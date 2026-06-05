@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kolbo Chatbot</string>
+    <string name="hint_message">הקלד הודעה...</string>
+    <string name="send_button">שלח</string>
+    <string name="empty_message">אנא הקלד הודעה</string>
+    <string name="error_message">שגיאה בהוצאת התשובה</string>
+    <string name="loading">טוען...</string>
+</resources>
