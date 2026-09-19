@@ -1,22 +1,30 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using NAudio.Wave;
 
 namespace Kolbo.Live.Windows;
 
 sealed record ExportedAudio(string WavPath, string Mp3Path);
+sealed record ExportProgressInfo(double Percent, string Message);
 
 static class ExportService
 {
     public static async Task<ExportedAudio> ExportAudioAsync(
         string sessionDirectory,
+        IProgress<ExportProgressInfo>? progress = null,
         CancellationToken cancellationToken = default)
     {
         var ffmpeg = Ffmpeg();
         var master = Master(sessionDirectory);
+        var duration = DurationSeconds(master);
 
+        progress?.Report(new ExportProgressInfo(5, "מכין WAV ללא אובדן איכות..."));
         var wav = Path.Combine(sessionDirectory, "final-audio.wav");
         File.Copy(master, wav, true);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        progress?.Report(new ExportProgressInfo(12, "מקודד MP3 באיכות 320kbps..."));
 
         var mp3 = Path.Combine(sessionDirectory, "final-audio.mp3");
         var temp = Path.Combine(sessionDirectory, "final-audio." + Guid.NewGuid().ToString("N") + ".tmp.mp3");
@@ -28,10 +36,18 @@ static class ExportService
             "-c:a", "libmp3lame",
             "-b:a", "320k",
             "-id3v2_version", "3",
+            "-progress", "pipe:1",
+            "-nostats",
             temp
         };
-        await RunAsync(ffmpeg, args, temp, cancellationToken);
+
+        await RunWithProgressAsync(
+            ffmpeg, args, temp, duration,
+            p => progress?.Report(new ExportProgressInfo(12 + p * 0.88, $"מייצא MP3... {Math.Round(p)}%")),
+            cancellationToken);
+
         File.Move(temp, mp3, true);
+        progress?.Report(new ExportProgressInfo(100, "ייצוא האודיו הושלם."));
         return new ExportedAudio(wav, mp3);
     }
 
@@ -39,10 +55,12 @@ static class ExportService
         string sessionDirectory,
         string? fallbackVideoPath,
         double videoOffsetSeconds,
+        IProgress<ExportProgressInfo>? progress = null,
         CancellationToken cancellationToken = default)
     {
         var ffmpeg = Ffmpeg();
         var master = Master(sessionDirectory);
+        var duration = DurationSeconds(master);
 
         var phoneVideo = Directory.EnumerateFiles(sessionDirectory, "phone-video.*")
             .FirstOrDefault(IsVideo);
@@ -52,8 +70,9 @@ static class ExportService
                         : null);
 
         if (video is null)
-            throw new InvalidOperationException("אין וידאו לסשן הזה. השתמש ב־“ייצא אודיו”, או צלם בטלפון / בחר סרטון קריוקי.");
+            throw new InvalidOperationException("אין וידאו לסשן הזה. ייצוא אודיו אינו דורש וידאו; ל־MP4 חבר מצלמת טלפון או בחר סרטון קריוקי.");
 
+        progress?.Report(new ExportProgressInfo(2, "מכין ייצוא MP4..."));
         var output = Path.Combine(sessionDirectory, "final-video.mp4");
         var temp = Path.Combine(sessionDirectory, "final-video." + Guid.NewGuid().ToString("N") + ".tmp.mp4");
 
@@ -73,12 +92,25 @@ static class ExportService
             "-b:a", "256k",
             "-shortest",
             "-movflags", "+faststart",
+            "-progress", "pipe:1",
+            "-nostats",
             temp
         };
 
-        await RunAsync(ffmpeg, args, temp, cancellationToken);
+        await RunWithProgressAsync(
+            ffmpeg, args, temp, duration,
+            p => progress?.Report(new ExportProgressInfo(Math.Max(2, p), $"מייצא MP4... {Math.Round(p)}%")),
+            cancellationToken);
+
         File.Move(temp, output, true);
+        progress?.Report(new ExportProgressInfo(100, "ייצוא הווידאו הושלם."));
         return output;
+    }
+
+    static double DurationSeconds(string master)
+    {
+        using var reader = new WaveFileReader(master);
+        return Math.Max(0.1, reader.TotalTime.TotalSeconds);
     }
 
     static string Ffmpeg()
@@ -97,10 +129,12 @@ static class ExportService
         return master;
     }
 
-    static async Task RunAsync(
+    static async Task RunWithProgressAsync(
         string executable,
         IEnumerable<string> args,
         string tempOutput,
+        double durationSeconds,
+        Action<double> progress,
         CancellationToken cancellationToken)
     {
         var psi = new ProcessStartInfo(executable)
@@ -118,22 +152,56 @@ static class ExportService
         process.Start();
 
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        var stderr = await stderrTask;
-        _ = await stdoutTask;
-
-        if (process.ExitCode == 0) return;
-
         try
         {
-            if (File.Exists(tempOutput))
-                File.Delete(tempOutput);
-        }
-        catch { }
+            while (true)
+            {
+                var line = await process.StandardOutput.ReadLineAsync(cancellationToken);
+                if (line is null) break;
 
-        var tail = stderr.Length <= 3000 ? stderr : stderr[^3000..];
-        throw new InvalidOperationException("FFmpeg export failed: " + tail);
+                if (line.StartsWith("out_time_ms=", StringComparison.Ordinal) &&
+                    long.TryParse(line.AsSpan("out_time_ms=".Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out var micros))
+                {
+                    var seconds = micros / 1_000_000d;
+                    progress(Math.Clamp(seconds / durationSeconds * 100d, 0d, 99d));
+                }
+                else if (line.StartsWith("out_time=", StringComparison.Ordinal) &&
+                         TimeSpan.TryParse(line["out_time=".Length..], CultureInfo.InvariantCulture, out var time))
+                {
+                    progress(Math.Clamp(time.TotalSeconds / durationSeconds * 100d, 0d, 99d));
+                }
+            }
+
+            await process.WaitForExitAsync(cancellationToken);
+            var stderr = await stderrTask;
+
+            if (process.ExitCode == 0)
+            {
+                progress(100);
+                return;
+            }
+
+            var tail = stderr.Length <= 3000 ? stderr : stderr[^3000..];
+            throw new InvalidOperationException("FFmpeg export failed: " + tail);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+            }
+            catch { }
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempOutput))
+                    File.Delete(tempOutput);
+            }
+            catch { }
+        }
     }
 
     static bool IsVideo(string path) =>
