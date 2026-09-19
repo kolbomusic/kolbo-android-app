@@ -48,7 +48,7 @@
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
           <TextBlock Text="KOLBO LIVE STUDIO" FontSize="17" FontWeight="Bold" FlowDirection="LeftToRight"/>
-          <TextBlock Text="  •  Preview 0.1.7  •  MR816X REV-X Capture" FontSize="13" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FlowDirection="LeftToRight"/>
+          <TextBlock Text="  •  Preview 0.1.8  •  Audio / Karaoke Video / YouTube" FontSize="13" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FlowDirection="LeftToRight"/>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" FlowDirection="LeftToRight">
           <Button Style="{StaticResource TitleButton}" Content="—" Click="Minimize_Click" ToolTip="מזער"/>
@@ -138,14 +138,26 @@
             </Border>
           </DockPanel>
 
-          <StackPanel Grid.Row="1" VerticalAlignment="Center">
-            <TextBlock Text="בחר פלייבק ובדוק את REV-X לפני ההקלטה" FontSize="27" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-            <TextBlock Text="ב־MR816X External FX התוכנה משתמשת בערוצי DAW 9/10 ל־REV-X וב־Return 9/10 בחזרה." Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,8,0,18" TextWrapping="Wrap"/>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="בחר מקור פלייבק ובדוק את REV-X לפני ההקלטה" FontSize="27" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+            <TextBlock Text="אפשר לבחור אודיו, סרטון קריוקי מהמחשב או קישור YouTube. בסרטון הווידאו מוצג כאן והאודיו נכנס דרך ASIO." Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,8,0,14" TextWrapping="Wrap" TextAlignment="Center"/>
 
-            <Border Background="#0D1729" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" Padding="18">
+            <Border Background="#0D1729" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" Padding="16">
               <StackPanel>
-                <TextBlock x:Name="BackingText" Text="אין פלייבק שנבחר" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,0,0,8" TextWrapping="Wrap"/>
-                <Button Content="בחר קובץ פלייבק" Click="ChooseBacking_Click" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="BackingText" Text="אין מקור פלייבק שנבחר" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                  <Button Content="בחר אודיו / סרטון קריוקי" Click="ChooseBacking_Click"/>
+                </StackPanel>
+                <Grid Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <TextBox x:Name="YouTubeUrlBox" Grid.Column="0" FlowDirection="LeftToRight" TextAlignment="Left" ToolTip="הדבק קישור YouTube"/>
+                  <Button Grid.Column="1" Content="טען YouTube" Click="LoadYouTube_Click" Margin="8,0,0,0"/>
+                </Grid>
+                <TextBlock x:Name="MediaStatusText" Text="בחר מקור. בקישור YouTube השתמש בתוכן שמותר לך לנגן ולהוריד." Foreground="{StaticResource Muted}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0"/>
+                <Border x:Name="KaraokeVideoFrame" Visibility="Collapsed" Background="Black" BorderBrush="#486080" BorderThickness="1" CornerRadius="10" Margin="0,12,0,0" Height="230">
+                  <MediaElement x:Name="KaraokeVideoPlayer" LoadedBehavior="Manual" UnloadedBehavior="Manual" IsMuted="True" Stretch="Uniform" ScrubbingEnabled="True"/>
+                </Border>
               </StackPanel>
             </Border>
 
@@ -175,6 +187,7 @@
             <TextBlock x:Name="ElapsedText" Text="00:00:00" FontSize="26" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,6"/>
             <TextBlock x:Name="InfoText" Text="מוכן. לחץ על בדיקת ASIO ומיפוי." Foreground="{StaticResource Muted}" TextWrapping="Wrap" TextAlignment="Center"/>
           </StackPanel>
+          </ScrollViewer>
 
           <StackPanel Grid.Row="2">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
@@ -193,7 +206,7 @@
     </Grid>
 
     <Border Grid.Row="2" Background="#0E192B" BorderBrush="#334866" BorderThickness="0,1,0,0">
-      <TextBlock Text="Preview 0.1.7 • ההקלטות נשמרות בנפרד ואינן נמחקות בהסרה • גרור את הפס העליון להזזה ושנה גודל מהקצוות"
+      <TextBlock Text="Preview 0.1.8 • אודיו / סרטון קריוקי / YouTube • ההקלטות נשמרות בנפרד ואינן נמחקות בהסרה"
                  Foreground="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="13"/>
     </Border>
   </Grid>
