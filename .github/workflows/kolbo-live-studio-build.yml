@@ -32,18 +32,23 @@ jobs:
         run: |
           $xaml=Get-Content src/Kolbo.Live.Windows/MainWindow.xaml -Raw
           $code=Get-Content src/Kolbo.Live.Windows/MainWindow.xaml.cs -Raw
+          $engine=Get-Content src/Kolbo.Live.Windows/AsioCaptureEngine.cs -Raw
           $media=Get-Content src/Kolbo.Live.Windows/MediaSourceService.cs -Raw
           $export=Get-Content src/Kolbo.Live.Windows/ExportService.cs -Raw
           $app=Get-Content src/Kolbo.Live.Windows/App.xaml -Raw
           $phone=Get-Content src/Kolbo.Live.Windows/PhonePairingServer.cs -Raw
-          if(-not (($xaml -match 'WindowStyle="SingleBorderWindow"') -and ($xaml -match 'ResizeMode="CanResizeWithGrip"'))){ throw 'frame contract failed' }
+
+          if(-not (($xaml -match 'WindowStyle="SingleBorderWindow"') -and ($xaml -match 'ResizeMode="CanResizeWithGrip"'))){ throw 'native window frame contract failed' }
           if(-not (($app -match 'TextElement.Foreground="White"') -and ($app -match 'Background="#23334F"'))){ throw 'contrast contract failed' }
-          if(-not (($xaml -match 'LoadYouTube_Click') -and ($media -match 'yt-dlp.exe'))){ throw 'youtube contract failed' }
+          if(-not (($xaml -match 'LoadYouTube_Click') -and ($media -match 'yt-dlp.exe'))){ throw 'YouTube contract failed' }
           if(-not (($xaml -match 'ExportAudio_Click') -and ($export -match 'ExportAudioAsync'))){ throw 'audio export contract failed' }
           if(-not (($xaml -match 'ExportVideo_Click') -and ($export -match 'ExportVideoAsync'))){ throw 'video export contract failed' }
-          if(-not (($code -match 'probe.Inputs.Count >= 10') -and ($code -match 'probe.Outputs.Count >= 10'))){ throw 'MR816 route contract failed' }
-          if(-not (($code -match 'effectGateFailed') -and ($phone -match 'local-http-native-camera'))){ throw 'runtime contract failed' }
+          if(-not (($xaml -match 'ExportProgressBar') -and ($export -match 'out_time_ms='))){ throw 'export progress contract failed' }
+          if(-not (($code -match 'MixGain_ValueChanged') -and ($engine -match 'UpdateGains'))){ throw 'live mic/playback balance contract failed' }
+          if(-not (($phone -match 'navigator.mediaDevices.getUserMedia') -and ($phone -match 'MediaRecorder') -and ($phone -match 'cloudflared.exe') -and ($phone -match 'WebSocket'))){ throw 'secure live browser camera contract failed' }
+          if(-not (($code -match 'probe.Inputs.Count >= 10') -and ($code -match 'effectGateFailed'))){ throw 'MR816 wet-return contract failed' }
           Write-Host 'Release source contract PASS'
+
       - name: Core acceptance tests
         shell: pwsh
         working-directory: klswork
@@ -80,7 +85,7 @@ jobs:
           Copy-Item $ffprobe.FullName release/publish/tools/ffprobe.exe
 
           @(
-            'Kolbo Live Studio Preview 0.1.9'
+            'Kolbo Live Studio Preview 0.2.0'
             ('FFmpeg archive SHA-256: '+$actual.ToLowerInvariant())
             'NAudio 3.1.0 and QRCoder 1.6.0 restored from NuGet'
           ) | Set-Content release/publish/THIRD-PARTY-BUILD-PROVENANCE.txt -Encoding UTF8
@@ -103,6 +108,19 @@ jobs:
           Copy-Item yt-dlp.exe release/publish/tools/yt-dlp.exe
           Add-Content release/publish/THIRD-PARTY-BUILD-PROVENANCE.txt ('yt-dlp latest verified SHA-256: '+$actual.ToLowerInvariant())
 
+      - name: Add verified cloudflared payload
+        shell: pwsh
+        working-directory: klswork
+        run: |
+          $url='https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-windows-amd64.exe'
+          $expected='2837888cc0f5d58f15b6dc478376de90b4d3ba5241c7947455d1e0a0df429712'
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile cloudflared.exe
+          $actual=(Get-FileHash cloudflared.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "cloudflared SHA-256 mismatch" }
+          New-Item release/publish/tools -ItemType Directory -Force | Out-Null
+          Copy-Item cloudflared.exe release/publish/tools/cloudflared.exe
+          Add-Content release/publish/THIRD-PARTY-BUILD-PROVENANCE.txt ('cloudflared 2026.9.1 SHA-256: '+$actual)
+
       - name: Verify bundled media tools
         shell: pwsh
         working-directory: klswork
@@ -111,6 +129,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "bundled FFmpeg failed to start" }
           & release/publish/tools/yt-dlp.exe --version
           if ($LASTEXITCODE -ne 0) { throw "bundled yt-dlp failed to start" }
+          & release/publish/tools/cloudflared.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "bundled cloudflared failed to start" }
 
       - name: Install NSIS
         shell: pwsh
@@ -149,7 +169,7 @@ jobs:
           New-Item dist -ItemType Directory -Force | Out-Null
           $makensis=(Get-Content nsis-path.txt -Raw).Trim()
           $payload=(Resolve-Path release/publish).Path.Replace('\','/')
-          $output=(Join-Path (Resolve-Path dist).Path 'Kolbo-Live-Studio-Preview-0.1.9-Setup.exe').Replace('\','/')
+          $output=(Join-Path (Resolve-Path dist).Path 'Kolbo-Live-Studio-Preview-0.2.0-Setup.exe').Replace('\','/')
 
           Push-Location packaging
           try {
@@ -160,15 +180,15 @@ jobs:
             Pop-Location
           }
 
-          if (-not (Test-Path dist/Kolbo-Live-Studio-Preview-0.1.9-Setup.exe)) { throw "Setup.exe missing" }
-          $hash=(Get-FileHash dist/Kolbo-Live-Studio-Preview-0.1.9-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          ($hash+'  Kolbo-Live-Studio-Preview-0.1.9-Setup.exe') | Set-Content dist/Kolbo-Live-Studio-Preview-0.1.9-Setup.exe.sha256.txt -Encoding ASCII
+          if (-not (Test-Path dist/Kolbo-Live-Studio-Preview-0.2.0-Setup.exe)) { throw "Setup.exe missing" }
+          $hash=(Get-FileHash dist/Kolbo-Live-Studio-Preview-0.2.0-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          ($hash+'  Kolbo-Live-Studio-Preview-0.2.0-Setup.exe') | Set-Content dist/Kolbo-Live-Studio-Preview-0.2.0-Setup.exe.sha256.txt -Encoding ASCII
 
       - name: Installer and application smoke test
         shell: pwsh
         working-directory: klswork
         run: |
-          $setup=(Resolve-Path dist/Kolbo-Live-Studio-Preview-0.1.9-Setup.exe).Path
+          $setup=(Resolve-Path dist/Kolbo-Live-Studio-Preview-0.2.0-Setup.exe).Path
           $install=Join-Path $env:LOCALAPPDATA 'Programs\KolboLiveStudio'
 
           Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -185,13 +205,16 @@ jobs:
           if (Test-Path (Join-Path $install 'STALE-FROM-OLD-PREVIEW.txt')) { throw "installer did not clean stale previous-preview files" }
 
           $version=(Get-Content (Join-Path $install 'VERSION.txt') -Raw).Trim()
-          if ($version -ne 'Kolbo Live Studio Preview 0.1.9') { throw "installed version stamp mismatch: $version" }
+          if ($version -ne 'Kolbo Live Studio Preview 0.2.0') { throw "installed version stamp mismatch: $version" }
 
           if (-not (Test-Path (Join-Path $install 'tools\ffmpeg.exe'))) { throw "installed FFmpeg missing" }
           if (-not (Test-Path (Join-Path $install 'tools\yt-dlp.exe'))) { throw "installed yt-dlp missing" }
+          if (-not (Test-Path (Join-Path $install 'tools\cloudflared.exe'))) { throw "installed cloudflared missing" }
 
           & (Join-Path $install 'tools\yt-dlp.exe') --version
           if ($LASTEXITCODE -ne 0) { throw "installed yt-dlp failed to start" }
+          & (Join-Path $install 'tools\cloudflared.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "installed cloudflared failed to start" }
 
           if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application unexpectedly running after silent install" }
 
@@ -207,7 +230,7 @@ jobs:
             $bmp=New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
             $g=[System.Drawing.Graphics]::FromImage($bmp)
             $g.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)
-            $bmp.Save((Join-Path (Resolve-Path dist).Path 'UI-SMOKE-0.1.9.png'))
+            $bmp.Save((Join-Path (Resolve-Path dist).Path 'UI-SMOKE-0.2.0.png'))
             $g.Dispose()
             $bmp.Dispose()
           }
@@ -230,39 +253,36 @@ jobs:
         working-directory: klswork
         run: |
           @(
-            'Kolbo Live Studio Preview 0.1.9 - Windows Release QA'
+            'Kolbo Live Studio Preview 0.2.0 - Windows Release QA'
             'Windows build: PASS'
+            'Release source contracts: PASS'
             'Core acceptance tests: 8/8 PASS'
             'Self-contained win-x64 publish: PASS'
             'FFmpeg SHA-256 verification: PASS'
             'yt-dlp SHA-256 verification: PASS'
-            'Bundled FFmpeg executable startup: PASS'
-            'Bundled yt-dlp executable startup: PASS'
+            'cloudflared 2026.9.1 pinned SHA-256 verification: PASS'
+            'Bundled FFmpeg / yt-dlp / cloudflared startup: PASS'
             'NSIS Setup.exe creation: PASS'
             'Silent install: PASS'
-            'Installed app executable present: PASS'
             'Clean replacement of stale previous-preview files: PASS'
-            'Installed VERSION.txt = 0.1.9: PASS'
-            'Installed FFmpeg present: PASS'
-            'Installed yt-dlp present: PASS'
-            'WPF application startup (5 seconds): PASS'
-            'Native Windows frame / minimize / maximize / close: IMPLEMENTED'
-            'High-contrast ComboBox selected text template: IMPLEMENTED'
-            'Playback sources: local audio, local karaoke video, YouTube URL'
-            'Audio export independent of video: IMPLEMENTED (WAV + MP3)'
-            'Video export separate and optional: IMPLEMENTED'
-            'MR816X exact-master mode: Dry + REV-X Wet + Playback share monitor/record master'
-            'MR816X no-wet fail-safe: IMPLEMENTED'
-            'Phone capture: local HTTP + native phone camera picker; no self-signed TLS'
-            'Application process cleanup after smoke test: PASS'
-            'Silent uninstall: PASS'
-            'Install directory removed after uninstall: PASS'
-            'MR816X hardware audio acceptance: REQUIRES USER HARDWARE'
-          ) | Set-Content dist/QA-REPORT-0.1.9.txt -Encoding UTF8
+            'WPF application startup smoke test: PASS'
+            'Native minimize / maximize / close / resize: IMPLEMENTED'
+            'High-contrast ComboBox text: IMPLEMENTED'
+            'Playback sources: audio / karaoke video / YouTube'
+            'Phone camera: trusted HTTPS browser getUserMedia + WSS live preview'
+            'Phone camera can connect before audio recording: IMPLEMENTED'
+            'Desktop commands phone video start/stop with the take: IMPLEMENTED'
+            'Live microphone/playback/REV-X/send gain updates during recording: IMPLEMENTED'
+            'Audio export independent of video: WAV + MP3 320kbps'
+            'Video export optional: MP4'
+            'Export progress percentage / cancel / output-folder action: IMPLEMENTED'
+            'MR816X real Wet Return fail-safe: IMPLEMENTED'
+            'Hardware MR816X audio acceptance and real phone-browser acceptance: REQUIRES USER HARDWARE'
+          ) | Set-Content dist/QA-REPORT-0.2.0.txt -Encoding UTF8
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Live-Studio-Preview-0.1.9-Windows
+          name: Kolbo-Live-Studio-Preview-0.2.0-Windows
           path: klswork/dist/*
           if-no-files-found: error
           retention-days: 7
