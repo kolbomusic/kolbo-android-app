@@ -48,7 +48,10 @@
                 </StackPanel>
               </Border>
 
-              <CheckBox x:Name="WetOnlyConfirm" Content="לניטור זהה להקלטה: Direct Monitor כבוי בכרטיס (ה־Master של התוכנה הוא מה ששומעים ומה שנשמר)"/>
+              <CheckBox x:Name="WetOnlyConfirm">
+                <TextBlock Text="לניטור זהה להקלטה: Direct Monitor כבוי בכרטיס. ה־Master של התוכנה הוא מה ששומעים ומה שנשמר."
+                           TextWrapping="Wrap" Foreground="White"/>
+              </CheckBox>
 
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="132"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -149,8 +152,10 @@
               <Button Content="חבר טלפון למצלמה" Click="PairPhone_Click"/>
               <Button Content="●  התחל הקלטה" Background="{StaticResource Record}" FontSize="17" Padding="26,12" Click="Record_Click"/>
               <Button Content="עצור ושמור" Click="Stop_Click"/>
-              <Button Content="ייצא אודיו" Click="ExportAudio_Click"/>
-              <Button Content="ייצא וידאו" Click="ExportVideo_Click"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
+              <Button Content="ייצא אודיו (WAV + MP3)" Click="ExportAudio_Click"/>
+              <Button Content="ייצא וידאו (אופציונלי)" Click="ExportVideo_Click"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
               <TextBlock Text="Video Offset:" Foreground="{StaticResource Muted}" VerticalAlignment="Center"/>
