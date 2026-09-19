@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>Kolbo.Live.Windows</AssemblyName>
+    <Version>0.1.4</Version>
+    <FileVersion>0.1.4.0</FileVersion>
+    <AssemblyVersion>0.1.4.0</AssemblyVersion>
+    <Product>Kolbo Live Studio Preview</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Kolbo.Live.Core/Kolbo.Live.Core.csproj"/>
+    <PackageReference Include="NAudio" Version="3.1.0"/>
+    <PackageReference Include="QRCoder" Version="1.6.0"/>
+    <FrameworkReference Include="Microsoft.AspNetCore.App"/>
+  </ItemGroup>
+</Project>
