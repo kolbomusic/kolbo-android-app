@@ -133,12 +133,17 @@ jobs:
           $install=Join-Path $env:LOCALAPPDATA 'Programs\KolboLiveStudio'
           Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           if (Test-Path $install) { Remove-Item $install -Recurse -Force }
+          New-Item $install -ItemType Directory -Force | Out-Null
+          Set-Content (Join-Path $install 'STALE-FROM-OLD-PREVIEW.txt') 'old' -Encoding ASCII
 
           $p=Start-Process $setup -ArgumentList '/S' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "silent install exit code $($p.ExitCode)" }
 
           $app=Join-Path $install 'Kolbo.Live.Windows.exe'
           if (-not (Test-Path $app)) { throw "installed EXE missing" }
+          if (Test-Path (Join-Path $install 'STALE-FROM-OLD-PREVIEW.txt')) { throw "installer did not clean stale previous-preview files" }
+          $version=(Get-Content (Join-Path $install 'VERSION.txt') -Raw).Trim()
+          if ($version -ne 'Kolbo Live Studio Preview 0.1.8') { throw "installed version stamp mismatch: $version" }
           if (-not (Test-Path (Join-Path $install 'tools\ffmpeg.exe'))) { throw "installed FFmpeg missing" }
           if (-not (Test-Path (Join-Path $install 'tools\yt-dlp.exe'))) { throw "installed yt-dlp missing" }
           & (Join-Path $install 'tools\yt-dlp.exe') --version
@@ -186,6 +191,8 @@ jobs:
             'NSIS Setup.exe creation: PASS'
             'Silent install: PASS'
             'Installed app executable present: PASS'
+            'Clean replacement of stale previous-preview files: PASS'
+            'Installed VERSION.txt = 0.1.8: PASS'
             'Installed FFmpeg present: PASS'
             'Installed yt-dlp present and starts: PASS'
             'WPF application startup (5 seconds): PASS'
