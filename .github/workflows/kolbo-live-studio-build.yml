@@ -26,6 +26,31 @@ jobs:
         working-directory: klswork
         run: dotnet build src/Kolbo.Live.Windows/Kolbo.Live.Windows.csproj -c Release --no-restore
 
+      - name: Release source contract gate
+        shell: pwsh
+        working-directory: klswork
+        run: |
+          $xaml=Get-Content src/Kolbo.Live.Windows/MainWindow.xaml -Raw
+          $code=Get-Content src/Kolbo.Live.Windows/MainWindow.xaml.cs -Raw
+          $media=Get-Content src/Kolbo.Live.Windows/MediaSourceService.cs -Raw
+          $export=Get-Content src/Kolbo.Live.Windows/ExportService.cs -Raw
+          $app=Get-Content src/Kolbo.Live.Windows/App.xaml -Raw
+          $checks=@(
+            @('native resizable frame', $xaml -match 'WindowStyle="SingleBorderWindow"' -and $xaml -match 'ResizeMode="CanResizeWithGrip"'),
+            @('high contrast combo template', $app -match 'TextElement.Foreground="White"' -and $app -match 'Background="#23334F"'),
+            @('local karaoke video source', $xaml -match 'בחר אודיו / סרטון קריוקי' -and $media -match 'KaraokeVideo'),
+            @('YouTube source', $xaml -match 'LoadYouTube_Click' -and $media -match 'yt-dlp.exe'),
+            @('karaoke video player', $xaml -match 'KaraokeVideoPlayer'),
+            @('audio export independent of video', $xaml -match 'ExportAudio_Click' -and $export -match 'ExportAudioAsync'),
+            @('optional video export', $xaml -match 'ExportVideo_Click' -and $export -match 'ExportVideoAsync'),
+            @('MR816 supports up to 16-channel driver layouts', $code -match 'probe.Inputs.Count >= 10' -and $code -match 'probe.Outputs.Count >= 10'),
+            @('real wet return fail-safe', $code -match 'effectGateFailed' -and $code -match 'Stop_Click'),
+            @('phone local HTTP flow', (Get-Content src/Kolbo.Live.Windows/PhonePairingServer.cs -Raw) -match 'local-http-native-camera')
+          )
+          $failed=@($checks | Where-Object { -not $_[1] })
+          $checks | ForEach-Object { Write-Host (($(if($_[1]){'PASS'}else{'FAIL'}))+' '+$_[0]) }
+          if($failed.Count -gt 0){ throw ('Release source contract failed: '+(($failed | ForEach-Object {$_.Item(0)}) -join ', ')) }
+
       - name: Core acceptance tests
         shell: pwsh
         working-directory: klswork
@@ -62,7 +87,7 @@ jobs:
           Copy-Item $ffprobe.FullName release/publish/tools/ffprobe.exe
 
           @(
-            'Kolbo Live Studio Preview 0.1.8'
+            'Kolbo Live Studio Preview 0.1.9'
             ('FFmpeg archive SHA-256: '+$actual.ToLowerInvariant())
             'NAudio 3.1.0 and QRCoder 1.6.0 restored from NuGet'
           ) | Set-Content release/publish/THIRD-PARTY-BUILD-PROVENANCE.txt -Encoding UTF8
@@ -131,7 +156,7 @@ jobs:
           New-Item dist -ItemType Directory -Force | Out-Null
           $makensis=(Get-Content nsis-path.txt -Raw).Trim()
           $payload=(Resolve-Path release/publish).Path.Replace('\','/')
-          $output=(Join-Path (Resolve-Path dist).Path 'Kolbo-Live-Studio-Preview-0.1.8-Setup.exe').Replace('\','/')
+          $output=(Join-Path (Resolve-Path dist).Path 'Kolbo-Live-Studio-Preview-0.1.9-Setup.exe').Replace('\','/')
 
           Push-Location packaging
           try {
@@ -142,15 +167,15 @@ jobs:
             Pop-Location
           }
 
-          if (-not (Test-Path dist/Kolbo-Live-Studio-Preview-0.1.8-Setup.exe)) { throw "Setup.exe missing" }
-          $hash=(Get-FileHash dist/Kolbo-Live-Studio-Preview-0.1.8-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          ($hash+'  Kolbo-Live-Studio-Preview-0.1.8-Setup.exe') | Set-Content dist/Kolbo-Live-Studio-Preview-0.1.8-Setup.exe.sha256.txt -Encoding ASCII
+          if (-not (Test-Path dist/Kolbo-Live-Studio-Preview-0.1.9-Setup.exe)) { throw "Setup.exe missing" }
+          $hash=(Get-FileHash dist/Kolbo-Live-Studio-Preview-0.1.9-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          ($hash+'  Kolbo-Live-Studio-Preview-0.1.9-Setup.exe') | Set-Content dist/Kolbo-Live-Studio-Preview-0.1.9-Setup.exe.sha256.txt -Encoding ASCII
 
       - name: Installer and application smoke test
         shell: pwsh
         working-directory: klswork
         run: |
-          $setup=(Resolve-Path dist/Kolbo-Live-Studio-Preview-0.1.8-Setup.exe).Path
+          $setup=(Resolve-Path dist/Kolbo-Live-Studio-Preview-0.1.9-Setup.exe).Path
           $install=Join-Path $env:LOCALAPPDATA 'Programs\KolboLiveStudio'
 
           Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -167,7 +192,7 @@ jobs:
           if (Test-Path (Join-Path $install 'STALE-FROM-OLD-PREVIEW.txt')) { throw "installer did not clean stale previous-preview files" }
 
           $version=(Get-Content (Join-Path $install 'VERSION.txt') -Raw).Trim()
-          if ($version -ne 'Kolbo Live Studio Preview 0.1.8') { throw "installed version stamp mismatch: $version" }
+          if ($version -ne 'Kolbo Live Studio Preview 0.1.9') { throw "installed version stamp mismatch: $version" }
 
           if (-not (Test-Path (Join-Path $install 'tools\ffmpeg.exe'))) { throw "installed FFmpeg missing" }
           if (-not (Test-Path (Join-Path $install 'tools\yt-dlp.exe'))) { throw "installed yt-dlp missing" }
@@ -189,7 +214,7 @@ jobs:
             $bmp=New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
             $g=[System.Drawing.Graphics]::FromImage($bmp)
             $g.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)
-            $bmp.Save((Join-Path (Resolve-Path dist).Path 'UI-SMOKE-0.1.8.png'))
+            $bmp.Save((Join-Path (Resolve-Path dist).Path 'UI-SMOKE-0.1.9.png'))
             $g.Dispose()
             $bmp.Dispose()
           }
@@ -212,7 +237,7 @@ jobs:
         working-directory: klswork
         run: |
           @(
-            'Kolbo Live Studio Preview 0.1.8 - Windows Release QA'
+            'Kolbo Live Studio Preview 0.1.9 - Windows Release QA'
             'Windows build: PASS'
             'Core acceptance tests: 8/8 PASS'
             'Self-contained win-x64 publish: PASS'
@@ -224,7 +249,7 @@ jobs:
             'Silent install: PASS'
             'Installed app executable present: PASS'
             'Clean replacement of stale previous-preview files: PASS'
-            'Installed VERSION.txt = 0.1.8: PASS'
+            'Installed VERSION.txt = 0.1.9: PASS'
             'Installed FFmpeg present: PASS'
             'Installed yt-dlp present: PASS'
             'WPF application startup (5 seconds): PASS'
@@ -240,11 +265,11 @@ jobs:
             'Silent uninstall: PASS'
             'Install directory removed after uninstall: PASS'
             'MR816X hardware audio acceptance: REQUIRES USER HARDWARE'
-          ) | Set-Content dist/QA-REPORT-0.1.8.txt -Encoding UTF8
+          ) | Set-Content dist/QA-REPORT-0.1.9.txt -Encoding UTF8
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Live-Studio-Preview-0.1.8-Windows
+          name: Kolbo-Live-Studio-Preview-0.1.9-Windows
           path: klswork/dist/*
           if-no-files-found: error
           retention-days: 7
