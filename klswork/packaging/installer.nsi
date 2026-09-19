@@ -9,9 +9,6 @@ Unicode True
 !ifndef OUTPUT
 !error "OUTPUT must name the output installer"
 !endif
-!ifndef UNINSTALL_FILES
-!error "UNINSTALL_FILES must name the generated owned-files deletion script"
-!endif
 
 Name "Kolbo Live Studio Preview"
 OutFile "${OUTPUT}"
@@ -27,7 +24,7 @@ VIAddVersionKey "LegalCopyright" "Kolbo Live Studio contributors"
 
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Kolbo Live Studio"
-!define MUI_WELCOMEPAGE_TEXT "Professional live recording preview with ASIO duplex audio and phone-camera workflow.$\r$\n$\r$\nThis is a preview build. Install the official ASIO driver for your audio interface before first use.$\r$\n$\r$\nRecordings are stored separately and are not deleted when the application is uninstalled."
+!define MUI_WELCOMEPAGE_TEXT "Professional live recording preview with ASIO duplex audio and phone-camera workflow.$\r$\n$\r$\nThis is a preview build. Install the official ASIO driver for your audio interface before first use.$\r$\n$$\nRecordings are stored separately and are not deleted when the application is uninstalled."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -55,10 +52,12 @@ Section "Kolbo Live Studio"
   SetOutPath "$INSTDIR"
   File /r "${PAYLOAD}\*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
+
   CreateDirectory "$SMPROGRAMS\Kolbo Live Studio"
   CreateShortcut "$SMPROGRAMS\Kolbo Live Studio\Kolbo Live Studio.lnk" "$INSTDIR\Kolbo.Live.Windows.exe"
   CreateShortcut "$SMPROGRAMS\Kolbo Live Studio\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
   CreateShortcut "$DESKTOP\Kolbo Live Studio.lnk" "$INSTDIR\Kolbo.Live.Windows.exe"
+
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayName" "Kolbo Live Studio Preview"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayVersion" "0.1.5-preview"
@@ -70,7 +69,7 @@ SectionEnd
 
 Section "Uninstall"
   SetShellVarContext current
-  !include "${UNINSTALL_FILES}"
+  !include "uninstall-files.generated.nsh"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   Delete "$DESKTOP\Kolbo Live Studio.lnk"

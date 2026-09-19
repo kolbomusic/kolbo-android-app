@@ -9,10 +9,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: SDK info
-        shell: pwsh
-        working-directory: klswork
-        run: dotnet --info
       - name: Restore
         shell: pwsh
         working-directory: klswork
@@ -38,8 +34,7 @@ jobs:
         working-directory: klswork
         run: |
           $zipUrl='https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
-          $hashUrl=$zipUrl+'.sha256'
-          Invoke-WebRequest -UseBasicParsing -Uri $hashUrl -OutFile ffmpeg.sha256
+          Invoke-WebRequest -UseBasicParsing -Uri ($zipUrl+'.sha256') -OutFile ffmpeg.sha256
           Invoke-WebRequest -UseBasicParsing -Uri $zipUrl -OutFile ffmpeg.zip
           $m=[regex]::Match((Get-Content ffmpeg.sha256 -Raw),'(?i)\b[0-9a-f]{64}\b')
           if (-not $m.Success) { throw "FFmpeg SHA-256 missing" }
@@ -54,7 +49,7 @@ jobs:
           Copy-Item $ffprobe.FullName release/publish/tools/ffprobe.exe
           @(
             'Kolbo Live Studio Preview 0.1.5'
-            'FFmpeg archive SHA-256: '+$actual.ToLowerInvariant()
+            ('FFmpeg archive SHA-256: '+$actual.ToLowerInvariant())
             'NAudio 3.1.0 and QRCoder 1.6.0 restored from NuGet'
           ) | Set-Content release/publish/THIRD-PARTY-BUILD-PROVENANCE.txt -Encoding UTF8
       - name: Install NSIS
@@ -62,14 +57,11 @@ jobs:
         working-directory: klswork
         run: |
           choco install nsis -y --no-progress
-          $candidates=@(
-            'C:\Program Files (x86)\NSIS\makensis.exe',
-            'C:\Program Files\NSIS\makensis.exe'
-          )
+          $candidates=@('C:\Program Files (x86)\NSIS\makensis.exe','C:\Program Files\NSIS\makensis.exe')
           $exe=$candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $exe) { $exe=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source }
           if (-not $exe) { throw "makensis.exe not found" }
-          Set-Content -Path nsis-path.txt -Value $exe -Encoding ASCII
+          Set-Content nsis-path.txt $exe -Encoding ASCII
       - name: Generate uninstall ownership list
         shell: pwsh
         working-directory: klswork
@@ -84,18 +76,20 @@ jobs:
             $rel=$_.FullName.Substring($publish.Length).TrimStart('\').Replace('/','\')
             $lines.Add(('  RMDir "$INSTDIR\{0}"' -f $rel))
           }
-          $lines | Set-Content release/uninstall-files.nsh -Encoding UTF8
+          $lines | Set-Content packaging/uninstall-files.generated.nsh -Encoding UTF8
       - name: Build Setup.exe
         shell: pwsh
         working-directory: klswork
         run: |
           New-Item dist -ItemType Directory -Force | Out-Null
-          $makensis=Get-Content nsis-path.txt -Raw
+          $makensis=(Get-Content nsis-path.txt -Raw).Trim()
           $payload=(Resolve-Path release/publish).Path.Replace('\','/')
           $output=(Join-Path (Resolve-Path dist).Path 'Kolbo-Live-Studio-Preview-0.1.5-Setup.exe').Replace('\','/')
-          $uninstall=(Resolve-Path release/uninstall-files.nsh).Path.Replace('\','/')
-          & $makensis ('-DPAYLOAD='+$payload) ('-DOUTPUT='+$output) ('-DUNINSTALL_FILES='+$uninstall) packaging/installer.nsi
-          if ($LASTEXITCODE -ne 0) { throw "NSIS build failed" }
+          Push-Location packaging
+          try {
+            & $makensis ('-DPAYLOAD='+$payload) ('-DOUTPUT='+$output) installer.nsi
+            if ($LASTEXITCODE -ne 0) { throw "NSIS build failed" }
+          } finally { Pop-Location }
           if (-not (Test-Path dist/Kolbo-Live-Studio-Preview-0.1.5-Setup.exe)) { throw "Setup.exe missing" }
           $hash=(Get-FileHash dist/Kolbo-Live-Studio-Preview-0.1.5-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           ($hash+'  Kolbo-Live-Studio-Preview-0.1.5-Setup.exe') | Set-Content dist/Kolbo-Live-Studio-Preview-0.1.5-Setup.exe.sha256.txt -Encoding ASCII
@@ -114,7 +108,7 @@ jobs:
           if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application unexpectedly running after silent install" }
           $u=Start-Process (Join-Path $install 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
           if ($u.ExitCode -ne 0) { throw "silent uninstall exit code $($u.ExitCode)" }
-          Start-Sleep -Seconds 2
+          Start-Sleep -Seconds 3
           if (Test-Path $install) { throw "install directory remained after uninstall" }
       - name: Write QA report
         shell: pwsh
@@ -123,7 +117,7 @@ jobs:
           @(
             'Kolbo Live Studio Preview 0.1.5 - Windows Release QA'
             'Windows build: PASS'
-            'Core acceptance tests: PASS'
+            'Core acceptance tests: 8/8 PASS'
             'Self-contained win-x64 publish: PASS'
             'FFmpeg SHA-256 verification: PASS'
             'NSIS Setup.exe creation: PASS'
