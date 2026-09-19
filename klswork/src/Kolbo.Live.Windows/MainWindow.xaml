@@ -1,7 +1,7 @@
 <Window x:Class="Kolbo.Live.Windows.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Kolbo Live Studio — Preview 0.1.8"
+        Title="Kolbo Live Studio — Preview 0.1.9"
         Width="1180" Height="700" MinWidth="860" MinHeight="560"
         WindowStyle="SingleBorderWindow" ResizeMode="CanResizeWithGrip" WindowState="Normal"
         Background="{StaticResource Bg}" FlowDirection="RightToLeft"
@@ -167,7 +167,7 @@
     </Grid>
 
     <Border Grid.Row="1" Background="#0E192B" BorderBrush="#334866" BorderThickness="0,1,0,0">
-      <TextBlock Text="Preview 0.1.8 • אודיו / סרטון קריוקי / YouTube • ההקלטות נשמרות בנפרד ואינן נמחקות בהסרה"
+      <TextBlock Text="Preview 0.1.9 • אודיו / סרטון קריוקי / YouTube • ההקלטות נשמרות בנפרד ואינן נמחקות בהסרה"
                  Foreground="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="13"/>
     </Border>
   </Grid>
