@@ -43,6 +43,13 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        var work = SystemParameters.WorkArea;
+        Width = Math.Min(1180, Math.Max(860, work.Width - 24));
+        Height = Math.Min(700, Math.Max(560, work.Height - 24));
+        Left = work.Left + Math.Max(0, (work.Width - Width) / 2);
+        Top = work.Top + Math.Max(0, (work.Height - Height) / 2);
+
         DeviceBox.ItemsSource = Devices;
         LoadDevices();
         uiTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background, (_, _) => UpdateMeters(), Dispatcher);
