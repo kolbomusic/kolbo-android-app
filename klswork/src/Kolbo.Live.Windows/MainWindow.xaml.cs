@@ -712,39 +712,6 @@ public partial class MainWindow : Window
         StateDot.Fill = (Brush)new BrushConverter().ConvertFromString(color)!;
     }
 
-    void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ClickCount == 2)
-        {
-            ToggleMaximize();
-            return;
-        }
-
-        if (e.LeftButton == MouseButtonState.Pressed)
-        {
-            try
-            {
-                if (WindowState == WindowState.Maximized)
-                    WindowState = WindowState.Normal;
-                DragMove();
-            }
-            catch { }
-        }
-    }
-
-    void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    void Maximize_Click(object sender, RoutedEventArgs e) => ToggleMaximize();
-    void Close_Click(object sender, RoutedEventArgs e) => Close();
-
-    void ToggleMaximize() =>
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-
-    void Window_StateChanged(object? sender, EventArgs e)
-    {
-        if (MaximizeButton is not null)
-            MaximizeButton.Content = WindowState == WindowState.Maximized ? "❐" : "□";
-    }
-
     protected override async void OnClosed(EventArgs e)
     {
         uiTimer.Stop();
