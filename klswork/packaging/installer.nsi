@@ -59,8 +59,7 @@ Section "Kolbo Live Studio"
   SetOutPath "$INSTDIR"
   File /r "${PAYLOAD}\*"
   FileOpen $0 "$INSTDIR\VERSION.txt" w
-  FileWrite $0 "Kolbo Live Studio Preview 0.1.8$$
-"
+  FileWrite $0 "Kolbo Live Studio Preview 0.1.8"
   FileClose $0
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
