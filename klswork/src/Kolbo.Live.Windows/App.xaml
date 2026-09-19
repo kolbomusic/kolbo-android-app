@@ -38,8 +38,66 @@
       <Setter Property="FontSize" Value="15"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Height" Value="40"/>
-      <Setter Property="Padding" Value="8,4"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <Border x:Name="SelectedBorder"
+                      Background="#23334F"
+                      BorderBrush="#7388AA"
+                      BorderThickness="1.5"
+                      CornerRadius="3">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="34"/>
+                  </Grid.ColumnDefinitions>
+                  <ContentPresenter Grid.Column="0"
+                                    Margin="10,0,6,0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Stretch"
+                                    Content="{TemplateBinding SelectionBoxItem}"
+                                    ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                    ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                    TextElement.Foreground="White"
+                                    TextElement.FontWeight="SemiBold"/>
+                  <TextBlock Grid.Column="1"
+                             Text="▼"
+                             Foreground="White"
+                             FontSize="10"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Center"/>
+                </Grid>
+              </Border>
+              <ToggleButton Focusable="False"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            ClickMode="Press"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
+              <Popup x:Name="Popup"
+                     IsOpen="{TemplateBinding IsDropDownOpen}"
+                     Placement="Bottom"
+                     AllowsTransparency="True"
+                     Focusable="False">
+                <Border Background="White"
+                        BorderBrush="#7388AA"
+                        BorderThickness="1"
+                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                  <ScrollViewer MaxHeight="320" CanContentScroll="True">
+                    <StackPanel IsItemsHost="True"/>
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="SelectedBorder" Property="Opacity" Value="0.55"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
 
     <Style TargetType="ComboBoxItem">
