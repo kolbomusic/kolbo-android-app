@@ -9,25 +9,19 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Expand source
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path work -Force | Out-Null
-          tar.exe -xf kolbo-live-studio-0.1.4.zip -C work
-          if (-not (Test-Path work/src/Kolbo.Live.Windows/Kolbo.Live.Windows.csproj)) { throw "Source extraction failed" }
       - name: Setup .NET 9.0.318
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.318'
       - name: Restore
         shell: pwsh
-        working-directory: work
+        working-directory: klswork
         run: dotnet restore src/Kolbo.Live.Windows/Kolbo.Live.Windows.csproj
       - name: Build Windows
         shell: pwsh
-        working-directory: work
-        run: dotnet build src/Kolbo.Live.Windows/Kolbo.Live.Windows.csproj -c Release -p:EnableWindowsTargeting=true --no-restore
+        working-directory: klswork
+        run: dotnet build src/Kolbo.Live.Windows/Kolbo.Live.Windows.csproj -c Release --no-restore
       - name: Core tests
         shell: pwsh
-        working-directory: work
+        working-directory: klswork
         run: dotnet run --project tests/Kolbo.Live.Tests/Kolbo.Live.Tests.csproj -c Release
