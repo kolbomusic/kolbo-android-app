@@ -4,7 +4,6 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -22,7 +21,6 @@ public partial class MainWindow : Window
     AsioCaptureEngine? engine;
     PhonePairingServer? phone;
     Window? phoneDialog;
-    PairingAuthority? pairing;
     bool recording;
     bool probed;
     bool mr816ExternalFxReady;
@@ -34,9 +32,11 @@ public partial class MainWindow : Window
     string? backingPath;
     string? sessionId;
     string? sessionDirectory;
+    string? lastOutputPath;
     PreparedPlayback? preparedPlayback;
     readonly MediaSourceService mediaSources = new();
     CancellationTokenSource? mediaLoadCts;
+    CancellationTokenSource? exportCts;
     readonly DispatcherTimer uiTimer;
     readonly Stopwatch elapsed = new();
 
@@ -52,12 +52,35 @@ public partial class MainWindow : Window
 
         DeviceBox.ItemsSource = Devices;
         LoadDevices();
+        UpdateMixLabels();
+
         uiTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background, (_, _) => UpdateMeters(), Dispatcher);
         uiTimer.Start();
     }
 
     static bool IsMr816Driver(string driver) =>
         driver.Contains("Yamaha Steinberg FW ASIO", StringComparison.OrdinalIgnoreCase);
+
+    Gains CurrentGains() => new(
+        (float)(DryGain.Value / 100.0),
+        (float)(WetGain.Value / 100.0),
+        (float)(BackingGain.Value / 100.0),
+        (float)(SendGain.Value / 100.0));
+
+    void MixGain_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (MicLevelText is null || PlaybackLevelText is null || WetLevelText is null || SendLevelText is null) return;
+        UpdateMixLabels();
+        engine?.UpdateGains(CurrentGains());
+    }
+
+    void UpdateMixLabels()
+    {
+        MicLevelText.Text = $"{Math.Round(DryGain.Value)}%";
+        PlaybackLevelText.Text = $"{Math.Round(BackingGain.Value)}%";
+        WetLevelText.Text = $"{Math.Round(WetGain.Value)}%";
+        SendLevelText.Text = $"{Math.Round(SendGain.Value)}%";
+    }
 
     void LoadDevices()
     {
@@ -185,14 +208,11 @@ public partial class MainWindow : Window
         }
     }
 
-    async Task PreparePlaybackAsync(
-        Func<CancellationToken, Task<PreparedPlayback>> loader,
-        string initialStatus)
+    async Task PreparePlaybackAsync(Func<CancellationToken, Task<PreparedPlayback>> loader, string initialStatus)
     {
         mediaLoadCts?.Cancel();
         mediaLoadCts?.Dispose();
         mediaLoadCts = new CancellationTokenSource();
-
         SetState("מכין מדיה", "#F4B942");
         MediaStatusText.Text = initialStatus;
         var prepared = await loader(mediaLoadCts.Token);
@@ -215,7 +235,7 @@ public partial class MainWindow : Window
 
         BackingText.Text = $"{kind}: {prepared.DisplayName}";
         MediaStatusText.Text = prepared.VideoPath is null
-            ? "האודיו מוכן ל־ASIO."
+            ? "האודיו מוכן ל-ASIO."
             : "הווידאו מוכן לתצוגה. האודיו שלו ייכנס דרך ASIO כדי שלא יהיה אודיו כפול.";
 
         KaraokeVideoPlayer.Stop();
@@ -282,10 +302,6 @@ public partial class MainWindow : Window
 
             if (IsMr816Driver(driver))
             {
-                // The MR816 driver can expose up to 16 DAW I/O channels.
-                // In External FX mode the digital I/O buses are repurposed as effect buses.
-                // We use the first stereo digital pair (DAW/ASIO 9/10) for REV-X and prove it
-                // by requiring a real Wet Return during the first seconds of recording.
                 if (probe.Inputs.Count >= 10 && probe.Outputs.Count >= 10)
                 {
                     SelectIndex(DryBox, 0);
@@ -300,11 +316,11 @@ public partial class MainWindow : Window
                     HardwareProfileText.Text =
                         $"MR816X זוהה עם {probe.Inputs.Count} כניסות / {probe.Outputs.Count} יציאות. " +
                         "נבחר מסלול REV-X דרך DAW/ASIO 9/10 ו-Monitor 1/2. " +
-                        "המסלול לא נחשב מאומת עד שמד Wet Return יזהה בפועל אפקט; אם לא — ההקלטה תיעצר אוטומטית.";
+                        "המסלול יאושר רק לאחר זיהוי Wet Return אמיתי.";
                     HardwareProfileText.Foreground = Brushes.LightGreen;
-                    EffectStatusText.Text = "מסלול REV-X מועמד מוכן. בזמן ההקלטה חייב להגיע Wet Return אמיתי; אחרת התוכנה תעצור את הטייק.";
+                    EffectStatusText.Text = "מסלול REV-X מועמד מוכן. אם לא יגיע Wet אמיתי בזמן הטייק — ההקלטה תיעצר.";
                     EffectStatusDot.Fill = Brushes.Goldenrod;
-                    InfoText.Text = $"MR816X External FX מוכן. Sample Rate: {probe.CurrentRate} Hz. כבה Direct Monitor, סמן את האישור ולחץ התחל הקלטה.";
+                    InfoText.Text = $"MR816X מוכן לבדיקה. Sample Rate: {probe.CurrentRate} Hz.";
                 }
                 else
                 {
@@ -313,11 +329,10 @@ public partial class MainWindow : Window
                     SelectIndex(MasterRBox, 1);
                     HardwareProfileText.Text =
                         $"Yamaha Steinberg FW ASIO זוהה עם {probe.Inputs.Count} כניסות / {probe.Outputs.Count} יציאות, " +
-                        "אך אין מספיק ערוצי DAW עבור מסלול REV-X 9/10. פתח לוח בקרה ASIO ובדוק את Digital I/O / External FX ואת תצורת הדרייבר.";
+                        "אך אין מספיק ערוצים למסלול REV-X 9/10.";
                     HardwareProfileText.Foreground = Brushes.OrangeRed;
-                    EffectStatusText.Text = "REV-X לא יאושר עד שהדרייבר יציג לפחות 10 כניסות ו־10 יציאות ותתקבל החזרת Wet בפועל.";
+                    EffectStatusText.Text = "פתח לוח בקרה ASIO ובדוק Digital I/O / External FX.";
                     EffectStatusDot.Fill = Brushes.OrangeRed;
-                    InfoText.Text = "פתח “לוח בקרה ASIO”, הגדר Digital I/O / External FX = External FX וחזור לבדיקה.";
                 }
             }
             else
@@ -329,8 +344,7 @@ public partial class MainWindow : Window
                 SelectIndex(SendRBox, 3);
                 SelectIndex(MasterLBox, 0);
                 SelectIndex(MasterRBox, 1);
-                HardwareProfileText.Text =
-                    "כרטיס כללי: נדרש מיפוי ידני של Dry / Wet Return / FX Send / Monitor לפי יכולות החומרה.";
+                HardwareProfileText.Text = "כרטיס כללי: מפה ידנית את Dry / Wet Return / FX Send / Monitor.";
                 HardwareProfileText.Foreground = Brushes.LightBlue;
                 InfoText.Text = $"ASIO זוהה: {probe.Inputs.Count} כניסות, {probe.Outputs.Count} יציאות. Sample Rate: {probe.CurrentRate} Hz.";
             }
@@ -347,36 +361,80 @@ public partial class MainWindow : Window
         }
     }
 
+    async void PairPhone_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (phone is not null)
+            {
+                await phone.DisposeAsync();
+                phone = null;
+            }
+
+            PhonePreviewImage.Source = null;
+            PhoneStatusText.Text = "מכין קישור HTTPS מאובטח...";
+            phone = new PhonePairingServer();
+            phone.StatusChanged += status => Dispatcher.BeginInvoke(() => PhoneStatusText.Text = status);
+            phone.PreviewFrameReceived += bytes => Dispatcher.BeginInvoke(() => ShowPhonePreview(bytes));
+            phone.VideoSaved += path => Dispatcher.BeginInvoke(() =>
+            {
+                lastOutputPath = path;
+                PhoneStatusText.Text = "סרטון הטלפון נשמר ומוכן לייצוא.";
+                ExportStatusText.Text = "וידאו מהטלפון התקבל. אפשר לייצא MP4.";
+            });
+
+            await phone.StartAsync();
+            ShowPairingWindow(phone.Url!);
+            PhoneStatusText.Text = "QR מוכן — אשר מצלמה בדפדפן. אפשר לעשות זאת לפני ההקלטה.";
+        }
+        catch (Exception ex)
+        {
+            if (phone is not null)
+            {
+                await phone.DisposeAsync();
+                phone = null;
+            }
+            PhoneStatusText.Text = "חיבור מצלמה נכשל.";
+            InfoText.Text = "חיבור מצלמת הטלפון נכשל: " + ex.Message;
+        }
+    }
+
+    void ShowPhonePreview(byte[] jpeg)
+    {
+        try
+        {
+            var bitmap = new BitmapImage();
+            using var ms = new MemoryStream(jpeg);
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = ms;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            PhonePreviewImage.Source = bitmap;
+        }
+        catch { }
+    }
+
     async void Record_Click(object sender, RoutedEventArgs e)
     {
         if (recording) return;
         if (DeviceBox.SelectedItem is not string driver) { InfoText.Text = "בחר דרייבר ASIO תחילה."; return; }
-        if (backingPath is null) { InfoText.Text = "בחר פלייבק לפני ההקלטה."; return; }
+        if (backingPath is null) { InfoText.Text = "בחר מקור פלייבק לפני ההקלטה."; return; }
         if (!probed) { InfoText.Text = "בצע קודם בדיקת ASIO ומיפוי."; return; }
 
         if (IsMr816Driver(driver) && !mr816ExternalFxReady)
         {
-            InfoText.Text = "ההקלטה נעצרה לפני התחלה: MR816X חייב להיות במצב External FX כדי להקליט את REV-X דרך 9/10.";
-            EffectStatusText.Text = "אין נתיב REV-X מאומת.";
-            EffectStatusDot.Fill = Brushes.OrangeRed;
+            InfoText.Text = "MR816X חייב להיות במצב External FX לפני תחילת הטייק.";
             return;
         }
 
         if (WetOnlyConfirm.IsChecked != true)
         {
-            InfoText.Text = "כדי שהשמיעה תהיה זהה להקלטה, כבה Direct Monitor בכרטיס ואשר זאת כאן. ה־Master של התוכנה ישמש גם לניטור וגם להקלטה.";
+            InfoText.Text = "אשר את מצב הניטור לפני ההקלטה.";
             return;
         }
 
         if (!TryRouting(out var route, out var message)) { InfoText.Text = message; return; }
-
-        if (phone is not null)
-        {
-            await phone.DisposeAsync();
-            phone = null;
-        }
-        pairing?.Revoke();
-        pairing = null;
 
         var id = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
         var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "Kolbo Live Studio", "Sessions", id);
@@ -385,18 +443,14 @@ public partial class MainWindow : Window
         {
             SetState("מכין פלייבק", "#F4B942");
             engine = new AsioCaptureEngine();
-            var gains = new Gains(
-                (float)(DryGain.Value / 100.0),
-                (float)(WetGain.Value / 100.0),
-                (float)(BackingGain.Value / 100.0),
-                (float)(SendGain.Value / 100.0));
-
             requireWetReturn = IsMr816Driver(driver) && mr816ExternalFxReady;
-            const bool useHardwareDirectDry = false; // Exact-master mode: monitor and recording receive the same block.
-            engine.Start(driver, route.SampleRate, dir, backingPath, route, gains, useHardwareDirectDry);
+            engine.Start(driver, route.SampleRate, dir, backingPath, route, CurrentGains(), hardwareDirectDry: false);
 
             sessionId = id;
             sessionDirectory = dir;
+            lastOutputPath = null;
+            phone?.SetSessionDirectory(dir);
+
             recording = true;
             dryActiveTicks = 0;
             wetSeen = false;
@@ -404,12 +458,22 @@ public partial class MainWindow : Window
             DeviceBox.IsEnabled = false;
             elapsed.Restart();
             StartKaraokeVideo();
+
+            if (phone?.Connected == true)
+            {
+                var started = await phone.StartRemoteRecordingAsync();
+                PhoneStatusText.Text = started
+                    ? "מצלמת הטלפון מקליטה יחד עם הטייק."
+                    : "המצלמה מחוברת אך לא קיבלה פקודת הקלטה.";
+            }
+
             SetState("מקליט", "#FF5263");
-            EffectStatusText.Text = "שיר למיקרופון. מחפש REV-X Return אמיתי בערוצים 9/10...";
+            EffectStatusText.Text = requireWetReturn
+                ? "שיר למיקרופון. מחפש REV-X Wet Return אמיתי..."
+                : "הקלטה פעילה.";
             EffectStatusDot.Fill = Brushes.Goldenrod;
-            InfoText.Text = requireWetReturn
-                ? "מקליט MR816X במצב Exact Master: Dry + REV-X Wet + Playback נשלחים יחד למוניטור ונכתבים מאותו בלוק דגימות ל־master.wav."
-                : "מקליט. אותו Master נשלח למוניטור ונשמר יחד עם ה־stems.";
+            ExportStatusText.Text = "";
+            InfoText.Text = "מקליט. יחס מיקרופון/פלייבק ניתן לשינוי בזמן אמת.";
         }
         catch (Exception ex)
         {
@@ -420,21 +484,30 @@ public partial class MainWindow : Window
         }
     }
 
-    void Stop_Click(object sender, RoutedEventArgs e)
+    async void Stop_Click(object sender, RoutedEventArgs e)
     {
         if (!recording) return;
+
         SetState("מסיים ושומר", "#F4B942");
-        pairing?.End();
         engine?.Stop();
         var error = engine?.Error;
         var clips = engine?.Overloads ?? 0;
         var neededWet = requireWetReturn;
+
         requireWetReturn = false;
         engine = null;
         recording = false;
         DeviceBox.IsEnabled = true;
         elapsed.Stop();
         StopKaraokeVideo();
+
+        if (phone?.Connected == true)
+        {
+            var stopSent = await phone.StopRemoteRecordingAsync();
+            PhoneStatusText.Text = stopSent
+                ? "האודיו נשמר. הטלפון מסיים ומעלה את הווידאו..."
+                : "האודיו נשמר; מצלמת הטלפון אינה מחוברת כרגע.";
+        }
 
         if (error is not null)
         {
@@ -445,119 +518,167 @@ public partial class MainWindow : Window
 
         if (neededWet && !wetSeen)
         {
-            SetState("נשמר — REV-X לא אומת", "#E45757");
-            EffectStatusText.Text = "הקובץ נשמר, אבל לא זוהה Wet Return משמעותי. אל תתייחס ל־Master כגרסת אפקט מאומתת.";
+            SetState("נעצר — REV-X לא אומת", "#E45757");
+            EffectStatusText.Text = "לא זוהה Wet Return. אל תשתמש בטייק הזה כגרסת אפקט.";
             EffectStatusDot.Fill = Brushes.OrangeRed;
-            InfoText.Text = $"הסשן נשמר, אך REV-X לא אומת. אירועי clipping: {clips}. בדוק External FX ו־REV-X Send/Return.";
         }
         else
         {
-            SetState("הושלם", "#35D7C5");
-            InfoText.Text = $"הסשן נשמר: dry, wet, backing ו־master. אירועי clipping: {clips}.";
-        }
-    }
-
-    async void PairPhone_Click(object sender, RoutedEventArgs e)
-    {
-        if (!recording || sessionId is null || sessionDirectory is null)
-        {
-            MessageBox.Show("התחל הקלטה לפני חיבור הטלפון.", "חיבור טלפון", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
+            SetState("נשמר — מוכן לייצוא", "#35D7C5");
         }
 
-        try
-        {
-            if (phone is not null)
-            {
-                await phone.DisposeAsync();
-                phone = null;
-            }
-
-            pairing?.Revoke();
-            pairing = new PairingAuthority();
-            pairing.Begin(sessionId);
-            phone = new PhonePairingServer(pairing, sessionId, sessionDirectory);
-            await phone.StartAsync();
-            ShowPairingWindow(phone.Url!, phone.LocalAddress ?? string.Empty);
-        }
-        catch (Exception ex)
-        {
-            InfoText.Text = "חיבור הטלפון נכשל: " + ex.Message;
-        }
+        ExportStatusText.Text = "השמירה הסתיימה. אפשר לייצא אודיו מיד; MP4 יהיה זמין כאשר וידאו מהטלפון/קריוקי קיים.";
+        InfoText.Text = $"הסשן נשמר. אירועי clipping: {clips}.";
     }
 
     async void ExportAudio_Click(object sender, RoutedEventArgs e)
     {
-        if (recording)
-        {
-            InfoText.Text = "עצור ושמור את האודיו לפני הייצוא.";
-            return;
-        }
-        if (sessionDirectory is null)
-        {
-            InfoText.Text = "אין סשן נוכחי לייצוא.";
-            return;
-        }
+        if (!CanExport()) return;
+        exportCts = new CancellationTokenSource();
+        BeginExport("מתחיל ייצוא WAV + MP3...");
 
         try
         {
-            SetState("מייצא אודיו", "#F4B942");
-            InfoText.Text = "מייצא WAV ללא שינוי ו־MP3 320kbps...";
-            var result = await ExportService.ExportAudioAsync(sessionDirectory);
-            SetState("ייצוא אודיו הושלם", "#35D7C5");
-            InfoText.Text = $"האודיו נשמר: {result.WavPath} וגם {result.Mp3Path}";
+            var progress = new Progress<ExportProgressInfo>(UpdateExportProgress);
+            var result = await ExportService.ExportAudioAsync(sessionDirectory!, progress, exportCts.Token);
+            lastOutputPath = result.Mp3Path;
+            FinishExport("ייצוא האודיו הושלם: WAV + MP3 320kbps.", result.Mp3Path);
+        }
+        catch (OperationCanceledException)
+        {
+            FinishExport("הייצוא בוטל.", null, success: false);
         }
         catch (Exception ex)
         {
-            SetState("שגיאת ייצוא", "#E45757");
-            InfoText.Text = "ייצוא האודיו נכשל: " + ex.Message;
+            FinishExport("ייצוא האודיו נכשל: " + ex.Message, null, success: false);
+        }
+        finally
+        {
+            exportCts.Dispose();
+            exportCts = null;
+            EndExportBusy();
         }
     }
 
     async void ExportVideo_Click(object sender, RoutedEventArgs e)
     {
-        if (recording)
-        {
-            InfoText.Text = "עצור ושמור את האודיו לפני ייצוא וידאו.";
-            return;
-        }
-        if (sessionDirectory is null)
-        {
-            InfoText.Text = "אין סשן נוכחי לייצוא.";
-            return;
-        }
+        if (!CanExport()) return;
 
         if (!double.TryParse(VideoOffsetBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var offset) &&
             !double.TryParse(VideoOffsetBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out offset))
         {
-            InfoText.Text = "Video Offset אינו מספר תקין.";
+            ExportStatusText.Text = "Video Offset אינו מספר תקין.";
             return;
         }
-        if (offset is < -10 or > 10)
-        {
-            InfoText.Text = "Video Offset חייב להיות בין ‎-10 ל־10 שניות.";
-            return;
-        }
+
+        exportCts = new CancellationTokenSource();
+        BeginExport("מתחיל ייצוא MP4...");
 
         try
         {
-            SetState("מייצא וידאו", "#F4B942");
-            InfoText.Text = "מייצא וידאו עם ה־Master המוקלט...";
+            var progress = new Progress<ExportProgressInfo>(UpdateExportProgress);
             var output = await ExportService.ExportVideoAsync(
-                sessionDirectory,
+                sessionDirectory!,
                 preparedPlayback?.VideoPath,
-                offset);
-            SetState("ייצוא וידאו הושלם", "#35D7C5");
-            InfoText.Text = "הווידאו נשמר: " + output;
+                offset,
+                progress,
+                exportCts.Token);
+
+            lastOutputPath = output;
+            FinishExport("ייצוא הווידאו הושלם.", output);
+        }
+        catch (OperationCanceledException)
+        {
+            FinishExport("הייצוא בוטל.", null, success: false);
         }
         catch (Exception ex)
         {
-            SetState("שגיאת ייצוא", "#E45757");
-            InfoText.Text = "ייצוא הווידאו נכשל: " + ex.Message;
+            FinishExport("ייצוא הווידאו נכשל: " + ex.Message, null, success: false);
+        }
+        finally
+        {
+            exportCts.Dispose();
+            exportCts = null;
+            EndExportBusy();
         }
     }
 
-    void ShowPairingWindow(Uri url, string localAddress)
+    bool CanExport()
+    {
+        if (recording)
+        {
+            ExportStatusText.Text = "עצור ושמור לפני הייצוא.";
+            return false;
+        }
+        if (sessionDirectory is null || !File.Exists(Path.Combine(sessionDirectory, "master.wav")))
+        {
+            ExportStatusText.Text = "אין עדיין הקלטה שמורה לייצוא.";
+            return false;
+        }
+        if (exportCts is not null)
+        {
+            ExportStatusText.Text = "כבר מתבצע ייצוא.";
+            return false;
+        }
+        return true;
+    }
+
+    void BeginExport(string message)
+    {
+        ExportAudioButton.IsEnabled = false;
+        ExportVideoButton.IsEnabled = false;
+        CancelExportButton.Visibility = Visibility.Visible;
+        OpenOutputButton.Visibility = Visibility.Collapsed;
+        ExportProgressBar.Visibility = Visibility.Visible;
+        ExportProgressBar.IsIndeterminate = false;
+        ExportProgressBar.Value = 0;
+        ExportStatusText.Text = message;
+        SetState("מייצא", "#F4B942");
+    }
+
+    void UpdateExportProgress(ExportProgressInfo info)
+    {
+        ExportProgressBar.Value = Math.Clamp(info.Percent, 0, 100);
+        ExportStatusText.Text = info.Message;
+    }
+
+    void FinishExport(string message, string? output, bool success = true)
+    {
+        ExportProgressBar.Visibility = Visibility.Visible;
+        ExportProgressBar.Value = success ? 100 : ExportProgressBar.Value;
+        ExportStatusText.Text = message;
+        OpenOutputButton.Visibility = output is null ? Visibility.Collapsed : Visibility.Visible;
+        SetState(success ? "ייצוא הושלם" : "ייצוא לא הושלם", success ? "#35D7C5" : "#E45757");
+
+        if (success && output is not null)
+            MessageBox.Show(message + Environment.NewLine + output, "Kolbo Live Studio", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    void EndExportBusy()
+    {
+        ExportAudioButton.IsEnabled = true;
+        ExportVideoButton.IsEnabled = true;
+        CancelExportButton.Visibility = Visibility.Collapsed;
+    }
+
+    void CancelExport_Click(object sender, RoutedEventArgs e) => exportCts?.Cancel();
+
+    void OpenOutput_Click(object sender, RoutedEventArgs e)
+    {
+        var path = lastOutputPath ?? sessionDirectory;
+        if (path is null) return;
+        var directory = File.Exists(path) ? Path.GetDirectoryName(path) : path;
+        if (directory is null || !Directory.Exists(directory)) return;
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "explorer.exe",
+            Arguments = """ + directory + """,
+            UseShellExecute = true
+        });
+    }
+
+    void ShowPairingWindow(Uri url)
     {
         phoneDialog?.Close();
 
@@ -566,7 +687,6 @@ public partial class MainWindow : Window
         using var png = new PngByteQRCode(data);
         var bytes = png.GetGraphic(12);
         var bitmap = new BitmapImage();
-
         using (var ms = new MemoryStream(bytes))
         {
             bitmap.BeginInit();
@@ -579,7 +699,7 @@ public partial class MainWindow : Window
         var panel = new StackPanel { Margin = new Thickness(22), FlowDirection = FlowDirection.RightToLeft };
         panel.Children.Add(new TextBlock
         {
-            Text = "סרוק בטלפון",
+            Text = "סרוק בטלפון ואשר מצלמה",
             Foreground = Brushes.Black,
             FontSize = 25,
             FontWeight = FontWeights.SemiBold,
@@ -587,7 +707,7 @@ public partial class MainWindow : Window
         });
         panel.Children.Add(new TextBlock
         {
-            Text = "המחשב והטלפון חייבים להיות באותה רשת. הדף פותח את מצלמת הטלפון המקורית — ללא תעודת HTTPS עצמית.",
+            Text = "הקישור נפתח ב-HTTPS מאובטח בדפדפן. אשר הרשאת מצלמה; התצוגה החיה תופיע מיד בתוכנה, גם לפני תחילת ההקלטה.",
             Foreground = Brushes.DarkSlateGray,
             FontSize = 15,
             TextWrapping = TextWrapping.Wrap,
@@ -608,23 +728,14 @@ public partial class MainWindow : Window
             Foreground = Brushes.Black,
             Background = Brushes.White,
             TextWrapping = TextWrapping.Wrap,
-            FlowDirection = FlowDirection.LeftToRight,
-            Margin = new Thickness(0, 0, 0, 8)
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Local: " + localAddress + " • אם Windows Firewall שואל — אפשר גישה ברשת פרטית.",
-            Foreground = Brushes.DarkSlateGray,
-            FontSize = 14,
-            TextWrapping = TextWrapping.Wrap,
-            TextAlignment = TextAlignment.Center
+            FlowDirection = FlowDirection.LeftToRight
         });
 
         phoneDialog = new Window
         {
             Owner = this,
             Title = "מצלמת טלפון — Kolbo Live Studio",
-            Width = 500,
+            Width = 520,
             Height = 590,
             MinWidth = 430,
             MinHeight = 520,
@@ -708,28 +819,20 @@ public partial class MainWindow : Window
             {
                 wetSeen = true;
                 EffectStatusDot.Fill = Brushes.LimeGreen;
-                EffectStatusText.Text = "REV-X Wet Return זוהה בפועל. האפקט נכנס ל־Master המוקלט.";
+                EffectStatusText.Text = "REV-X Wet Return זוהה בפועל. האפקט נכנס ל-Master המוקלט.";
             }
             else if (!wetSeen && dryActiveTicks >= 24 && requireWetReturn && !effectGateFailed)
             {
                 effectGateFailed = true;
                 EffectStatusDot.Fill = Brushes.OrangeRed;
-                EffectStatusText.Text =
-                    "בדיקת REV-X נכשלה: יש Dry מהמיקרופון אבל אין Wet Return. ההקלטה נעצרת כדי לא לשמור ביצוע יבש בטעות.";
-                InfoText.Text =
-                    "REV-X לא הגיע חזרה מה־MR816X. פתח את Yamaha Steinberg FW Control Panel, ודא Digital I/O / External FX = External FX, ואז בדוק שוב.";
+                EffectStatusText.Text = "יש Dry אך אין REV-X Wet Return. הטייק נעצר כדי לא לשמור קול יבש בטעות.";
+                InfoText.Text = "REV-X לא הגיע חזרה מה-MR816X. בדוק External FX ונסה שוב.";
                 Dispatcher.BeginInvoke(() => Stop_Click(this, new RoutedEventArgs()));
-            }
-            else if (!wetSeen && dryActiveTicks >= 18)
-            {
-                EffectStatusDot.Fill = Brushes.Goldenrod;
-                EffectStatusText.Text =
-                    "יש Dry. עדיין מחכה ל־REV-X Return; אם לא יגיע, ההקלטה תיעצר אוטומטית.";
             }
             else if (!wetSeen && dryActiveTicks > 0)
             {
                 EffectStatusDot.Fill = Brushes.Goldenrod;
-                EffectStatusText.Text = "Dry זוהה. ממתין ל־REV-X Return...";
+                EffectStatusText.Text = "Dry זוהה. ממתין ל-REV-X Wet Return...";
             }
 
             if (engine.Error is { } engineError)
@@ -756,10 +859,21 @@ public partial class MainWindow : Window
         uiTimer.Stop();
         mediaLoadCts?.Cancel();
         mediaLoadCts?.Dispose();
+        exportCts?.Cancel();
+        exportCts?.Dispose();
         StopKaraokeVideo();
-        if (recording) Stop_Click(this, new RoutedEventArgs());
+
+        if (recording)
+        {
+            try
+            {
+                engine?.Stop();
+                recording = false;
+            }
+            catch { }
+        }
+
         phoneDialog?.Close();
-        pairing?.Revoke();
         if (phone is not null) await phone.DisposeAsync();
         base.OnClosed(e);
     }
