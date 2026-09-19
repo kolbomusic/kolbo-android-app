@@ -72,130 +72,7 @@ jobs:
           if (-not $exeAsset -or -not $sumAsset) { throw "yt-dlp release assets missing" }
           Invoke-WebRequest -Headers $headers -UseBasicParsing -Uri $exeAsset.browser_download_url -OutFile yt-dlp.exe
           Invoke-WebRequest -Headers $headers -UseBasicParsing -Uri $sumAsset.browser_download_url -OutFile yt-dlp.sha256
-          $line=Get-Content yt-dlp.sha256 | Where-Object { $_ -match '(?i)^[0-9a-f]{64}\s+yt-dlp\.exe
-        shell: pwsh
-        working-directory: klswork
-        run: |
-          choco install nsis -y --no-progress
-          $candidates=@('C:\Program Files (x86)\NSIS\makensis.exe','C:\Program Files\NSIS\makensis.exe')
-          $exe=$candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $exe) { $exe=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source }
-          if (-not $exe) { throw "makensis.exe not found" }
-          Set-Content nsis-path.txt $exe -Encoding ASCII
-
-      - name: Generate uninstall ownership list
-        shell: pwsh
-        working-directory: klswork
-        run: |
-          $publish=(Resolve-Path release/publish).Path
-          $lines=New-Object 'System.Collections.Generic.List[string]'
-          Get-ChildItem $publish -Recurse -File | Sort-Object {$_.FullName.Length} -Descending | ForEach-Object {
-            $rel=$_.FullName.Substring($publish.Length).TrimStart('\').Replace('/','\')
-            $lines.Add(('  Delete "$INSTDIR\{0}"' -f $rel))
-          }
-          Get-ChildItem $publish -Recurse -Directory | Sort-Object {$_.FullName.Length} -Descending | ForEach-Object {
-            $rel=$_.FullName.Substring($publish.Length).TrimStart('\').Replace('/','\')
-            $lines.Add(('  RMDir "$INSTDIR\{0}"' -f $rel))
-          }
-          $lines | Set-Content packaging/uninstall-files.generated.nsh -Encoding UTF8
-
-      - name: Build Setup.exe
-        shell: pwsh
-        working-directory: klswork
-        run: |
-          New-Item dist -ItemType Directory -Force | Out-Null
-          $makensis=(Get-Content nsis-path.txt -Raw).Trim()
-          $payload=(Resolve-Path release/publish).Path.Replace('\','/')
-          $output=(Join-Path (Resolve-Path dist).Path 'Kolbo-Live-Studio-Preview-0.1.8-Setup.exe').Replace('\','/')
-          Push-Location packaging
-          try {
-            & $makensis ('-DPAYLOAD='+$payload) ('-DOUTPUT='+$output) installer.nsi
-            if ($LASTEXITCODE -ne 0) { throw "NSIS build failed" }
-          } finally { Pop-Location }
-          if (-not (Test-Path dist/Kolbo-Live-Studio-Preview-0.1.8-Setup.exe)) { throw "Setup.exe missing" }
-          $hash=(Get-FileHash dist/Kolbo-Live-Studio-Preview-0.1.8-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          ($hash+'  Kolbo-Live-Studio-Preview-0.1.8-Setup.exe') | Set-Content dist/Kolbo-Live-Studio-Preview-0.1.8-Setup.exe.sha256.txt -Encoding ASCII
-
-      - name: Installer and application smoke test
-        shell: pwsh
-        working-directory: klswork
-        run: |
-          $setup=(Resolve-Path dist/Kolbo-Live-Studio-Preview-0.1.8-Setup.exe).Path
-          $install=Join-Path $env:LOCALAPPDATA 'Programs\KolboLiveStudio'
-          Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          if (Test-Path $install) { Remove-Item $install -Recurse -Force }
-
-          $p=Start-Process $setup -ArgumentList '/S' -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "silent install exit code $($p.ExitCode)" }
-
-          $app=Join-Path $install 'Kolbo.Live.Windows.exe'
-          if (-not (Test-Path $app)) { throw "installed EXE missing" }
-          if (-not (Test-Path (Join-Path $install 'tools\ffmpeg.exe'))) { throw "installed FFmpeg missing" }
-          if (-not (Test-Path (Join-Path $install 'tools\yt-dlp.exe'))) { throw "installed yt-dlp missing" }
-          $yt=Start-Process (Join-Path $install 'tools\yt-dlp.exe') -ArgumentList '--version' -Wait -PassThru -NoNewWindow
-          if ($yt.ExitCode -ne 0) { throw "installed yt-dlp failed to start" }
-          if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application unexpectedly running after silent install" }
-
-          $run=Start-Process $app -PassThru
-          Start-Sleep -Seconds 5
-          $run.Refresh()
-          if ($run.HasExited) { throw "application exited during startup smoke test with code $($run.ExitCode)" }
-
-          try {
-            Add-Type -AssemblyName System.Windows.Forms
-            Add-Type -AssemblyName System.Drawing
-            $bounds=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bmp=New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
-            $g=[System.Drawing.Graphics]::FromImage($bmp)
-            $g.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)
-            $bmp.Save((Join-Path (Resolve-Path dist).Path 'UI-SMOKE-0.1.8.png'))
-            $g.Dispose(); $bmp.Dispose()
-          } catch {
-            Write-Warning ("UI screenshot unavailable: "+$_.Exception.Message)
-          }
-
-          Stop-Process -Id $run.Id -Force
-          Start-Sleep -Seconds 1
-          if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application process remained after smoke-test cleanup" }
-
-          $u=Start-Process (Join-Path $install 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
-          if ($u.ExitCode -ne 0) { throw "silent uninstall exit code $($u.ExitCode)" }
-          Start-Sleep -Seconds 3
-          if (Test-Path $install) { throw "install directory remained after uninstall" }
-
-      - name: Write QA report
-        shell: pwsh
-        working-directory: klswork
-        run: |
-          @(
-            'Kolbo Live Studio Preview 0.1.8 - Windows Release QA'
-            'Windows build: PASS'
-            'Core acceptance tests: PASS'
-            'Self-contained win-x64 publish: PASS'
-            'FFmpeg SHA-256 verification: PASS'
-            'NSIS Setup.exe creation: PASS'
-            'Silent install: PASS'
-            'Installed app executable present: PASS'
-            'Installed FFmpeg present: PASS'
-            'Installed yt-dlp present and starts: PASS'
-            'Playback sources: local audio, local karaoke video, YouTube URL'
-            'Export: phone video + master, karaoke video + master, or audio-only MP3 when no video'
-            'WPF application startup (5 seconds): PASS'
-            'Application process cleanup after smoke test: PASS'
-            'Silent uninstall: PASS'
-            'Install directory removed after uninstall: PASS'
-            'MR816X External FX hardware mapping implemented: Dry 1, REV-X Send 9/10, Return 9/10, Monitor 1/2'
-            'MR816X hardware audio acceptance: REQUIRES USER HARDWARE'
-            'Phone flow changed from self-signed HTTPS/getUserMedia to local HTTP/native camera capture'
-          ) | Set-Content dist/QA-REPORT-0.1.8.txt -Encoding UTF8
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Kolbo-Live-Studio-Preview-0.1.8-Windows
-          path: klswork/dist/*
-          if-no-files-found: error
-          retention-days: 7
- } | Select-Object -First 1
+          $line=Get-Content yt-dlp.sha256 | Where-Object { $_ -match 'yt-dlp\.exe' } | Select-Object -First 1
           if (-not $line) { throw "yt-dlp SHA-256 line missing" }
           $expected=($line -split '\s+')[0]
           $actual=(Get-FileHash yt-dlp.exe -Algorithm SHA256).Hash
@@ -263,6 +140,9 @@ jobs:
           $app=Join-Path $install 'Kolbo.Live.Windows.exe'
           if (-not (Test-Path $app)) { throw "installed EXE missing" }
           if (-not (Test-Path (Join-Path $install 'tools\ffmpeg.exe'))) { throw "installed FFmpeg missing" }
+          if (-not (Test-Path (Join-Path $install 'tools\yt-dlp.exe'))) { throw "installed yt-dlp missing" }
+          & (Join-Path $install 'tools\yt-dlp.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "installed yt-dlp failed to start" }
           if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application unexpectedly running after silent install" }
 
           $run=Start-Process $app -PassThru
@@ -302,17 +182,21 @@ jobs:
             'Core acceptance tests: PASS'
             'Self-contained win-x64 publish: PASS'
             'FFmpeg SHA-256 verification: PASS'
+            'yt-dlp SHA-256 verification: PASS'
             'NSIS Setup.exe creation: PASS'
             'Silent install: PASS'
             'Installed app executable present: PASS'
             'Installed FFmpeg present: PASS'
+            'Installed yt-dlp present and starts: PASS'
             'WPF application startup (5 seconds): PASS'
+            'Native Windows title bar / minimize / maximize / close: IMPLEMENTED'
+            'Playback sources: local audio, local karaoke video, YouTube URL'
+            'Export: phone video + master, karaoke video + master, or audio-only MP3 when no video'
+            'MR816X no-wet fail-safe: IMPLEMENTED'
             'Application process cleanup after smoke test: PASS'
             'Silent uninstall: PASS'
             'Install directory removed after uninstall: PASS'
-            'MR816X External FX hardware mapping implemented: Dry 1, REV-X Send 9/10, Return 9/10, Monitor 1/2'
             'MR816X hardware audio acceptance: REQUIRES USER HARDWARE'
-            'Phone flow changed from self-signed HTTPS/getUserMedia to local HTTP/native camera capture'
           ) | Set-Content dist/QA-REPORT-0.1.8.txt -Encoding UTF8
 
       - uses: actions/upload-artifact@v4
