@@ -302,7 +302,7 @@ public partial class MainWindow : Window
 
             if (IsMr816Driver(driver))
             {
-                if (probe.Inputs.Count >= 10 && probe.Outputs.Count >= 10)
+                if (probe.Inputs.Count == 10 && probe.Outputs.Count == 10)
                 {
                     SelectIndex(DryBox, 0);
                     SelectIndex(WetLBox, 8);
@@ -314,8 +314,8 @@ public partial class MainWindow : Window
                     mr816ExternalFxReady = true;
 
                     HardwareProfileText.Text =
-                        $"MR816X זוהה עם {probe.Inputs.Count} כניסות / {probe.Outputs.Count} יציאות. " +
-                        "נבחר מסלול REV-X דרך DAW/ASIO 9/10 ו-Monitor 1/2. " +
+                        "MR816X זוהה במצב External FX הנכון (10×10). " +
+                        "REV-X נשלח דרך DAW 9/10 וחוזר דרך ASIO 9/10; Monitor הוא 1/2. " +
                         "המסלול יאושר רק לאחר זיהוי Wet Return אמיתי.";
                     HardwareProfileText.Foreground = Brushes.LightGreen;
                     EffectStatusText.Text = "מסלול REV-X מועמד מוכן. אם לא יגיע Wet אמיתי בזמן הטייק — ההקלטה תיעצר.";
@@ -328,10 +328,11 @@ public partial class MainWindow : Window
                     SelectIndex(MasterLBox, 0);
                     SelectIndex(MasterRBox, 1);
                     HardwareProfileText.Text =
-                        $"Yamaha Steinberg FW ASIO זוהה עם {probe.Inputs.Count} כניסות / {probe.Outputs.Count} יציאות, " +
-                        "אך אין מספיק ערוצים למסלול REV-X 9/10.";
+                        $"Yamaha Steinberg FW ASIO זוהה עם {probe.Inputs.Count}×{probe.Outputs.Count}. " +
+                        "זה אינו מצב MR816X External FX הנדרש. ב-Normal mode הדרייבר הוא 16×16; " +
+                        "ב-External FX של REV-X הוא צריך להופיע 10×10.";
                     HardwareProfileText.Foreground = Brushes.OrangeRed;
-                    EffectStatusText.Text = "פתח לוח בקרה ASIO ובדוק Digital I/O / External FX.";
+                    EffectStatusText.Text = "פתח לוח בקרה ASIO והגדר Digital I/O / External FX = External FX, ואז לחץ שוב על בדיקת ASIO.";
                     EffectStatusDot.Fill = Brushes.OrangeRed;
                 }
             }
