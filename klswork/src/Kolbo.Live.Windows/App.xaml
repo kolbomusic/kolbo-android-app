@@ -50,8 +50,8 @@
       <Setter Property="MinHeight" Value="36"/>
       <Style.Triggers>
         <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="{StaticResource Accent}"/>
-          <Setter Property="Foreground" Value="White"/>
+          <Setter Property="Background" Value="#DDD6FE"/>
+          <Setter Property="Foreground" Value="#111827"/>
         </Trigger>
         <Trigger Property="IsMouseOver" Value="True">
           <Setter Property="Background" Value="#EDE8FF"/>
