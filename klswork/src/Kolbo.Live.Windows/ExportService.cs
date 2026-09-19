@@ -152,6 +152,7 @@ static class ExportService
         process.Start();
 
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        var completedSuccessfully = false;
         try
         {
             while (true)
@@ -177,6 +178,7 @@ static class ExportService
 
             if (process.ExitCode == 0)
             {
+                completedSuccessfully = true;
                 progress(100);
                 return;
             }
@@ -195,12 +197,15 @@ static class ExportService
         }
         finally
         {
-            try
+            if (!completedSuccessfully)
             {
-                if (File.Exists(tempOutput))
-                    File.Delete(tempOutput);
+                try
+                {
+                    if (File.Exists(tempOutput))
+                        File.Delete(tempOutput);
+                }
+                catch { }
             }
-            catch { }
         }
     }
 
