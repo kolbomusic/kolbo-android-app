@@ -62,9 +62,9 @@ sealed class PhonePairingServer : IAsyncDisposable
 
         await app.StartAsync(cancellationToken);
 
-        var cloudflared = Path.Combine(AppContext.BaseDirectory, "tools", "cloudflared.exe");
+        var cloudflared = Path.Combine(AppContext.BaseDirectory, "tools", "Kolbo.Live.Tunnel.exe");
         if (!File.Exists(cloudflared))
-            throw new FileNotFoundException("cloudflared.exe לא נמצא בחבילת התוכנה", cloudflared);
+            throw new FileNotFoundException("Kolbo.Live.Tunnel.exe לא נמצא בחבילת התוכנה", cloudflared);
 
         var psi = new ProcessStartInfo(cloudflared)
         {
