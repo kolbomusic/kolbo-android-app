@@ -4,41 +4,22 @@ using System.IO;
 
 namespace Kolbo.Live.Windows;
 
+sealed record ExportedAudio(string WavPath, string Mp3Path);
+
 static class ExportService
 {
-    public static async Task<string> ExportResultAsync(
+    public static async Task<ExportedAudio> ExportAudioAsync(
         string sessionDirectory,
-        string? fallbackVideoPath,
-        double videoOffsetSeconds,
         CancellationToken cancellationToken = default)
     {
-        var ffmpeg = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
-        if (!File.Exists(ffmpeg))
-            throw new FileNotFoundException("ffmpeg.exe לא נמצא בחבילת התוכנה", ffmpeg);
+        var ffmpeg = Ffmpeg();
+        var master = Master(sessionDirectory);
 
-        var master = Path.Combine(sessionDirectory, "master.wav");
-        if (!File.Exists(master))
-            throw new FileNotFoundException("master.wav לא נמצא בסשן", master);
+        var wav = Path.Combine(sessionDirectory, "final-audio.wav");
+        File.Copy(master, wav, true);
 
-        var phoneVideo = Directory.EnumerateFiles(sessionDirectory, "phone-video.*")
-            .FirstOrDefault(IsVideo);
-
-        var video = phoneVideo ?? (fallbackVideoPath is not null && File.Exists(fallbackVideoPath) ? fallbackVideoPath : null);
-
-        return video is null
-            ? await ExportAudioOnlyAsync(ffmpeg, master, sessionDirectory, cancellationToken)
-            : await ExportVideoAsync(ffmpeg, video, master, sessionDirectory, videoOffsetSeconds, cancellationToken);
-    }
-
-    static async Task<string> ExportAudioOnlyAsync(
-        string ffmpeg,
-        string master,
-        string sessionDirectory,
-        CancellationToken cancellationToken)
-    {
-        var output = Path.Combine(sessionDirectory, "final-audio.mp3");
+        var mp3 = Path.Combine(sessionDirectory, "final-audio.mp3");
         var temp = Path.Combine(sessionDirectory, "final-audio." + Guid.NewGuid().ToString("N") + ".tmp.mp3");
-
         var args = new[]
         {
             "-hide_banner", "-y",
@@ -49,20 +30,30 @@ static class ExportService
             "-id3v2_version", "3",
             temp
         };
-
         await RunAsync(ffmpeg, args, temp, cancellationToken);
-        File.Move(temp, output, true);
-        return output;
+        File.Move(temp, mp3, true);
+        return new ExportedAudio(wav, mp3);
     }
 
-    static async Task<string> ExportVideoAsync(
-        string ffmpeg,
-        string video,
-        string master,
+    public static async Task<string> ExportVideoAsync(
         string sessionDirectory,
+        string? fallbackVideoPath,
         double videoOffsetSeconds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
+        var ffmpeg = Ffmpeg();
+        var master = Master(sessionDirectory);
+
+        var phoneVideo = Directory.EnumerateFiles(sessionDirectory, "phone-video.*")
+            .FirstOrDefault(IsVideo);
+        var video = phoneVideo ??
+                    (fallbackVideoPath is not null && File.Exists(fallbackVideoPath)
+                        ? fallbackVideoPath
+                        : null);
+
+        if (video is null)
+            throw new InvalidOperationException("אין וידאו לסשן הזה. השתמש ב־“ייצא אודיו”, או צלם בטלפון / בחר סרטון קריוקי.");
+
         var output = Path.Combine(sessionDirectory, "final-video.mp4");
         var temp = Path.Combine(sessionDirectory, "final-video." + Guid.NewGuid().ToString("N") + ".tmp.mp4");
 
@@ -88,6 +79,22 @@ static class ExportService
         await RunAsync(ffmpeg, args, temp, cancellationToken);
         File.Move(temp, output, true);
         return output;
+    }
+
+    static string Ffmpeg()
+    {
+        var ffmpeg = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
+        if (!File.Exists(ffmpeg))
+            throw new FileNotFoundException("ffmpeg.exe לא נמצא בחבילת התוכנה", ffmpeg);
+        return ffmpeg;
+    }
+
+    static string Master(string sessionDirectory)
+    {
+        var master = Path.Combine(sessionDirectory, "master.wav");
+        if (!File.Exists(master))
+            throw new FileNotFoundException("master.wav לא נמצא בסשן", master);
+        return master;
     }
 
     static async Task RunAsync(
