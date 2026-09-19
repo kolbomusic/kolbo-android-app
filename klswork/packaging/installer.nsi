@@ -15,11 +15,11 @@ OutFile "${OUTPUT}"
 InstallDir "$LOCALAPPDATA\Programs\KolboLiveStudio"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
-BrandingText "Kolbo Live Studio - Preview 0.1.5"
-VIProductVersion "0.1.5.0"
+BrandingText "Kolbo Live Studio - Preview 0.1.6"
+VIProductVersion "0.1.6.0"
 VIAddVersionKey "ProductName" "Kolbo Live Studio"
 VIAddVersionKey "FileDescription" "Kolbo Live Studio Preview Installer"
-VIAddVersionKey "FileVersion" "0.1.5-preview"
+VIAddVersionKey "FileVersion" "0.1.6-preview"
 VIAddVersionKey "LegalCopyright" "Kolbo Live Studio contributors"
 
 !define MUI_ABORTWARNING
@@ -60,7 +60,7 @@ Section "Kolbo Live Studio"
 
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayName" "Kolbo Live Studio Preview"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayVersion" "0.1.5-preview"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayVersion" "0.1.6-preview"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayIcon" "$INSTDIR\Kolbo.Live.Windows.exe"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "NoModify" 1
