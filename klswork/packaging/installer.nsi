@@ -53,6 +53,7 @@ Section "Kolbo Live Studio"
   ; A previous preview may still be running. Close it before replacing files,
   ; then install into a clean application directory. Recordings are stored elsewhere.
   nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM Kolbo.Live.Windows.exe /F'
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM Kolbo.Live.Tunnel.exe /F'
   Sleep 500
   RMDir /r "$INSTDIR"
 
