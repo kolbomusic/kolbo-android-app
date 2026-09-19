@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     int dryActiveTicks;
     bool wetSeen;
     bool effectGateFailed;
+    bool requireWetReturn;
     int[] supportedRates = [];
     string? backingPath;
     string? sessionId;
@@ -289,11 +290,11 @@ public partial class MainWindow : Window
 
                     HardwareProfileText.Text =
                         "MR816X External FX זוהה (10×10). REV-X Send = DAW 9/10, Return = ASIO 9/10, Monitor = 1/2. " +
-                        "Dry נשמע דרך Direct Monitor של הכרטיס ואינו נשלח שוב למוניטור מהתוכנה.";
+                        "למצב 1:1 יש לכבות Direct Monitor בחומרה; התוכנה שולחת את אותו Master בדיוק גם לאוזניות וגם לקובץ.";
                     HardwareProfileText.Foreground = Brushes.LightGreen;
-                    EffectStatusText.Text = "נתיב REV-X מוכן. בזמן ההקלטה אשווה בין מד Dry למד Wet ואאמת שמגיע אפקט אמיתי.";
+                    EffectStatusText.Text = "נתיב REV-X מוכן. בזמן ההקלטה התוכנה תוודא בפועל שמגיע Wet Return; אם לא — היא תעצור ולא תשמור ביצוע יבש כאילו היה תקין.";
                     EffectStatusDot.Fill = Brushes.Goldenrod;
-                    InfoText.Text = $"MR816X External FX מוכן. Sample Rate: {probe.CurrentRate} Hz. אשר Direct Monitor ולחץ התחל הקלטה.";
+                    InfoText.Text = $"MR816X External FX מוכן. Sample Rate: {probe.CurrentRate} Hz. כבה Direct Monitor, סמן את האישור ולחץ התחל הקלטה.";
                 }
                 else
                 {
@@ -353,7 +354,7 @@ public partial class MainWindow : Window
 
         if (WetOnlyConfirm.IsChecked != true)
         {
-            InfoText.Text = "אשר ש־Direct Monitor פעיל בכרטיס ושאין ניטור Dry כפול.";
+            InfoText.Text = "כדי שהשמיעה תהיה זהה להקלטה, כבה Direct Monitor בכרטיס ואשר זאת כאן. ה־Master של התוכנה ישמש גם לניטור וגם להקלטה.";
             return;
         }
 
@@ -380,7 +381,8 @@ public partial class MainWindow : Window
                 (float)(BackingGain.Value / 100.0),
                 (float)(SendGain.Value / 100.0));
 
-            var useHardwareDirectDry = IsMr816Driver(driver) && mr816ExternalFxReady;
+            requireWetReturn = IsMr816Driver(driver) && mr816ExternalFxReady;
+            const bool useHardwareDirectDry = false; // Exact-master mode: monitor and recording receive the same block.
             engine.Start(driver, route.SampleRate, dir, backingPath, route, gains, useHardwareDirectDry);
 
             sessionId = id;
@@ -395,9 +397,9 @@ public partial class MainWindow : Window
             SetState("מקליט", "#FF5263");
             EffectStatusText.Text = "שיר למיקרופון. מחפש REV-X Return אמיתי בערוצים 9/10...";
             EffectStatusDot.Fill = Brushes.Goldenrod;
-            InfoText.Text = useHardwareDirectDry
-                ? "מקליט MR816X: Dry מהכניסה נשמר ל־Master אך לא מוכפל במוניטור; Wet REV-X + Playback נשלחים למוניטור ונשמרים."
-                : "מקליט. ה־Master נשמר יחד עם ה־stems.";
+            InfoText.Text = requireWetReturn
+                ? "מקליט MR816X במצב Exact Master: Dry + REV-X Wet + Playback נשלחים יחד למוניטור ונכתבים מאותו בלוק דגימות ל־master.wav."
+                : "מקליט. אותו Master נשלח למוניטור ונשמר יחד עם ה־stems.";
         }
         catch (Exception ex)
         {
@@ -416,7 +418,8 @@ public partial class MainWindow : Window
         engine?.Stop();
         var error = engine?.Error;
         var clips = engine?.Overloads ?? 0;
-        var hadMr816 = engine?.HardwareDirectDry == true;
+        var neededWet = requireWetReturn;
+        requireWetReturn = false;
         engine = null;
         recording = false;
         DeviceBox.IsEnabled = true;
@@ -430,7 +433,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (hadMr816 && !wetSeen)
+        if (neededWet && !wetSeen)
         {
             SetState("נשמר — REV-X לא אומת", "#E45757");
             EffectStatusText.Text = "הקובץ נשמר, אבל לא זוהה Wet Return משמעותי. אל תתייחס ל־Master כגרסת אפקט מאומתת.";
@@ -473,14 +476,41 @@ public partial class MainWindow : Window
         }
     }
 
-    async void Export_Click(object sender, RoutedEventArgs e)
+    async void ExportAudio_Click(object sender, RoutedEventArgs e)
     {
         if (recording)
         {
             InfoText.Text = "עצור ושמור את האודיו לפני הייצוא.";
             return;
         }
+        if (sessionDirectory is null)
+        {
+            InfoText.Text = "אין סשן נוכחי לייצוא.";
+            return;
+        }
 
+        try
+        {
+            SetState("מייצא אודיו", "#F4B942");
+            InfoText.Text = "מייצא WAV ללא שינוי ו־MP3 320kbps...";
+            var result = await ExportService.ExportAudioAsync(sessionDirectory);
+            SetState("ייצוא אודיו הושלם", "#35D7C5");
+            InfoText.Text = $"האודיו נשמר: {result.WavPath} וגם {result.Mp3Path}";
+        }
+        catch (Exception ex)
+        {
+            SetState("שגיאת ייצוא", "#E45757");
+            InfoText.Text = "ייצוא האודיו נכשל: " + ex.Message;
+        }
+    }
+
+    async void ExportVideo_Click(object sender, RoutedEventArgs e)
+    {
+        if (recording)
+        {
+            InfoText.Text = "עצור ושמור את האודיו לפני ייצוא וידאו.";
+            return;
+        }
         if (sessionDirectory is null)
         {
             InfoText.Text = "אין סשן נוכחי לייצוא.";
@@ -493,7 +523,6 @@ public partial class MainWindow : Window
             InfoText.Text = "Video Offset אינו מספר תקין.";
             return;
         }
-
         if (offset is < -10 or > 10)
         {
             InfoText.Text = "Video Offset חייב להיות בין ‎-10 ל־10 שניות.";
@@ -502,19 +531,19 @@ public partial class MainWindow : Window
 
         try
         {
-            SetState("מייצא", "#F4B942");
-            InfoText.Text = "מכין את התוצאה הסופית...";
-            var output = await ExportService.ExportResultAsync(
+            SetState("מייצא וידאו", "#F4B942");
+            InfoText.Text = "מייצא וידאו עם ה־Master המוקלט...";
+            var output = await ExportService.ExportVideoAsync(
                 sessionDirectory,
                 preparedPlayback?.VideoPath,
                 offset);
-            SetState("הייצוא הושלם", "#35D7C5");
-            InfoText.Text = "הקובץ נשמר: " + output;
+            SetState("ייצוא וידאו הושלם", "#35D7C5");
+            InfoText.Text = "הווידאו נשמר: " + output;
         }
         catch (Exception ex)
         {
             SetState("שגיאת ייצוא", "#E45757");
-            InfoText.Text = "הייצוא נכשל: " + ex.Message;
+            InfoText.Text = "ייצוא הווידאו נכשל: " + ex.Message;
         }
     }
 
@@ -671,7 +700,7 @@ public partial class MainWindow : Window
                 EffectStatusDot.Fill = Brushes.LimeGreen;
                 EffectStatusText.Text = "REV-X Wet Return זוהה בפועל. האפקט נכנס ל־Master המוקלט.";
             }
-            else if (!wetSeen && dryActiveTicks >= 24 && engine.HardwareDirectDry && !effectGateFailed)
+            else if (!wetSeen && dryActiveTicks >= 24 && requireWetReturn && !effectGateFailed)
             {
                 effectGateFailed = true;
                 EffectStatusDot.Fill = Brushes.OrangeRed;
