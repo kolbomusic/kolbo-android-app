@@ -9,10 +9,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup .NET 9.0.318
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '9.0.318'
+      - name: SDK info
+        shell: pwsh
+        working-directory: klswork
+        run: |
+          dotnet --version
+          dotnet --info
       - name: Restore
         shell: pwsh
         working-directory: klswork
