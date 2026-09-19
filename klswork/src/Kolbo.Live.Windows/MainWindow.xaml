@@ -8,7 +8,7 @@
     <DockPanel Grid.Row="0" Margin="0,0,0,20">
       <StackPanel DockPanel.Dock="Right">
         <TextBlock Text="KOLBO LIVE STUDIO" FontSize="26" FontWeight="Bold"/>
-        <TextBlock Text="Preview 0.1.4 • ASIO duplex • החזרת אפקטים אמיתית מהכרטיס" Foreground="{StaticResource Muted}" FontSize="14" Margin="0,4,0,0"/>
+        <TextBlock Text="Preview 0.1.5 • ASIO duplex • החזרת אפקטים אמיתית מהכרטיס" Foreground="{StaticResource Muted}" FontSize="14" Margin="0,4,0,0"/>
       </StackPanel>
       <Border DockPanel.Dock="Left" Background="#16233B" CornerRadius="18" Padding="14,8">
         <StackPanel Orientation="Horizontal"><Ellipse x:Name="StateDot" Width="10" Height="10" Fill="#35D7C5" Margin="0,0,8,0"/><TextBlock x:Name="StateTextBlock" Text="מוכן" Foreground="{StaticResource Muted}" VerticalAlignment="Center"/></StackPanel>
