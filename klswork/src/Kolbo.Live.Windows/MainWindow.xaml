@@ -95,7 +95,7 @@
 
           <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="בחר מקור פלייבק ובדוק את REV-X לפני ההקלטה" FontSize="27" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+            <TextBlock Text="בחר מקור פלייבק ובדוק את REV-X לפני ההקלטה" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
             <TextBlock Text="אפשר לבחור אודיו, סרטון קריוקי מהמחשב או קישור YouTube. בסרטון הווידאו מוצג כאן והאודיו נכנס דרך ASIO." Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,8,0,14" TextWrapping="Wrap" TextAlignment="Center"/>
 
             <Border Background="#0D1729" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" Padding="16">
