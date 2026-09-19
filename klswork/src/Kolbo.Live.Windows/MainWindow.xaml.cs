@@ -282,9 +282,11 @@ public partial class MainWindow : Window
 
             if (IsMr816Driver(driver))
             {
-                // MR816X External FX mode exposes 10 DAW inputs and 10 DAW outputs.
-                // Channels 9/10 are the documented REV-X send/return pair.
-                if (probe.Inputs.Count == 10 && probe.Outputs.Count == 10)
+                // The MR816 driver can expose up to 16 DAW I/O channels.
+                // In External FX mode the digital I/O buses are repurposed as effect buses.
+                // We use the first stereo digital pair (DAW/ASIO 9/10) for REV-X and prove it
+                // by requiring a real Wet Return during the first seconds of recording.
+                if (probe.Inputs.Count >= 10 && probe.Outputs.Count >= 10)
                 {
                     SelectIndex(DryBox, 0);
                     SelectIndex(WetLBox, 8);
@@ -296,10 +298,11 @@ public partial class MainWindow : Window
                     mr816ExternalFxReady = true;
 
                     HardwareProfileText.Text =
-                        "MR816X External FX זוהה (10×10). REV-X Send = DAW 9/10, Return = ASIO 9/10, Monitor = 1/2. " +
-                        "למצב 1:1 יש לכבות Direct Monitor בחומרה; התוכנה שולחת את אותו Master בדיוק גם לאוזניות וגם לקובץ.";
+                        $"MR816X זוהה עם {probe.Inputs.Count} כניסות / {probe.Outputs.Count} יציאות. " +
+                        "נבחר מסלול REV-X דרך DAW/ASIO 9/10 ו-Monitor 1/2. " +
+                        "המסלול לא נחשב מאומת עד שמד Wet Return יזהה בפועל אפקט; אם לא — ההקלטה תיעצר אוטומטית.";
                     HardwareProfileText.Foreground = Brushes.LightGreen;
-                    EffectStatusText.Text = "נתיב REV-X מוכן. בזמן ההקלטה התוכנה תוודא בפועל שמגיע Wet Return; אם לא — היא תעצור ולא תשמור ביצוע יבש כאילו היה תקין.";
+                    EffectStatusText.Text = "מסלול REV-X מועמד מוכן. בזמן ההקלטה חייב להגיע Wet Return אמיתי; אחרת התוכנה תעצור את הטייק.";
                     EffectStatusDot.Fill = Brushes.Goldenrod;
                     InfoText.Text = $"MR816X External FX מוכן. Sample Rate: {probe.CurrentRate} Hz. כבה Direct Monitor, סמן את האישור ולחץ התחל הקלטה.";
                 }
@@ -310,11 +313,11 @@ public partial class MainWindow : Window
                     SelectIndex(MasterRBox, 1);
                     HardwareProfileText.Text =
                         $"Yamaha Steinberg FW ASIO זוהה עם {probe.Inputs.Count} כניסות / {probe.Outputs.Count} יציאות, " +
-                        "אבל MR816X אינו במצב External FX של REV-X. פתח לוח בקרה ASIO והגדר Digital I/O, External FX = External FX, ואז בדוק שוב.";
+                        "אך אין מספיק ערוצי DAW עבור מסלול REV-X 9/10. פתח לוח בקרה ASIO ובדוק את Digital I/O / External FX ואת תצורת הדרייבר.";
                     HardwareProfileText.Foreground = Brushes.OrangeRed;
-                    EffectStatusText.Text = "REV-X לא יאושר להקלטה עד שהכרטיס יופיע כ־10×10 External FX.";
+                    EffectStatusText.Text = "REV-X לא יאושר עד שהדרייבר יציג לפחות 10 כניסות ו־10 יציאות ותתקבל החזרת Wet בפועל.";
                     EffectStatusDot.Fill = Brushes.OrangeRed;
-                    InfoText.Text = "נדרש MR816X External FX. לחץ “פתח לוח בקרה ASIO”, בחר External FX וחזור לבדיקה.";
+                    InfoText.Text = "פתח “לוח בקרה ASIO”, הגדר Digital I/O / External FX = External FX וחזור לבדיקה.";
                 }
             }
             else
