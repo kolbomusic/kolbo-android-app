@@ -80,6 +80,7 @@ SectionEnd
 Section "Uninstall"
   SetShellVarContext current
   !include "uninstall-files.generated.nsh"
+  Delete "$INSTDIR\VERSION.txt"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   Delete "$DESKTOP\Kolbo Live Studio.lnk"
