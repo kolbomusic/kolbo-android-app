@@ -79,7 +79,7 @@ sealed class AsioCaptureEngine : IDisposable
 
             backingSamples = LoadBacking(backingPath, rate);
             backingPosition = 0;
-            gains = mix;
+            Volatile.Write(ref gains, mix);
             this.hardwareDirectDry = hardwareDirectDry;
             frames = 0;
             overloads = 0;
@@ -170,13 +170,14 @@ sealed class AsioCaptureEngine : IDisposable
             }
             backingPosition = bp;
 
+            var liveGains = Volatile.Read(ref gains);
             var clipped = Mixer.Process(
                 dryBlock.AsSpan(0, n),
                 wetBlock.AsSpan(0, n * 2),
                 backingBlock.AsSpan(0, n * 2),
                 masterBlock.AsSpan(0, n * 2),
                 sendBlock.AsSpan(0, n * 2),
-                gains);
+                liveGains);
             if (clipped > 0) Interlocked.Add(ref overloads, clipped);
 
             for (var i = 0; i < n; i++)
@@ -188,8 +189,8 @@ sealed class AsioCaptureEngine : IDisposable
                 {
                     // Dry is already present in the headphones through MR816X Direct Monitor.
                     // Sending it again from the DAW would double it and change the live balance.
-                    monitorL[i] = Math.Clamp(Finite(wetBlock[i * 2] * gains.Wet + backingBlock[i * 2] * gains.Backing), -1f, 1f);
-                    monitorR[i] = Math.Clamp(Finite(wetBlock[i * 2 + 1] * gains.Wet + backingBlock[i * 2 + 1] * gains.Backing), -1f, 1f);
+                    monitorL[i] = Math.Clamp(Finite(wetBlock[i * 2] * liveGains.Wet + backingBlock[i * 2] * liveGains.Backing), -1f, 1f);
+                    monitorR[i] = Math.Clamp(Finite(wetBlock[i * 2 + 1] * liveGains.Wet + backingBlock[i * 2 + 1] * liveGains.Backing), -1f, 1f);
                 }
                 else
                 {
@@ -245,6 +246,11 @@ sealed class AsioCaptureEngine : IDisposable
                 throw new InvalidOperationException("קובץ הפלייבק גדול מדי לטעינה בטוחה לזיכרון");
         }
         return buffer.WrittenSpan.ToArray();
+    }
+
+    public void UpdateGains(Gains mix)
+    {
+        Volatile.Write(ref gains, mix);
     }
 
     public void Stop()
