@@ -31,8 +31,8 @@
     </Style>
 
     <Style TargetType="ComboBox">
-      <Setter Property="Foreground" Value="{StaticResource InputText}"/>
-      <Setter Property="Background" Value="{StaticResource InputBg}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Background" Value="#23334F"/>
       <Setter Property="BorderBrush" Value="#7388AA"/>
       <Setter Property="BorderThickness" Value="1.5"/>
       <Setter Property="FontSize" Value="15"/>
@@ -50,8 +50,8 @@
       <Setter Property="MinHeight" Value="36"/>
       <Style.Triggers>
         <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="#DDD6FE"/>
-          <Setter Property="Foreground" Value="#111827"/>
+          <Setter Property="Background" Value="{StaticResource Accent}"/>
+          <Setter Property="Foreground" Value="White"/>
         </Trigger>
         <Trigger Property="IsMouseOver" Value="True">
           <Setter Property="Background" Value="#EDE8FF"/>
