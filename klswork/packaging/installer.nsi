@@ -24,7 +24,7 @@ VIAddVersionKey "LegalCopyright" "Kolbo Live Studio contributors"
 
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Kolbo Live Studio"
-!define MUI_WELCOMEPAGE_TEXT "Professional live recording preview with ASIO duplex audio and phone-camera workflow.$\r$\n$\r$\nThis is a preview build. Install the official ASIO driver for your audio interface before first use.$\r$\n$$\nRecordings are stored separately and are not deleted when the application is uninstalled."
+!define MUI_WELCOMEPAGE_TEXT "ASIO duplex recording and phone-camera preview. Recordings are stored separately and are not deleted during uninstall."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
