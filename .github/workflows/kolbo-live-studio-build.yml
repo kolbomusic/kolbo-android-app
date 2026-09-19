@@ -12,18 +12,22 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.318'
+
       - name: Restore
         shell: pwsh
         working-directory: klswork
         run: dotnet restore src/Kolbo.Live.Windows/Kolbo.Live.Windows.csproj
+
       - name: Build Windows
         shell: pwsh
         working-directory: klswork
         run: dotnet build src/Kolbo.Live.Windows/Kolbo.Live.Windows.csproj -c Release --no-restore
+
       - name: Core acceptance tests
         shell: pwsh
         working-directory: klswork
         run: dotnet run --project tests/Kolbo.Live.Tests/Kolbo.Live.Tests.csproj -c Release
+
       - name: Publish self-contained win-x64
         shell: pwsh
         working-directory: klswork
@@ -32,6 +36,7 @@ jobs:
           dotnet publish src/Kolbo.Live.Windows/Kolbo.Live.Windows.csproj -c Release -r win-x64 --self-contained true -o release/publish
           if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
           if (-not (Test-Path release/publish/Kolbo.Live.Windows.exe)) { throw "published EXE missing" }
+
       - name: Add verified FFmpeg payload
         shell: pwsh
         working-directory: klswork
@@ -51,10 +56,11 @@ jobs:
           Copy-Item $ffmpeg.FullName release/publish/tools/ffmpeg.exe
           Copy-Item $ffprobe.FullName release/publish/tools/ffprobe.exe
           @(
-            'Kolbo Live Studio Preview 0.1.6'
+            'Kolbo Live Studio Preview 0.1.7'
             ('FFmpeg archive SHA-256: '+$actual.ToLowerInvariant())
             'NAudio 3.1.0 and QRCoder 1.6.0 restored from NuGet'
           ) | Set-Content release/publish/THIRD-PARTY-BUILD-PROVENANCE.txt -Encoding UTF8
+
       - name: Install NSIS
         shell: pwsh
         working-directory: klswork
@@ -65,6 +71,7 @@ jobs:
           if (-not $exe) { $exe=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source }
           if (-not $exe) { throw "makensis.exe not found" }
           Set-Content nsis-path.txt $exe -Encoding ASCII
+
       - name: Generate uninstall ownership list
         shell: pwsh
         working-directory: klswork
@@ -80,6 +87,7 @@ jobs:
             $lines.Add(('  RMDir "$INSTDIR\{0}"' -f $rel))
           }
           $lines | Set-Content packaging/uninstall-files.generated.nsh -Encoding UTF8
+
       - name: Build Setup.exe
         shell: pwsh
         working-directory: klswork
@@ -87,48 +95,68 @@ jobs:
           New-Item dist -ItemType Directory -Force | Out-Null
           $makensis=(Get-Content nsis-path.txt -Raw).Trim()
           $payload=(Resolve-Path release/publish).Path.Replace('\','/')
-          $output=(Join-Path (Resolve-Path dist).Path 'Kolbo-Live-Studio-Preview-0.1.6-Setup.exe').Replace('\','/')
+          $output=(Join-Path (Resolve-Path dist).Path 'Kolbo-Live-Studio-Preview-0.1.7-Setup.exe').Replace('\','/')
           Push-Location packaging
           try {
             & $makensis ('-DPAYLOAD='+$payload) ('-DOUTPUT='+$output) installer.nsi
             if ($LASTEXITCODE -ne 0) { throw "NSIS build failed" }
           } finally { Pop-Location }
-          if (-not (Test-Path dist/Kolbo-Live-Studio-Preview-0.1.6-Setup.exe)) { throw "Setup.exe missing" }
-          $hash=(Get-FileHash dist/Kolbo-Live-Studio-Preview-0.1.6-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          ($hash+'  Kolbo-Live-Studio-Preview-0.1.6-Setup.exe') | Set-Content dist/Kolbo-Live-Studio-Preview-0.1.6-Setup.exe.sha256.txt -Encoding ASCII
+          if (-not (Test-Path dist/Kolbo-Live-Studio-Preview-0.1.7-Setup.exe)) { throw "Setup.exe missing" }
+          $hash=(Get-FileHash dist/Kolbo-Live-Studio-Preview-0.1.7-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          ($hash+'  Kolbo-Live-Studio-Preview-0.1.7-Setup.exe') | Set-Content dist/Kolbo-Live-Studio-Preview-0.1.7-Setup.exe.sha256.txt -Encoding ASCII
+
       - name: Installer and application smoke test
         shell: pwsh
         working-directory: klswork
         run: |
-          $setup=(Resolve-Path dist/Kolbo-Live-Studio-Preview-0.1.6-Setup.exe).Path
+          $setup=(Resolve-Path dist/Kolbo-Live-Studio-Preview-0.1.7-Setup.exe).Path
           $install=Join-Path $env:LOCALAPPDATA 'Programs\KolboLiveStudio'
           Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           if (Test-Path $install) { Remove-Item $install -Recurse -Force }
+
           $p=Start-Process $setup -ArgumentList '/S' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "silent install exit code $($p.ExitCode)" }
+
           $app=Join-Path $install 'Kolbo.Live.Windows.exe'
           if (-not (Test-Path $app)) { throw "installed EXE missing" }
           if (-not (Test-Path (Join-Path $install 'tools\ffmpeg.exe'))) { throw "installed FFmpeg missing" }
           if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application unexpectedly running after silent install" }
+
           $run=Start-Process $app -PassThru
           Start-Sleep -Seconds 5
           $run.Refresh()
           if ($run.HasExited) { throw "application exited during startup smoke test with code $($run.ExitCode)" }
+
+          try {
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+            $bounds=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp=New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
+            $g=[System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)
+            $bmp.Save((Join-Path (Resolve-Path dist).Path 'UI-SMOKE-0.1.7.png'))
+            $g.Dispose(); $bmp.Dispose()
+          } catch {
+            Write-Warning ("UI screenshot unavailable: "+$_.Exception.Message)
+          }
+
           Stop-Process -Id $run.Id -Force
           Start-Sleep -Seconds 1
           if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application process remained after smoke-test cleanup" }
+
           $u=Start-Process (Join-Path $install 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
           if ($u.ExitCode -ne 0) { throw "silent uninstall exit code $($u.ExitCode)" }
           Start-Sleep -Seconds 3
           if (Test-Path $install) { throw "install directory remained after uninstall" }
+
       - name: Write QA report
         shell: pwsh
         working-directory: klswork
         run: |
           @(
-            'Kolbo Live Studio Preview 0.1.6 - Windows Release QA'
+            'Kolbo Live Studio Preview 0.1.7 - Windows Release QA'
             'Windows build: PASS'
-            'Core acceptance tests: 8/8 PASS'
+            'Core acceptance tests: PASS'
             'Self-contained win-x64 publish: PASS'
             'FFmpeg SHA-256 verification: PASS'
             'NSIS Setup.exe creation: PASS'
@@ -139,11 +167,14 @@ jobs:
             'Application process cleanup after smoke test: PASS'
             'Silent uninstall: PASS'
             'Install directory removed after uninstall: PASS'
-            'Hardware ASIO/audio/phone-camera acceptance: NOT RUN on cloud runner'
-          ) | Set-Content dist/QA-REPORT-0.1.6.txt -Encoding UTF8
+            'MR816X External FX hardware mapping implemented: Dry 1, REV-X Send 9/10, Return 9/10, Monitor 1/2'
+            'MR816X hardware audio acceptance: REQUIRES USER HARDWARE'
+            'Phone flow changed from self-signed HTTPS/getUserMedia to local HTTP/native camera capture'
+          ) | Set-Content dist/QA-REPORT-0.1.7.txt -Encoding UTF8
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Live-Studio-Preview-0.1.6-Windows
+          name: Kolbo-Live-Studio-Preview-0.1.7-Windows
           path: klswork/dist/*
           if-no-files-found: error
           retention-days: 7

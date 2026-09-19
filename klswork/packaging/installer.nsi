@@ -15,16 +15,16 @@ OutFile "${OUTPUT}"
 InstallDir "$LOCALAPPDATA\Programs\KolboLiveStudio"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
-BrandingText "Kolbo Live Studio - Preview 0.1.6"
-VIProductVersion "0.1.6.0"
+BrandingText "Kolbo Live Studio - Preview 0.1.7"
+VIProductVersion "0.1.7.0"
 VIAddVersionKey "ProductName" "Kolbo Live Studio"
 VIAddVersionKey "FileDescription" "Kolbo Live Studio Preview Installer"
-VIAddVersionKey "FileVersion" "0.1.6-preview"
+VIAddVersionKey "FileVersion" "0.1.7-preview"
 VIAddVersionKey "LegalCopyright" "Kolbo Live Studio contributors"
 
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Kolbo Live Studio"
-!define MUI_WELCOMEPAGE_TEXT "ASIO duplex recording and phone-camera preview. Recordings are stored separately and are not deleted during uninstall."
+!define MUI_WELCOMEPAGE_TEXT "MR816X REV-X capture, local phone video capture, and high-contrast resizable UI. Recordings are stored separately and are not deleted during uninstall."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -60,7 +60,7 @@ Section "Kolbo Live Studio"
 
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayName" "Kolbo Live Studio Preview"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayVersion" "0.1.6-preview"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayVersion" "0.1.7-preview"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "DisplayIcon" "$INSTDIR\Kolbo.Live.Windows.exe"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KolboLiveStudio" "NoModify" 1

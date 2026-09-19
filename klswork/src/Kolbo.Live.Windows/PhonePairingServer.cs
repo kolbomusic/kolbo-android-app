@@ -1,7 +1,5 @@
 using System.Net;
 using System.Net.NetworkInformation;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.IO;
 using Microsoft.AspNetCore.Builder;
@@ -11,18 +9,22 @@ using Kolbo.Live.Core;
 
 namespace Kolbo.Live.Windows;
 
+/// <summary>
+/// Local-network phone capture server.
+/// Uses HTTP plus the phone's native camera capture control instead of getUserMedia.
+/// This avoids self-signed TLS failures on mobile browsers while keeping the video on the local network.
+/// Pairing uses a high-entropy, single-use token and uploads are accepted only for the current session.
+/// </summary>
 sealed class PhonePairingServer : IAsyncDisposable
 {
     WebApplication? app;
-    X509Certificate2? certificate;
-    RSA? certificateKey;
     readonly PairingAuthority authority;
     readonly string code;
     readonly string sessionId;
     readonly string sessionDirectory;
 
     public Uri? Url { get; private set; }
-    public string? Fingerprint { get; private set; }
+    public string? LocalAddress { get; private set; }
 
     public PhonePairingServer(PairingAuthority authority, string sessionId, string sessionDirectory)
     {
@@ -36,55 +38,71 @@ sealed class PhonePairingServer : IAsyncDisposable
     {
         if (app is not null) return;
         var localIp = LocalIp();
+        if (IPAddress.IsLoopback(localIp))
+            throw new InvalidOperationException("לא נמצאה כתובת רשת מקומית. חבר את המחשב והטלפון לאותה רשת Wi-Fi/‏LAN.");
+
         using var probe = new System.Net.Sockets.TcpListener(localIp, 0);
         probe.Start();
         var port = ((IPEndPoint)probe.LocalEndpoint).Port;
         probe.Stop();
 
-        certificateKey = RSA.Create(2048);
-        var request = new CertificateRequest("CN=Kolbo Live Studio Local", certificateKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
-        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, false));
-        var san = new SubjectAlternativeNameBuilder();
-        san.AddDnsName("localhost");
-        san.AddIpAddress(IPAddress.Loopback);
-        san.AddIpAddress(localIp);
-        request.CertificateExtensions.Add(san.Build());
-        certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-2), DateTimeOffset.UtcNow.AddHours(8));
-        Fingerprint = certificate.Thumbprint;
-
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.ConfigureKestrel(o => o.Listen(localIp, port, l => l.UseHttps(certificate)));
+        builder.WebHost.ConfigureKestrel(o => o.Listen(localIp, port));
         app = builder.Build();
+
         app.MapGet("/", () => Results.Content(Page(sessionId), "text/html", Encoding.UTF8));
-        app.MapGet("/health", () => Results.Ok(new { service = "kolbo-live-studio-phone", authenticated = false }));
+        app.MapGet("/health", () => Results.Ok(new
+        {
+            service = "kolbo-live-studio-phone",
+            transport = "local-http-native-camera",
+            session = sessionId
+        }));
         app.MapPost("/pair", (PairRequest body) =>
         {
             var bearer = authority.Exchange(body.Code);
             return bearer is null ? Results.Unauthorized() : Results.Ok(new { bearer });
         });
         app.MapPost("/upload/{id}", UploadAsync);
+
         await app.StartAsync(cancellationToken);
-        Url = new Uri($"https://{localIp}:{port}/?code={Uri.EscapeDataString(code)}");
+        LocalAddress = $"{localIp}:{port}";
+        Url = new Uri($"http://{localIp}:{port}/?code={Uri.EscapeDataString(code)}");
+
+        // Verify that Kestrel really answers on the LAN address before showing the QR.
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        using var response = await http.GetAsync(new Uri($"http://{localIp}:{port}/health"), cancellationToken);
+        response.EnsureSuccessStatusCode();
     }
 
     async Task<IResult> UploadAsync(HttpRequest request, string id)
     {
         var bearer = Bearer(request);
-        if (bearer is null || !authority.Authenticate(bearer)) return Results.Unauthorized();
-        if (id.Length is < 1 or > 80 || id != sessionId || authority.CurrentId != id || authority.Recording)
+        if (bearer is null || !authority.Authenticate(bearer))
             return Results.Unauthorized();
+
+        if (id.Length is < 1 or > 80 || id != sessionId || authority.CurrentId != id)
+            return Results.Unauthorized();
+
+        if (authority.Recording)
+            return Results.StatusCode(StatusCodes.Status409Conflict);
+
         if (request.ContentLength is > PairingAuthority.MaxUploadBytes)
             return Results.BadRequest("file too large");
+
         var safe = new string(id.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
         if (safe != id) return Results.BadRequest("invalid session id");
 
         var contentType = request.ContentType ?? string.Empty;
-        var extension = contentType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? ".mp4" : ".webm";
+        var extension =
+            contentType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? ".mp4" :
+            contentType.Contains("quicktime", StringComparison.OrdinalIgnoreCase) ? ".mov" :
+            contentType.Contains("webm", StringComparison.OrdinalIgnoreCase) ? ".webm" : ".mp4";
+
         Directory.CreateDirectory(sessionDirectory);
         var temp = Path.Combine(sessionDirectory, $"phone-video-{Guid.NewGuid():N}.part");
         var final = Path.Combine(sessionDirectory, "phone-video" + extension);
         long written = 0;
+
         try
         {
             await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true))
@@ -101,13 +119,17 @@ sealed class PhonePairingServer : IAsyncDisposable
                 }
                 await output.FlushAsync(request.HttpContext.RequestAborted);
             }
-            if (!authority.AllowUpload(bearer, id, written)) return Results.Unauthorized();
+
+            if (!authority.AllowUpload(bearer, id, written))
+                return Results.Unauthorized();
+
             File.Move(temp, final, true);
             return Results.Ok(new { saved = true, bytes = written, file = Path.GetFileName(final) });
         }
         finally
         {
-            if (File.Exists(temp)) try { File.Delete(temp); } catch { }
+            if (File.Exists(temp))
+                try { File.Delete(temp); } catch { }
         }
     }
 
@@ -122,18 +144,25 @@ sealed class PhonePairingServer : IAsyncDisposable
     static IPAddress LocalIp()
     {
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces()
-                     .Where(n => n.OperationalStatus == OperationalStatus.Up && n.NetworkInterfaceType != NetworkInterfaceType.Loopback && n.NetworkInterfaceType != NetworkInterfaceType.Tunnel))
+                     .Where(n => n.OperationalStatus == OperationalStatus.Up &&
+                                 n.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
+                                 n.NetworkInterfaceType != NetworkInterfaceType.Tunnel))
         {
             var props = nic.GetIPProperties();
-            if (!props.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)) continue;
+            if (!props.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
+                continue;
+
             var ip = props.UnicastAddresses.Select(u => u.Address).FirstOrDefault(a =>
                 a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
                 !IPAddress.IsLoopback(a) &&
                 !a.ToString().StartsWith("169.254.", StringComparison.Ordinal));
+
             if (ip is not null) return ip;
         }
+
         return Dns.GetHostEntry(Dns.GetHostName()).AddressList.FirstOrDefault(a =>
-            a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !IPAddress.IsLoopback(a)) ?? IPAddress.Loopback;
+            a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+            !IPAddress.IsLoopback(a)) ?? IPAddress.Loopback;
     }
 
     static string Page(string id)
@@ -142,17 +171,82 @@ sealed class PhonePairingServer : IAsyncDisposable
         var escapedId = Uri.EscapeDataString(id);
         return """
 <!doctype html>
-<html lang='he' dir='rtl'><head><meta charset='utf-8'><meta name=viewport content='width=device-width,initial-scale=1'>
-<title>Kolbo Live Studio</title><style>body{background:#0b1220;color:#f4f7ff;font:18px system-ui,sans-serif;text-align:center;padding:20px}video{width:100%;max-width:700px;background:#000;border-radius:14px}button{font-size:18px;padding:12px 20px;margin:8px;border-radius:10px}#s{color:#9fb1ca}</style></head>
-<body><h1>Kolbo Live Studio</h1><video id=v autoplay playsinline muted></video><p id=s>מתחבר...</p><button id=start disabled>התחל מצלמה</button><button id=stop disabled>עצור ושלח</button>
+<html lang='he' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Kolbo Live Studio</title>
+<style>
+body{margin:0;background:#08111f;color:#fff;font:18px system-ui,sans-serif}
+main{max-width:720px;margin:auto;padding:24px}
+.card{background:#111d31;border:1px solid #486080;border-radius:18px;padding:20px;margin-top:16px}
+h1{font-size:28px;margin:0 0 10px}p{line-height:1.55;color:#d8e2f2}
+input[type=file]{display:block;width:100%;box-sizing:border-box;background:#fff;color:#111827;padding:14px;border-radius:10px;margin:16px 0}
+button{width:100%;font-size:18px;font-weight:700;padding:14px;border:0;border-radius:10px;background:#8f6cff;color:#fff}
+button:disabled{opacity:.45}#s{font-weight:600;color:#35d7c5}.warn{color:#ffd56a}
+</style>
+</head>
+<body>
+<main>
+  <h1>Kolbo Live Studio</h1>
+  <div class='card'>
+    <p>החיבור למחשב נוצר. לחץ על שדה הווידאו כדי לפתוח את מצלמת הטלפון המקורית, צלם את הביצוע ושמור.</p>
+    <input id='pick' type='file' accept='video/*' capture='environment'>
+    <button id='upload' disabled>שלח את הווידאו למחשב</button>
+    <p id='s'>מתחבר למחשב...</p>
+    <p class='warn'>את ההעלאה בצע לאחר שלחצת במחשב על “עצור ושמור”.</p>
+  </div>
+</main>
 <script>
-const q=new URLSearchParams(location.search),code=q.get('code'),s=document.getElementById('s'),v=document.getElementById('v'),start=document.getElementById('start'),stop=document.getElementById('stop');
-let bearer,stream,rec,chunks=[],mime='',pendingBlob=null,pendingType='';
-(async()=>{try{const r=await fetch('/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});if(!r.ok){s.textContent='קוד הצימוד פג או כבר נוצל';return}bearer=(await r.json()).bearer;start.disabled=false;s.textContent='מוכן — אשר הרשאת מצלמה'}catch(e){s.textContent='החיבור למחשב נכשל'}})();
-async function uploadPending(){if(!pendingBlob)return;stop.disabled=true;s.textContent='שולח למחשב...';try{const r=await fetch('/upload/__KOLBO_SESSION_ID__',{method:'POST',headers:{Authorization:'Bearer '+bearer,'Content-Type':pendingType},body:pendingBlob});if(!r.ok){s.textContent='ההעלאה עדיין לא אושרה. עצור את ההקלטה במחשב ואז לחץ שוב על שלח.';stop.textContent='שלח שוב';stop.disabled=false;return}pendingBlob=null;s.textContent='הסרטון נשמר בסשן במחשב';stop.textContent='עצור ושלח'}catch(e){s.textContent='שליחת הסרטון נכשלה: '+e.message;stop.textContent='שלח שוב';stop.disabled=false}}
-start.onclick=async()=>{try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});v.srcObject=stream;chunks=[];pendingBlob=null;mime=['video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(x=>MediaRecorder.isTypeSupported(x))||'';rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);rec.start(1000);start.disabled=true;stop.disabled=false;stop.textContent='עצור ושלח';s.textContent='מצלם'}catch(e){s.textContent='לא התקבלה הרשאת מצלמה: '+e.message}};
-stop.onclick=async()=>{if(pendingBlob){await uploadPending();return}stop.disabled=true;s.textContent='מסיים צילום...';rec.onstop=async()=>{pendingType=rec.mimeType||mime||'video/webm';pendingBlob=new Blob(chunks,{type:pendingType});await uploadPending()};rec.stop();stream.getTracks().forEach(x=>x.stop())};
-</script></body></html>
+const q=new URLSearchParams(location.search);
+const code=q.get('code');
+const s=document.getElementById('s');
+const pick=document.getElementById('pick');
+const upload=document.getElementById('upload');
+let bearer=null,file=null;
+(async()=>{
+  try{
+    const r=await fetch('/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});
+    if(!r.ok){s.textContent='קוד הצימוד פג או כבר נוצל';return}
+    bearer=(await r.json()).bearer;
+    s.textContent='מחובר למחשב — אפשר לצלם';
+  }catch(e){s.textContent='החיבור למחשב נכשל: '+e.message}
+})();
+pick.onchange=()=>{
+  file=pick.files&&pick.files[0];
+  upload.disabled=!file;
+  if(file)s.textContent='הווידאו מוכן לשליחה: '+Math.round(file.size/1024/1024)+' MB';
+};
+upload.onclick=async()=>{
+  if(!file||!bearer)return;
+  upload.disabled=true;
+  s.textContent='שולח למחשב...';
+  try{
+    const r=await fetch('/upload/__KOLBO_SESSION_ID__',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+bearer,'Content-Type':file.type||'video/mp4'},
+      body:file
+    });
+    if(r.status===409){
+      s.textContent='ההקלטה במחשב עדיין פעילה. לחץ במחשב “עצור ושמור” ואז לחץ כאן שוב.';
+      upload.disabled=false;
+      return;
+    }
+    if(!r.ok){
+      s.textContent='שליחת הווידאו נכשלה. קוד: '+r.status;
+      upload.disabled=false;
+      return;
+    }
+    s.textContent='הווידאו נשמר בהצלחה במחשב';
+    upload.textContent='נשלח בהצלחה';
+  }catch(e){
+    s.textContent='שליחת הווידאו נכשלה: '+e.message;
+    upload.disabled=false;
+  }
+};
+</script>
+</body>
+</html>
 """.Replace(sessionMarker, escapedId, StringComparison.Ordinal);
     }
 
@@ -166,9 +260,5 @@ stop.onclick=async()=>{if(pendingBlob){await uploadPending();return}stop.disable
             await app.DisposeAsync();
             app = null;
         }
-        certificate?.Dispose();
-        certificate = null;
-        certificateKey?.Dispose();
-        certificateKey = null;
     }
 }

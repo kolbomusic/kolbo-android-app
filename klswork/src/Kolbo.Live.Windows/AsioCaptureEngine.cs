@@ -7,16 +7,18 @@ using Kolbo.Live.Core;
 namespace Kolbo.Live.Windows;
 
 /// <summary>
-/// Low-latency ASIO duplex engine. The exact same master sample block is sent to the
-/// selected monitor outputs and queued for lossless recording. Only the dry mic is
-/// sent to the hardware-FX send outputs, so wet/master audio cannot feed back into FX.
+/// Low-latency ASIO duplex engine.
+/// For the MR816X External FX profile, the hardware Direct Monitor supplies the dry voice
+/// to the headphones, while this engine sends Dry -> DAW 9/10 -> REV-X, receives the
+/// stereo REV-X return on ASIO 9/10, and sends only Wet + Playback to the monitor outputs.
+/// The recorded master is Dry + Wet + Playback, matching the audible sum without doubling Dry.
 /// </summary>
 sealed class AsioCaptureEngine : IDisposable
 {
     AsioDevice? asio;
     SessionWriter? writer;
-    Routing? routing;
     Gains gains = new();
+    bool hardwareDirectDry;
     float[] backingSamples = [];
     int backingPosition;
     float[] dryBlock = [];
@@ -36,6 +38,7 @@ sealed class AsioCaptureEngine : IDisposable
     public string? Error => Volatile.Read(ref error) ?? writer?.Error;
     public float DryPeak => Volatile.Read(ref dryPeak);
     public float WetPeak => Volatile.Read(ref wetPeak);
+    public bool HardwareDirectDry => hardwareDirectDry;
 
     public static IReadOnlyList<string> Drivers() => AsioDevice.GetDriverNames();
 
@@ -52,7 +55,7 @@ sealed class AsioCaptureEngine : IDisposable
         return new DeviceProbe(inputs, outputs, rates, device.CurrentSampleRate);
     }
 
-    public void Start(string driver, int rate, string folder, string backingPath, Routing route, Gains mix)
+    public void Start(string driver, int rate, string folder, string backingPath, Routing route, Gains mix, bool hardwareDirectDry)
     {
         if (Running) throw new InvalidOperationException("כבר מתבצעת הקלטה");
         if (!AsioDevice.GetDriverNames().Contains(driver, StringComparer.Ordinal))
@@ -64,7 +67,7 @@ sealed class AsioCaptureEngine : IDisposable
             if (!device.IsSampleRateSupported(rate))
                 throw new InvalidOperationException($"הכרטיס אינו תומך ב־{rate}Hz");
             if (device.CurrentSampleRate != rate)
-                throw new InvalidOperationException($"הכרטיס מוגדר כרגע ל־{device.CurrentSampleRate}Hz. שנה את Sample Rate בלוח הבקרה של הכרטיס ל־{rate}Hz ואז נסה שוב; התוכנה לא משנה Clock/Sample Rate אוטומטית.");
+                throw new InvalidOperationException($"הכרטיס מוגדר כרגע ל־{device.CurrentSampleRate}Hz. שנה את Sample Rate בלוח הבקרה של הכרטיס ל־{rate}Hz ואז נסה שוב.");
 
             var validation = route.Validate(
                 device.Capabilities.NbInputChannels,
@@ -76,8 +79,12 @@ sealed class AsioCaptureEngine : IDisposable
 
             backingSamples = LoadBacking(backingPath, rate);
             backingPosition = 0;
-            routing = route;
             gains = mix;
+            this.hardwareDirectDry = hardwareDirectDry;
+            frames = 0;
+            overloads = 0;
+            dryPeak = wetPeak = 0;
+            error = null;
 
             device.InitDuplex(new AsioDuplexOptions
             {
@@ -134,8 +141,8 @@ sealed class AsioCaptureEngine : IDisposable
             var wetR = b.GetInput(2);
             var sendL = b.GetOutput(0);
             var sendR = b.GetOutput(1);
-            var masterL = b.GetOutput(2);
-            var masterR = b.GetOutput(3);
+            var monitorL = b.GetOutput(2);
+            var monitorR = b.GetOutput(3);
 
             float dp = 0, wp = 0;
             var bp = backingPosition;
@@ -163,18 +170,39 @@ sealed class AsioCaptureEngine : IDisposable
             }
             backingPosition = bp;
 
-            var clipped = Mixer.Process(dryBlock.AsSpan(0, n), wetBlock.AsSpan(0, n * 2), backingBlock.AsSpan(0, n * 2), masterBlock.AsSpan(0, n * 2), sendBlock.AsSpan(0, n * 2), gains);
+            var clipped = Mixer.Process(
+                dryBlock.AsSpan(0, n),
+                wetBlock.AsSpan(0, n * 2),
+                backingBlock.AsSpan(0, n * 2),
+                masterBlock.AsSpan(0, n * 2),
+                sendBlock.AsSpan(0, n * 2),
+                gains);
             if (clipped > 0) Interlocked.Add(ref overloads, clipped);
 
             for (var i = 0; i < n; i++)
             {
                 sendL[i] = sendBlock[i * 2];
                 sendR[i] = sendBlock[i * 2 + 1];
-                masterL[i] = masterBlock[i * 2];
-                masterR[i] = masterBlock[i * 2 + 1];
+
+                if (hardwareDirectDry)
+                {
+                    // Dry is already present in the headphones through MR816X Direct Monitor.
+                    // Sending it again from the DAW would double it and change the live balance.
+                    monitorL[i] = Math.Clamp(Finite(wetBlock[i * 2] * gains.Wet + backingBlock[i * 2] * gains.Backing), -1f, 1f);
+                    monitorR[i] = Math.Clamp(Finite(wetBlock[i * 2 + 1] * gains.Wet + backingBlock[i * 2 + 1] * gains.Backing), -1f, 1f);
+                }
+                else
+                {
+                    monitorL[i] = masterBlock[i * 2];
+                    monitorR[i] = masterBlock[i * 2 + 1];
+                }
             }
 
-            if (writer is null || !writer.TryWrite(dryBlock.AsSpan(0, n), wetBlock.AsSpan(0, n * 2), backingBlock.AsSpan(0, n * 2), masterBlock.AsSpan(0, n * 2)))
+            if (writer is null || !writer.TryWrite(
+                    dryBlock.AsSpan(0, n),
+                    wetBlock.AsSpan(0, n * 2),
+                    backingBlock.AsSpan(0, n * 2),
+                    masterBlock.AsSpan(0, n * 2)))
                 Volatile.Write(ref error, writer?.Error ?? "לא ניתן לשמור את האודיו");
 
             Volatile.Write(ref dryPeak, Math.Clamp(dp, 0, 1));
