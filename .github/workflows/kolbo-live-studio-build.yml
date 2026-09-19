@@ -236,11 +236,11 @@ jobs:
 
           if (-not (Test-Path (Join-Path $install 'tools\ffmpeg.exe'))) { throw "installed FFmpeg missing" }
           if (-not (Test-Path (Join-Path $install 'tools\yt-dlp.exe'))) { throw "installed yt-dlp missing" }
-          if (-not (Test-Path (Join-Path $install 'tools\cloudflared.exe'))) { throw "installed Kolbo camera tunnel missing" }
+          if (-not (Test-Path (Join-Path $install 'tools\Kolbo.Live.Tunnel.exe'))) { throw "installed Kolbo camera tunnel missing" }
 
           & (Join-Path $install 'tools\yt-dlp.exe') --version
           if ($LASTEXITCODE -ne 0) { throw "installed yt-dlp failed to start" }
-          & (Join-Path $install 'tools\cloudflared.exe') --version
+          & (Join-Path $install 'tools\Kolbo.Live.Tunnel.exe') --version
           if ($LASTEXITCODE -ne 0) { throw "installed Kolbo camera tunnel failed to start" }
 
           if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application unexpectedly running after silent install" }
