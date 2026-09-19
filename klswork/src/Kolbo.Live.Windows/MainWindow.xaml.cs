@@ -32,6 +32,9 @@ public partial class MainWindow : Window
     string? backingPath;
     string? sessionId;
     string? sessionDirectory;
+    PreparedPlayback? preparedPlayback;
+    readonly MediaSourceService mediaSources = new();
+    CancellationTokenSource? mediaLoadCts;
     readonly DispatcherTimer uiTimer;
     readonly Stopwatch elapsed = new();
 
@@ -105,15 +108,141 @@ public partial class MainWindow : Window
         SetState("נדרשת בדיקת ASIO", "#F4B942");
     }
 
-    void ChooseBacking_Click(object sender, RoutedEventArgs e)
+    async void ChooseBacking_Click(object sender, RoutedEventArgs e)
     {
-        var d = new OpenFileDialog { Filter = "Audio|*.wav;*.mp3;*.m4a;*.aiff|All files|*.*" };
-        if (d.ShowDialog() == true)
+        if (recording)
         {
-            backingPath = d.FileName;
-            BackingText.Text = Path.GetFileName(d.FileName);
-            InfoText.Text = "הפלייבק ייטען לזיכרון לפני תחילת ASIO.";
+            InfoText.Text = "עצור את ההקלטה לפני החלפת מקור הפלייבק.";
+            return;
         }
+
+        var d = new OpenFileDialog { Filter = MediaSourceService.FileDialogFilter };
+        if (d.ShowDialog() != true) return;
+
+        try
+        {
+            await PreparePlaybackAsync(
+                ct => mediaSources.PrepareLocalAsync(
+                    d.FileName,
+                    new Progress<string>(s => MediaStatusText.Text = s),
+                    ct),
+                "מכין את מקור הפלייבק...");
+        }
+        catch (OperationCanceledException)
+        {
+            MediaStatusText.Text = "טעינת המדיה בוטלה.";
+        }
+        catch (Exception ex)
+        {
+            SetState("שגיאת מדיה", "#E45757");
+            MediaStatusText.Text = "טעינת הקובץ נכשלה: " + ex.Message;
+            InfoText.Text = MediaStatusText.Text;
+        }
+    }
+
+    async void LoadYouTube_Click(object sender, RoutedEventArgs e)
+    {
+        if (recording)
+        {
+            InfoText.Text = "עצור את ההקלטה לפני החלפת מקור הפלייבק.";
+            return;
+        }
+
+        var url = YouTubeUrlBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            MediaStatusText.Text = "הדבק קישור YouTube תחילה.";
+            return;
+        }
+
+        try
+        {
+            await PreparePlaybackAsync(
+                ct => mediaSources.PrepareYouTubeAsync(
+                    url,
+                    new Progress<string>(s => MediaStatusText.Text = s),
+                    ct),
+                "טוען YouTube...");
+        }
+        catch (OperationCanceledException)
+        {
+            MediaStatusText.Text = "טעינת YouTube בוטלה.";
+        }
+        catch (Exception ex)
+        {
+            SetState("שגיאת YouTube", "#E45757");
+            MediaStatusText.Text = "טעינת YouTube נכשלה: " + ex.Message;
+            InfoText.Text = MediaStatusText.Text;
+        }
+    }
+
+    async Task PreparePlaybackAsync(
+        Func<CancellationToken, Task<PreparedPlayback>> loader,
+        string initialStatus)
+    {
+        mediaLoadCts?.Cancel();
+        mediaLoadCts?.Dispose();
+        mediaLoadCts = new CancellationTokenSource();
+
+        SetState("מכין מדיה", "#F4B942");
+        MediaStatusText.Text = initialStatus;
+        var prepared = await loader(mediaLoadCts.Token);
+        ApplyPreparedPlayback(prepared);
+        SetState("מקור מוכן", "#35D7C5");
+    }
+
+    void ApplyPreparedPlayback(PreparedPlayback prepared)
+    {
+        preparedPlayback = prepared;
+        backingPath = prepared.AudioPath;
+
+        var kind = prepared.Kind switch
+        {
+            PlaybackSourceKind.AudioFile => "אודיו",
+            PlaybackSourceKind.KaraokeVideo => "סרטון קריוקי",
+            PlaybackSourceKind.YouTube => "YouTube",
+            _ => "מדיה"
+        };
+
+        BackingText.Text = $"{kind}: {prepared.DisplayName}";
+        MediaStatusText.Text = prepared.VideoPath is null
+            ? "האודיו מוכן ל־ASIO."
+            : "הווידאו מוכן לתצוגה. האודיו שלו ייכנס דרך ASIO כדי שלא יהיה אודיו כפול.";
+
+        KaraokeVideoPlayer.Stop();
+        if (prepared.VideoPath is not null)
+        {
+            KaraokeVideoPlayer.Source = new Uri(prepared.VideoPath, UriKind.Absolute);
+            KaraokeVideoPlayer.Position = TimeSpan.Zero;
+            KaraokeVideoFrame.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            KaraokeVideoPlayer.Source = null;
+            KaraokeVideoFrame.Visibility = Visibility.Collapsed;
+        }
+
+        InfoText.Text = "מקור הפלייבק מוכן. בצע בדיקת ASIO ומיפוי לפני ההקלטה.";
+    }
+
+    void StartKaraokeVideo()
+    {
+        if (preparedPlayback?.VideoPath is null) return;
+        try
+        {
+            KaraokeVideoPlayer.Stop();
+            KaraokeVideoPlayer.Position = TimeSpan.Zero;
+            KaraokeVideoPlayer.Play();
+        }
+        catch (Exception ex)
+        {
+            MediaStatusText.Text = "האודיו ממשיך דרך ASIO, אך תצוגת הווידאו לא התחילה: " + ex.Message;
+        }
+    }
+
+    void StopKaraokeVideo()
+    {
+        try { KaraokeVideoPlayer.Stop(); } catch { }
     }
 
     void Probe_Click(object sender, RoutedEventArgs e)
@@ -260,6 +389,7 @@ public partial class MainWindow : Window
             wetSeen = false;
             DeviceBox.IsEnabled = false;
             elapsed.Restart();
+            StartKaraokeVideo();
             SetState("מקליט", "#FF5263");
             EffectStatusText.Text = "שיר למיקרופון. מחפש REV-X Return אמיתי בערוצים 9/10...";
             EffectStatusDot.Fill = Brushes.Goldenrod;
@@ -289,6 +419,7 @@ public partial class MainWindow : Window
         recording = false;
         DeviceBox.IsEnabled = true;
         elapsed.Stop();
+        StopKaraokeVideo();
 
         if (error is not null)
         {
@@ -342,8 +473,17 @@ public partial class MainWindow : Window
 
     async void Export_Click(object sender, RoutedEventArgs e)
     {
-        if (recording) { InfoText.Text = "עצור ושמור את האודיו לפני ייצוא MP4."; return; }
-        if (sessionDirectory is null) { InfoText.Text = "אין סשן נוכחי לייצוא."; return; }
+        if (recording)
+        {
+            InfoText.Text = "עצור ושמור את האודיו לפני הייצוא.";
+            return;
+        }
+
+        if (sessionDirectory is null)
+        {
+            InfoText.Text = "אין סשן נוכחי לייצוא.";
+            return;
+        }
 
         if (!double.TryParse(VideoOffsetBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var offset) &&
             !double.TryParse(VideoOffsetBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out offset))
@@ -360,16 +500,19 @@ public partial class MainWindow : Window
 
         try
         {
-            SetState("מייצא MP4", "#F4B942");
-            InfoText.Text = "מייצא וידאו עם master.wav.";
-            var output = await ExportService.ExportPhoneMasterAsync(sessionDirectory, offset);
+            SetState("מייצא", "#F4B942");
+            InfoText.Text = "מכין את התוצאה הסופית...";
+            var output = await ExportService.ExportResultAsync(
+                sessionDirectory,
+                preparedPlayback?.VideoPath,
+                offset);
             SetState("הייצוא הושלם", "#35D7C5");
             InfoText.Text = "הקובץ נשמר: " + output;
         }
         catch (Exception ex)
         {
             SetState("שגיאת ייצוא", "#E45757");
-            InfoText.Text = "ייצוא MP4 נכשל: " + ex.Message;
+            InfoText.Text = "הייצוא נכשל: " + ex.Message;
         }
     }
 
@@ -593,6 +736,9 @@ public partial class MainWindow : Window
     protected override async void OnClosed(EventArgs e)
     {
         uiTimer.Stop();
+        mediaLoadCts?.Cancel();
+        mediaLoadCts?.Dispose();
+        StopKaraokeVideo();
         if (recording) Stop_Click(this, new RoutedEventArgs());
         phoneDialog?.Close();
         pairing?.Revoke();
