@@ -87,7 +87,7 @@ sealed class PhonePairingServer : IAsyncDisposable
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(25));
-        await using var _ = timeout.Token.Register(() => urlTcs.TrySetCanceled(timeout.Token));
+        using var registration = timeout.Token.Register(() => urlTcs.TrySetCanceled(timeout.Token));
         var baseUrl = await urlTcs.Task;
 
         Url = new Uri(baseUrl, "/?code=" + Uri.EscapeDataString(authority.PairCode));
