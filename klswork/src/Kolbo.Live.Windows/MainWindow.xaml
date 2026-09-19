@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Kolbo Live Studio"
         Width="1280" Height="760" MinWidth="980" MinHeight="640"
-        WindowStyle="SingleBorderWindow" ResizeMode="CanResizeWithGrip" WindowState="Maximized"
+        WindowStyle="SingleBorderWindow" ResizeMode="CanResizeWithGrip" WindowState="Normal"
         Background="{StaticResource Bg}" FlowDirection="RightToLeft"
         WindowStartupLocation="CenterScreen">
 
@@ -48,7 +48,7 @@
                 </StackPanel>
               </Border>
 
-              <CheckBox x:Name="WetOnlyConfirm" Content="Direct Monitor פעיל בכרטיס ואין ניטור Dry כפול"/>
+              <CheckBox x:Name="WetOnlyConfirm" Content="לניטור זהה להקלטה: Direct Monitor כבוי בכרטיס (ה־Master של התוכנה הוא מה ששומעים ומה שנשמר)"/>
 
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="132"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -83,7 +83,7 @@
           <DockPanel Grid.Row="0">
             <StackPanel DockPanel.Dock="Right">
               <TextBlock Text="הופעה חדשה" FontSize="26" FontWeight="Bold"/>
-              <TextBlock Text="MR816X: Dry ישיר בחומרה + REV-X Return + Playback נשמרים יחד ל-Master" Foreground="{StaticResource Muted}" Margin="0,4,0,0"/>
+              <TextBlock Text="MR816X: Dry + REV-X Return + Playback עוברים דרך אותו Master — מה ששומעים הוא מה שנשמר" Foreground="{StaticResource Muted}" Margin="0,4,0,0"/>
             </StackPanel>
             <Border DockPanel.Dock="Left" Background="#17253D" CornerRadius="16" Padding="12,7">
               <StackPanel Orientation="Horizontal">
@@ -149,7 +149,8 @@
               <Button Content="חבר טלפון למצלמה" Click="PairPhone_Click"/>
               <Button Content="●  התחל הקלטה" Background="{StaticResource Record}" FontSize="17" Padding="26,12" Click="Record_Click"/>
               <Button Content="עצור ושמור" Click="Stop_Click"/>
-              <Button Content="ייצא תוצאה" Click="Export_Click"/>
+              <Button Content="ייצא אודיו" Click="ExportAudio_Click"/>
+              <Button Content="ייצא וידאו" Click="ExportVideo_Click"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
               <TextBlock Text="Video Offset:" Foreground="{StaticResource Muted}" VerticalAlignment="Center"/>
