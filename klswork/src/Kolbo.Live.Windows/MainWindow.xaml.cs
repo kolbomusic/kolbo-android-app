@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     bool mr816ExternalFxReady;
     int dryActiveTicks;
     bool wetSeen;
+    bool effectGateFailed;
     int[] supportedRates = [];
     string? backingPath;
     string? sessionId;
@@ -387,6 +388,7 @@ public partial class MainWindow : Window
             recording = true;
             dryActiveTicks = 0;
             wetSeen = false;
+            effectGateFailed = false;
             DeviceBox.IsEnabled = false;
             elapsed.Restart();
             StartKaraokeVideo();
@@ -669,11 +671,21 @@ public partial class MainWindow : Window
                 EffectStatusDot.Fill = Brushes.LimeGreen;
                 EffectStatusText.Text = "REV-X Wet Return זוהה בפועל. האפקט נכנס ל־Master המוקלט.";
             }
-            else if (!wetSeen && dryActiveTicks >= 18)
+            else if (!wetSeen && dryActiveTicks >= 24 && engine.HardwareDirectDry && !effectGateFailed)
             {
+                effectGateFailed = true;
                 EffectStatusDot.Fill = Brushes.OrangeRed;
                 EffectStatusText.Text =
-                    "יש Dry מהמיקרופון אבל עדיין אין Wet Return. אם אתה שומע Reverb באוזניות, עצור ובדוק שה־MR816X במצב External FX וש־REV-X פעיל על DAW 9/10.";
+                    "בדיקת REV-X נכשלה: יש Dry מהמיקרופון אבל אין Wet Return. ההקלטה נעצרת כדי לא לשמור ביצוע יבש בטעות.";
+                InfoText.Text =
+                    "REV-X לא הגיע חזרה מה־MR816X. פתח את Yamaha Steinberg FW Control Panel, ודא Digital I/O / External FX = External FX, ואז בדוק שוב.";
+                Dispatcher.BeginInvoke(() => Stop_Click(this, new RoutedEventArgs()));
+            }
+            else if (!wetSeen && dryActiveTicks >= 18)
+            {
+                EffectStatusDot.Fill = Brushes.Goldenrod;
+                EffectStatusText.Text =
+                    "יש Dry. עדיין מחכה ל־REV-X Return; אם לא יגיע, ההקלטה תיעצר אוטומטית.";
             }
             else if (!wetSeen && dryActiveTicks > 0)
             {
