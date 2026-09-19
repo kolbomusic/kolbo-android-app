@@ -45,7 +45,7 @@ jobs:
           if(-not (($xaml -match 'ExportVideo_Click') -and ($export -match 'ExportVideoAsync'))){ throw 'video export contract failed' }
           if(-not (($xaml -match 'ExportProgressBar') -and ($export -match 'out_time_ms='))){ throw 'export progress contract failed' }
           if(-not (($code -match 'MixGain_ValueChanged') -and ($engine -match 'UpdateGains'))){ throw 'live mic/playback balance contract failed' }
-          if(-not (($phone -match 'navigator.mediaDevices.getUserMedia') -and ($phone -match 'MediaRecorder') -and ($phone -match 'cloudflared.exe') -and ($phone -match 'WebSocket'))){ throw 'secure live browser camera contract failed' }
+          if(-not (($phone -match 'navigator.mediaDevices.getUserMedia') -and ($phone -match 'MediaRecorder') -and ($phone -match 'Kolbo.Live.Tunnel.exe') -and ($phone -match 'WebSocket'))){ throw 'secure live browser camera contract failed' }
           if(-not (($code -match 'probe.Inputs.Count == 10') -and ($code -match 'effectGateFailed'))){ throw 'MR816 documented 10x10 wet-return contract failed' }
           Write-Host 'Release source contract PASS'
 
@@ -118,7 +118,7 @@ jobs:
           $actual=(Get-FileHash cloudflared.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw "cloudflared SHA-256 mismatch" }
           New-Item release/publish/tools -ItemType Directory -Force | Out-Null
-          Copy-Item cloudflared.exe release/publish/tools/cloudflared.exe
+          Copy-Item cloudflared.exe release/publish/tools/Kolbo.Live.Tunnel.exe
           Add-Content release/publish/THIRD-PARTY-BUILD-PROVENANCE.txt ('cloudflared 2026.9.1 SHA-256: '+$actual)
 
       - name: Verify bundled media tools
@@ -129,8 +129,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "bundled FFmpeg failed to start" }
           & release/publish/tools/yt-dlp.exe --version
           if ($LASTEXITCODE -ne 0) { throw "bundled yt-dlp failed to start" }
-          & release/publish/tools/cloudflared.exe --version
-          if ($LASTEXITCODE -ne 0) { throw "bundled cloudflared failed to start" }
+          & release/publish/tools/Kolbo.Live.Tunnel.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "bundled Kolbo camera tunnel failed to start" }
 
       - name: Phone camera JavaScript syntax gate
         shell: pwsh
@@ -232,12 +232,12 @@ jobs:
 
           if (-not (Test-Path (Join-Path $install 'tools\ffmpeg.exe'))) { throw "installed FFmpeg missing" }
           if (-not (Test-Path (Join-Path $install 'tools\yt-dlp.exe'))) { throw "installed yt-dlp missing" }
-          if (-not (Test-Path (Join-Path $install 'tools\cloudflared.exe'))) { throw "installed cloudflared missing" }
+          if (-not (Test-Path (Join-Path $install 'tools\cloudflared.exe'))) { throw "installed Kolbo camera tunnel missing" }
 
           & (Join-Path $install 'tools\yt-dlp.exe') --version
           if ($LASTEXITCODE -ne 0) { throw "installed yt-dlp failed to start" }
           & (Join-Path $install 'tools\cloudflared.exe') --version
-          if ($LASTEXITCODE -ne 0) { throw "installed cloudflared failed to start" }
+          if ($LASTEXITCODE -ne 0) { throw "installed Kolbo camera tunnel failed to start" }
 
           if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application unexpectedly running after silent install" }
 
@@ -284,7 +284,7 @@ jobs:
             'FFmpeg SHA-256 verification: PASS'
             'yt-dlp SHA-256 verification: PASS'
             'cloudflared 2026.9.1 pinned SHA-256 verification: PASS'
-            'Bundled FFmpeg / yt-dlp / cloudflared startup: PASS'
+            'Bundled FFmpeg / yt-dlp / Kolbo.Live.Tunnel startup: PASS'
             'Phone camera JavaScript syntax: PASS'
             'Actual WAV+MP3 export smoke: PASS'
             'Actual MP4 export smoke: PASS'
