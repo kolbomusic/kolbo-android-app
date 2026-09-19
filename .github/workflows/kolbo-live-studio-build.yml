@@ -132,6 +132,29 @@ jobs:
           & release/publish/tools/cloudflared.exe --version
           if ($LASTEXITCODE -ne 0) { throw "bundled cloudflared failed to start" }
 
+      - name: Phone camera JavaScript syntax gate
+        shell: pwsh
+        working-directory: klswork
+        run: |
+          $source=Get-Content src/Kolbo.Live.Windows/PhonePairingServer.cs -Raw
+          $m=[regex]::Match($source,'(?s)<script>(.*?)</script>')
+          if(-not $m.Success){ throw "phone camera script not found" }
+          $m.Groups[1].Value | Set-Content phone-camera.js -Encoding UTF8
+          node --check phone-camera.js
+          if($LASTEXITCODE -ne 0){ throw "phone camera JavaScript syntax failed" }
+
+      - name: Real export smoke test
+        shell: pwsh
+        working-directory: klswork
+        run: |
+          dotnet build tests/Kolbo.Export.Smoke/Kolbo.Export.Smoke.csproj -c Release
+          if($LASTEXITCODE -ne 0){ throw "export smoke test build failed" }
+          $out='tests/Kolbo.Export.Smoke/bin/Release/net9.0'
+          New-Item (Join-Path $out 'tools') -ItemType Directory -Force | Out-Null
+          Copy-Item release/publish/tools/ffmpeg.exe (Join-Path $out 'tools/ffmpeg.exe')
+          dotnet run --project tests/Kolbo.Export.Smoke/Kolbo.Export.Smoke.csproj -c Release --no-build
+          if($LASTEXITCODE -ne 0){ throw "real export smoke test failed" }
+
       - name: Install NSIS
         shell: pwsh
         working-directory: klswork
@@ -262,6 +285,10 @@ jobs:
             'yt-dlp SHA-256 verification: PASS'
             'cloudflared 2026.9.1 pinned SHA-256 verification: PASS'
             'Bundled FFmpeg / yt-dlp / cloudflared startup: PASS'
+            'Phone camera JavaScript syntax: PASS'
+            'Actual WAV+MP3 export smoke: PASS'
+            'Actual MP4 export smoke: PASS'
+            'Export progress reaches completion: PASS'
             'NSIS Setup.exe creation: PASS'
             'Silent install: PASS'
             'Clean replacement of stale previous-preview files: PASS'
