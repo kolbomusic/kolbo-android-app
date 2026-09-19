@@ -265,14 +265,14 @@ jobs:
             Write-Warning ("UI screenshot unavailable: "+$_.Exception.Message)
           }
 
-          Stop-Process -Id $run.Id -Force
-          Start-Sleep -Seconds 1
-          if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "application process remained after smoke-test cleanup" }
-
+          # Deliberately leave the application running: the uninstaller must close it
+          # itself so users never need Task Manager just to update/remove Kolbo.
           $u=Start-Process (Join-Path $install 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
           if ($u.ExitCode -ne 0) { throw "silent uninstall exit code $($u.ExitCode)" }
 
           Start-Sleep -Seconds 3
+          if (Get-Process Kolbo.Live.Windows -ErrorAction SilentlyContinue) { throw "uninstaller left application process running" }
+          if (Get-Process Kolbo.Live.Tunnel -ErrorAction SilentlyContinue) { throw "uninstaller left camera tunnel process running" }
           if (Test-Path $install) { throw "install directory remained after uninstall" }
 
       - name: Write QA report
@@ -297,6 +297,8 @@ jobs:
             'Silent install: PASS'
             'Clean replacement of stale previous-preview files: PASS'
             'WPF application startup smoke test: PASS'
+            'Uninstall while application is running: PASS'
+            'No Kolbo app/tunnel process remains after uninstall: PASS'
             'Native minimize / maximize / close / resize: IMPLEMENTED'
             'High-contrast ComboBox text: IMPLEMENTED'
             'Playback sources: audio / karaoke video / YouTube'
