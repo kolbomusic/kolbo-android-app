@@ -80,6 +80,9 @@ SectionEnd
 
 Section "Uninstall"
   SetShellVarContext current
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM Kolbo.Live.Windows.exe /F'
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM Kolbo.Live.Tunnel.exe /F'
+  Sleep 500
   !include "uninstall-files.generated.nsh"
   Delete "$INSTDIR\VERSION.txt"
   Delete "$INSTDIR\Uninstall.exe"
