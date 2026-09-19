@@ -5,9 +5,9 @@
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>Kolbo.Live.Windows</AssemblyName>
-    <Version>0.1.8</Version>
-    <FileVersion>0.1.8.0</FileVersion>
-    <AssemblyVersion>0.1.8.0</AssemblyVersion>
+    <Version>0.1.9</Version>
+    <FileVersion>0.1.9.0</FileVersion>
+    <AssemblyVersion>0.1.9.0</AssemblyVersion>
     <Product>Kolbo Live Studio Preview</Product>
   </PropertyGroup>
   <ItemGroup>
