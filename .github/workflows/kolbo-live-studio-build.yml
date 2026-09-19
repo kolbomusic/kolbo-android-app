@@ -46,7 +46,7 @@ jobs:
           if(-not (($xaml -match 'ExportProgressBar') -and ($export -match 'out_time_ms='))){ throw 'export progress contract failed' }
           if(-not (($code -match 'MixGain_ValueChanged') -and ($engine -match 'UpdateGains'))){ throw 'live mic/playback balance contract failed' }
           if(-not (($phone -match 'navigator.mediaDevices.getUserMedia') -and ($phone -match 'MediaRecorder') -and ($phone -match 'cloudflared.exe') -and ($phone -match 'WebSocket'))){ throw 'secure live browser camera contract failed' }
-          if(-not (($code -match 'probe.Inputs.Count >= 10') -and ($code -match 'effectGateFailed'))){ throw 'MR816 wet-return contract failed' }
+          if(-not (($code -match 'probe.Inputs.Count == 10') -and ($code -match 'effectGateFailed'))){ throw 'MR816 documented 10x10 wet-return contract failed' }
           Write-Host 'Release source contract PASS'
 
       - name: Core acceptance tests
