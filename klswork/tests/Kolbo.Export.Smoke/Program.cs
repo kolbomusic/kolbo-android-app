@@ -37,17 +37,21 @@ using (var p = Process.Start(psi)!)
 }
 
 double audioProgress = 0, videoProgress = 0;
-var audio = await ExportService.ExportAudioAsync(session, new Progress<ExportProgressInfo>(p => audioProgress = Math.Max(audioProgress, p.Percent)));
+var audio = await ExportService.ExportAudioAsync(session, new ImmediateProgress<ExportProgressInfo>(p => audioProgress = Math.Max(audioProgress, p.Percent)));
 if (!File.Exists(audio.WavPath) || new FileInfo(audio.WavPath).Length <= 100) throw new Exception("WAV export missing");
 if (!File.Exists(audio.Mp3Path) || new FileInfo(audio.Mp3Path).Length <= 100) throw new Exception("MP3 export missing");
 
-var mp4 = await ExportService.ExportVideoAsync(session, video, 0, new Progress<ExportProgressInfo>(p => videoProgress = Math.Max(videoProgress, p.Percent)));
+var mp4 = await ExportService.ExportVideoAsync(session, video, 0, new ImmediateProgress<ExportProgressInfo>(p => videoProgress = Math.Max(videoProgress, p.Percent)));
 if (!File.Exists(mp4) || new FileInfo(mp4).Length <= 1000) throw new Exception("MP4 export missing");
 
-await Task.Delay(100);
 if (audioProgress < 99) throw new Exception("audio progress did not reach completion");
 if (videoProgress < 99) throw new Exception("video progress did not reach completion");
 
 Console.WriteLine("PASS actual WAV+MP3 export");
 Console.WriteLine("PASS actual MP4 export");
 Console.WriteLine("PASS progress reaches 100%");
+
+sealed class ImmediateProgress<T>(Action<T> action) : IProgress<T>
+{
+    public void Report(T value) => action(value);
+}
