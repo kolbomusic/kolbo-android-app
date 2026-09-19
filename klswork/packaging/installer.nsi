@@ -49,8 +49,19 @@ FunctionEnd
 
 Section "Kolbo Live Studio"
   SetShellVarContext current
+
+  ; A previous preview may still be running. Close it before replacing files,
+  ; then install into a clean application directory. Recordings are stored elsewhere.
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM Kolbo.Live.Windows.exe /F'
+  Sleep 500
+  RMDir /r "$INSTDIR"
+
   SetOutPath "$INSTDIR"
   File /r "${PAYLOAD}\*"
+  FileOpen $0 "$INSTDIR\VERSION.txt" w
+  FileWrite $0 "Kolbo Live Studio Preview 0.1.8$$
+"
+  FileClose $0
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   CreateDirectory "$SMPROGRAMS\Kolbo Live Studio"
