@@ -17,6 +17,7 @@ jobs:
   bundle:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Google Play release: API 36 / v0.4.1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
