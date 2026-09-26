@@ -82,6 +82,10 @@ jobs:
           cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" "$GITHUB_WORKSPACE/android-signing-tools/"
           cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign" "$GITHUB_WORKSPACE/android-signing-tools/"
           cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/lib/apksigner.jar" "$GITHUB_WORKSPACE/android-signing-tools/lib/"
+          mkdir -p "$GITHUB_WORKSPACE/android-signing-tools/lib64"
+          LIBCPP="$(find "$ANDROID_SDK_ROOT/build-tools/35.0.0" -type f -name 'libc++.so' | head -1)"
+          test -n "$LIBCPP"
+          cp "$LIBCPP" "$GITHUB_WORKSPACE/android-signing-tools/lib64/libc++.so"
 
       - name: Upload unsigned release APK and signing tools
         uses: actions/upload-artifact@v4
