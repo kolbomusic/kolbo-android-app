@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           APK="$(find "$GITHUB_WORKSPACE/kol-yaakov-native/app/build/outputs/apk/release" -maxdepth 1 -name '*.apk' -type f | head -1)"
           test -n "$APK"
-          AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt"
           "$AAPT" dump badging "$APK" | tee "$GITHUB_WORKSPACE/APK_BADGING.txt"
           grep -q "package: name='com.ofirgilboa.kolyaakov'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
           grep -q "versionCode='401'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
