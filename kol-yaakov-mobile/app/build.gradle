@@ -1,0 +1,40 @@
+plugins { id 'com.android.application' }
+
+def signStore = System.getenv('KOL_YAAKOV_STORE_FILE')
+def signStorePass = System.getenv('KOL_YAAKOV_STORE_PASSWORD')
+def signKeyAlias = System.getenv('KOL_YAAKOV_KEY_ALIAS')
+def signKeyPass = System.getenv('KOL_YAAKOV_KEY_PASSWORD')
+
+android {
+    namespace 'com.ofirgilboa.kolyaakov'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.ofirgilboa.kolyaakov'
+        minSdk 26
+        targetSdk 35
+        versionCode 300
+        versionName '0.3.0'
+    }
+
+    signingConfigs {
+        release {
+            if (signStore && signStorePass && signKeyAlias && signKeyPass) {
+                storeFile file(signStore)
+                storePassword signStorePass
+                keyAlias signKeyAlias
+                keyPassword signKeyPass
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+        }
+    }
+}
