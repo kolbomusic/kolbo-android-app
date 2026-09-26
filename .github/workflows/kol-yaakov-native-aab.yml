@@ -1,0 +1,72 @@
+name: Build Kol Yaakov Native AAB
+
+on:
+  push:
+    branches:
+      - build/kol-yaakov-native-android-v0.4.0
+    paths:
+      - 'kol-yaakov-native/**'
+      - '.github/workflows/kol-yaakov-native-aab.yml'
+  workflow_dispatch:
+
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Prepare Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Native-only gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -R "android.webkit.WebView" kol-yaakov-native/app/src/main
+          ! grep -R "android.permission.INTERNET" kol-yaakov-native/app/src/main/AndroidManifest.xml
+          grep -q "class MainActivity extends Activity" kol-yaakov-native/app/src/main/java/com/ofirgilboa/kolyaakov/MainActivity.java
+
+      - name: Build unsigned release App Bundle
+        working-directory: kol-yaakov-native
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace :app:bundleRelease
+
+      - name: Validate bundle output
+        shell: bash
+        run: |
+          set -euo pipefail
+          AAB="$(find "$GITHUB_WORKSPACE/kol-yaakov-native/app/build/outputs/bundle/release" -maxdepth 1 -name '*.aab' -type f | head -1)"
+          test -n "$AAB"
+          unzip -t "$AAB" >/dev/null
+          cp "$AAB" "$GITHUB_WORKSPACE/Kol-Yaakov-Android-v0.4.0-UNSIGNED.aab"
+          sha256sum "$GITHUB_WORKSPACE/Kol-Yaakov-Android-v0.4.0-UNSIGNED.aab" > "$GITHUB_WORKSPACE/UNSIGNED_AAB_SHA256.txt"
+
+      - name: Upload AAB build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kol-Yaakov-Android-v0.4.0-AAB-BUILD
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            Kol-Yaakov-Android-v0.4.0-UNSIGNED.aab
+            UNSIGNED_AAB_SHA256.txt
