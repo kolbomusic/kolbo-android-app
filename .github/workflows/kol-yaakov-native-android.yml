@@ -1,0 +1,79 @@
+name: Build Kol Yaakov Native Android
+
+on:
+  push:
+    branches:
+      - build/kol-yaakov-native-android-v0.4.0
+    paths:
+      - 'kol-yaakov-native/**'
+      - '.github/workflows/kol-yaakov-native-android.yml'
+  workflow_dispatch:
+
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Prepare Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Native-only gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -R "android.webkit.WebView" kol-yaakov-native/app/src/main
+          ! grep -R "INTERNET" kol-yaakov-native/app/src/main/AndroidManifest.xml
+          grep -q "class MainActivity extends Activity" kol-yaakov-native/app/src/main/java/com/ofirgilboa/kolyaakov/MainActivity.java
+
+      - name: Build release APK
+        working-directory: kol-yaakov-native
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Validate Android package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find "$GITHUB_WORKSPACE/kol-yaakov-native/app/build/outputs/apk/release" -maxdepth 1 -name '*.apk' -type f | head -1)"
+          test -n "$APK"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging "$APK" | tee "$GITHUB_WORKSPACE/APK_BADGING.txt"
+          grep -q "package: name='com.ofirgilboa.kolyaakov'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
+          grep -q "versionCode='400'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
+          grep -q "application-label:'קול יעקב'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
+          cp "$APK" "$GITHUB_WORKSPACE/Kol-Yaakov-Android-v0.4.0-UNSIGNED.apk"
+          sha256sum "$GITHUB_WORKSPACE/Kol-Yaakov-Android-v0.4.0-UNSIGNED.apk" > "$GITHUB_WORKSPACE/UNSIGNED_SHA256.txt"
+
+      - name: Upload release build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kol-Yaakov-Android-v0.4.0-NATIVE-BUILD
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            Kol-Yaakov-Android-v0.4.0-UNSIGNED.apk
+            APK_BADGING.txt
+            UNSIGNED_SHA256.txt
