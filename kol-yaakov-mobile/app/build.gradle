@@ -4,6 +4,7 @@ def signStore = System.getenv('KOL_YAAKOV_STORE_FILE')
 def signStorePass = System.getenv('KOL_YAAKOV_STORE_PASSWORD')
 def signKeyAlias = System.getenv('KOL_YAAKOV_KEY_ALIAS')
 def signKeyPass = System.getenv('KOL_YAAKOV_KEY_PASSWORD')
+def hasReleaseSigning = signStore && signStorePass && signKeyAlias && signKeyPass
 
 android {
     namespace 'com.ofirgilboa.kolyaakov'
@@ -19,7 +20,7 @@ android {
 
     signingConfigs {
         release {
-            if (signStore && signStorePass && signKeyAlias && signKeyPass) {
+            if (hasReleaseSigning) {
                 storeFile file(signStore)
                 storePassword signStorePass
                 keyAlias signKeyAlias
@@ -34,7 +35,9 @@ android {
         release {
             minifyEnabled false
             shrinkResources false
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
