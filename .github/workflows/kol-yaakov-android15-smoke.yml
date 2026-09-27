@@ -3,7 +3,7 @@ name: Kol Yaakov Android 15 Install Smoke
 on:
   push:
     branches:
-      - build/kol-yaakov-native-android-v0.4.1
+      - build/kol-yaakov-native-android-v0.4.2
     paths:
       - '.github/workflows/kol-yaakov-android15-smoke.yml'
   workflow_dispatch:
