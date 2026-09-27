@@ -3,7 +3,7 @@ name: Build Kol Yaakov Native Android
 on:
   push:
     branches:
-      - build/kol-yaakov-native-android-v0.4.1
+      - build/kol-yaakov-native-android-v0.4.2
     paths:
       - 'kol-yaakov-native/**'
       - '.github/workflows/kol-yaakov-native-android.yml'
@@ -62,18 +62,18 @@ jobs:
           AAPT="$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt"
           "$AAPT" dump badging "$APK" | tee "$GITHUB_WORKSPACE/APK_BADGING.txt"
           grep -q "package: name='com.ofirgilboa.kolyaakov'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
-          grep -q "versionCode='401'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
+          grep -q "versionCode='402'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
           grep -q "application-label:'קול יעקב'" "$GITHUB_WORKSPACE/APK_BADGING.txt"
-          cp "$APK" "$GITHUB_WORKSPACE/Kol-Yaakov-Android-v0.4.1-UNSIGNED.apk"
-          sha256sum "$GITHUB_WORKSPACE/Kol-Yaakov-Android-v0.4.1-UNSIGNED.apk" > "$GITHUB_WORKSPACE/UNSIGNED_SHA256.txt"
+          cp "$APK" "$GITHUB_WORKSPACE/Kol-Yaakov-Android-v0.4.2-UNSIGNED.apk"
+          sha256sum "$GITHUB_WORKSPACE/Kol-Yaakov-Android-v0.4.2-UNSIGNED.apk" > "$GITHUB_WORKSPACE/UNSIGNED_SHA256.txt"
 
       - name: Upload release build
         uses: actions/upload-artifact@v4
         with:
-          name: Kol-Yaakov-Android-v0.4.1-NATIVE-BUILD
+          name: Kol-Yaakov-Android-v0.4.2-NATIVE-BUILD
           retention-days: 1
           if-no-files-found: error
           path: |
-            Kol-Yaakov-Android-v0.4.1-UNSIGNED.apk
+            Kol-Yaakov-Android-v0.4.2-UNSIGNED.apk
             APK_BADGING.txt
             UNSIGNED_SHA256.txt
