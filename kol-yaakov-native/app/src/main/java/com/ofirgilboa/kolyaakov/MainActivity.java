@@ -9,9 +9,11 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.Gravity;
+import android.view.WindowInsets;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -49,7 +51,14 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
-        getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
+        if(Build.VERSION.SDK_INT>=30){
+            getWindow().setDecorFitsSystemWindows(false);
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        }else{
+            getWindow().setStatusBarColor(BG);
+            getWindow().setNavigationBarColor(BG);
+        }
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         prefs=getSharedPreferences(PREFS,MODE_PRIVATE); vibrator=(Vibrator)getSystemService(VIBRATOR_SERVICE);
         state=AppState.load(prefs.getString(STATE_KEY,null));
@@ -71,14 +80,30 @@ public class MainActivity extends Activity {
     void buildShell(){
         root=vertical();root.setBackgroundColor(BG);root.setLayoutParams(new ViewGroup.LayoutParams(-1,-1));
         LinearLayout top=horizontal();top.setBackgroundColor(BG);pad(top,16,14); top.setMinimumHeight(dp(78));
+        if(Build.VERSION.SDK_INT>=30){
+            top.setOnApplyWindowInsetsListener((v,insets)->{
+                int statusTop=insets.getInsets(WindowInsets.Type.statusBars()).top;
+                v.setPadding(dp(16),dp(14)+statusTop,dp(16),dp(14));
+                return insets;
+            });
+        }
         TextView logo=tv("🎙",28,TEXT,true);logo.setGravity(Gravity.CENTER);logo.setBackground(bg(PURPLE,15));logo.setLayoutParams(new LinearLayout.LayoutParams(dp(50),dp(50)));top.addView(logo);
         LinearLayout titles=vertical();LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-2,1);tp.setMargins(dp(12),0,dp(12),0);titles.setLayoutParams(tp);
         headerSub=tv("מאמן הזיכרון לאמנים",12,PURPLE2,true);headerTitle=tv("היום",23,TEXT,true);titles.addView(headerSub);titles.addView(headerTitle);top.addView(titles);
         Button add=button("＋",false);add.setContentDescription("הוסף שיר");add.setTextSize(24);add.setLayoutParams(new LinearLayout.LayoutParams(dp(52),dp(52)));add.setOnClickListener(v->songDialog(null));top.addView(add);root.addView(top);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(BG);content=vertical();pad(content,14,14);scroll.addView(content,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        nav=horizontal();nav.setBackgroundColor(Color.rgb(8,12,22));pad(nav,6,6);String[][] ns={{"⌂","היום","home"},{"♫","שירים","library"},{"◎","אימון","practice"},{"↗","זיכרון","progress"},{"⚙","עוד","more"}};
-        for(String[] n:ns){Button b=new Button(this);b.setAllCaps(false);b.setText(n[0]+"\n"+n[1]);b.setTextSize(12);b.setTag(n[2]);b.setTextColor(MUTED);b.setBackgroundColor(Color.TRANSPARENT);b.setMinHeight(dp(64));b.setOnClickListener(v->{view=(String)v.getTag();task=null;revealed=false;render();});nav.addView(b,new LinearLayout.LayoutParams(0,dp(66),1));}
+        nav=horizontal();nav.setBackgroundColor(Color.rgb(8,12,22));pad(nav,8,10);nav.setMinimumHeight(dp(88));nav.setClipToPadding(false);
+        if(Build.VERSION.SDK_INT>=30){
+            nav.setOnApplyWindowInsetsListener((v,insets)->{
+                int navBottom=insets.getInsets(WindowInsets.Type.navigationBars()).bottom;
+                v.setPadding(dp(8),dp(10),dp(8),dp(14)+navBottom);
+                return insets;
+            });
+        }
+        String[][] ns={{"⌂","היום","home"},{"♫","שירים","library"},{"◎","אימון","practice"},{"↗","זיכרון","progress"},{"⚙","עוד","more"}};
+        for(String[] n:ns){Button b=new Button(this);b.setAllCaps(false);b.setText(n[0]+"\n"+n[1]);b.setTextSize(13);b.setTag(n[2]);b.setContentDescription(n[1]);b.setTextColor(MUTED);b.setBackgroundColor(Color.TRANSPARENT);b.setMinHeight(dp(68));b.setPadding(dp(2),dp(7),dp(2),dp(7));b.setOnClickListener(v->{view=(String)v.getTag();task=null;revealed=false;render();});nav.addView(b,new LinearLayout.LayoutParams(0,dp(70),1));}
         root.addView(nav);setContentView(root);
+        if(Build.VERSION.SDK_INT>=30)root.requestApplyInsets();
     }
 
     void setHead(String title,String sub){headerTitle.setText(title);headerSub.setText(sub);}
@@ -122,7 +147,7 @@ public class MainActivity extends Activity {
 
     void renderProgress(){setHead("מפת הזיכרון","איפה השיר יושב ואיפה הוא עדיין נופל");if(state.songs.isEmpty()){content.addView(tv("הוסף שיר כדי לראות מפת זיכרון.",18,MUTED,false));return;}for(Song s:state.songs){LinearLayout c=card();c.addView(tv(s.title+" · "+readiness(s)+"%",20,TEXT,true));c.addView(gap(9));for(Line l:s.lines){Progress p=s.progress(l.id);LinearLayout row=vertical();row.addView(tv(l.text,14,TEXT,true));ProgressBar pb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);pb.setMax(100);pb.setProgress((int)Math.round(p.score*100));pb.setProgressTintList(android.content.res.ColorStateList.valueOf(p.score>=.8?GREEN:p.score>=.55?AMBER:PURPLE));row.addView(pb,new LinearLayout.LayoutParams(-1,dp(7)));row.addView(tv((int)Math.round(p.score*100)+"% · "+(p.attempts==0?"טרם נבדקה":p.streak+" הצלחות רצופות"),11,MUTED,false));c.addView(row);c.addView(gap(9));}content.addView(c,mp());content.addView(gap(12));}}
 
-    void renderMore(){setHead("עוד","הגדרות · גיבוי · אודות");LinearLayout c=card();c.addView(tv("הנתונים שלך",20,TEXT,true));c.addView(tv("השירים וההתקדמות נשמרים מקומית במכשיר. אפשר לייצא גיבוי JSON ולהחזיר אותו בכל עת.",14,MUTED,false));c.addView(gap(12));Button ex=button("ייצא גיבוי",false);ex.setOnClickListener(v->exportBackup());Button im=button("ייבא גיבוי",false);im.setOnClickListener(v->importBackup());c.addView(ex,mp());c.addView(gap(7));c.addView(im,mp());content.addView(c);content.addView(gap(12));LinearLayout about=card();about.addView(tv("קול יעקב",24,TEXT,true));about.addView(tv("מאמן זיכרון ביצועי לאמנים",15,PURPLE2,true));about.addView(gap(12));about.addView(tv("בהשראת יעקב ישראל אבוטבול",16,TEXT,true));about.addView(tv("נבנה על ידי אופיר גלבוע",16,TEXT,true));about.addView(gap(8));about.addView(tv("ofirgilboa2050@gmail.com",14,MUTED,false));about.addView(tv("054-924-9925",14,MUTED,false));about.addView(gap(10));about.addView(tv("Android Native · v0.4.1",12,MUTED,false));content.addView(about);}
+    void renderMore(){setHead("עוד","הגדרות · גיבוי · אודות");LinearLayout c=card();c.addView(tv("הנתונים שלך",20,TEXT,true));c.addView(tv("השירים וההתקדמות נשמרים מקומית במכשיר. אפשר לייצא גיבוי JSON ולהחזיר אותו בכל עת.",14,MUTED,false));c.addView(gap(12));Button ex=button("ייצא גיבוי",false);ex.setOnClickListener(v->exportBackup());Button im=button("ייבא גיבוי",false);im.setOnClickListener(v->importBackup());c.addView(ex,mp());c.addView(gap(7));c.addView(im,mp());content.addView(c);content.addView(gap(12));LinearLayout about=card();about.addView(tv("קול יעקב",24,TEXT,true));about.addView(tv("מאמן זיכרון ביצועי לאמנים",15,PURPLE2,true));about.addView(gap(12));about.addView(tv("בהשראת יעקב ישראל אבוטבול",16,TEXT,true));about.addView(tv("נבנה על ידי אופיר גלבוע",16,TEXT,true));about.addView(gap(8));about.addView(tv("ofirgilboa2050@gmail.com",14,MUTED,false));about.addView(tv("054-924-9925",14,MUTED,false));about.addView(gap(10));about.addView(tv("Android Native · v0.4.2",12,MUTED,false));content.addView(about);}
 
     void startPerformance(Song s){performance=new PerformanceSession();performance.songId=s.id;performance.index=0;performance.revealed=false;getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);view="performance";render();}
     void renderPerformance(){setHead("חזרת במה","מסך נקי · מעבר בין שורות");if(performance==null){view="library";render();return;}Song s=getSong(performance.songId);if(s==null){endPerformance();return;}LinearLayout c=card();TextView count=tv((performance.index+1)+" / "+s.lines.size(),12,MUTED,true);count.setGravity(Gravity.CENTER);c.addView(count);c.addView(gap(16));Line l=s.lines.get(Math.min(performance.index,s.lines.size()-1));TextView sec=tv(l.section,14,PURPLE2,true);sec.setGravity(Gravity.CENTER);c.addView(sec);TextView line=tv(performance.revealed?l.text:"נסה לשיר את השורה הבאה מהזיכרון…",27,performance.revealed?TEXT:Color.rgb(110,121,145),true);line.setGravity(Gravity.CENTER);line.setMinHeight(dp(190));line.setGravity(Gravity.CENTER);c.addView(line,mp());Button reveal=button(performance.revealed?"המשך לשורה הבאה":"הצג שורה",true);reveal.setOnClickListener(v->{if(!performance.revealed){performance.revealed=true;performance.rescues++;render();}else{performance.index++;performance.revealed=false;if(performance.index>=s.lines.size()){new AlertDialog.Builder(this).setTitle("חזרת במה הושלמה").setMessage("סיימת את "+s.title+" עם "+performance.rescues+" הצצות לטקסט.").setPositiveButton("סיום",(d,w)->endPerformance()).show();}else render();}});c.addView(reveal,mp());content.addView(c);content.addView(gap(10));Button end=button("סיים חזרה",false);end.setOnClickListener(v->endPerformance());content.addView(end,mp());}
