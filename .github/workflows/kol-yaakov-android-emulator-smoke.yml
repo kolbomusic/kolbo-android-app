@@ -3,7 +3,7 @@ name: Kol Yaakov Android Install Smoke Test
 on:
   push:
     branches:
-      - build/kol-yaakov-native-android-v0.4.1
+      - build/kol-yaakov-native-android-v0.4.2
     paths:
       - 'kol-yaakov-native/**'
       - '.github/workflows/kol-yaakov-android-emulator-smoke.yml'
