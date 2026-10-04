@@ -1,0 +1,11 @@
+--- a/app/src/main/java/com/kolbomusic/singstudio/core/dsp/StreamingVocalDspEngine.kt
++++ b/app/src/main/java/com/kolbomusic/singstudio/core/dsp/StreamingVocalDspEngine.kt
+@@ -149,7 +149,7 @@
+     }
+ 
+     private class StreamProcessor(
+-        sampleRate: Int,
++        private val sampleRate: Int,
+         private val preset: VocalPreset,
+         analysis: VocalAnalysis
+     ) {
