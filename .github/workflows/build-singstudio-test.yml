@@ -26,6 +26,7 @@ jobs:
 
           base64 -d singstudio-ci/kolbo-0.19.0.patch.gz.b64 | gzip -dc > /tmp/kolbo-0.19.0.patch
           patch --batch --forward -p1 -d project < /tmp/kolbo-0.19.0.patch
+          patch --batch --forward -p1 -d project < singstudio-ci/kolbo-0.19.0-fix1.patch
 
           grep -F 'versionName = "0.19.0"' project/app/build.gradle.kts
           grep -F 'AwaitingEditChoice' project/app/src/main/java/com/kolbomusic/singstudio/ui/recording/PostTakeFlowModels.kt
