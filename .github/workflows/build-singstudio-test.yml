@@ -1,4 +1,4 @@
-name: Kolbo Sing Studio 0.19.0 Source Extract
+name: Kolbo Sing Studio 0.19.0 Android CI
 on:
   push:
     branches: [singstudio-test-0.19.0]
@@ -8,20 +8,81 @@ permissions:
   contents: read
 
 jobs:
-  source:
+  apk:
+    name: Android debug APK and verification
     runs-on: ubuntu-24.04
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
-      - name: Verify and extract 0.18.1 source
+
+      - name: Verify source, apply 0.19.0 patch and extract
         shell: bash
         run: |
+          set -euo pipefail
           echo "add113e31ad74d034f0fd8de7317e25f82aa44cb0b9740c351be90e09874a527  singstudio-ci/source-0.18.1.zip" | sha256sum -c -
-          rm -rf project && mkdir project
+          rm -rf project
+          mkdir -p project
           unzip -q singstudio-ci/source-0.18.1.zip -d project
-          find project -type f | sort > project/source-files.txt
-      - name: Upload extracted source
+
+          base64 -d singstudio-ci/kolbo-0.19.0.patch.gz.b64 | gzip -dc > /tmp/kolbo-0.19.0.patch
+          patch --batch --forward -p1 -d project < /tmp/kolbo-0.19.0.patch
+
+          grep -F 'versionName = "0.19.0"' project/app/build.gradle.kts
+          grep -F 'AwaitingEditChoice' project/app/src/main/java/com/kolbomusic/singstudio/ui/recording/PostTakeFlowModels.kt
+          grep -F 'VideoLook' project/app/src/main/java/com/kolbomusic/singstudio/core/editor/VideoProjectModels.kt
+          grep -F 'CompositionPreviewCard' project/app/src/main/java/com/kolbomusic/singstudio/ui/recording/RecordingStudioScreen.kt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - name: Android SDK components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --channel=3 --install 'platform-tools' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+          sdkmanager --channel=3 --install 'platforms;android-37.0'
+          test -d "${ANDROID_HOME}/platforms/android-37.0"
+          grep 'compileSdk = 37' project/app/build.gradle.kts
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Compile native and Android APK
+        working-directory: project
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Unit tests
+        working-directory: project
+        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Lint
+        working-directory: project
+        run: gradle :app:lintDebug --no-daemon --stacktrace
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=project/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -2
+          sha256sum "$APK" | tee project/apk-sha256.txt
+          "${ANDROID_HOME}/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "${ANDROID_HOME}/build-tools/36.0.0/aapt" dump badging "$APK" | head -20
+
+      - name: Upload test APK
         uses: actions/upload-artifact@v4
         with:
-          name: KolboSingStudio-0.18.1-extracted-source
-          path: project
+          name: KolboSingStudio-0.19.0-debug-APK
+          path: |
+            project/app/build/outputs/apk/debug/app-debug.apk
+            project/apk-sha256.txt
+            project/app/build/reports/lint-results-debug.html
           if-no-files-found: error
