@@ -32,14 +32,10 @@ jobs:
         shell: bash
         run: |
           yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --channel=3 --install 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
-          if ! sdkmanager --channel=3 --install 'platforms;android-37'; then
-            echo 'WARNING: Android API 37 not found in cloud SDK; trying CI-only compileSdk=36'
-          fi
-          if [ ! -d "${ANDROID_HOME}/platforms/android-37" ]; then
-            sed -i 's/compileSdk = 37/compileSdk = 36/' project/app/build.gradle.kts
-            grep 'compileSdk = 36' project/app/build.gradle.kts
-          fi
+          sdkmanager --channel=3 --install 'platform-tools' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+          sdkmanager --channel=3 --install 'platforms;android-37.0'
+          test -d "${ANDROID_HOME}/platforms/android-37.0"
+          grep 'compileSdk = 37' project/app/build.gradle.kts
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.0'
