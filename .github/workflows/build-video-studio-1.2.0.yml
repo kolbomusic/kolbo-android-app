@@ -19,7 +19,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo '5399db114c99476bcd3ae4273fe2049254c85d5c5f97c816486d46df48d36366  videostudio-ci/source-1.2.0.zip' | sha256sum -c -
+          echo '6a0a10b11d2dffdd4f34513f771b4e90535f130e0e8613688f5d92acf8779a99  videostudio-ci/source-1.2.0.zip' | sha256sum -c -
           rm -rf project && mkdir project
           unzip -q videostudio-ci/source-1.2.0.zip -d project
           mkdir -p project/app/src/main/assets
