@@ -1,7 +1,7 @@
-name: Kolbo Video Studio 1.2.0 Hebrew Audio Preview APK Build
+name: Kolbo Video Studio 1.2.1 Hebrew Audio Preview APK Build
 on:
   push:
-    branches: [video-studio-apk-1.2.0]
+    branches: [video-studio-apk-1.2.1-router]
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,9 +19,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo '6a0a10b11d2dffdd4f34513f771b4e90535f130e0e8613688f5d92acf8779a99  videostudio-ci/source-1.2.0.zip' | sha256sum -c -
+          echo 'f3c4269114d0f82943fefd25e34f40afaee6aea9525139f6d9323e6453dc67c6  videostudio-ci/source-1.2.1.zip' | sha256sum -c -
           rm -rf project && mkdir project
-          unzip -q videostudio-ci/source-1.2.0.zip -d project
+          unzip -q videostudio-ci/source-1.2.1.zip -d project
           mkdir -p project/app/src/main/assets
       - name: Structural gates
         shell: bash
@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           cd project
           python3 tools/build.py
-          test -s build/final/Kolbo-Video-Studio-1.2.0.apk
+          test -s build/final/Kolbo-Video-Studio-1.2.1.apk
           test -s build/release/unsigned.apk
       - name: Java and package verification
         shell: bash
@@ -56,7 +56,7 @@ jobs:
           import json,urllib.request,urllib.parse
           q='הדמות נכנסת לשירותים ואז מתיישבת על האסלה'
           url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=he&tl=en&dt=t&q='+urllib.parse.quote(q)
-          req=urllib.request.Request(url,headers={'User-Agent':'Kolbo-Video-Studio/1.2.0'})
+          req=urllib.request.Request(url,headers={'User-Agent':'Kolbo-Video-Studio/1.2.1'})
           with urllib.request.urlopen(req,timeout=30) as r:j=json.load(r)
           text=' '.join(x[0] for x in j[0] if x and x[0]).lower()
           print('TRANSLATION',text)
@@ -76,7 +76,7 @@ jobs:
             ('https://hkchengrex-mmaudio.hf.space','/video_to_audio')
           ]
           for base,endpoint in checks:
-              req=urllib.request.Request(base+'/gradio_api/info',headers={'User-Agent':'Kolbo-Video-Studio/1.2.0'})
+              req=urllib.request.Request(base+'/gradio_api/info',headers={'User-Agent':'Kolbo-Video-Studio/1.2.1'})
               with urllib.request.urlopen(req,timeout=30) as r:j=json.load(r)
               assert endpoint in j.get('named_endpoints',{}),(base,endpoint)
               print('LIVE_CONTRACT_PASS',base,endpoint)
@@ -88,7 +88,7 @@ jobs:
           curl -fsSL https://huggingface.co/hkchengrex/MMAudio/resolve/main/examples/sora_beach.mp4 -o /tmp/mma-input.mp4
           python3 - <<'PY'
           import json,urllib.request,uuid,re
-          base='https://hkchengrex-mmaudio.hf.space';ua='Kolbo-Video-Studio/1.2.0'
+          base='https://hkchengrex-mmaudio.hf.space';ua='Kolbo-Video-Studio/1.2.1'
           raw=open('/tmp/mma-input.mp4','rb').read();b='Kolbo'+uuid.uuid4().hex
           body=(('--'+b+'\r\nContent-Disposition: form-data; name="files"; filename="input.mp4"\r\nContent-Type: video/mp4\r\n\r\n').encode()+raw+('\r\n--'+b+'--\r\n').encode())
           req=urllib.request.Request(base+'/gradio_api/upload',data=body,method='POST',headers={'Content-Type':'multipart/form-data; boundary='+b,'User-Agent':ua})
@@ -130,16 +130,16 @@ jobs:
         shell: bash
         run: |
           cd project
-          sha256sum build/final/Kolbo-Video-Studio-1.2.0.apk build/release/unsigned.apk build/test/Kolbo-Video-Studio-tests.apk
+          sha256sum build/final/Kolbo-Video-Studio-1.2.1.apk build/release/unsigned.apk build/test/Kolbo-Video-Studio-tests.apk
       - name: Upload build for original-key signing
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-Studio-1.2.0-build
+          name: Kolbo-Video-Studio-1.2.1-build
           if-no-files-found: warn
           retention-days: 2
           path: |
-            project/build/final/Kolbo-Video-Studio-1.2.0.apk
+            project/build/final/Kolbo-Video-Studio-1.2.1.apk
             project/build/release/unsigned.apk
             project/build/test/Kolbo-Video-Studio-tests.apk
             project/build/verification/**
