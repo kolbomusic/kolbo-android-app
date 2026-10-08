@@ -1,0 +1,36 @@
+name: Probe Video Studio 1.2.1 providers
+on:
+  push:
+    branches: [video-studio-121-probe]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Probe audio mirrors and LTX 2.5
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,urllib.request
+          hosts=[
+            'https://hkchengrex-mmaudio.hf.space',
+            'https://lpdoctor-mmaudio.hf.space',
+            'https://lshzhm-deepaudio-v1.hf.space',
+            'https://lightricks-ltx-2-5.hf.space',
+            'https://chopperblu-ltx-2-5-demo.hf.space'
+          ]
+          ua='Kolbo-Video-Studio/1.2.1'
+          for base in hosts:
+              try:
+                  req=urllib.request.Request(base+'/gradio_api/info',headers={'User-Agent':ua})
+                  with urllib.request.urlopen(req,timeout=30) as r:j=json.load(r)
+                  print('HOST_OK',base)
+                  for n,e in j.get('named_endpoints',{}).items():
+                      print('ENDPOINT',base,n,[(p.get('parameter_name'),p.get('parameter_default')) for p in e.get('parameters',[])])
+              except Exception as e:
+                  print('HOST_ERR',base,repr(e))
+          PY
