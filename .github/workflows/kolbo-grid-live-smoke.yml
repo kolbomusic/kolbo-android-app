@@ -1,0 +1,55 @@
+name: Kolbo Video Grid live HTTPS smoke
+on:
+  push:
+    branches: [video-grid-v2.2-demo]
+    paths: [".github/workflows/kolbo-grid-live-smoke.yml", "render_bootstrap.py"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-live-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - name: Test public Render HTTPS endpoints without uploading personal media
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time,urllib.request,urllib.error
+          root="https://kolbo-video-grid-preview.onrender.com"
+          def call(path,method="GET"):
+              request=urllib.request.Request(root+path,method=method)
+              try:
+                  with urllib.request.urlopen(request,timeout=40) as response:
+                      return response.status,response.read(100000)
+              except urllib.error.HTTPError as exc:
+                  return exc.code,exc.read(100000)
+          for attempt in range(10):
+              try:
+                  status,payload=call("/health")
+                  if status==200:break
+                  print("cold-start retry",attempt,status,flush=True)
+              except Exception as exc:
+                  print("cold-start retry",attempt,type(exc).__name__,flush=True)
+              time.sleep(15)
+          else:raise SystemExit("Health never became ready")
+          health=json.loads(payload)
+          assert health["read_only_preview"] is True,health
+          assert health["gpu_generation_verified"] is False,health
+          status,payload=call("/v1/grid/requirements")
+          assert status==200,(status,payload[:200])
+          state=json.loads(payload)
+          assert state["version"] in ["2.3.0","2.4.0"]
+          assert state["video_generation_verified"] is False
+          status,payload=call("/v1/grid/public-status")
+          public=json.loads(payload)
+          assert status==200 and public["generation_enabled"] is False
+          assert public["storage_durable"] is False
+          status,html=call("/studio")
+          assert status==200 and b"Kolbo" in html
+          status,payload=call("/v1/grid/jobs",method="POST")
+          assert status==503,(status,payload[:200])
+          assert json.loads(payload)["detail"]=="READ_ONLY_PREVIEW_NO_PERSISTENT_STORAGE_OR_GPU"
+          print("PASS: HTTPS, studio, truthful capacity, and blocked unauthorized uploads")
+          print("PUBLIC_VERSION:",state["version"],"GENERATION_ENABLED:",public["generation_enabled"])
+          PY
