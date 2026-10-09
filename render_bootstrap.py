@@ -1,8 +1,8 @@
 """Build-time restore of the reviewed 2.2.0 Python runtime sources."""
 import base64,hashlib,io,pathlib,zipfile
-source=pathlib.Path('kolbo-grid-v2.2-runtime.src.b64')
+source=pathlib.Path('kolbo-grid-v23-runtime.src.b64')
 data=base64.b64decode(source.read_text(encoding='ascii'),validate=True)
-assert hashlib.sha256(data).hexdigest()=='6430f86d035225469cb6feca3725a52bac209f376bca546782c3a2f2a5e834b0', 'Runtime checksum mismatch'
+assert hashlib.sha256(data).hexdigest()=='b285fc59f50498c5659e296978dc5427770358a364f9864117ba14ed411cd402', 'Runtime checksum mismatch'
 root=pathlib.Path('.').resolve()
 with zipfile.ZipFile(io.BytesIO(data)) as z:
     assert z.testzip() is None
