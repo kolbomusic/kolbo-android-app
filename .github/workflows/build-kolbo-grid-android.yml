@@ -1,9 +1,9 @@
-name: Build Kolbo Video Grid 2.3 APK
+name: Build Kolbo Video Grid 2.5 APK
 on:
   push:
     branches: [video-grid-v2.2-demo]
     paths:
-      - 'kolbo-grid-v23-android.src.b64'
+      - 'kolbo-grid-v25-android.src.b64'
       - '.github/workflows/build-kolbo-grid-android.yml'
   workflow_dispatch:
 permissions:
@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android_app
-          base64 --decode kolbo-grid-v23-android.src.b64 > /tmp/kolbo-grid-src.zip
+          base64 --decode kolbo-grid-v25-android.src.b64 > /tmp/kolbo-grid-src.zip
           python3 - <<'PY'
           import zipfile,pathlib
           dest=pathlib.Path('android_app').resolve()
@@ -58,7 +58,7 @@ jobs:
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-Grid-2.3.0-debug-APK
+          name: Kolbo-Video-Grid-2.5.0-debug-APK
           path: |
             android_app/app/build/outputs/apk/debug/app-debug.apk
             apk.sha256
