@@ -39,8 +39,9 @@ jobs:
           status,payload=call("/v1/grid/requirements")
           assert status==200,(status,payload[:200])
           state=json.loads(payload)
-          assert state["version"]=="2.4.0"
+          assert state["version"]=="2.5.0"
           assert state["video_generation_verified"] is False
+          assert any(item["id"]=="model" and item["state"]=="missing" for item in state["steps"])
           status,payload=call("/v1/grid/public-status")
           public=json.loads(payload)
           assert status==200 and public["generation_enabled"] is False
