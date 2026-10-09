@@ -1,0 +1,80 @@
+name: Probe Kolbo Video Studio alternate Wan providers
+on:
+  push:
+    branches: [video-studio-121-provider-probe]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Validate alternate providers with real MP4
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/gradio-app/gradio/main/test/test_files/bus.png -o input.png
+          python3 - <<'PY'
+          import json,urllib.request,uuid,re,sys
+          UA='Kolbo-Video-Studio/1.2.1'
+          providers=[
+            ('r3gm','https://r3gm-wan2-2-fp8da-aoti-preview.hf.space',
+             lambda image,p,n:[image,None,p,6,n,3.5,1,1,42,False,6,'UniPCMultistep',3.0,16,True,True,True]),
+            ('kulkas','https://kulkas2pintu-wan222.hf.space',
+             lambda image,p,n:[image,None,p,4,n,3.5,1,1,42,False,6,'UniPCMultistep',3.0,16,True,True]),
+            ('saravutw','https://saravutw-wan2-2-i2v-lightning-4-8step-custom.hf.space',
+             lambda image,p,n:[image,None,p,4,n,3.5,1,1,42,False,5,'UniPCMultistep',3.0,16,False,True])
+          ]
+          raw=open('input.png','rb').read()
+          prompt='The same bus visibly drives forward into a garage and comes to a complete stop. Strong coherent forward motion. Never sway in place.'
+          neg='static image, still frame, jitter, drift in place, sway, blur, distorted subject, duplicate subject, low quality'
+          passed=[]
+          for name,base,payload in providers:
+            try:
+              req=urllib.request.Request(base+'/gradio_api/info',headers={'User-Agent':UA})
+              with urllib.request.urlopen(req,timeout=30) as r: info=json.load(r)
+              assert '/generate_video' in info.get('named_endpoints',{})
+              b='Kolbo'+uuid.uuid4().hex
+              body=(('--'+b+'\r\nContent-Disposition: form-data; name="files"; filename="input.png"\r\nContent-Type: image/png\r\n\r\n').encode()+raw+('\r\n--'+b+'--\r\n').encode())
+              req=urllib.request.Request(base+'/gradio_api/upload',data=body,method='POST',headers={'Content-Type':'multipart/form-data; boundary='+b,'User-Agent':UA})
+              with urllib.request.urlopen(req,timeout=30) as r:path=json.loads(r.read().decode())[0]
+              image={'path':path,'orig_name':'input.png','mime_type':'image/png','meta':{'_type':'gradio.FileData'}}
+              req=urllib.request.Request(base+'/gradio_api/call/generate_video',data=json.dumps({'data':payload(image,prompt,neg)}).encode(),method='POST',headers={'Content-Type':'application/json','Accept':'application/json','User-Agent':UA})
+              with urllib.request.urlopen(req,timeout=30) as r: event=json.loads(r.read().decode())['event_id']
+              assert re.fullmatch(r'[A-Za-z0-9_-]{1,120}',event)
+              req=urllib.request.Request(base+'/gradio_api/call/generate_video/'+event,headers={'Accept':'text/event-stream','User-Agent':UA})
+              with urllib.request.urlopen(req,timeout=420) as r:s=r.read().decode('utf-8','replace')
+              ev='';parts=[];complete=None
+              for line in s.splitlines()+['']:
+                if not line:
+                  if ev=='complete': complete='\n'.join(parts)
+                  if ev=='error': raise RuntimeError('provider event:error '+'\n'.join(parts))
+                  ev='';parts=[];continue
+                if line.startswith('event:'):ev=line[6:].strip()
+                elif line.startswith('data:'):parts.append(line[5:].strip())
+              if not complete: raise RuntimeError('no complete event')
+              obj=json.loads(complete)
+              def find(o):
+                if isinstance(o,dict):
+                  u=o.get('url')
+                  if isinstance(u,str) and u.startswith(base+'/'):return u
+                  for v in o.values():
+                    z=find(v)
+                    if z:return z
+                elif isinstance(o,list):
+                  for v in o:
+                    z=find(v)
+                    if z:return z
+              url=find(obj)
+              if not url: raise RuntimeError('no video url')
+              with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':UA}),timeout=60) as r:
+                head=r.read(32);ctype=r.headers.get('content-type')
+              if len(head)<12 or head[4:8]!=b'ftyp':raise RuntimeError('not mp4')
+              print('PROVIDER_PASS',name,base,ctype,url)
+              passed.append(name)
+            except Exception as e:
+              print('PROVIDER_FAIL',name,base,repr(e))
+          print('PASSED',passed)
+          if not passed: sys.exit(2)
+          PY
