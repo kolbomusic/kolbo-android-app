@@ -1,0 +1,61 @@
+name: Build Kolbo Video Grid 2.1 APK
+on:
+  push:
+    branches: [video-grid-android-v2.1]
+    paths:
+      - 'kolbo-grid-android-v2.1.src.b64'
+      - '.github/workflows/build-kolbo-grid-android.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Restore verified application source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android_app
+          base64 --decode kolbo-grid-android-v2.1.src.b64 > /tmp/kolbo-grid-src.zip
+          python3 - <<'PY'
+          import zipfile,pathlib
+          dest=pathlib.Path('android_app').resolve()
+          with zipfile.ZipFile('/tmp/kolbo-grid-src.zip') as z:
+              assert z.testzip() is None
+              for entry in z.infolist():
+                  target=(dest/entry.filename).resolve()
+                  assert target.is_relative_to(dest)
+              z.extractall(dest)
+          PY
+          test -s android_app/app/src/main/java/com/kolbo/videogrid/MainActivity.java
+      - name: Build native debug APK
+        run: gradle -p android_app :app:assembleDebug --no-daemon --stacktrace
+      - name: Inspect output
+        run: |
+          set -e
+          APK=android_app/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          sha256sum "$APK" | tee apk.sha256
+          ls -lh "$APK"
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-Grid-2.1.0-debug-APK
+          path: |
+            android_app/app/build/outputs/apk/debug/app-debug.apk
+            apk.sha256
+          retention-days: 14
