@@ -51,6 +51,8 @@ jobs:
           APK=android_app/app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK"
           unzip -t "$APK" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
           sha256sum "$APK" | tee apk.sha256
           ls -lh "$APK"
       - name: Upload Android APK
