@@ -38,5 +38,20 @@ class AdapterTests(unittest.TestCase):
   ex=__import__('copy').deepcopy(EXAMPLE)
   ex['named_endpoints']['/generate_video']['api_visibility']='private'
   self.assertFalse(recognize(ex))
+ def test_real_ltx25_api_with_auto_duration_and_random_seed(self):
+  from copy import deepcopy
+  info=deepcopy(EXAMPLE)
+  p=info['named_endpoints']['/generate_video']['parameters']
+  p[4]['parameter_name']='duration_seconds'
+  p.insert(5,{'parameter_name':'auto_length','label':'Automatic duration (up to 15 seconds)',
+              'component':'Checkbox','parameter_default':False})
+  p.extend([{'parameter_name':'randomize_seed','component':'Checkbox','parameter_default':True},
+            {'parameter_name':'decoder','component':'Radio','parameter_default':'conv'}])
+  p[2]['parameter_default']=1472
+  p[3]['parameter_default']=832
+  found=recognize(info)
+  self.assertEqual(len(found),1)
+  args=found[0].arguments('Orange ball exactly twice.',8,{'path':'/image'})
+  self.assertEqual(args,['Orange ball exactly twice.',{'path':'/image'},512,512,8,False,42,False,'conv'])
  def test_wrong_duration_raises(self):
   with self.assertRaises(ValueError):recognize(EXAMPLE)[0].arguments('Orange ball.',60,{'path':'/a'})
