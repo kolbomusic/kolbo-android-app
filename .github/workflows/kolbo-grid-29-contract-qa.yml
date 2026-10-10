@@ -1,0 +1,65 @@
+name: Kolbo Grid 2.9 exact-action contract QA
+on:
+  push:
+    branches: [kolbo-grid-v29-contract-exact-two-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore and verify the immutable source archive
+        run: |
+          python3 - <<'PY'
+          import pathlib,base64,hashlib,zipfile
+          src=base64.b64decode(pathlib.Path('kolbo-grid-v29-src.b64').read_text().strip(),validate=True)
+          digest=pathlib.Path('kolbo-grid-v29-src.sha256').read_text().strip()
+          assert hashlib.sha256(src).hexdigest()==digest,'Source hash mismatch'
+          archive=pathlib.Path('src.zip')
+          archive.write_bytes(src)
+          with zipfile.ZipFile(archive) as z:
+            assert z.testzip() is None
+            for entry in z.infolist():
+              p=pathlib.PurePosixPath(entry.filename)
+              assert not p.is_absolute() and '..' not in p.parts
+            z.extractall('grid29')
+          PY
+      - name: Install independent CPU prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install -q -r grid29/requirements.txt
+      - name: Run strict action and sound synchronization tests
+        run: |
+          cd grid29
+          python3 -m unittest discover -s tests -v
+      - name: Render deterministic 8s example with two visible bounces and two audible contacts
+        run: |
+          cd grid29
+          python3 -m pilots.kolbo_grid_29 --mode fixture --duration 8 --out ../grid29-proof
+          python3 - <<'PY'
+          import json,pathlib
+          r=json.loads(pathlib.Path('../grid29-proof/report.json').read_text())
+          assert r['status']=='PASS_RESTRICTED_BALL_SCENE'
+          assert r['media_validation']['audio_events_exactly']==2
+          assert r['visual_validation']['detected_count']==2
+          assert r['provider_request_sent'] is False
+          assert r['ai_video_generation_verified_this_run'] is False
+          assert pathlib.Path('../grid29-proof/approved.mp4').exists()
+          print('PASS: strict contract and sound position validated for offline fixture')
+          PY
+      - name: Export short-lived audit and fixture only
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Grid-v29-contract-validation
+          path: |
+            grid29-proof/report.json
+            grid29-proof/approved.mp4
+          retention-days: 3
