@@ -65,8 +65,26 @@ def inspect_access_without_generation(api_key:str)->dict:
                 'generation_permitted':False,'detail':safe[:160]}
     models=result.get('data')
     ids={m.get('id') for m in models if isinstance(m,dict)} if isinstance(models,list) else set()
+    match=next((m for m in models if isinstance(m,dict) and m.get('id')==MODEL),None) if isinstance(models,list) else None
+    # Price detection is observational only. This endpoint is NOT a contractual
+    # account-specific zero-spend lock, even when it reports a zero value.
+    price_state='not_provided'
+    if match is not None:
+        pricing=match.get('pricing')
+        rate=match.get('price_per_second')
+        if isinstance(pricing,dict):
+            rate=pricing.get('price_per_second',pricing.get('usd_per_second',rate))
+        if isinstance(rate,(int,float,str)) and not isinstance(rate,bool):
+            try:
+                rate_float=float(rate)
+                if rate_float==0:price_state='zero_metadata_unverified'
+                elif rate_float>0:price_state='positive_rate_detected'
+                else:price_state='unrecognized'
+            except (TypeError,ValueError):
+                price_state='unrecognized'
     return {'credential_state':'accepted' if isinstance(models,list) else 'unverified',
             'model_visible':MODEL in ids,
+            'price_metadata_state':price_state,
             'pricing_verified':False,'generation_permitted':False}
 
 def video_payload(prompt:str,seconds:int,reference_urls:list[str])->dict:
