@@ -33,18 +33,17 @@ public final class CharacterRoleContract {
         }
         return new CharacterRoleContract(0,0,false,instruction);
     }
-    /** Separate immutable photographic slots; no guessed demographics/occupation. */
+    /** Slots stay tied to their photos, but no globally irrelevant scene words. */
     public String immutableSubjects() {
-        return "CHARACTER LOCK CONTRACT. "
-            +"SUBJECT_1 is ONLY the specific person depicted in reference IMAGE_1. "
-            +"SUBJECT_2 is ONLY the different specific person depicted in reference IMAGE_2. "
-            +"Reference slots must never be swapped. In every frame keep each subject's own face, "
-            +"hairstyle, physique, accessories and ORIGINAL CLOTHING from their OWN separate input photo. "
-            +"A police/military/workplace setting does NOT authorize putting both in matching uniforms. "
-            +"Never turn SUBJECT_2 into a duplicate of SUBJECT_1 or make both subjects employees "
-            +"of the same organization merely because of the environment. "
-            +"Costume changes are allowed only when EXPLICITLY commanded by the user. "
-            +"Do not clone, merge, disappear, replace or add subjects. ";
+        return "CHARACTER REFERENCE CONTRACT (CURRENT REQUEST ONLY). "
+            +"SUBJECT_1 corresponds to the specific individual in reference IMAGE_1. "
+            +"SUBJECT_2 corresponds to the different individual in reference IMAGE_2. "
+            +"Preserve each reference person's face, hair, physique, accessories and ORIGINAL CLOTHING. "
+            +"The two reference slots are distinct: never swap, merge, duplicate or replace them. "
+            +"Never infer professions, occupations, uniforms, events, locations or props from "
+            +"any prior request or from anything not expressly required in this current instruction. "
+            +"Only TWO principal reference subjects; unrelated background extras are allowed "
+            +"when physically necessary (for example an audience), not as substitutes. ";
     }
     public String actionDirection() {
         if(!explicitDirection)return
