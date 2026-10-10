@@ -56,3 +56,47 @@ Official references:
 https://developers.google.com/admob/android/ssv
 https://support.google.com/admob/answer/7313578
 https://support.google.com/admob/answer/6213019
+
+
+## Selling Kolbo Video to third-party users (STAGING)
+
+The app will have separate permission/monetization policies for the publisher
+(owner) and ordinary users. The owner may be charged zero *internal app
+credits*, but the video backend still requires an independent real provider
+budget and GPU capacity. An owner role must be attested by the server, never
+provided as a Boolean field in an Android request.
+
+Possible revenue channels: optional rewarded ads, prepaid in-app credit packs,
+monthly Plus/Pro subscriptions with clearly bounded included credits, and
+commercial video creation packages. Subscription video generation is NEVER
+"unlimited" unless genuine backend capacity is contracted and paid for.
+
+As of October 2026, Google Play-distributed applications selling digital
+services normally must use Google Play Billing unless a regional exception
+or approved alternative billing program applies. Play service fees vary by
+market, product, developer program and install cohort. Any customer-facing
+prices must be shown accurately. Paid provider usage must be controlled by
+a trusted server-side budget independent of the app's local wallet balance.
+
+Backend scaffold monetization_policy.py (and corresponding tests) supports
+unit economics and strictly fails closed when real price evidence, durable
+credits ledger, purchase verification, or funding authorization is missing.
+
+Example only (not product launch prices): an 8-second output sold at $1.00,
+with confirmed supplier cost $0.40, infrastructure $0.10, platform fees $0.15,
+VAT reserve $0.10 and refunds reserve $0.05 leaves an estimated $0.20 margin.
+This example excludes additional overhead and is not a tax calculation.
+
+Before launch: production Play Console merchant profile; registered payment
+products and subscription terms; Android BillingClient integration; server-side
+Google Play Developer API purchase validation; purchase token idempotency,
+refund/chargeback and subscription lifecycle handling (RTDN); durable
+PostgreSQL ledger with atomic reservations and spend settlement; budgets
+per user, model and calendar period; Israeli invoicing/tax compliance; explicit
+content/identity consent and privacy disclosures. No production payment
+credentials, merchant details or secret keys must be committed to GitHub.
+
+Sources:
+https://support.google.com/googleplay/android-developer/answer/9858738
+https://support.google.com/googleplay/android-developer/answer/112622
+https://developer.android.com/google/play/billing
