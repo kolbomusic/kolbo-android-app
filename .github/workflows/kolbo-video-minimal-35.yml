@@ -39,7 +39,7 @@ jobs:
                   assert not p.is_absolute() and '..' not in p.parts
               z.extractall('android')
           PY
-      - name: Static checks: only image, prompt, generate, preview and download
+      - name: Static checks for minimal video workflow
         run: |
           python3 - <<'PY'
           from pathlib import Path
