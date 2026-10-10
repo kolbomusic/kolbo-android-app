@@ -8,7 +8,7 @@ public final class StudioFailureNotice {
     public static boolean isFailure(String input){
         if(input==null||input.isEmpty())return false;
         String s=input.toLowerCase(Locale.ROOT);
-        return s.contains("לא הושלמה")||s.contains("לא הצליח")
+        return s.contains("קצר מדי")||s.contains("לא הושלמה")||s.contains("לא הצליח")
             ||s.contains("לא ניתן")||s.contains("נכשל")
             ||s.contains("שגיאה")||s.contains("מכסה")
             ||s.contains("מוגבל")||s.contains("עמוס")
