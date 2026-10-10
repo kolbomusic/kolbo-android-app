@@ -85,6 +85,11 @@ def run(out:Path, mode:str='fixture',duration:int=8,allow_external:bool=False,so
                 'Grass rustles, quiet natural wind. Do not include text, titles, captions, '
                 'subtitles, trademarks, logos or watermarks.', duration,visual)
             report['ai_visual_generation_verified']=True
+        from pilots.ball_action_gate import detect_bounces
+        visual_actions=detect_bounces(visual,expected_minimum=2)
+        report['visual_action_check']=visual_actions
+        if not visual_actions.get('pass'):
+            raise ValueError('BOUNCE_ACTION_NOT_VERIFIED')
         report['status']='foley_processing';write()
         details=render_ball_foley(visual,final,duration,'orange_ball_meadow',out)
         # A second, independent QA that checks sound strength, motion and exact duration.
