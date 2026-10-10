@@ -1,8 +1,8 @@
-name: Kolbo Video 4.0.5 current-request concert scene isolation & Android APK
+name: Kolbo Video 4.0.6 polished RTL studio UX and strict duration QA
 on:
   push:
-    branches: [kolbo-video-v405-scene-intent-isolation-20261010]
-    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java', 'patches/kolbo-v403-general-planner.py', 'patches/StoryboardPlanner.java', 'patches/ProviderFailure.java', 'patches/tests/StoryboardPlannerSmoke.java', 'patches/kolbo-v404-role-binding.py', 'patches/CharacterRoleContract.java', 'patches/tests/RoleAndActions404Smoke.java', 'patches/kolbo-v405-scene-isolation.py', 'patches/SceneIntentContract.java', 'patches/tests/SceneIntent405Smoke.java']
+    branches: [kolbo-video-v406-studio-ui-duration-20261010]
+    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java', 'patches/kolbo-v403-general-planner.py', 'patches/StoryboardPlanner.java', 'patches/ProviderFailure.java', 'patches/tests/StoryboardPlannerSmoke.java', 'patches/kolbo-v404-role-binding.py', 'patches/CharacterRoleContract.java', 'patches/tests/RoleAndActions404Smoke.java', 'patches/kolbo-v405-scene-isolation.py', 'patches/SceneIntentContract.java', 'patches/tests/SceneIntent405Smoke.java', 'patches/kolbo-v406-studio-polish.py', 'patches/kolbo-v406-quality-and-scene.py', 'patches/StudioVisuals.java', 'patches/OutputLengthGate.java', 'patches/DurationPolicy.java', 'patches/tests/Quality406Smoke.java']
   workflow_dispatch:
 permissions:
   contents: read
@@ -50,13 +50,18 @@ jobs:
         run: python3 patches/kolbo-v404-role-binding.py android
       - name: Apply v4.0.5 request-specific intent and inspectable prompts
         run: python3 patches/kolbo-v405-scene-isolation.py android
+      - name: Apply v4.0.6 studio interface and fail-closed output validation
+        run: python3 patches/kolbo-v406-studio-polish.py android
+      - name: Apply v4.0.6 duet scene semantics and pure duration policy
+        run: python3 patches/kolbo-v406-quality-and-scene.py android
       - name: Compile and exercise standalone storyboard planner
         run: |
           mkdir -p build/storyboard-test
-          javac -encoding UTF-8 -d build/storyboard-test android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java android/app/src/main/java/com/kolbo/videostudio/ProviderFailure.java android/app/src/main/java/com/kolbo/videostudio/CharacterRoleContract.java android/app/src/main/java/com/kolbo/videostudio/SceneIntentContract.java patches/tests/StoryboardPlannerSmoke.java patches/tests/RoleAndActions404Smoke.java patches/tests/SceneIntent405Smoke.java
+          javac -encoding UTF-8 -d build/storyboard-test android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java android/app/src/main/java/com/kolbo/videostudio/ProviderFailure.java android/app/src/main/java/com/kolbo/videostudio/CharacterRoleContract.java android/app/src/main/java/com/kolbo/videostudio/SceneIntentContract.java android/app/src/main/java/com/kolbo/videostudio/DurationPolicy.java patches/tests/StoryboardPlannerSmoke.java patches/tests/RoleAndActions404Smoke.java patches/tests/SceneIntent405Smoke.java patches/tests/Quality406Smoke.java
           java -cp build/storyboard-test com.kolbo.videostudio.StoryboardPlannerSmoke
           java -cp build/storyboard-test com.kolbo.videostudio.RoleAndActions404Smoke
           java -cp build/storyboard-test com.kolbo.videostudio.SceneIntent405Smoke
+          java -cp build/storyboard-test com.kolbo.videostudio.Quality406Smoke
       - name: Static safeguards and prompt QA
         run: |
           python3 - <<'PY'
@@ -64,7 +69,7 @@ jobs:
           main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
           composer=Path('android/app/src/main/java/com/kolbo/videostudio/TwoPersonComposer.java').read_text()
           deps=Path('android/app/build.gradle').read_text()
-          assert 'preview405' in deps and "versionName '4.0.5'" in deps
+          assert 'preview406' in deps and "versionName '4.0.6'" in deps
           assert "segmentation-selfie:16.0.0-beta6" in deps and "face-detection:16.1.7" in deps
           assert "translated.trim().length()<3" in main
           assert "translated.trim().length()<10" not in main
@@ -91,7 +96,7 @@ jobs:
           assert 'NO additional bystanders. " + englishPrompt' not in main
           assert 'NO additional bystanders. " + scenePrompt' in main
           assert 'audioAfterVideo(combined,originalInstruction,motionWarning)' in main
-          assert "versionCode 405" in deps
+          assert "versionCode 406" in deps
           assert 'private void previewDuoBeforeUpload(' in main
           assert 'final boolean unverified=identityReviewRequired;' in main
           assert 'טיוטת AI לא מאומתת' in main
@@ -120,6 +125,15 @@ jobs:
           assert 'lastSubmittedPrompt="";originalForDiagnostics=instruction' in main
           assert 'אבחון ההנחיה שנשלחה' in main
           assert "MUSIC_PERFORMANCE" in Path('android/app/src/main/java/com/kolbo/videostudio/SceneIntentContract.java').read_text()
+          assert 'OutputLengthGate.verify(file,expectedDuration)' in main
+          assert 'OutputLengthGate.verify(clip,secs)' in main
+          assert 'OutputLengthGate.verify(file,seconds)' in main
+          assert 'new StudioVisuals.AmbientMotionView(this)' in main
+          assert 'waitingCard.setVisibility(b?View.VISIBLE:View.GONE)' in main
+          assert 'resultCard.setVisibility(View.VISIBLE)' in main
+          assert 'lastPhaseDetail' in main
+          assert 'class StudioVisuals' in Path('android/app/src/main/java/com/kolbo/videostudio/StudioVisuals.java').read_text()
+          assert 'DurationPolicy.acceptable' in Path('android/app/src/main/java/com/kolbo/videostudio/OutputLengthGate.java').read_text()
           print('PASS: separate foreground masks, scene composition, photo face count, short Hebrew')
           PY
       - name: Test rejecting still subjects but not two moving subjects
@@ -136,11 +150,11 @@ jobs:
           unzip -t "$APK" | tail -1
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview405'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview406'
           sha256sum "$APK" | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-4.0.5-Scene-Intent-Isolation-APK
+          name: Kolbo-Video-4.0.6-Studio-Polish-Length-QA-APK
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             app-debug.apk.sha256
