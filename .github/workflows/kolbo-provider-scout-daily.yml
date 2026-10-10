@@ -1,0 +1,53 @@
+name: Kolbo video source daily discovery (metadata only)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/kolbo-provider-scout-daily.yml']
+  schedule:
+    # GitHub Actions schedule uses UTC and can run late; not 24/7.
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: kolbo-provider-scout-daily
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: github.repository == 'kolbomusic/kolbo-android-app'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check -q -r provider-scout-requirements.txt
+      - name: Inspect at most six public Gradio Spaces; do not consume GPU
+        run: python -m provider_scout.cli --catalog registry/providers.json --max-candidates 6
+      - name: Recheck that no candidate became production-enabled
+        run: |
+          python - <<'PY'
+          import json
+          catalog=json.load(open('registry/providers.json'))
+          assert catalog['never_claims_generation_from_metadata'] is True
+          assert len(catalog['candidates'])<=6
+          assert all(c['production_eligible'] is False and c['probe']=='not_run' for c in catalog['candidates'])
+          PY
+      - name: Publish bounded registry only, never source code
+        run: |
+          git config user.name 'kolbo-provider-catalog-bot'
+          git config user.email 'kolbo-provider-catalog-bot@users.noreply.github.com'
+          git add -- registry/providers.json
+          if git diff --cached --quiet; then
+            echo 'No change in catalog'
+          else
+            git commit -m 'chore(provider-catalog): daily public provider metadata refresh [skip ci]'
+            git push origin HEAD:main
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-daily-provider-metadata-snapshot
+          path: registry/providers.json
+          retention-days: 7
