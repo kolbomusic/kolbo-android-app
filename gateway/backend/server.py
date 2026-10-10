@@ -209,6 +209,20 @@ def gpu_available():
         return bool(payload.get('system'))
     except Exception:return False
 
+@app.get('/v1/agnes/access')
+def agnes_access(authorization:str|None=Header(default=None)):
+    """Explicit, read-only provider check; never creates a billable video job."""
+    require_auth(authorization)
+    if RENDER_PROVIDER!='agnes':
+        return {'credential_state':'provider_not_selected','model_visible':False,
+                'pricing_verified':False,'generation_permitted':False}
+    result=agnes_adapter.inspect_access_without_generation(AGNES_KEY)
+    result['local_zero_price_gate']=AGNES_PROMO_ACK
+    # local approval is not provider price evidence; never label the two equivalent
+    result['provider_account_price_verified']=False
+    result['generation_permitted']=False
+    return result
+
 @app.get('/v1/health')
 def health(authorization:str|None=Header(default=None)):
     require_auth(authorization)
