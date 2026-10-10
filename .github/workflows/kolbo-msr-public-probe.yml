@@ -32,6 +32,10 @@ jobs:
                       print("RETURNS",name,[(o.get("label"),o.get("type",{}).get("type"),o.get("component")) for o in obj.get("returns",[])])
                   else:
                     print("CONFIG_FIELDS",list(parsed)[:25])
+                  for c in parsed.get("components",[]):
+                    p=c.get("props",{})
+                    if p.get("label") in ("Length (seconds @ 24 fps)","Resolution","Reference frames per slot"):
+                      print("CONTROL",p.get("label"),json.dumps({k:p.get(k) for k in ("value","minimum","maximum","step","choices")},ensure_ascii=False))
                 except Exception as e: print("NOT_JSON",str(e)[:200],data[:200])
             except Exception as e:
               print("UNAVAILABLE",path,str(e)[:300])
