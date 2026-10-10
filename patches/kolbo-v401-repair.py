@@ -65,6 +65,15 @@ replace_one('''                if(second!=null) {
                 audioAfterVideo(combined,originalInstruction,motionWarning);''')
 main.write_text(s,encoding='utf-8')
 
+# Android MediaMetadataRetriever OPTION_CLOSEST_SYNC may return the exact
+# same keyframe for several requested times. Sample nearby real frames instead.
+motion_file=root/'app/src/main/java/com/kolbo/videostudio/DuoDanceMotionGate.java'
+motion=motion_file.read_text(encoding='utf-8')
+old='retriever.getFrameAtTime(t*1000L,MediaMetadataRetriever.OPTION_CLOSEST_SYNC)'
+if motion.count(old)!=1: raise SystemExit('Motion sampler changed')
+motion=motion.replace(old,'retriever.getFrameAtTime(t*1000L,MediaMetadataRetriever.OPTION_CLOSEST)')
+motion_file.write_text(motion,encoding='utf-8')
+
 g=gradle.read_text(encoding='utf-8')
 for old,new in [("versionCode 400","versionCode 401"),("versionName '4.0.0'","versionName '4.0.1'")]:
     if g.count(old)!=1: raise SystemExit('Version metadata changed')
