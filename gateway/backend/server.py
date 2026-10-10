@@ -130,6 +130,7 @@ def _probe_agnes_without_generation_once():
             state='unverified'
         print('KOLBO_AGNES_READ_ONLY_PROBE: credential_state='+state
               +' flash_model_visible='+str(bool(result.get('model_visible')))
+              +' pricing_metadata='+str(result.get('price_metadata_state','not_provided'))
               +' zero_price_verified=false',flush=True)
     except Exception:
         print('KOLBO_AGNES_READ_ONLY_PROBE: credential_state=unverified'
