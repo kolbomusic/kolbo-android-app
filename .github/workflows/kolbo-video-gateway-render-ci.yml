@@ -58,3 +58,22 @@ jobs:
         run: |
           cd gateway
           python -m pytest -q -p no:cacheprovider backend/tests
+      - name: Build and boot Render Docker with all staging modules, without real provider keys
+        run: |
+          docker build -f gateway/backend/Dockerfile.render gateway/backend -t kolbo-video-staging-v413:ci
+          docker run -d --name kolbo-video-staging-ci             -p 127.0.0.1:19876:10000             -e KOLBO_RENDER_PROVIDER=agnes             -e KOLBO_ORCHESTRATOR_PREFLIGHT=             kolbo-video-staging-v413:ci
+          trap 'docker rm -f kolbo-video-staging-ci >/dev/null 2>&1 || true' EXIT
+          ready=0
+          for i in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:19876/healthz | grep -q '"alive":true'; then
+              ready=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "1" ]; then
+            docker logs kolbo-video-staging-ci
+            exit 1
+          fi
+          http_code=$(curl --silent --output /dev/null --write-out '%{http_code}'             --request POST http://127.0.0.1:19876/v1/orchestrator/plan             --header 'Content-Type: application/json'             --data '{"seconds":8,"independent_people":2}')
+          test "$http_code" = "401"
+          echo "PASS: Docker boot, public health, and authenticated-only staging planner"
