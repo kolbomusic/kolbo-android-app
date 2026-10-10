@@ -210,3 +210,39 @@ def test_bad_request_maps_only_whitelisted_error_category(monkeypatch):
     with pytest.raises(agnes.AgnesQueueFull):
         agnes.api_json('POST','/v1/videos','test-credential-not-real',
                        {'model':agnes.MODEL,'mode':'text','prompt':'test'})
+
+def test_agnes_http_503_with_explicit_full_queue_triggers_safe_retry(monkeypatch):
+    from urllib.error import HTTPError
+    from io import BytesIO
+    import pytest
+    bodies=[
+      b'{"code":"video_queue_full","message":"video queue is full, please retry later"}',
+      b'video_queue_full',
+      b'{"error":{"code":"queue_full"}}',
+    ]
+    for body in bodies:
+        def reject(*a,**k):
+            raise HTTPError('https://apihub.agnes-ai.com/v1/videos',503,
+                            'Service Unavailable',{},BytesIO(body))
+        monkeypatch.setattr(agnes,'build_opener',lambda *a: type(
+            'RejectedQueue',(),{'open':staticmethod(reject)})())
+        with pytest.raises(agnes.AgnesQueueFull):
+            agnes.api_json('POST','/v1/videos','test-only-agn-key',
+                           {'model':agnes.MODEL,'prompt':'Two performers','mode':'text'})
+
+def test_ambiguous_http_503_never_retries_and_never_logs_body(monkeypatch):
+    from urllib.error import HTTPError
+    from io import BytesIO
+    import pytest
+    body=b'Internal temporary failure. reference photo secret and user prompt.'
+    def reject(*a,**k):
+        raise HTTPError('https://apihub.agnes-ai.com/v1/videos',503,
+                        'Service Unavailable',{},BytesIO(body))
+    monkeypatch.setattr(agnes,'build_opener',lambda *a: type(
+        'AmbiguousProviderError',(),{'open':staticmethod(reject)})())
+    with pytest.raises(agnes.AgnesError) as exc:
+        agnes.api_json('POST','/v1/videos','test-only-agn-key',
+                       {'model':agnes.MODEL,'prompt':'Two performers','mode':'text'})
+    assert not isinstance(exc.value,agnes.AgnesQueueFull)
+    assert '503' in str(exc.value)
+    assert 'photo secret' not in str(exc.value)
