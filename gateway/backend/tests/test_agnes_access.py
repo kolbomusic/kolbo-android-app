@@ -175,3 +175,38 @@ def test_persistent_queue_full_stops_after_bounded_attempts(monkeypatch,tmp_path
     assert len(calls)==5
     assert delays[:4]==[20,40,80,120]
     assert job['state']=='failed' and 'חמישה ניסיונות' in job['error']
+
+def test_soft_queue_rejection_detected_in_nested_response_fields(monkeypatch):
+    import pytest
+    samples=[
+        {'error':{'code':'video_queue_full','message':'Video queue is full'}},
+        {'error':'video_queue_full'},
+        {'message':'video_queue_full'},
+        {'detail':'queue full'},
+        {'code':'rate_limit'},
+    ]
+    for response in samples:
+        monkeypatch.setattr(agnes,'api_json',lambda *a,**k:response)
+        with pytest.raises(agnes.AgnesQueueFull):
+            agnes.submit('Two singers performing in Caesarea',8,[],
+                         'test-credential-not-real')
+
+def test_task_id_is_not_retried_even_when_status_looks_busy(monkeypatch):
+    response={'video_id':'task_accepted123','message':'queue_full','status':'queued'}
+    monkeypatch.setattr(agnes,'api_json',lambda *a,**k:response)
+    assert agnes.submit('Two performers dancing',8,[],
+                        'test-credential-not-real')=='task_accepted123'
+
+def test_bad_request_maps_only_whitelisted_error_category(monkeypatch):
+    import pytest
+    from urllib.error import HTTPError
+    from io import BytesIO
+    details=b'{"code":"video_queue_full","message":"queue is full"}'
+    def fake_open(*a,**k):
+        raise HTTPError('https://apihub.agnes-ai.com/v1/videos',400,
+                        'Bad Request',{},BytesIO(details))
+    monkeypatch.setattr(agnes,'build_opener',lambda *a: type(
+        'FakeOpener',(),{'open':staticmethod(fake_open)})())
+    with pytest.raises(agnes.AgnesQueueFull):
+        agnes.api_json('POST','/v1/videos','test-credential-not-real',
+                       {'model':agnes.MODEL,'mode':'text','prompt':'test'})
