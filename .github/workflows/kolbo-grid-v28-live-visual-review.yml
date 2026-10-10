@@ -1,0 +1,55 @@
+name: Kolbo Grid 2.8 one-shot raw visual review
+on:
+  push:
+    branches: [kolbo-grid-v28-live-visual-review-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-one:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore reviewed backend code
+        run: |
+          python3 - <<'PY'
+          import base64,pathlib,zipfile
+          raw=base64.b64decode(pathlib.Path('kolbo-grid-v26-runtime.src.b64').read_text().strip(),validate=True)
+          pathlib.Path('runtime.zip').write_bytes(raw)
+          with zipfile.ZipFile('runtime.zip') as z:
+            assert z.testzip() is None
+            for entry in z.infolist():
+              p=pathlib.PurePosixPath(entry.filename)
+              assert not p.is_absolute() and '..' not in p.parts
+            z.extractall('runtime')
+          PY
+      - name: CPU prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -q -r requirements-pilot.txt
+      - name: Consent and media policy unit tests
+        env:
+          PYTHONPATH: "runtime:."
+        run: python -m unittest discover -s tests -v
+      - name: One public provider video+Foley test with synthetic image only
+        env:
+          PYTHONPATH: "runtime:."
+        run: |
+          python -m pilots.kolbo_grid_28_pilot --mode live --duration 8 \
+              --allow-external-synthetic-upload --out proof
+      - name: Export actual results even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Grid-2.8-LTX25-raw-video-review
+          path: |
+            proof/report.json
+            proof/visual.mp4
+            proof/events.json
+            proof/kolbo-pilot.mp4
+          retention-days: 3
