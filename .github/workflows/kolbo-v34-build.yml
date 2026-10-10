@@ -1,0 +1,107 @@
+name: Kolbo Video Grid 3.4 consented provider-worker and Android APK
+on:
+  push:
+    branches: [kolbo-grid-v34-external-worker-optin-20261010]
+    paths: ['kolbo-grid-v34-backend.src.b64','kolbo-grid-v34-backend.src.sha256','kolbo-grid-v34-android.src.b64','kolbo-grid-v34-android.src.sha256','.github/workflows/kolbo-v34-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backend-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Verify immutable backend SHA256 and extraction safety
+        run: |
+          python3 - <<'PY'
+          import pathlib,base64,hashlib,zipfile
+          raw=base64.b64decode(pathlib.Path('kolbo-grid-v34-backend.src.b64').read_text().strip(),validate=True)
+          expected=pathlib.Path('kolbo-grid-v34-backend.src.sha256').read_text().strip()
+          assert hashlib.sha256(raw).hexdigest()==expected
+          pathlib.Path('backend.zip').write_bytes(raw)
+          with zipfile.ZipFile('backend.zip') as z:
+            assert z.testzip() is None
+            for entry in z.infolist():
+              p=pathlib.PurePosixPath(entry.filename)
+              assert not p.is_absolute() and '..' not in p.parts
+            z.extractall('backend')
+          print('SHA256 source integrity OK')
+          PY
+      - name: Install FFmpeg and CPU packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install --disable-pip-version-check -q -r backend/requirements.txt
+      - name: Test authentic queue workflow with synthetic provider output and user consent
+        env: {PYTHONPATH: 'backend'}
+        run: python3 -m unittest discover -s backend/tests -v
+      - name: Check no actual external data or provider billing
+        run: |
+          grep -q "NO_OPERATOR_APPROVED_PROVIDERS" backend/kolbo_grid/external_worker.py
+          grep -q "EXTERNAL_UPLOAD_CONSENT_REQUIRED" backend/kolbo_grid/coordinator.py
+          echo 'Backend tests passed without external GPU/provider requests'
+  android-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Install Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify immutable Android source SHA256 and extract
+        run: |
+          python3 - <<'PY'
+          import pathlib,base64,hashlib,zipfile
+          raw=base64.b64decode(pathlib.Path('kolbo-grid-v34-android.src.b64').read_text().strip(),validate=True)
+          assert hashlib.sha256(raw).hexdigest()==pathlib.Path('kolbo-grid-v34-android.src.sha256').read_text().strip()
+          pathlib.Path('android.zip').write_bytes(raw)
+          with zipfile.ZipFile('android.zip') as z:
+            assert z.testzip() is None
+            for entry in z.infolist():
+              p=pathlib.PurePosixPath(entry.filename)
+              assert not p.is_absolute() and '..' not in p.parts
+            z.extractall('android')
+          PY
+      - name: Verify Android privacy consent and connection contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('android/app/src/main/java/com/kolbo/videogrid/MainActivity.java').read_text()
+          manifest=Path('android/app/src/main/AndroidManifest.xml').read_text()
+          gradle=Path('android/app/build.gradle').read_text()
+          for v in ('external_upload_approved','external_provider_id',
+                    'approved_public_provider_ids','externalConsent.setChecked(false)',
+                    'KOLBO_TRUSTED_PROVIDER_IDS_JSON'):
+              if v!='KOLBO_TRUSTED_PROVIDER_IDS_JSON': assert v in s,v
+          assert 'preview34' in gradle and "versionName '3.4.0'" in gradle
+          assert 'usesCleartextTraffic="false"' in manifest
+          assert 'setInstanceFollowRedirects(false)' in s
+          print('PASS Android consent resets, private worker, and HTTPS policy')
+          PY
+      - name: Assemble native debug APK
+        run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK signing and package
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videogrid.preview34'
+          sha256sum "$APK" | tee kolbo-grid-v34-apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Grid-3.4.0-Consent-Worker-APK
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            kolbo-grid-v34-apk.sha256
+          retention-days: 14
