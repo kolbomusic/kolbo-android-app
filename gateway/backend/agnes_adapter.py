@@ -42,6 +42,15 @@ def api_json(method: str, path: str, api_key: str, payload: dict|None=None, time
     except HTTPError as e:
         # Do not echo provider dumps; raw errors can include personal information.
         if e.code==429:raise AgnesQueueFull('Agnes החזיר HTTP 429: מגבלת קצב או תור מלא') from e
+        if e.code==503:
+            # Upstream Flash reports HTTP 503 "video_queue_full". Distinguish
+            # explicit rejection from ambiguous temporary 503; never resubmit
+            # if Agnes might have accepted an asynchronous task already.
+            body=e.read(4096).decode('utf-8','replace').lower()
+            if any(marker in body for marker in (
+                    'video_queue_full','queue is full','queue_full','queue full')):
+                raise AgnesQueueFull('Agnes דחה את ההפקה: תור Flash מלא (503)') from e
+            raise AgnesError('Agnes החזיר HTTP 503 ללא אישור שהבקשה נדחתה; ניסיון חוזר אוטומטי נחסם למניעת עבודה כפולה') from e
         if e.code in (401,403):raise AgnesError('מפתח Agnes אינו מורשה להפקה (401/403)') from e
         if e.code in (402,):raise AgnesError('Agnes דורש חיוב: נחסמה ההפקה במקום לעבור למסלול בתשלום') from e
         if e.code==400:
