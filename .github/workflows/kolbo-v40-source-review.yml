@@ -1,0 +1,34 @@
+name: Inspect verified v3.9 Android source for two-reference handling
+on:
+  push:
+    branches: [kolbo-video-v40-duo-performance-qa-20261010]
+    paths: [".github/workflows/kolbo-v40-source-review.yml"]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and extract source zip
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,zipfile,pathlib
+          src=base64.b64decode(pathlib.Path('kolbo-video-v39.src.b64').read_text().strip(),validate=True)
+          sha=hashlib.sha256(src).hexdigest()
+          assert sha==pathlib.Path('kolbo-video-v39.src.sha256').read_text().strip()
+          pathlib.Path('src.zip').write_bytes(src)
+          with zipfile.ZipFile('src.zip') as z:
+            assert z.testzip() is None
+            for item in z.infolist():
+              p=pathlib.PurePosixPath(item.filename)
+              assert not p.is_absolute() and '..' not in p.parts
+            z.extractall('source')
+          print('Source verified',sha)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-v39-verified-Android-source
+          path: source/
+          retention-days: 2
