@@ -74,3 +74,16 @@ def test_order_or_duplicate_scenes_rejected(tmp_path):
     with pytest.raises(assembly.AssemblyError,match='contiguous'):
         assembly.join(private,[assembly.SourceClip(1,first,1000)],
                       tmp_path/'done',size=(320,180))
+
+
+def test_assembly_cannot_overwrite_existing_customer_delivery(tmp_path):
+    source=tmp_path/'sources'
+    a=create_clip(source/'a.mp4',1.0,440)
+    destination=tmp_path/'done'
+    first=assembly.join(source,[assembly.SourceClip(0,a,1000)],
+       destination,size=(320,180),output_basename='job_a.mp4')
+    original=first.path.read_bytes()
+    with pytest.raises(assembly.AssemblyError,match='already exists'):
+        assembly.join(source,[assembly.SourceClip(0,a,1000)],
+          destination,size=(320,180),output_basename='job_a.mp4')
+    assert first.path.read_bytes()==original
