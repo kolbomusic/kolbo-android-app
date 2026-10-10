@@ -72,7 +72,7 @@ plan_source=plan_source.replace(find,swap,1)
 # Merge a bare actor label with its action, rather than generating a shot of
 # "character 1" alone. The scanner may split before the very first verb.
 anchor_context='        if(clauses.isEmpty())clauses.add(normalized);'
-replacement_context='''        if(clauses.size()>1 && clauses.get(0).trim().matches("(?iu)(?:דמות|character|person|subject)\\s*[12]")) {
+replacement_context='''        if(clauses.size()>1 && clauses.get(0).trim().matches("(?iu)(?:דמות|character|person|subject)[ ]*[12]")) {
             clauses.set(1,clauses.get(0)+" "+clauses.get(1));
             clauses.remove(0);
         }
