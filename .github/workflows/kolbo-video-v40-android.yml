@@ -2,7 +2,7 @@ name: Kolbo Video 4.0.7 offline audiovisual evidence review and honest QA
 on:
   push:
     branches: [kolbo-video-v407-evidence-audio-qa-20261010]
-    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java', 'patches/kolbo-v403-general-planner.py', 'patches/StoryboardPlanner.java', 'patches/ProviderFailure.java', 'patches/tests/StoryboardPlannerSmoke.java', 'patches/kolbo-v404-role-binding.py', 'patches/CharacterRoleContract.java', 'patches/tests/RoleAndActions404Smoke.java', 'patches/kolbo-v405-scene-isolation.py', 'patches/SceneIntentContract.java', 'patches/tests/SceneIntent405Smoke.java', 'patches/kolbo-v406-studio-polish.py', 'patches/kolbo-v406-quality-and-scene.py', 'patches/StudioVisuals.java', 'patches/OutputLengthGate.java', 'patches/DurationPolicy.java', 'patches/tests/Quality406Smoke.java', 'patches/kolbo-v407-evidence-integration.py', 'patches/VideoEvidenceAudit.java', 'patches/VideoEvidenceAuditRequest.java', 'patches/tests/Evidence407Smoke.java']
+    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java', 'patches/kolbo-v403-general-planner.py', 'patches/StoryboardPlanner.java', 'patches/ProviderFailure.java', 'patches/tests/StoryboardPlannerSmoke.java', 'patches/kolbo-v404-role-binding.py', 'patches/CharacterRoleContract.java', 'patches/tests/RoleAndActions404Smoke.java', 'patches/kolbo-v405-scene-isolation.py', 'patches/SceneIntentContract.java', 'patches/tests/SceneIntent405Smoke.java', 'patches/kolbo-v406-studio-polish.py', 'patches/kolbo-v406-quality-and-scene.py', 'patches/StudioVisuals.java', 'patches/OutputLengthGate.java', 'patches/DurationPolicy.java', 'patches/tests/Quality406Smoke.java', 'patches/kolbo-v407-evidence-integration.py', 'patches/VideoEvidenceAudit.java', 'patches/VideoEvidenceAuditRequest.java', 'patches/tests/Evidence407Smoke.java', 'patches/StudioFailureNotice.java', 'patches/kolbo-v407-terminal-errors.py', 'patches/tests/Failure407Smoke.java']
   workflow_dispatch:
 permissions:
   contents: read
@@ -56,15 +56,18 @@ jobs:
         run: python3 patches/kolbo-v406-quality-and-scene.py android
       - name: Apply v4.0.7 offline evidence reviewer
         run: python3 patches/kolbo-v407-evidence-integration.py android
+      - name: Apply v4.0.7 terminal failure and retry UI
+        run: python3 patches/kolbo-v407-terminal-errors.py android
       - name: Compile and exercise standalone storyboard planner
         run: |
           mkdir -p build/storyboard-test
-          javac -encoding UTF-8 -d build/storyboard-test android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java android/app/src/main/java/com/kolbo/videostudio/ProviderFailure.java android/app/src/main/java/com/kolbo/videostudio/CharacterRoleContract.java android/app/src/main/java/com/kolbo/videostudio/SceneIntentContract.java android/app/src/main/java/com/kolbo/videostudio/DurationPolicy.java android/app/src/main/java/com/kolbo/videostudio/VideoEvidenceAuditRequest.java patches/tests/StoryboardPlannerSmoke.java patches/tests/RoleAndActions404Smoke.java patches/tests/SceneIntent405Smoke.java patches/tests/Quality406Smoke.java patches/tests/Evidence407Smoke.java
+          javac -encoding UTF-8 -d build/storyboard-test android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java android/app/src/main/java/com/kolbo/videostudio/ProviderFailure.java android/app/src/main/java/com/kolbo/videostudio/CharacterRoleContract.java android/app/src/main/java/com/kolbo/videostudio/SceneIntentContract.java android/app/src/main/java/com/kolbo/videostudio/DurationPolicy.java android/app/src/main/java/com/kolbo/videostudio/VideoEvidenceAuditRequest.java android/app/src/main/java/com/kolbo/videostudio/StudioFailureNotice.java patches/tests/StoryboardPlannerSmoke.java patches/tests/RoleAndActions404Smoke.java patches/tests/SceneIntent405Smoke.java patches/tests/Quality406Smoke.java patches/tests/Evidence407Smoke.java patches/tests/Failure407Smoke.java
           java -cp build/storyboard-test com.kolbo.videostudio.StoryboardPlannerSmoke
           java -cp build/storyboard-test com.kolbo.videostudio.RoleAndActions404Smoke
           java -cp build/storyboard-test com.kolbo.videostudio.SceneIntent405Smoke
           java -cp build/storyboard-test com.kolbo.videostudio.Quality406Smoke
           java -cp build/storyboard-test com.kolbo.videostudio.Evidence407Smoke
+          java -cp build/storyboard-test com.kolbo.videostudio.Failure407Smoke
       - name: Static safeguards and prompt QA
         run: |
           python3 - <<'PY'
@@ -137,6 +140,10 @@ jobs:
           assert 'lastPhaseDetail' in main
           assert 'class StudioVisuals' in Path('android/app/src/main/java/com/kolbo/videostudio/StudioVisuals.java').read_text()
           assert 'DurationPolicy.acceptable' in Path('android/app/src/main/java/com/kolbo/videostudio/OutputLengthGate.java').read_text()
+          assert 'generationInFlight=true' in main
+          assert 'showFailureUi("ההפקה הסתיימה ללא קובץ וידאו תקין.")' in main
+          assert 'retryCreation.setOnClickListener(v -> createVideo())' in main
+          assert 'StudioFailureNotice.isFailure(s)' in main
           assert 'VideoEvidenceAudit.inspect(' in main
           assert 'lastQualityEvidence=evidence.details()' in main
           assert 'status.setText(qualityHeadline)' in main
@@ -163,7 +170,7 @@ jobs:
           sha256sum "$APK" | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-4.0.7-Offline-Evidence-QA-APK
+          name: Kolbo-Video-4.0.7-Failure-Recovery-Evidence-QA-APK
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             app-debug.apk.sha256
