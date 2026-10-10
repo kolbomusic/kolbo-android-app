@@ -40,7 +40,7 @@ public final class CharacterRoleContract {
             +"SUBJECT_2 corresponds to the different individual in reference IMAGE_2. "
             +"Preserve each reference person's face, hair, physique, accessories and ORIGINAL CLOTHING. "
             +"The two reference slots are distinct: never swap, merge, duplicate or replace them. "
-            +"Never infer professions, occupations, uniforms, events, locations or props from "
+            +"Never infer professions, occupations, events, locations or props from "
             +"any prior request or from anything not expressly required in this current instruction. "
             +"Only TWO principal reference subjects; unrelated background extras are allowed "
             +"when physically necessary (for example an audience), not as substitutes. ";
