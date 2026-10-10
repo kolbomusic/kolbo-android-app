@@ -477,8 +477,17 @@ def submit(spec:JobSpec,authorization:str|None=Header(default=None)):
     except ValueError as e:raise HTTPException(422,str(e))
     with lock:
         active=sum(1 for j in jobs.values() if j.state in ('running','queued'))
+        if RENDER_PROVIDER=='agnes' and active:
+            # Single Render Free worker: queuing duplicate expensive provider calls
+            # makes the user's next request appear frozen behind the previous one.
+            # No automatic task reuse, because the prompt/images could differ.
+            raise HTTPException(409,
+                'כבר מתבצעת בקשת וידאו אחרת. המתן לסיום הבקשה הקודמת לפני יצירת סרטון חדש.',
+                headers={'Retry-After':'30'})
         if active>=MAX_PENDING:raise HTTPException(503,'תור מחשוב מלא. נסה מאוחר יותר',headers={'Retry-After':'120'})
-        job=Job(id=str(uuid.uuid4()))
+        job=Job(id=str(uuid.uuid4()),
+            detail='ממתין לביצוע יצירת הסרטון ב־Agnes' if RENDER_PROVIDER=='agnes'
+                   else 'ממתין לתור המחשב')
         jobs[job.id]=job
     threading.Thread(target=execute,args=(job,spec,images),daemon=True).start()
     return {'job_id':job.id,'state':job.state}
