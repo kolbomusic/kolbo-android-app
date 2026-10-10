@@ -1,0 +1,38 @@
+name: Kolbo Grid 2.6 isolated 503 source diagnostic
+on:
+  push:
+    branches: [kolbo-grid-v26-503-diagnostic-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  examine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract deployed runtime source safely
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,pathlib,zipfile,json
+          src=pathlib.Path("kolbo-grid-v26-runtime.src.b64")
+          data=base64.b64decode(src.read_text().strip(),validate=True)
+          pathlib.Path("diagnostic-source.zip").write_bytes(data)
+          with zipfile.ZipFile("diagnostic-source.zip") as z:
+              assert z.testzip() is None
+              for entry in z.infolist():
+                  p=pathlib.PurePosixPath(entry.filename)
+                  assert not p.is_absolute() and ".." not in p.parts
+              z.extractall("diagnostic-runtime")
+              files=[{"path":entry.filename,"size":entry.file_size} for entry in z.infolist()]
+          pathlib.Path("diagnostic-manifest.json").write_text(json.dumps({"source_sha256":hashlib.sha256(data).hexdigest(),"files":files},indent=2))
+          print("SOURCE_SHA256",hashlib.sha256(data).hexdigest(),"FILES",len(files))
+          print("Manifest and extracted archive saved as short-lived artifacts; no credentials printed.")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kolbo-grid-26-static-source-diagnostic
+          path: |
+            diagnostic-runtime/
+            diagnostic-manifest.json
+          retention-days: 2
