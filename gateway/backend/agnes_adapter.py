@@ -85,7 +85,7 @@ def video_payload(prompt:str,seconds:int,reference_urls:list[str])->dict:
 
 def submit(prompt:str,seconds:int,urls:list[str],key:str)->str:
     data=api_json('POST','/v1/videos',key,video_payload(prompt,seconds,urls),timeout=70)
-    video_id=data.get('video_id')
+    video_id=data.get('video_id') or data.get('id')
     if not isinstance(video_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{4,128}',video_id):
         raise AgnesError('Agnes לא החזיר מזהה וידאו תקין')
     return video_id
@@ -97,7 +97,8 @@ def poll(video_id:str,key:str,deadline:float,on_progress=None)->str:
         data=api_json('GET',path,key,timeout=35)
         state=data.get('status')
         if state=='completed':
-            url=data.get('url')
+            metadata=data.get('metadata') if isinstance(data.get('metadata'),dict) else {}
+            url=data.get('url') or metadata.get('url')
             if not isinstance(url,str) or not url:raise AgnesError('Agnes דיווח על הצלחה בלי קישור ל־MP4')
             return url
         if state=='failed':
