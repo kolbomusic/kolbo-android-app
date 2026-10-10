@@ -1,0 +1,39 @@
+name: Kolbo 3.2 provider API shape diagnostic (read-only)
+on:
+  push:
+    branches: [kolbo-grid-v32-provider-discovery-20261010]
+    paths: ['.github/workflows/kolbo-provider-diagnostic.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -q -r provider-scout-requirements.txt
+      - name: Print sanitized public API parameter/output shape (no uploads)
+        run: |
+          python - <<'PY'
+          from huggingface_hub import HfApi
+          import requests
+          info=HfApi(token=False).space_info('chopperblu/ltx-2-5-demo',token=False)
+          subdomain=info.subdomain
+          print('SUBDOMAIN',subdomain)
+          from provider_scout.scout import safe_space_host
+          host=safe_space_host(subdomain)
+          r=requests.get(host+'/gradio_api/info',timeout=25,allow_redirects=False)
+          print('HTTP',r.status_code,'LEN',len(r.content))
+          data=r.json()
+          print('ROOT_KEYS',list(data.keys()))
+          for name,endpoint in list((data.get('named_endpoints') or {}).items())[:7]:
+            print('ENDPOINT',name,'KEYS',list(endpoint.keys()))
+            for p in endpoint.get('parameters',[])[:20]:
+              print('INPUT',p.get('parameter_name'),p.get('label'),p.get('component'),str(p.get('type'))[:80],str(p.get('parameter_default','NO_DEFAULT'))[:50])
+            for p in endpoint.get('returns',[])[:12]:
+              print('OUTPUT',p.get('label'),p.get('component'),str(p.get('type'))[:80])
+          PY
