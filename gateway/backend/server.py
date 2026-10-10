@@ -8,6 +8,7 @@ import base64, binascii, hmac, io, json, os, pathlib, secrets, subprocess, threa
 from urllib.parse import urlsplit
 import agnes_adapter
 import device_pairing
+import staging_plan_api
 from dataclasses import dataclass, field
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -238,6 +239,17 @@ def gpu_available():
         payload=json.loads(comfy_request('GET','/system_stats',timeout=2))
         return bool(payload.get('system'))
     except Exception:return False
+
+
+@app.post('/v1/orchestrator/plan')
+def orchestrator_preflight(
+    request:staging_plan_api.PlanRequest,
+    authorization:str|None=Header(default=None)
+):
+    """Read-only staging integration. Cannot create clips, charge or credit anyone."""
+    require_auth(authorization)
+    return staging_plan_api.plan(
+        request,enabled=os.environ.get('KOLBO_ORCHESTRATOR_PREFLIGHT','')=='ENABLED_READ_ONLY')
 
 @app.get('/v1/agnes/access')
 def agnes_access(authorization:str|None=Header(default=None)):
