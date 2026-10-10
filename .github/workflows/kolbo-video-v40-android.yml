@@ -1,8 +1,8 @@
-name: Kolbo Video 4.0.2 honest identity reference preview + APK
+name: Kolbo Video 4.0.3 general storyboard planner + honest provider limits APK
 on:
   push:
-    branches: [kolbo-video-v402-identity-qa-20261010]
-    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java']
+    branches: [kolbo-video-v403-general-story-planner-20261010]
+    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java', 'patches/kolbo-v403-general-planner.py', 'patches/StoryboardPlanner.java', 'patches/ProviderFailure.java', 'patches/tests/StoryboardPlannerSmoke.java']
   workflow_dispatch:
 permissions:
   contents: read
@@ -44,6 +44,13 @@ jobs:
         run: python3 patches/kolbo-v402-identity-consent.py android
       - name: Add separate MSR public Gradio provider
         run: python3 patches/kolbo-v402-msr-connect.py android
+      - name: Apply v4.0.3 storyboard planner and quota guard
+        run: python3 patches/kolbo-v403-general-planner.py android
+      - name: Compile and exercise standalone storyboard planner
+        run: |
+          mkdir -p build/storyboard-test
+          javac -encoding UTF-8 -d build/storyboard-test android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java android/app/src/main/java/com/kolbo/videostudio/ProviderFailure.java patches/tests/StoryboardPlannerSmoke.java
+          java -cp build/storyboard-test com.kolbo.videostudio.StoryboardPlannerSmoke
       - name: Static safeguards and prompt QA
         run: |
           python3 - <<'PY'
@@ -51,7 +58,7 @@ jobs:
           main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
           composer=Path('android/app/src/main/java/com/kolbo/videostudio/TwoPersonComposer.java').read_text()
           deps=Path('android/app/build.gradle').read_text()
-          assert 'preview402' in deps and "versionName '4.0.2'" in deps
+          assert 'preview403' in deps and "versionName '4.0.3'" in deps
           assert "segmentation-selfie:16.0.0-beta6" in deps and "face-detection:16.1.7" in deps
           assert "translated.trim().length()<3" in main
           assert "translated.trim().length()<10" not in main
@@ -78,7 +85,7 @@ jobs:
           assert 'NO additional bystanders. " + englishPrompt' not in main
           assert 'NO additional bystanders. " + scenePrompt' in main
           assert 'audioAfterVideo(combined,originalInstruction,motionWarning)' in main
-          assert "versionCode 402" in deps
+          assert "versionCode 403" in deps
           assert 'private void previewDuoBeforeUpload(' in main
           assert 'final boolean unverified=identityReviewRequired;' in main
           assert 'טיוטת AI לא מאומתת' in main
@@ -93,6 +100,10 @@ jobs:
           assert 'hugging-apps-ltx25-multi-subject-reference.hf.space' in msr
           assert 'p.put((double)seconds)' in msr
           assert 'MSR' in msr
+          assert 'StoryboardPlanner.plan(translatedPrompt,desiredSeconds)' in main
+          assert 'StoryboardPlanner.plan(englishPrompt,requestedSeconds)' in main
+          assert 'ProviderFailure.explain(e)' in main
+          assert 'טיוטה חלקית בלבד' in main
           print('PASS: separate foreground masks, scene composition, photo face count, short Hebrew')
           PY
       - name: Test rejecting still subjects but not two moving subjects
@@ -109,11 +120,11 @@ jobs:
           unzip -t "$APK" | tail -1
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview402'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview403'
           sha256sum "$APK" | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-4.0.2-Dual-Reference-MSR-APK
+          name: Kolbo-Video-4.0.3-General-Story-Planner-APK
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             app-debug.apk.sha256
