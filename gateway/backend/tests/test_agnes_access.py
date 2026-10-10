@@ -77,3 +77,20 @@ def test_no_price_data_reports_unknown(monkeypatch):
     state=agnes.inspect_access_without_generation('safe-example-long-key-123456')
     assert state['price_metadata_state']=='not_provided'
     assert state['generation_permitted'] is False
+
+def test_explicit_owner_trial_does_not_claim_account_price_verified(monkeypatch):
+    monkeypatch.setattr(server,'TOKEN','long-test-gateway-token-over-24-characters')
+    monkeypatch.setattr(server,'RENDER_PROVIDER','agnes')
+    monkeypatch.setattr(server,'AGNES_KEY','example-accepted-test-api-key')
+    monkeypatch.setattr(server,'AGNES_PROMO_ACK',True)
+    monkeypatch.setattr(server,'AGNES_ACTIVATION_MODE','USER_APPROVED_FLASH_TRIAL')
+    monkeypatch.setattr(server,'PUBLIC_BASE','https://gateway.example.org')
+    ready=TestClient(server.app).get('/v1/health',headers={
+        'Authorization':'Bearer long-test-gateway-token-over-24-characters'})
+    assert ready.status_code==200
+    info=ready.json()
+    assert info['owner_authorized_flash_trial'] is True
+    assert info['operator_price_confirmation'] is False
+    assert info['price_promotion_verified_live'] is False
+    assert info['possible_billing_if_promotion_changes'] is True
+    assert info['provider']=='agnes-video-2.5-flash'
