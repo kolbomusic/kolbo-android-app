@@ -356,7 +356,28 @@ def execute_agnes(job:Job,spec:JobSpec,images:list[bytes]):
             for i,(raw,picture) in enumerate(zip(images,spec.images),1):
                 _,url=stage_reference(job.id,i,raw,picture.mime_type)
                 links.append(url)
-            video_id=agnes_adapter.submit(spec.prompt,spec.seconds,links,AGNES_KEY)
+            # Retries are allowed only for a definite queue rejection, before Agnes
+            # has created a video ID. Never retry unknown responses or timeout:
+            # the supplier might have started a billable job.
+            video_id=None
+            backoffs=(20,40,80,120)
+            for attempt in range(len(backoffs)+1):
+                try:
+                    video_id=agnes_adapter.submit(spec.prompt,spec.seconds,links,AGNES_KEY)
+                    break
+                except agnes_adapter.AgnesQueueFull:
+                    if attempt>=len(backoffs):
+                        raise agnes_adapter.AgnesQueueFull(
+                            'תור Agnes נותר מלא גם לאחר חמישה ניסיונות בהפרשי זמן; '
+                            'לא נוצר סרטון ולא בוצע מעבר למודל בתשלום.')
+                    wait=backoffs[attempt]
+                    with lock:job.detail=(
+                        f'Agnes עמוס, מנסה מחדש אוטומטית '
+                        f'({attempt+1}/{len(backoffs)}) בעוד {wait} שניות. '
+                        'לא נוצרה עדיין עבודת וידאו אצל הספק.')
+                    print('KOLBO_AGNES_QUEUE_RETRY attempt='+str(attempt+1)
+                          +' wait_seconds='+str(wait)+' category=explicit_rejection',flush=True)
+                    time.sleep(wait)
             with lock:job.detail='Agnes מעבד את הסרטון (ייתכן תור שרת עמוס)'
             def update(text):
                 with lock:job.detail=text
@@ -371,6 +392,9 @@ def execute_agnes(job:Job,spec:JobSpec,images:list[bytes]):
             candidate=WORK_DIR/(job.id+'.mp4')
             try:candidate.unlink(missing_ok=True)
             except OSError:pass
+            kind=('agnes_queue_full' if isinstance(e,agnes_adapter.AgnesQueueFull)
+                  else 'provider_or_render_error')
+            print('KOLBO_AGNES_JOB_FAILED category='+kind,flush=True)
             with lock:job.state='failed';job.detail='ההפקה לא הושלמה';job.error=str(e)[:280]
         finally:
             remove_job_references(job.id)
