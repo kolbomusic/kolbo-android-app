@@ -362,7 +362,9 @@ def execute_agnes(job:Job,spec:JobSpec,images:list[bytes]):
             # the supplier might have started a billable job.
             phase='submit'
             video_id=None
-            backoffs=(20,40,80,120)
+            # Aggressive retry loops created several minutes of false-looking
+            # progress during a long Flash outage. Bound the queue-only retries.
+            backoffs=(15,30)
             for attempt in range(len(backoffs)+1):
                 try:
                     video_id=agnes_adapter.submit(spec.prompt,spec.seconds,links,AGNES_KEY)
@@ -370,7 +372,7 @@ def execute_agnes(job:Job,spec:JobSpec,images:list[bytes]):
                 except agnes_adapter.AgnesQueueFull:
                     if attempt>=len(backoffs):
                         raise agnes_adapter.AgnesQueueFull(
-                            'תור Agnes נותר מלא גם לאחר חמישה ניסיונות בהפרשי זמן; '
+                            'תור Agnes עדיין מלא אחרי שלושה ניסיונות בהפרשי זמן. '
                             'לא נוצר סרטון ולא בוצע מעבר למודל בתשלום.')
                     wait=backoffs[attempt]
                     with lock:job.detail=(
