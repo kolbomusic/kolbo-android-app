@@ -1,0 +1,102 @@
+name: Kolbo Video 3.8 two character refs and 60 seconds Android APK
+on:
+  push:
+    branches: [kolbo-video-v38-two-photos-60s-20261010]
+    paths: [".github/workflows/kolbo-video-minimal-38.yml", "kolbo-video-v38-src.b64", "kolbo-video-v38-src.sha256"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Install Android platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify and extract source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path,PurePosixPath
+          import hashlib,base64,zipfile
+          data=base64.b64decode(Path('kolbo-video-v38-src.b64').read_text().strip(),validate=True)
+          expected=Path('kolbo-video-v38-src.sha256').read_text().strip()
+          assert hashlib.sha256(data).hexdigest()==expected
+          Path('src.zip').write_bytes(data)
+          with zipfile.ZipFile('src.zip') as z:
+              assert z.testzip() is None
+              for item in z.infolist():
+                  p=PurePosixPath(item.filename)
+                  assert not p.is_absolute() and '..' not in p.parts
+              z.extractall('android')
+          PY
+      - name: Static checks for minimal video workflow
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
+          manifest=Path('android/app/src/main/AndroidManifest.xml').read_text()
+          assert 'צור וידאו' in src and 'הורד MP4' in src
+          assert 'choose' not in src.lower() or 'chooseImage' not in src
+          assert '/gradio_api/call/generate_video' in src and '/gradio_api/upload' in src
+          assert 'ACTION_OPEN_DOCUMENT' in src and 'ACTION_CREATE_DOCUMENT' in src
+          assert 'VideoView' in src and 'JSONObject.NULL' in src
+          assert 'setInstanceFollowRedirects(false)' in src
+          assert 'X-API-Key' not in src and 'tokenField' not in src
+          assert 'serverField' not in src and 'Spinner' not in src
+          assert "com.google.mlkit:translate:17.0.3" in Path("android/app/build.gradle").read_text()
+          assert "TranslateLanguage.HEBREW" in src and "TranslateLanguage.ENGLISH" in src
+          assert "downloadModelIfNeeded()" in src and "translator.translate(sceneText)" in src
+          assert "quotedHebrew(instruction)" in src and "exact phrase in HEBREW" in src
+          assert "beginGeneration(instruction,null,null,desired)" in src
+          assert "submit(chunkPrompt,imageMeta,seconds)" in src
+          assert "submit(instruction,imageMeta)" not in src
+          assert 'PICK_TWO' in src and 'jointReference(first,second)' in src
+          assert 'durationBar.setMax(59)' in src and 'SEGMENT_MAX = 12' in src
+          assert 'ClipConcatenator.combine(clips,combined,requestedSeconds)' in src
+          assert 'ClipConcatenator.validateLength(combined,requestedSeconds)' in src
+          concat=Path("android/app/src/main/java/com/kolbo/videostudio/ClipConcatenator.java").read_text()
+          assert 'MediaMuxer' in concat and 'MediaExtractor' in concat
+          assert 'Math.abs(millis-desiredSeconds*1000L)>850L' in concat
+          assert "לא יוצג סרטון קצר מהמבוקש" in src
+          audio=Path("android/app/src/main/java/com/kolbo/videostudio/AudioFinisher.java").read_text()
+          assert "AudioFinisher.finish(raw,mixed,speech,addEffect)" in src
+          assert "hebrewVoice.synthesizeToFile" in src
+          assert "wantsFartEffect" in src and "finalMix(raw" in src
+          assert '"he-IL"' in src
+          assert 'MediaMuxer' in audio and 'MediaCodec' in audio
+          assert "addFartSound" in audio and "mixSpeech" in audio
+          assert "out[start+i]+=effect" in audio
+          assert "mux.writeSampleData" in audio
+          assert 'versionCode 380' in Path("android/app/build.gradle").read_text()
+          assert 'usesCleartextTraffic="false"' in manifest
+          print('PASS minimal app contract: no login key, remote model direct, privacy notice')
+          PY
+      - name: Compile native APK
+        run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK and signature
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q "com.kolbo.videostudio.preview38"
+          sha256sum "$APK" | tee app-debug.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-3.8-Two-Photos-60s-APK
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            app-debug.apk.sha256
+          retention-days: 14
