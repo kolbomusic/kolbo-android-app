@@ -67,11 +67,11 @@ def test_verified_two_person_clip_happy_path_and_exactly_once_points(db):
     assert duplicate.outcome=='existing_job'
     assert duplicate.job.id==output.job.id
     assert store.balance(OWNER)==80
-    result=co.deliver(job_id=output.job.id,request=request(),
+    result=co.deliver(owner_hash=OWNER,job_id=output.job.id,request=request(),
         segments=[good_segment()],provider='provider_a')
     assert result.available_to_customer
     assert result.job.state=='completed'
-    replay=co.deliver(job_id=output.job.id,request=request(),
+    replay=co.deliver(owner_hash=OWNER,job_id=output.job.id,request=request(),
         segments=[good_segment()],provider='provider_a')
     assert replay.job.state=='completed'
     assert store.balance(OWNER)==80
@@ -119,13 +119,13 @@ def test_read_only_recovery_after_process_restart(db):
     restarted_store=ledger.StagingLedger(new_conn)
     restarted_co=orchestrator.StagingCoordinator(restarted_store)
     try:
-        pending=restarted_co.recover(submission.job.id)
+        pending=restarted_co.recover(submission.job.id,owner_hash=OWNER)
         assert pending.state=='unknown_acceptance'
         assert restarted_store.balance(OWNER)==80
-        resolved=restarted_co.recover(submission.job.id,
+        resolved=restarted_co.recover(submission.job.id,owner_hash=OWNER,
              accepted_task_id='task_accepted_before_restart')
         assert resolved.state=='accepted'
-        result=restarted_co.deliver(job_id=submission.job.id,
+        result=restarted_co.deliver(owner_hash=OWNER,job_id=submission.job.id,
             request=request(),segments=[good_segment()],provider='provider_a')
         assert result.available_to_customer
         assert restarted_store.balance(OWNER)==80
@@ -148,7 +148,7 @@ def test_lost_identity_or_three_second_video_refunds_points(db):
     store,_=db
     co,_=orchestrate(store)
     job=submit(co)
-    failed=co.deliver(job_id=job.job.id,request=request(),
+    failed=co.deliver(owner_hash=OWNER,job_id=job.job.id,request=request(),
       segments=[good_segment(end_ms=3000,measured_ms=3000)],
       provider='provider_a')
     assert failed.job.state=='failed_refunded'
@@ -159,7 +159,7 @@ def test_unverified_singing_or_face_identity_keeps_draft_unpublished(db):
     store,_=db
     co,_=orchestrate(store)
     job=submit(co)
-    draft=co.deliver(job_id=job.job.id,request=request(),
+    draft=co.deliver(owner_hash=OWNER,job_id=job.job.id,request=request(),
       segments=[good_segment(lips_and_language_reviewed=False,
                             source_identities_reviewed=False)],
       provider='provider_a')
@@ -197,3 +197,17 @@ def test_insufficient_credits_never_contacts_provider(db):
     with pytest.raises(ledger.NoCredits):
         submit(co,points=120,dispatch=lambda _:pytest.fail('no credits'))
     assert store.balance(OWNER)==100
+
+
+def test_owner_isolation_blocks_foreign_receipt_recovery_or_delivery(db):
+    store,_=db
+    co,_=orchestrate(store)
+    sub=submit(co)
+    outsider='b'*64
+    with pytest.raises(ledger.LedgerError):
+        co.recover(sub.job.id,owner_hash=outsider)
+    with pytest.raises(ledger.LedgerError):
+        co.deliver(owner_hash=outsider,job_id=sub.job.id,
+            request=request(),segments=[good_segment()],provider='provider_a')
+    assert store.view(sub.job.id).state=='accepted'
+    assert store.balance(OWNER)==80
