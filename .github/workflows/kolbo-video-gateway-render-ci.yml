@@ -1,7 +1,7 @@
-name: Kolbo Video Gateway — Provider Router & Rewarded Credits Security Tests
+name: Kolbo Video Gateway — Operational Resilience & Monetization Safety Tests
 on:
   push:
-    branches: [kolbo-video-multiengine-router-20261010]
+    branches: [kolbo-video-v413-safety-economy-continuity-20261010]
     paths:
       - "gateway/**"
       - ".github/workflows/kolbo-video-gateway-render-ci.yml"
