@@ -51,7 +51,9 @@ def register(record:RegisterInput):
     with lock:
         if not is_approved and digest not in seen_pending:
             seen_pending.add(digest)
-            logging.info('KOLBO_DEVICE_PENDING fingerprint_sha256=%s',digest)
+            # The default uvicorn logging level can suppress root logger INFO.
+            # Emit only a SHA256 of the public key, never a token or private key.
+            print('KOLBO_DEVICE_PENDING fingerprint_sha256='+digest,flush=True)
     return {'status':'approved' if is_approved else 'pending',
             'fingerprint':digest,'code_entry_required':False,
             'approval':'server_operator_only'}
