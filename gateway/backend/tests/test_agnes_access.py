@@ -139,7 +139,7 @@ def test_queue_busy_retries_only_without_accepted_job(monkeypatch,tmp_path):
         if job['state']=='failed':break
         time.sleep(0.01)
     assert len(calls)==3
-    assert delays[:2]==[20,40]
+    assert delays[:2]==[15,30]
     assert job['state']=='failed'
     assert 'download stop' in job['error']
     # No other model, no automatic retry after Agnes accepted a valid ID.
@@ -172,9 +172,9 @@ def test_persistent_queue_full_stops_after_bounded_attempts(monkeypatch,tmp_path
             headers={'Authorization':'Bearer mock-kolbo-owner-token-abcdef-12345'}).json()
         if job['state']=='failed':break
         time.sleep(0.01)
-    assert len(calls)==5
-    assert delays[:4]==[20,40,80,120]
-    assert job['state']=='failed' and 'חמישה ניסיונות' in job['error']
+    assert len(calls)==3
+    assert delays[:2]==[15,30]
+    assert job['state']=='failed' and 'שלושה ניסיונות' in job['error']
 
 def test_soft_queue_rejection_detected_in_nested_response_fields(monkeypatch):
     import pytest
