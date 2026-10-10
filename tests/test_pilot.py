@@ -30,3 +30,23 @@ class PilotTest(TestCase):
             self.assertFalse(r['ai_visual_generation_verified'])
             self.assertFalse(r['native_ai_audio_verified'])
             self.assertFalse(r['semantic_prompt_fidelity_verified'])
+
+    def test_no_bounce_slide_is_rejected(self):
+        import cv2
+        import numpy as np
+        from pilots.ball_action_gate import detect_bounces
+        with TemporaryDirectory() as tmp:
+            video=Path(tmp)/'sliding.avi'
+            writer=cv2.VideoWriter(str(video),cv2.VideoWriter_fourcc(*'MJPG'),24,(512,288))
+            self.assertTrue(writer.isOpened())
+            try:
+                for i in range(8*24):
+                    frame=np.zeros((288,512,3),dtype=np.uint8)
+                    frame[:215]=(219,173,119)
+                    frame[215:]=(76,145,76)
+                    cv2.circle(frame,(80+i,185),36,(35,111,236),-1)
+                    writer.write(frame)
+            finally:writer.release()
+            findings=detect_bounces(video,expected_minimum=2)
+            self.assertFalse(findings['pass'],str(findings))
+            self.assertEqual(findings['detected_rebound_candidates'],0)
