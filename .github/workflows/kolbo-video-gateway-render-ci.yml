@@ -1,7 +1,7 @@
-name: Kolbo Video Gateway — Agnes Render test suite
+name: Kolbo Video Gateway — Provider Router & Rewarded Credits Security Tests
 on:
   push:
-    branches: [kolbo-video-v410-agnes-render-gateway-20261010]
+    branches: [kolbo-video-multiengine-router-20261010]
     paths:
       - "gateway/**"
       - ".github/workflows/kolbo-video-gateway-render-ci.yml"
