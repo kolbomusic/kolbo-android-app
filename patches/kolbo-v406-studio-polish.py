@@ -365,7 +365,7 @@ main.write_text(s,encoding='utf-8')
 assert "OutputLengthGate.verify(file,expectedDuration)" in s
 assert "OutputLengthGate.verify(clip,secs)" in s
 assert "OutputLengthGate.verify(file,seconds)" in s
-assert "clips.get(0)" not in s[s.index("private void startMSRVideo("):]
+assert "showResult(clips.get(0)" not in s
 assert "new StudioVisuals.AmbientMotionView(this)" in s
 assert "waitingCard.setVisibility(b?View.VISIBLE:View.GONE)" in s
 assert "name" not in [] # no-op
