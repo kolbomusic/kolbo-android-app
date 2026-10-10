@@ -1,0 +1,50 @@
+name: Kolbo Grid 2.9 single AI video action proof
+on:
+  push:
+    branches: [kolbo-grid-v29-one-shot-proof-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  one-try:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore reviewed source by checksum
+        run: |
+          python3 - <<'PY'
+          import pathlib,hashlib,base64,zipfile
+          b=base64.b64decode(pathlib.Path('kolbo-grid-v29-src.b64').read_text().strip(),validate=True)
+          assert hashlib.sha256(b).hexdigest()==pathlib.Path('kolbo-grid-v29-src.sha256').read_text().strip()
+          pathlib.Path('source.zip').write_bytes(b)
+          with zipfile.ZipFile('source.zip') as z:
+            assert z.testzip() is None
+            for item in z.infolist():
+              p=pathlib.PurePosixPath(item.filename)
+              assert not p.is_absolute() and '..' not in p.parts
+            z.extractall('grid29')
+          PY
+      - name: Install no-GPU processing and ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install -q -r grid29/requirements.txt
+      - name: Generate exactly ONE synthetic request through public LTX-2.5
+        run: |
+          cd grid29
+          python3 -m pilots.kolbo_grid_29 --mode live --duration 8 --allow-external-synthetic-upload \
+            --instruction "כדור כתום קופץ פעמיים על הדשא" --out ../kolbo-grid-29-live
+      - name: Preserve blocked raw video, final result and truthful QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Grid-2.9-one-shot-LTX25-proof
+          path: |
+            kolbo-grid-29-live/report.json
+            kolbo-grid-29-live/raw.mp4
+            kolbo-grid-29-live/approved.mp4
+          retention-days: 3
