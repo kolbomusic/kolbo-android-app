@@ -1,0 +1,152 @@
+{
+  "candidates": [
+    {
+      "api_host": "https://chopperblu-ltx-2-5-demo.hf.space",
+      "automated_public_demo_probe_candidate": false,
+      "capabilities": [
+        {
+          "api_name": "/generate_video",
+          "capability": "image_to_video",
+          "declares_video_output": true,
+          "slots": [
+            {
+              "default": null,
+              "kind": "prompt",
+              "name": "prompt"
+            },
+            {
+              "default": null,
+              "kind": "image",
+              "name": "image_path"
+            },
+            {
+              "default": 512,
+              "kind": "default",
+              "name": "width"
+            },
+            {
+              "default": 512,
+              "kind": "default",
+              "name": "height"
+            },
+            {
+              "default": null,
+              "kind": "duration",
+              "name": "duration_seconds"
+            },
+            {
+              "default": false,
+              "kind": "default",
+              "name": "auto_length"
+            },
+            {
+              "default": 42,
+              "kind": "default",
+              "name": "seed"
+            },
+            {
+              "default": false,
+              "kind": "default",
+              "name": "randomize_seed"
+            },
+            {
+              "default": "conv",
+              "kind": "default",
+              "name": "decoder"
+            }
+          ],
+          "supports_explicit_duration": true
+        }
+      ],
+      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "id": "chopperblu/ltx-2-5-demo",
+      "license_declared": null,
+      "pricing_verified": false,
+      "probe": "not_run",
+      "production_eligible": false,
+      "source": "huggingface_spaces_official",
+      "space_url": "https://huggingface.co/spaces/chopperblu/ltx-2-5-demo",
+      "status": "schema_matched",
+      "terms_verified": false
+    },
+    {
+      "api_host": "https://kulkas2pintu-wan777.hf.space",
+      "automated_public_demo_probe_candidate": false,
+      "capabilities": [],
+      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "id": "kulkas2pintu/wan777",
+      "license_declared": null,
+      "pricing_verified": false,
+      "probe": "not_run",
+      "production_eligible": false,
+      "source": "huggingface_spaces_official",
+      "space_url": "https://huggingface.co/spaces/kulkas2pintu/wan777",
+      "status": "schema_not_compatible",
+      "terms_verified": false
+    },
+    {
+      "api_host": "https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",
+      "automated_public_demo_probe_candidate": false,
+      "capabilities": [],
+      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "id": "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
+      "license_declared": null,
+      "pricing_verified": false,
+      "probe": "not_run",
+      "production_eligible": false,
+      "source": "huggingface_spaces_official",
+      "space_url": "https://huggingface.co/spaces/zerogpu-aoti/wan2-2-fp8da-aoti-faster",
+      "status": "schema_not_compatible",
+      "terms_verified": false
+    },
+    {
+      "api_host": "https://r3gm-wan2-2-fp8da-aoti-preview.hf.space",
+      "automated_public_demo_probe_candidate": false,
+      "capabilities": [],
+      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "id": "r3gm/wan2-2-fp8da-aoti-preview",
+      "license_declared": null,
+      "pricing_verified": false,
+      "probe": "not_run",
+      "production_eligible": false,
+      "source": "huggingface_spaces_official",
+      "space_url": "https://huggingface.co/spaces/r3gm/wan2-2-fp8da-aoti-preview",
+      "status": "schema_not_compatible",
+      "terms_verified": false
+    },
+    {
+      "api_host": "https://minimaxai-minimax-h3-turbo-lora.hf.space",
+      "automated_public_demo_probe_candidate": false,
+      "capabilities": [],
+      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "id": "MiniMaxAI/MiniMax-H3-Turbo-Lora",
+      "license_declared": null,
+      "pricing_verified": false,
+      "probe": "not_run",
+      "production_eligible": false,
+      "source": "huggingface_spaces_official",
+      "space_url": "https://huggingface.co/spaces/MiniMaxAI/MiniMax-H3-Turbo-Lora",
+      "status": "schema_not_compatible",
+      "terms_verified": false
+    },
+    {
+      "api_host": "https://lightricks-ltx-video-distilled.hf.space",
+      "automated_public_demo_probe_candidate": false,
+      "capabilities": [],
+      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "id": "Lightricks/ltx-video-distilled",
+      "license_declared": null,
+      "pricing_verified": false,
+      "probe": "not_run",
+      "production_eligible": false,
+      "source": "huggingface_spaces_official",
+      "space_url": "https://huggingface.co/spaces/Lightricks/ltx-video-distilled",
+      "status": "schema_not_compatible",
+      "terms_verified": false
+    }
+  ],
+  "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+  "never_claims_generation_from_metadata": true,
+  "verification_level": "metadata_only",
+  "version": "3.2.0"
+}
