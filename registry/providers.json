@@ -58,7 +58,7 @@
           "supports_explicit_duration": true
         }
       ],
-      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "discovered_at": "2026-10-10T10:40:59.092866+00:00",
       "id": "chopperblu/ltx-2-5-demo",
       "license_declared": null,
       "pricing_verified": false,
@@ -73,7 +73,7 @@
       "api_host": "https://kulkas2pintu-wan777.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "discovered_at": "2026-10-10T10:40:59.092866+00:00",
       "id": "kulkas2pintu/wan777",
       "license_declared": null,
       "pricing_verified": false,
@@ -88,7 +88,7 @@
       "api_host": "https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "discovered_at": "2026-10-10T10:40:59.092866+00:00",
       "id": "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
       "license_declared": null,
       "pricing_verified": false,
@@ -103,7 +103,7 @@
       "api_host": "https://r3gm-wan2-2-fp8da-aoti-preview.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "discovered_at": "2026-10-10T10:40:59.092866+00:00",
       "id": "r3gm/wan2-2-fp8da-aoti-preview",
       "license_declared": null,
       "pricing_verified": false,
@@ -118,7 +118,7 @@
       "api_host": "https://minimaxai-minimax-h3-turbo-lora.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "discovered_at": "2026-10-10T10:40:59.092866+00:00",
       "id": "MiniMaxAI/MiniMax-H3-Turbo-Lora",
       "license_declared": null,
       "pricing_verified": false,
@@ -133,7 +133,7 @@
       "api_host": "https://lightricks-ltx-video-distilled.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+      "discovered_at": "2026-10-10T10:40:59.092866+00:00",
       "id": "Lightricks/ltx-video-distilled",
       "license_declared": null,
       "pricing_verified": false,
@@ -145,7 +145,7 @@
       "terms_verified": false
     }
   ],
-  "discovered_at": "2026-10-10T02:49:31.860710+00:00",
+  "discovered_at": "2026-10-10T10:40:59.092866+00:00",
   "never_claims_generation_from_metadata": true,
   "verification_level": "metadata_only",
   "version": "3.2.0"
