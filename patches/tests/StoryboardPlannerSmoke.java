@@ -15,6 +15,7 @@ public final class StoryboardPlannerSmoke {
         check(total==8,"Exact requested duration allocation");
         check(StoryboardPlanner.stagePrompt(he.scenes.get(0),3,true).contains("Image 1"),"Two independent identity constraints");
         StoryboardPlanner.Plan en=StoryboardPlanner.plan("The woman walks toward the car, opens the door, and drives away",8);
+        System.out.println("DEBUG ENGLISH PLAN:\n"+en.preview());
         check(en.scenes.size()==3,"English multiaction prompt");
         StoryboardPlanner.Plan shortPlan=StoryboardPlanner.plan("קודם רוקדת ואז שרה לאחר מכן יושבת ולבסוף מחייכת",3);
         check(shortPlan.reduced,"Short duration requires action consolidation");
