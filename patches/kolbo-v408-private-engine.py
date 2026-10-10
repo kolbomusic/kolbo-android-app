@@ -64,13 +64,18 @@ once('''    private TextView sectionLabel(String heading){''',
             .setNegativeButton("ביטול",(d,w)->{})
             .show();
     }
-    private void startPrivateVideo(String instruction,Uri first,Uri second,int seconds){
+    private void startPrivateVideo(String translated,String original,Uri first,Uri second,int seconds){
         executor.execute(()->{
             try{
                 message("מכינים סרטון במנוע הפרטי...");
                 // Unlike Gradio demos, both image references are preserved as
                 // independent inputs all the way to the owner's workflow.
-                File output=PrivateRenderClient.render(this,instruction,first,second,
+                String compiled=SceneIntentContract.from(original).sceneSetting()
+                    +(second!=null?CharacterRoleContract.from(original).immutableSubjects()
+                        +CharacterRoleContract.from(original).actionDirection()
+                        :"")+translated;
+                recordSubmittedPrompt("שרת וידאו עצמאי",compiled);
+                File output=PrivateRenderClient.render(this,compiled,first,second,
                     seconds,getCacheDir(),stage->message(stage));
                 OutputLengthGate.verify(output,seconds);
                 showResult(output,"נוצר במנוע פרטי. הפנים, התוכן והשמע עדיין דורשים בדיקה.");
@@ -95,11 +100,20 @@ once('''        final int desired=durationSeconds;
         }
         if(second!=null){''')
 once('''        if(!hasHebrew(instruction)) {''',
-    '''        if(PrivateRenderClient.configured(this)){
-            startPrivateVideo(instruction,chosen,second,requestedSeconds);
+    '''        if(PrivateRenderClient.configured(this) && !hasHebrew(instruction)){
+            startPrivateVideo(instruction,instruction,chosen,second,requestedSeconds);
             return;
         }
         if(!hasHebrew(instruction)) {''')
+# Route translated Hebrew to the independent GPU engine (not raw Hebrew).
+before_translation='''                  if(second!=null&&useMultiReferenceProvider){'''
+after_translation='''                  if(PrivateRenderClient.configured(this)){
+                      startPrivateVideo(enhanced,instruction,chosen,second,requestedSeconds);
+                      return;
+                  }
+                  if(second!=null&&useMultiReferenceProvider){'''
+if s.count(before_translation)!=1:raise SystemExit('No unique post-translation route')
+s=s.replace(before_translation,after_translation,1)
 g=gradle.read_text(encoding='utf-8')
 for a,b in [
     ("applicationId 'com.kolbo.videostudio.preview407'","applicationId 'com.kolbo.videostudio.preview408'"),
@@ -110,7 +124,7 @@ for a,b in [
     g=g.replace(a,b,1)
 gradle.write_text(g,encoding='utf-8')
 main.write_text(s,encoding='utf-8')
-assert 'PrivateRenderClient.render(this,instruction,first,second' in s
+assert 'PrivateRenderClient.render(this,compiled,first,second' in s
 assert 'OutputLengthGate.verify(output,seconds)' in s
 assert 'privateSettings.setOnClickListener' in s
 assert 'if(PrivateRenderClient.configured(this))' in s
