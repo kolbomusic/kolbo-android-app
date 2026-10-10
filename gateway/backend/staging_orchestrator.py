@@ -77,7 +77,7 @@ class StagingCoordinator:
                 # Explicit rejection means no task was accepted or billable.
                 # Remain submitting for the next eligible provider.
                 continue
-            except BaseException:
+            except Exception:
                 self.store.progress(job.id,'unknown_acceptance')
                 self.stats.record(option.name,feedback.Outcome.UNKNOWN_SUBMISSION)
                 return Submission(self.store.view(job.id),option.name,
@@ -97,10 +97,10 @@ class StagingCoordinator:
         return Submission(self.store.view(job.id),None,
                           'all_explicitly_rejected',tuple(attempted),True)
 
-    def recover(self,job_id:str,*,verified_rejection:bool=False,
+    def recover(self,job_id:str,*,owner_hash:str,verified_rejection:bool=False,
                 accepted_task_id:str|None=None)->ledger.JobView:
         """No second provider POST is triggered by a restart or API timeout."""
-        job=self.store.view(job_id)
+        job=self.store.view_for_owner(owner_hash,job_id)
         if job.state=='unknown_acceptance':
             if accepted_task_id:
                 return self.store.progress(job_id,'accepted',
@@ -110,10 +110,10 @@ class StagingCoordinator:
                         rejection_verified=True)
         return job
 
-    def deliver(self,*,job_id:str,request:guard.VideoRequest,
+    def deliver(self,*,owner_hash:str,job_id:str,request:guard.VideoRequest,
                 segments:list[guard.SegmentResult],
                 provider:str)->Delivery:
-        view=self.store.view(job_id)
+        view=self.store.view_for_owner(owner_hash,job_id)
         if view.state=='completed':
             # An identical status query must not settle credits twice.
             quality=guard.assess_output(request,segments)
