@@ -59,8 +59,10 @@ replacement='''                // Use only this request's explicitly inferred SC
                       "If singing is requested, use Bukhori rather than English lyrics. ":"");'''
 change(original,replacement)
 change('String scenePrompt=styleConstraints+roleLock.prompt(scene.action,scene.index,plan.scenes.size());',
-       'String scenePrompt=styleConstraints+roleLock.prompt(scene.action,scene.index,plan.scenes.size());\n'
-       '                        recordSubmittedPrompt("MSR reference slots 1+2",scenePrompt);')
+       'String scenePrompt=styleConstraints+roleLock.prompt(scene.action,scene.index,plan.scenes.size());')
+change('File clip=MultiSubjectReferenceClient.generate(firstBytes,firstMime,secondBytes,secondMime,',
+       'recordSubmittedPrompt("MSR reference slots 1+2",scenePrompt);\n'
+       '                        File clip=MultiSubjectReferenceClient.generate(firstBytes,firstMime,secondBytes,secondMime,')
 change('String review="הופקו "+plan.scenes.size()+" מקטעי תוכנית עם נעילת תפקידים בהנחיה בלבד. אין בדיקה אוטומטית אמינה שמזהה מי פעל על מי או האם נשמרה זהות הפנים; התוצאה טיוטה לביקורת בלבד.";',
        'String review="הופקו "+plan.scenes.size()+" מקטעי תוכנית. "+sceneIntent.reviewHebrew()\n'
        '                    +" זהות הדמויות, הרקע, ביצוע הפעולות והצלילים לא אומתו חזותית או שמיעתית. טיוטה לבדיקה בלבד.";')
