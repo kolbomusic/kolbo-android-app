@@ -28,7 +28,8 @@ jobs:
                     endpoints=parsed.get("named_endpoints",{})
                     print("ENDPOINTS", list(endpoints.keys())[:20])
                     for name,obj in endpoints.items():
-                      print("SCHEMA",name,json.dumps(obj.get("parameters",[]),ensure_ascii=False)[:1000])
+                      print("PARAMETERS",name,[(p.get("parameter_name"),p.get("label"),p.get("type",{}).get("type"),p.get("parameter_has_default"),str(p.get("parameter_default"))[:80]) for p in obj.get("parameters",[])])
+                      print("RETURNS",name,[(o.get("label"),o.get("type",{}).get("type"),o.get("component")) for o in obj.get("returns",[])])
                   else:
                     print("CONFIG_FIELDS",list(parsed)[:25])
                 except Exception as e: print("NOT_JSON",str(e)[:200],data[:200])
