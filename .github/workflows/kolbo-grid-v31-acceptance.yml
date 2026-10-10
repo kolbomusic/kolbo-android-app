@@ -1,0 +1,86 @@
+name: Kolbo Grid 3.1 isolated API and Docker acceptance
+on:
+  push:
+    branches: [kolbo-grid-v31-secure-scoped-api-20261010]
+    paths: [".github/workflows/kolbo-grid-v31-acceptance.yml", "kolbo-grid-v31-source.b64", "kolbo-grid-v31-source.sha256"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate source integrity and extract safely
+        run: |
+          python3 - <<'PY'
+          import pathlib,base64,hashlib,zipfile
+          raw=base64.b64decode(pathlib.Path('kolbo-grid-v31-source.b64').read_text().strip(),validate=True)
+          assert hashlib.sha256(raw).hexdigest()==pathlib.Path('kolbo-grid-v31-source.sha256').read_text().strip()
+          pathlib.Path('source.zip').write_bytes(raw)
+          with zipfile.ZipFile('source.zip') as z:
+            assert z.testzip() is None
+            for item in z.infolist():
+              name=pathlib.PurePosixPath(item.filename)
+              assert not name.is_absolute() and '..' not in name.parts
+            z.extractall('grid31')
+          print('PASS verified immutable source archive')
+          PY
+      - name: Install FFMPEG and Python CPU dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install -q -r grid31/requirements.txt
+      - name: Run 17 integration and security tests
+        run: |
+          cd grid31
+          PYTHONPATH=. python3 -m unittest discover -s tests -v
+      - name: Build isolated Docker container
+        run: docker build -t kolbo-grid-3.1:test grid31
+      - name: Check read-only Docker is not writable by default
+        run: |
+          docker run -d --rm --name kolbo-grid-v31-ci -p 127.0.0.1:10000:10000 kolbo-grid-3.1:test
+          for i in $(seq 1 30); do if curl --silent --fail http://127.0.0.1:10000/health >/tmp/health.json; then break; fi; sleep 2; done
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error
+          base='http://127.0.0.1:10000'
+          with urllib.request.urlopen(base+'/v1/repair/scoped-ball/status',timeout=10) as r: s=json.load(r)
+          assert s['enabled'] is False
+          with urllib.request.urlopen(base+'/health',timeout=10) as r: h=json.load(r)
+          assert h['read_only_preview'] is True
+          try:
+              urllib.request.urlopen(urllib.request.Request(base+'/v1/jobs',data=b'',method='POST'),timeout=10)
+              raise AssertionError('Write was not blocked!')
+          except urllib.error.HTTPError as err:
+              assert err.code==503,err.code
+          print('PASS preview mode readonly, status disabled, legacy jobs disabled')
+          PY
+          docker rm -f kolbo-grid-v31-ci
+      - name: Check repair-only isolation in an offline CI-only container
+        run: |
+          docker run -d --rm --name kolbo-grid-v31-ci -p 127.0.0.1:10000:10000 \
+            -e KOLBO_GRID_DEMO_READONLY=0 \
+            -e KOLBO_REPAIR_API_ONLY=1 \
+            -e KOLBO_SCOPED_REPAIR_ENABLED=1 \
+            -e KOLBO_CLOUD_API_KEY=ci-only-disposable-test-token \
+            kolbo-grid-3.1:test
+          for i in $(seq 1 30); do if curl --silent --fail http://127.0.0.1:10000/health >/tmp/health.json; then break; fi; sleep 2; done
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error
+          base='http://127.0.0.1:10000'
+          with urllib.request.urlopen(base+'/v1/repair/scoped-ball/status',timeout=10) as r: s=json.load(r)
+          assert s['enabled'] is True
+          try:
+              urllib.request.urlopen(urllib.request.Request(base+'/v1/jobs',data=b'',method='POST'),timeout=10)
+              raise AssertionError('Legacy job writes are not blocked!')
+          except urllib.error.HTTPError as err:
+              assert err.code==503,err.code
+          print('PASS isolated repair enabled without enabling legacy writes')
+          PY
+      - name: Cleanup CI test containers
+        if: always()
+        run: docker rm -f kolbo-grid-v31-ci || true
