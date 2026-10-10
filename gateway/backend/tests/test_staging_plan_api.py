@@ -56,11 +56,8 @@ def test_no_externally_provided_provider_proofs_accepted(monkeypatch):
             {'name':'unlimited_free','account_price_verified':True,
              'has_live_capacity':True,'unit_cost_usd':'0'}]},
         headers={'Authorization':'Bearer test-only-strong-access-token-12345'})
-    if result.status_code==200:
-        assert 'unlimited_free' not in result.json()['providers']
-        assert result.json()['can_submit'] is False
-    else:
-        assert result.status_code==422
+    assert result.status_code==422
+    assert 'extra_forbidden' in result.text
 
 def test_backend_plan_contract_never_returns_raw_private_data(monkeypatch):
     monkeypatch.setenv('AGNES_API_KEY','sensitive-fake-key-should-not-leak')
