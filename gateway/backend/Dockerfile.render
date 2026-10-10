@@ -6,7 +6,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY server.py agnes_adapter.py ./
+COPY server.py agnes_adapter.py device_pairing.py ./
 RUN mkdir -p /app/work && chmod 700 /app/work
 ENV KOLBO_RENDER_PROVIDER=agnes KOLBO_WORK_DIR=/app/work
 EXPOSE 10000
