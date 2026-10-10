@@ -87,7 +87,7 @@ gradle.write_text(g,encoding='utf-8')
 main.write_text(s,encoding='utf-8')
 assert 'DeviceAutoPair.accessToken()' in c
 assert 'DeviceAutoPair.accessToken()' in s
-assert 'showPrivateEngineSettings(){\\n        message("בודק חיבור אוטומטי' in s
+assert 'private void showPrivateEngineSettings(){' in s and 'message("בודק חיבור אוטומטי מאובטח' in s
 assert 'EditText secret' not in s
 assert 'GaFfJgcM-' not in s
 assert 'AGNES_API_KEY' not in c
