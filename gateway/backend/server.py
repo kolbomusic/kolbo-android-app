@@ -27,7 +27,7 @@ WORKFLOW_BY_IMAGE_COUNT = {
 COMFY = os.environ.get('KOLBO_COMFY_URL','http://127.0.0.1:8188').rstrip('/')
 # Operator-selected provider. Agnes uses a third-party API, not independent GPU.
 RENDER_PROVIDER = os.environ.get('KOLBO_RENDER_PROVIDER','comfy').lower()
-AGNES_KEY = os.environ.get('AGNES_API_KEY','')
+AGNES_KEY = os.environ.get('AGNES_API_KEY','').strip()
 PUBLIC_BASE = os.environ.get('KOLBO_PUBLIC_BASE_URL','').rstrip('/')
 # Confirmation is NOT a technical price-lock: provider billing can change.
 AGNES_PROMO_ACK = os.environ.get('KOLBO_AGNES_PROMO_ACK','') == 'CURRENT_ZERO_PRICE_CHECKED'
@@ -63,6 +63,14 @@ class Reference:
     owner_job_id: str
     expires: float
 refs: dict[str,Reference] = {}
+
+def agnes_api_key_state():
+    """Non-sensitive startup diagnostic: never disclose, hash, or log the API key."""
+    raw=os.environ.get('AGNES_API_KEY')
+    if raw is None:return 'missing_variable'
+    if not raw.strip():return 'empty_value'
+    if len(raw.strip())<12:return 'too_short'
+    return 'configured_not_authenticated'
 
 def agnes_config_errors():
     issues=[]
@@ -103,6 +111,11 @@ def remove_job_references(job_id:str):
     for _,path in gone:
         try:path.unlink(missing_ok=True)
         except OSError:pass
+
+# Log ONLY discrete, non-secret readiness states after every Render redeployment.
+print('KOLBO_AGNES_CONFIG: api_key_state='+agnes_api_key_state()
+      +' price_confirmation='+('present' if AGNES_PROMO_ACK else 'missing')
+      +' provider='+RENDER_PROVIDER,flush=True)
 
 @app.get('/healthz')
 def infrastructure_health():
@@ -209,6 +222,9 @@ def health(authorization:str|None=Header(default=None)):
             'min_seconds':4,'max_seconds':12,'requires_public_reference_urls':True,
             'unlimited_credits':False,'unlimited_compute':False,
             'price_promotion_verified_live':False,
+            'agnes_api_key_state':agnes_api_key_state(),
+            'agnes_api_key_verified_live':False,
+            'operator_price_confirmation':AGNES_PROMO_ACK,
             'detail':'מוכן להגשת בקשה ניסיונית ל־Agnes. זמינות ומחיר בחשבון לא אומתו בפועל.'
                      if not issues else '; '.join(issues)}
     if RENDER_PROVIDER!='comfy':
