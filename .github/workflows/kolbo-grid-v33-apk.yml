@@ -1,0 +1,77 @@
+name: Kolbo Grid 3.3 native Android catalog client acceptance
+on:
+  push:
+    branches: [kolbo-grid-v33-live-catalog-android-20261010]
+    paths: ['.github/workflows/kolbo-grid-v33-apk.yml','kolbo-v33-android.src.b64','kolbo-v33-android.src.sha256']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Install Android platform and build tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify and extract source archive
+        run: |
+          python3 - <<'PY'
+          import base64,pathlib,zipfile,hashlib
+          b=base64.b64decode(pathlib.Path('kolbo-v33-android.src.b64').read_text().strip(),validate=True)
+          assert hashlib.sha256(b).hexdigest()==pathlib.Path('kolbo-v33-android.src.sha256').read_text().strip()
+          pathlib.Path('src-v33.zip').write_bytes(b)
+          with zipfile.ZipFile('src-v33.zip') as z:
+            assert z.testzip() is None
+            for info in z.infolist():
+              p=pathlib.PurePosixPath(info.filename)
+              assert not p.is_absolute() and '..' not in p.parts
+            z.extractall('native')
+          PY
+      - name: Static security and live-catalog integration checks
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('native/app/src/main/java/com/kolbo/videogrid/MainActivity.java').read_text()
+          b=Path('native/app/build.gradle').read_text()
+          m=Path('native/app/src/main/AndroidManifest.xml').read_text()
+          assert 'raw.githubusercontent.com/kolbomusic/kolbo-android-app/main/registry/providers.json' in s
+          assert 'metadata_only' in s
+          assert 'production_eligible' in s and 'terms_verified' in s and 'pricing_verified' in s
+          assert 'availableWorkerProfile' in s and 'chooseWorkerProfile' in s
+          assert 'bestCandidateId' in s and 'openExperimentalProvider' in s
+          assert 'setInstanceFollowRedirects(false)' in s
+          assert "versionCode 330" in b and "versionName '3.3.0'" in b
+          assert "applicationId 'com.kolbo.videogrid.preview33'" in b
+          assert 'usesCleartextTraffic="false"' in m
+          print('PASS catalog, provider safety gates, private worker priority, separate install ID')
+          PY
+      - name: Build native debug APK
+        run: gradle -p native :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK signature and package metadata
+        run: |
+          set -euo pipefail
+          APK=native/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q "com.kolbo.videogrid.preview33"
+          sha256sum "$APK" | tee apk-v33.sha256
+          ls -lh "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-Grid-3.3.0-native-APK
+          path: |
+            native/app/build/outputs/apk/debug/app-debug.apk
+            apk-v33.sha256
+          retention-days: 14
