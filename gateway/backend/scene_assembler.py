@@ -139,7 +139,14 @@ def join(source_directory:Path,clips:list[SourceClip],output_directory:Path,
         if require_audio and not has_audio:
             raise AssemblyError('Final output unexpectedly has no audio')
         target=directory/output_basename
-        os.replace(temporary,target)
+        # Job-scoped output filenames are mandatory; never overwrite another
+        # owner's previous render or silently replace a signed delivery.
+        try:
+            os.link(temporary,target)
+        except FileExistsError as exc:
+            raise AssemblyError('Output already exists; never overwrite a prior video') from exc
+        except OSError as exc:
+            raise AssemblyError('Could not atomically publish the assembled video') from exc
         return Assembled(target,len(clips),expected,actual,has_audio)
     finally:
         Path(temporary).unlink(missing_ok=True)
