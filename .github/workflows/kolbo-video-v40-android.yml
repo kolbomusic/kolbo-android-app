@@ -47,7 +47,7 @@ jobs:
           main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
           composer=Path('android/app/src/main/java/com/kolbo/videostudio/TwoPersonComposer.java').read_text()
           deps=Path('android/app/build.gradle').read_text()
-          assert 'preview40' in deps and "versionName '4.0.1'" in deps
+          assert 'preview401' in deps and "versionName '4.0.1'" in deps
           assert "segmentation-selfie:16.0.0-beta6" in deps and "face-detection:16.1.7" in deps
           assert "translated.trim().length()<3" in main
           assert "translated.trim().length()<10" not in main
@@ -91,7 +91,7 @@ jobs:
           unzip -t "$APK" | tail -1
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview40'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview401'
           sha256sum "$APK" | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
