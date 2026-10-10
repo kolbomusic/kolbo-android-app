@@ -1,0 +1,64 @@
+name: Kolbo Grid 2.8 audio plus visual action QA
+on:
+  push:
+    branches: [kolbo-grid-v28-visual-gate-20261010]
+  workflow_dispatch:
+    inputs:
+      run_live_synthetic:
+        type: boolean
+        required: false
+        default: false
+        description: "Use public HF GPU for one synthetic image only (limited quota)"
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore already reviewed Kolbo 2.6 runtime source
+        run: |
+          python3 - <<'PY'
+          import pathlib,base64,zipfile
+          data=base64.b64decode(pathlib.Path('kolbo-grid-v26-runtime.src.b64').read_text().strip(),validate=True)
+          pathlib.Path('grid-runtime.zip').write_bytes(data)
+          with zipfile.ZipFile('grid-runtime.zip') as z:
+              assert z.testzip() is None
+              for i in z.infolist():
+                  p=pathlib.PurePosixPath(i.filename)
+                  assert not p.is_absolute() and '..' not in p.parts
+              z.extractall('pilot-runtime')
+          PY
+      - name: Install CPU dependencies and codecs
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -q -r requirements-pilot.txt
+      - name: Test consent and the genuine 8-second sound/motion quality gate
+        env:
+          PYTHONPATH: "pilot-runtime:."
+        run: python3 -m unittest discover -s tests -v
+      - name: Generate synthetic 8-second audible MP4 and independent QA report
+        env:
+          PYTHONPATH: "pilot-runtime:."
+        run: python3 -m pilots.kolbo_grid_28_pilot --mode fixture --duration 8 --out result/fixture
+      - name: Generate one *optional* public LTX25 synthetic sample
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_synthetic == true }}
+        env:
+          PYTHONPATH: "pilot-runtime:."
+        run: python3 -m pilots.kolbo_grid_28_pilot --mode live --duration 8 --allow-external-synthetic-upload --out result/live
+      - name: Upload QA evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Grid-2.8-Visual-Audio-QA
+          path: |
+            result/fixture/kolbo-pilot.mp4
+            result/fixture/report.json
+            result/live/report.json
+            result/live/kolbo-pilot.mp4
+          retention-days: 3
