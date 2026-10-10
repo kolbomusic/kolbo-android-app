@@ -30,8 +30,13 @@ COMFY = os.environ.get('KOLBO_COMFY_URL','http://127.0.0.1:8188').rstrip('/')
 RENDER_PROVIDER = os.environ.get('KOLBO_RENDER_PROVIDER','comfy').lower()
 AGNES_KEY = os.environ.get('AGNES_API_KEY','').strip()
 PUBLIC_BASE = os.environ.get('KOLBO_PUBLIC_BASE_URL','').rstrip('/')
-# Confirmation is NOT a technical price-lock: provider billing can change.
-AGNES_PROMO_ACK = os.environ.get('KOLBO_AGNES_PROMO_ACK','') == 'CURRENT_ZERO_PRICE_CHECKED'
+# Two independently meaningful cases. Neither is a supplier-enforced price lock.
+# USER_APPROVED_FLASH_TRIAL records the owner's explicit request to enable Flash
+# despite promotion uncertainty; it must not be labelled "price verified".
+AGNES_ACTIVATION_MODE = os.environ.get('KOLBO_AGNES_PROMO_ACK','')
+AGNES_PROMO_ACK = AGNES_ACTIVATION_MODE in (
+    'CURRENT_ZERO_PRICE_CHECKED','USER_APPROVED_FLASH_TRIAL')
+AGNES_PRICE_VERIFIED = False
 REFERENCE_TTL_SECONDS = 60 * 45
 TOKEN = os.environ.get('KOLBO_API_TOKEN','')
 TIMEOUT = int(os.environ.get('KOLBO_RENDER_TIMEOUT_SECONDS','1200'))
@@ -77,7 +82,7 @@ def agnes_api_key_state():
 def agnes_config_errors():
     issues=[]
     if not AGNES_KEY or len(AGNES_KEY)<12:issues.append('חסר מפתח Agnes API')
-    if not AGNES_PROMO_ACK:issues.append('לא אושר שמחיר Agnes Flash בחשבון עדיין $0')
+    if not AGNES_PROMO_ACK:issues.append('אגנס פלאש לא הופעל: נדרש אישור מפורש לניסיון במסלול המבצע')
     try:
         parsed=urlsplit(PUBLIC_BASE)
         if parsed.scheme!='https' or not parsed.hostname or parsed.path not in ('','/') or parsed.query or parsed.fragment or parsed.username or parsed.password:
@@ -243,6 +248,7 @@ def agnes_access(authorization:str|None=Header(default=None)):
                 'pricing_verified':False,'generation_permitted':False}
     result=agnes_adapter.inspect_access_without_generation(AGNES_KEY)
     result['local_zero_price_gate']=AGNES_PROMO_ACK
+    result['owner_authorized_flash_trial']=AGNES_ACTIVATION_MODE=='USER_APPROVED_FLASH_TRIAL'
     # local approval is not provider price evidence; never label the two equivalent
     result['provider_account_price_verified']=False
     result['generation_permitted']=False
@@ -263,8 +269,10 @@ def health(authorization:str|None=Header(default=None)):
             'price_promotion_verified_live':False,
             'agnes_api_key_state':agnes_api_key_state(),
             'agnes_api_key_verified_live':False,
-            'operator_price_confirmation':AGNES_PROMO_ACK,
-            'detail':'מוכן להגשת בקשה ניסיונית ל־Agnes. זמינות ומחיר בחשבון לא אומתו בפועל.'
+            'operator_price_confirmation':AGNES_ACTIVATION_MODE=='CURRENT_ZERO_PRICE_CHECKED',
+            'owner_authorized_flash_trial':AGNES_ACTIVATION_MODE=='USER_APPROVED_FLASH_TRIAL',
+            'possible_billing_if_promotion_changes':True,
+            'detail':'Agnes Flash הופעל לניסיון לפי בקשת בעל החשבון. מחיר המבצע המפורסם $0 לשנייה, אך מחיר החשבון בזמן חיוב אינו מאומת. ללא מעבר למודל בתשלום.'
                      if not issues else '; '.join(issues)}
     if RENDER_PROVIDER!='comfy':
         return {'status':'not_ready','provider':RENDER_PROVIDER,'detail':'ספק הפקה לא נתמך',
