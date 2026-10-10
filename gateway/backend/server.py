@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64, binascii, hmac, io, json, os, pathlib, secrets, subprocess, threading, time, uuid, ipaddress
 from urllib.parse import urlsplit
 import agnes_adapter
+import device_pairing
 from dataclasses import dataclass, field
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -43,6 +44,7 @@ JOB_TTL_SECONDS = int(os.environ.get('KOLBO_JOB_TTL_SECONDS', '86400'))
 # other backbones can request exact frame counts in the server config.
 FRAME_MODE = os.environ.get('KOLBO_FRAME_MODE','ltx_8n_plus_1')
 app = FastAPI(title='Kolbo Video Gateway · independent GPU or Agnes Flash',version='0.3.0',docs_url=None,redoc_url=None)
+app.include_router(device_pairing.router)
 lock = threading.RLock()
 worker_semaphore = threading.Semaphore(1)
 
@@ -167,11 +169,13 @@ class JobSpec(BaseModel):
     fps: int = Field(default=24,ge=8,le=60)
 
 def require_auth(authorization:str | None):
-    if not TOKEN or len(TOKEN)<24:
-        raise HTTPException(503,'שרת פרטי לא הוגדר: חסר מפתח אבטחה ארוך')
-    wanted='Bearer '+TOKEN
-    if not authorization or not hmac.compare_digest(authorization,wanted):
-        raise HTTPException(401,'מפתח חיבור שגוי',headers={'WWW-Authenticate':'Bearer'})
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(401,'לא התקבלה הרשאת מכשיר',headers={'WWW-Authenticate':'Bearer'})
+    provided=authorization[7:]
+    legacy=bool(TOKEN and len(TOKEN)>=24 and hmac.compare_digest(provided,TOKEN))
+    device=not legacy and device_pairing.is_authorized_session(provided)
+    if not (legacy or device):
+        raise HTTPException(401,'ההרשאה פגה או שהמכשיר לא אושר',headers={'WWW-Authenticate':'Bearer'})
 
 def frame_count(seconds:int,fps:int)->int:
     target=round(seconds*fps)
