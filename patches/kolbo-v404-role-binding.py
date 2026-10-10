@@ -69,6 +69,16 @@ swap='''        for(String section:SEQUENCE.split(normalized)) {
         }'''
 if plan_source.count(find)!=1:raise SystemExit('Storyboard extraction block changed')
 plan_source=plan_source.replace(find,swap,1)
+# Merge a bare actor label with its action, rather than generating a shot of
+# "character 1" alone. The scanner may split before the very first verb.
+anchor_context='        if(clauses.isEmpty())clauses.add(normalized);'
+replacement_context='''        if(clauses.size()>1 && clauses.get(0).trim().matches("(?iu)(?:דמות|character|person|subject)\\s*[12]")) {
+            clauses.set(1,clauses.get(0)+" "+clauses.get(1));
+            clauses.remove(0);
+        }
+        if(clauses.isEmpty())clauses.add(normalized);'''
+if plan_source.count(anchor_context)!=1:raise SystemExit('Initial actor context location changed')
+plan_source=plan_source.replace(anchor_context,replacement_context,1)
 anchor='''    private static final int MAX_SCENES = 8;'''
 insertion='''    // Split only on likely *new actions*; never split every Hebrew prefixed vav.
     private static final Pattern HEBREW_ACTION_BREAK = Pattern.compile(
