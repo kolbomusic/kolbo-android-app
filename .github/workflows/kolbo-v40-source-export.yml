@@ -1,0 +1,40 @@
+name: Kolbo Video v4 source inspection export
+on:
+  push:
+    branches: [kolbo-video-v40-duo-performance-qa-20261010]
+    paths: ['.github/workflows/kolbo-v40-source-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify original source integrity and extract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import base64, hashlib, zipfile
+          raw = base64.b64decode(Path('kolbo-video-v40.src.b64').read_text().strip(), validate=True)
+          expected = Path('kolbo-video-v40.src.sha256').read_text().strip()
+          actual = hashlib.sha256(raw).hexdigest()
+          if actual != expected:
+              raise SystemExit(f'SHA256 mismatch: expected {expected}; got {actual}')
+          Path('verified-source.zip').write_bytes(raw)
+          with zipfile.ZipFile('verified-source.zip') as z:
+              for entry in z.infolist():
+                  p = PurePosixPath(entry.filename)
+                  if p.is_absolute() or '..' in p.parts: raise RuntimeError('Unsafe path in source archive')
+              bad = z.testzip()
+              if bad: raise RuntimeError('Corrupt source member: ' + bad)
+              z.extractall('source')
+          print('Verified source SHA256:', actual)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-V4-Verified-Source
+          path: source/
+          retention-days: 2
