@@ -349,6 +349,7 @@ def verify_video(output:pathlib.Path,seconds:int):
 def execute_agnes(job:Job,spec:JobSpec,images:list[bytes]):
     # Do not silently switch to paid Agnes 2.5 or to MSR if Flash fails.
     with worker_semaphore:
+        phase='setup'
         try:
             with lock:job.state='running';job.detail='מכינים תמונות ייחוס זמניות'
             if not 4<=spec.seconds<=12:raise ValueError('Agnes Flash מאפשר 4–12 שניות')
@@ -359,6 +360,7 @@ def execute_agnes(job:Job,spec:JobSpec,images:list[bytes]):
             # Retries are allowed only for a definite queue rejection, before Agnes
             # has created a video ID. Never retry unknown responses or timeout:
             # the supplier might have started a billable job.
+            phase='submit'
             video_id=None
             backoffs=(20,40,80,120)
             for attempt in range(len(backoffs)+1):
@@ -381,20 +383,35 @@ def execute_agnes(job:Job,spec:JobSpec,images:list[bytes]):
             with lock:job.detail='Agnes מעבד את הסרטון (ייתכן תור שרת עמוס)'
             def update(text):
                 with lock:job.detail=text
+            phase='poll'
             url=agnes_adapter.poll(video_id,AGNES_KEY,time.monotonic()+TIMEOUT,update)
+            phase='download'
             data=agnes_adapter.download_mp4(url)
             WORK_DIR.mkdir(parents=True,exist_ok=True)
             output=WORK_DIR/(job.id+'.mp4')
             output.write_bytes(data)
+            phase='verify_duration'
             verify_video(output,spec.seconds)
             with lock:job.output=output;job.state='completed';job.detail='הסרטון הוחזר לבדיקה'
         except Exception as e:
             candidate=WORK_DIR/(job.id+'.mp4')
             try:candidate.unlink(missing_ok=True)
             except OSError:pass
-            kind=('agnes_queue_full' if isinstance(e,agnes_adapter.AgnesQueueFull)
-                  else 'provider_or_render_error')
-            print('KOLBO_AGNES_JOB_FAILED category='+kind,flush=True)
+            # Never log the prompt, images, task ID, token, URLs or raw provider body.
+            # Keep only a safe failure category and the internal phase.
+            if isinstance(e,agnes_adapter.AgnesQueueFull):
+                kind='agnes_queue_full'
+            elif isinstance(e,agnes_adapter.AgnesError):
+                msg=str(e)
+                if '400' in msg:kind='agnes_http_400'
+                elif '401/403' in msg:kind='agnes_auth'
+                elif '402' in msg:kind='agnes_payment_required'
+                elif 'מזהה וידאו' in msg:kind='agnes_no_task_id'
+                elif 'לא סיים' in msg:kind='agnes_timeout'
+                else:kind='agnes_provider_error'
+            elif isinstance(e,ValueError):kind='validation'
+            else:kind='internal_exception'
+            print('KOLBO_AGNES_JOB_FAILED phase='+phase+' category='+kind,flush=True)
             with lock:job.state='failed';job.detail='ההפקה לא הושלמה';job.error=str(e)[:280]
         finally:
             remove_job_references(job.id)
