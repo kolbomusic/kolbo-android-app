@@ -75,7 +75,7 @@ motion=motion.replace(old,'retriever.getFrameAtTime(t*1000L,MediaMetadataRetriev
 motion_file.write_text(motion,encoding='utf-8')
 
 g=gradle.read_text(encoding='utf-8')
-for old,new in [("versionCode 400","versionCode 401"),("versionName '4.0.0'","versionName '4.0.1'")]:
+for old,new in [("versionCode 400","versionCode 401"),("versionName '4.0.0'","versionName '4.0.1'"),("applicationId 'com.kolbo.videostudio.preview40'","applicationId 'com.kolbo.videostudio.preview401'")]:
     if g.count(old)!=1: raise SystemExit('Version metadata changed')
     g=g.replace(old,new)
 gradle.write_text(g,encoding='utf-8')
