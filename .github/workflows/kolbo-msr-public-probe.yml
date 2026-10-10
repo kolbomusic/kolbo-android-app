@@ -1,0 +1,37 @@
+name: Public multi-reference provider metadata probe (no uploads)
+on:
+  push:
+    branches: [kolbo-video-v402-identity-qa-20261010]
+    paths: ['.github/workflows/kolbo-msr-public-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public_capabilities:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Check only public HF Space metadata (no image and no inference requests)
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.error, json
+          base="https://hugging-apps-ltx25-multi-subject-reference.hf.space"
+          for path in ("/config", "/gradio_api/info"):
+            req=urllib.request.Request(base+path,headers={"User-Agent":"KolboVideo/4.0.2 public-metadata-probe"})
+            try:
+              with urllib.request.urlopen(req,timeout=15) as r:
+                data=r.read(300000).decode("utf-8","replace")
+                print("URL",path,"HTTP",r.status,"bytes",len(data))
+                try:
+                  parsed=json.loads(data)
+                  if path=="/gradio_api/info":
+                    endpoints=parsed.get("named_endpoints",{})
+                    print("ENDPOINTS", list(endpoints.keys())[:20])
+                    for name,obj in endpoints.items():
+                      print("SCHEMA",name,json.dumps(obj.get("parameters",[]),ensure_ascii=False)[:1000])
+                  else:
+                    print("CONFIG_FIELDS",list(parsed)[:25])
+                except Exception as e: print("NOT_JSON",str(e)[:200],data[:200])
+            except Exception as e:
+              print("UNAVAILABLE",path,str(e)[:300])
+          PY
