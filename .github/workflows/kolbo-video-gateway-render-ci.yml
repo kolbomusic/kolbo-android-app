@@ -11,7 +11,23 @@ permissions:
 jobs:
   gateway-tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kolbo_ci
+          POSTGRES_PASSWORD: kolbo_ci_fixture_only
+          POSTGRES_DB: kolbo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kolbo_ci -d kolbo_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      KOLBO_TEST_PG_DSN: postgresql://kolbo_ci:kolbo_ci_fixture_only@localhost:5432/kolbo_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
