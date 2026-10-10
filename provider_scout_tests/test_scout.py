@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock,patch
 from provider_scout.scout import safe_space_host,safe_space_id,scan
 from test_adapter import EXAMPLE
 
@@ -25,7 +25,8 @@ class ScoutTests(unittest.TestCase):
   hub.search_spaces.return_value=[SimpleNamespace(id='author/demo')]
   hub.space_info.return_value=SimpleNamespace(private=False,disabled=False,subdomain='author-demo',card_data={'license':'apache-2.0'})
   session=MagicMock();session.get.return_value=Response(EXAMPLE)
-  result=scan(max_candidates=1,terms=['image to video'],client=hub,session=session)
+  with patch('provider_scout.scout.PILOT_IDS',()):
+   result=scan(max_candidates=1,terms=['image to video'],client=hub,session=session)
   c=result['candidates'][0]
   self.assertEqual(c['status'],'schema_matched')
   self.assertEqual(c['capabilities'][0]['api_name'],'/generate_video')
