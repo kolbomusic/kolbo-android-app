@@ -166,7 +166,7 @@ jobs:
           assert 'https' in cli and 'setInstanceFollowRedirects(false)' in cli
           assert 'אם הוא משתמש ב־Agnes או בספק AI בענן' in main
           assert 'recordSubmittedPrompt("שרת הפקה מחובר (GPU או Agnes)"' in main
-          assert 'חיבור שרת הפקה (GPU / Agnes)' in main
+          assert 'ממתינים לאישור אוטומטי' in Path('android/app/src/main/java/com/kolbo/videostudio/DeviceAutoPair.java').read_text()
           assert 'https://kolbo-video-agnes-gateway.onrender.com' in main
           assert 'GaFfJgcM-' not in main
           assert 'DeviceAutoPair.accessToken()' in main
