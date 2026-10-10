@@ -162,3 +162,15 @@ class StagingLedger:
                 FROM generation_jobs WHERE job_id=?''',(job_id,)).fetchone()
             if not row:raise LedgerError('Unknown job')
             return self._view(row)
+
+    def view_for_owner(self,owner_hash:str,job_id:str)->JobView:
+        """Read only an owner's own receipt, never an arbitrary guessed job ID."""
+        if not _OWNER.fullmatch(owner_hash):
+            raise LedgerError('Invalid server-verified owner')
+        with self.lock:
+            row=self.db.execute('''SELECT job_id,state,held_credits,provider_task_id
+                FROM generation_jobs WHERE job_id=? AND owner_hash=?''',
+                (job_id,owner_hash)).fetchone()
+            if row is None:raise LedgerError('Unknown job or owner')
+            return self._view(row)
+
