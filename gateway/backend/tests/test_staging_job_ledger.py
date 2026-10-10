@@ -12,8 +12,6 @@ SPEC=hashlib.sha256(b'canonical safe reference specification').hexdigest()
 def storage(tmp_path):
     path=tmp_path/'staging.sqlite'
     conn=sqlite3.connect(str(path),timeout=7,check_same_thread=False)
-    conn.execute('INSERT OR IGNORE INTO wallets(owner_hash,balance) VALUES (?,?)',
-                 (OWNER,100)) if False else None
     obj=ledger.StagingLedger(conn)
     conn.execute('INSERT INTO wallets(owner_hash,balance) VALUES (?,?)',(OWNER,100))
     conn.commit()
@@ -51,8 +49,10 @@ def test_rejected_before_provider_acceptance_refunds_exactly_once(storage):
     failed=store.progress(job.id,'failed_refunded',rejection_verified=True)
     assert failed.state=='failed_refunded'
     assert store.balance(OWNER)==100
-    with pytest.raises(ledger.InvalidTransition):
-        store.progress(job.id,'failed_refunded',rejection_verified=True)
+    # A replay is idempotent: the same terminal receipt is returned, and
+    # the balance cannot increase a second time.
+    repeated=store.progress(job.id,'failed_refunded',rejection_verified=True)
+    assert repeated.id==job.id and repeated.state=='failed_refunded'
     assert store.balance(OWNER)==100
 
 def test_ambiguous_request_cannot_resubmit_or_fraudulently_refund(storage):
