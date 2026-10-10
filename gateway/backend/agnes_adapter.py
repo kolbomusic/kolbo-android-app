@@ -44,7 +44,19 @@ def api_json(method: str, path: str, api_key: str, payload: dict|None=None, time
         if e.code==429:raise AgnesQueueFull('Agnes החזיר HTTP 429: מגבלת קצב או תור מלא') from e
         if e.code in (401,403):raise AgnesError('מפתח Agnes אינו מורשה להפקה (401/403)') from e
         if e.code in (402,):raise AgnesError('Agnes דורש חיוב: נחסמה ההפקה במקום לעבור למסלול בתשלום') from e
-        if e.code==400:raise AgnesError('בקשת ההפקה נדחתה ב־Agnes (400); בדוק טווח משך וקישורי תמונות') from e
+        if e.code==400:
+            # The provider's raw body is untrusted and could echo a prompt/image URL.
+            # Classify only known codes; never put its body into owner logs.
+            body=e.read(4096).decode('utf-8','replace').lower()
+            if any(k in body for k in ('video_queue_full','queue_full','queue is full')):
+                raise AgnesQueueFull('Agnes דחה יצירה: תור הווידאו מלא (400)') from e
+            if any(k in body for k in ('prompt is too long','prompt too long','max prompt','prompt length')):
+                raise AgnesError('Agnes דחה את ההנחיה: אורך הטקסט חורג מהמגבלה (400)') from e
+            if any(k in body for k in ('images','picture','reference media','reference image','image_url','image url')):
+                raise AgnesError('Agnes דחה את תמונות הייחוס או את מצב reference (400)') from e
+            if any(k in body for k in ('seconds','duration','size','mode','forbidden field')):
+                raise AgnesError('Agnes דחה שדה בבקשת הווידאו (400)') from e
+            raise AgnesError('Agnes דחה את בקשת הווידאו (400), יש לבדוק את תאימות הספק') from e
         raise AgnesError('שגיאת שירות Agnes: HTTP '+str(e.code)) from e
     except (URLError,TimeoutError) as e:
         raise AgnesError('לא ניתן ליצור קשר עם שירות Agnes') from e
@@ -108,14 +120,29 @@ class AgnesQueueFull(AgnesError):
 
 def submit(prompt:str,seconds:int,urls:list[str],key:str)->str:
     data=api_json('POST','/v1/videos',key,video_payload(prompt,seconds,urls),timeout=70)
-    code=str(data.get('code',data.get('error_code',''))).lower()
-    error=data.get('error')
-    if isinstance(error,dict):
-        code=(code+' '+str(error.get('code',''))).lower()
+    # A response that carries a valid task ID must not be automatically retried;
+    # the provider may already be processing or billing it.
+    video_id=data.get('video_id') or data.get('id') or data.get('task_id')
     status=str(data.get('status','')).lower()
-    if 'video_queue_full' in code or 'queue_full' in code or status=='video_queue_full':
-        raise AgnesQueueFull('Agnes מדווח שתור ההפקה מלא')
-    video_id=data.get('video_id') or data.get('id')
+    if not video_id:
+        error=data.get('error')
+        chunks=[data.get('code',''),data.get('error_code',''),
+                data.get('message',''),data.get('detail',''),status]
+        if isinstance(error,dict):
+            chunks.extend((error.get('code',''),error.get('message','')))
+        elif isinstance(error,str):
+            chunks.append(error)
+        detail=' '.join(str(piece)[:160] for piece in chunks).lower()
+        if any(code in detail for code in ('video_queue_full','queue_full','queue is full','queue full')):
+            raise AgnesQueueFull('Agnes מדווח שתור ההפקה מלא (תגובה ללא מזהה וידאו)')
+        if any(code in detail for code in ('rate_limit','too many requests')):
+            raise AgnesQueueFull('Agnes הגביל קצב בקשות (ללא יצירת עבודה)')
+        if any(code in detail for code in ('prompt too long','prompt length','too many characters')):
+            raise AgnesError('ההנחיה ארוכה מדי עבור Agnes')
+        if any(code in detail for code in ('blocked','safety')):
+            raise AgnesError('Agnes דחה את תוכן הבקשה במסגרת בדיקת בטיחות')
+        if any(code in detail for code in ('invalid image','reference','picture')):
+            raise AgnesError('Agnes דחה את מדיית הייחוס או את הגדרות reference')
     if not isinstance(video_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{4,128}',video_id):
         raise AgnesError('Agnes לא החזיר מזהה וידאו תקין')
     return video_id
