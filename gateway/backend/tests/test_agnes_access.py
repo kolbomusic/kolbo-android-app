@@ -47,3 +47,15 @@ def test_provider_auth_failure_reports_rejected_without_key_material(monkeypatch
     assert r['credential_state']=='rejected'
     assert not r['generation_permitted']
     assert 'example-agnes' not in str(r)
+
+def test_25_flash_metadata_url_when_task_completes(monkeypatch):
+    import time
+    seen=[]
+    def fake_api(method,path,key,payload=None,timeout=35):
+        seen.append((method,path))
+        return {'status':'completed','metadata':{'url':'https://cdn.example.com/agnes-flash.mp4'}}
+    monkeypatch.setattr(agnes,'api_json',fake_api)
+    link=agnes.poll('video_reference_12345','example-key',time.monotonic()+10)
+    assert link=='https://cdn.example.com/agnes-flash.mp4'
+    assert len(seen)==1 and seen[0][0]=='GET'
+    assert 'model_name=agnes-video-2.5-flash' in seen[0][1]
