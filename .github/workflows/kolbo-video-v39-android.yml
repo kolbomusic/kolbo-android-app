@@ -1,0 +1,81 @@
+name: Kolbo Video 3.9 two subjects one scene APK acceptance
+on:
+  push:
+    branches: [kolbo-video-v39-single-scene-two-people-20261010]
+    paths: ['.github/workflows/kolbo-video-v39-android.yml', 'kolbo-video-v39.src.b64', 'kolbo-video-v39.src.sha256']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Validate source SHA256 and extract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path,PurePosixPath
+          import base64,hashlib,zipfile
+          data=base64.b64decode(Path('kolbo-video-v39.src.b64').read_text().strip(),validate=True)
+          assert hashlib.sha256(data).hexdigest()==Path('kolbo-video-v39.src.sha256').read_text().strip()
+          Path('source.zip').write_bytes(data)
+          with zipfile.ZipFile('source.zip') as z:
+            assert z.testzip() is None
+            for item in z.infolist():
+              path=PurePosixPath(item.filename)
+              assert not path.is_absolute() and '..' not in path.parts
+            z.extractall('android')
+          PY
+      - name: Static safeguards and prompt QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
+          composer=Path('android/app/src/main/java/com/kolbo/videostudio/TwoPersonComposer.java').read_text()
+          deps=Path('android/app/build.gradle').read_text()
+          assert 'preview39' in deps and "versionName '3.9.0'" in deps
+          assert "segmentation-selfie:16.0.0-beta6" in deps and "face-detection:16.1.7" in deps
+          assert "translated.trim().length()<3" in main
+          assert "translated.trim().length()<10" not in main
+          assert "TwoPersonComposer.compose(a,b)" in main
+          assert "TwoPersonComposer.checkVideoCount(combined)" in main
+          assert "place(c,paint,a,0,0,256,512)" not in main
+          assert "Single shared scene" not in main
+          assert 'if(fa!=1||fb!=1)' in composer
+          assert 'if(count!=2)' in composer
+          assert 'max>2' in composer and '!sawTwo' in composer
+          assert 'segmentation.close()' in composer and 'fd.close()' in composer
+          assert "getWindow().getDecorView().setLayoutDirection" in main
+          print('PASS: separate foreground masks, scene composition, photo face count, short Hebrew')
+          PY
+      - name: Assemble Android APK
+        run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK signature and app identifier
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview39'
+          sha256sum "$APK" | tee app-debug.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-3.9-Single-Scene-Two-Characters-APK
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            app-debug.apk.sha256
+          retention-days: 14
