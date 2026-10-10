@@ -55,6 +55,9 @@ jobs:
           assert "Single shared scene" not in main
           assert 'if(fa!=1||fb!=1)' in composer
           assert 'if(count!=2)' in composer
+          assert 'static final int W=512,H=512;' in composer
+          assert 'place(c,left,132,H-24,210,448)' in composer
+          assert 'place(c,right,380,H-24,210,448)' in composer
           assert 'max>2' in composer and '!sawTwo' in composer
           assert 'segmentation.close()' in composer and 'fd.close()' in composer
           assert "getWindow().getDecorView().setLayoutDirection" in main
