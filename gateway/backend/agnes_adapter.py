@@ -41,7 +41,7 @@ def api_json(method: str, path: str, api_key: str, payload: dict|None=None, time
             return result
     except HTTPError as e:
         # Do not echo provider dumps; raw errors can include personal information.
-        if e.code==429:raise AgnesError('מגבלת קצב או תור מלא בשירות Agnes (429)') from e
+        if e.code==429:raise AgnesQueueFull('Agnes החזיר HTTP 429: מגבלת קצב או תור מלא') from e
         if e.code in (401,403):raise AgnesError('מפתח Agnes אינו מורשה להפקה (401/403)') from e
         if e.code in (402,):raise AgnesError('Agnes דורש חיוב: נחסמה ההפקה במקום לעבור למסלול בתשלום') from e
         if e.code==400:raise AgnesError('בקשת ההפקה נדחתה ב־Agnes (400); בדוק טווח משך וקישורי תמונות') from e
@@ -101,8 +101,20 @@ def video_payload(prompt:str,seconds:int,reference_urls:list[str])->dict:
     if reference_urls:payload['images']=reference_urls
     return payload
 
+# Retry only an EXPLICIT queue rejection before a video ID exists.
+# Do not retry timeouts or vague errors: Agnes may have already accepted the job.
+class AgnesQueueFull(AgnesError):
+    pass
+
 def submit(prompt:str,seconds:int,urls:list[str],key:str)->str:
     data=api_json('POST','/v1/videos',key,video_payload(prompt,seconds,urls),timeout=70)
+    code=str(data.get('code',data.get('error_code',''))).lower()
+    error=data.get('error')
+    if isinstance(error,dict):
+        code=(code+' '+str(error.get('code',''))).lower()
+    status=str(data.get('status','')).lower()
+    if 'video_queue_full' in code or 'queue_full' in code or status=='video_queue_full':
+        raise AgnesQueueFull('Agnes מדווח שתור ההפקה מלא')
     video_id=data.get('video_id') or data.get('id')
     if not isinstance(video_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{4,128}',video_id):
         raise AgnesError('Agnes לא החזיר מזהה וידאו תקין')
