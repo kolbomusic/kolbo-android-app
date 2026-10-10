@@ -1,8 +1,8 @@
-name: Kolbo Video 4.0.3 general storyboard planner + honest provider limits APK
+name: Kolbo Video 4.0.4 actor role / identity binding and scene continuity Android APK
 on:
   push:
-    branches: [kolbo-video-v403-general-story-planner-20261010]
-    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java', 'patches/kolbo-v403-general-planner.py', 'patches/StoryboardPlanner.java', 'patches/ProviderFailure.java', 'patches/tests/StoryboardPlannerSmoke.java']
+    branches: [kolbo-video-v404-role-identity-action-qa-20261010]
+    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java', 'patches/kolbo-v403-general-planner.py', 'patches/StoryboardPlanner.java', 'patches/ProviderFailure.java', 'patches/tests/StoryboardPlannerSmoke.java', 'patches/kolbo-v404-role-binding.py', 'patches/CharacterRoleContract.java', 'patches/tests/RoleAndActions404Smoke.java']
   workflow_dispatch:
 permissions:
   contents: read
@@ -46,11 +46,14 @@ jobs:
         run: python3 patches/kolbo-v402-msr-connect.py android
       - name: Apply v4.0.3 storyboard planner and quota guard
         run: python3 patches/kolbo-v403-general-planner.py android
+      - name: Apply v4.0.4 immutable character slots, actor-target locking, and Hebrew action parsing
+        run: python3 patches/kolbo-v404-role-binding.py android
       - name: Compile and exercise standalone storyboard planner
         run: |
           mkdir -p build/storyboard-test
-          javac -encoding UTF-8 -d build/storyboard-test android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java android/app/src/main/java/com/kolbo/videostudio/ProviderFailure.java patches/tests/StoryboardPlannerSmoke.java
+          javac -encoding UTF-8 -d build/storyboard-test android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java android/app/src/main/java/com/kolbo/videostudio/ProviderFailure.java android/app/src/main/java/com/kolbo/videostudio/CharacterRoleContract.java patches/tests/StoryboardPlannerSmoke.java patches/tests/RoleAndActions404Smoke.java
           java -cp build/storyboard-test com.kolbo.videostudio.StoryboardPlannerSmoke
+          java -cp build/storyboard-test com.kolbo.videostudio.RoleAndActions404Smoke
       - name: Static safeguards and prompt QA
         run: |
           python3 - <<'PY'
@@ -58,7 +61,7 @@ jobs:
           main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
           composer=Path('android/app/src/main/java/com/kolbo/videostudio/TwoPersonComposer.java').read_text()
           deps=Path('android/app/build.gradle').read_text()
-          assert 'preview403' in deps and "versionName '4.0.3'" in deps
+          assert 'preview404' in deps and "versionName '4.0.4'" in deps
           assert "segmentation-selfie:16.0.0-beta6" in deps and "face-detection:16.1.7" in deps
           assert "translated.trim().length()<3" in main
           assert "translated.trim().length()<10" not in main
@@ -85,7 +88,7 @@ jobs:
           assert 'NO additional bystanders. " + englishPrompt' not in main
           assert 'NO additional bystanders. " + scenePrompt' in main
           assert 'audioAfterVideo(combined,originalInstruction,motionWarning)' in main
-          assert "versionCode 403" in deps
+          assert "versionCode 404" in deps
           assert 'private void previewDuoBeforeUpload(' in main
           assert 'final boolean unverified=identityReviewRequired;' in main
           assert 'טיוטת AI לא מאומתת' in main
@@ -104,6 +107,11 @@ jobs:
           assert 'StoryboardPlanner.plan(englishPrompt,requestedSeconds)' in main
           assert 'ProviderFailure.explain(e)' in main
           assert 'טיוטה חלקית בלבד' in main
+          assert 'CharacterRoleContract.from(originalInstruction)' in main
+          assert 'styleConstraints+roleLock.prompt(scene.action' in main
+          assert 'String scenePrompt=common+' not in main
+          assert 'CharacterRoleContract.from(instruction).preview()' in main
+          assert 'HEBREW_ACTION_BREAK' in Path('android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java').read_text()
           print('PASS: separate foreground masks, scene composition, photo face count, short Hebrew')
           PY
       - name: Test rejecting still subjects but not two moving subjects
@@ -120,11 +128,11 @@ jobs:
           unzip -t "$APK" | tail -1
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview403'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview404'
           sha256sum "$APK" | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-4.0.3-General-Story-Planner-APK
+          name: Kolbo-Video-4.0.4-Role-Identity-Lock-APK
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             app-debug.apk.sha256
