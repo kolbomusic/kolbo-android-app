@@ -8,13 +8,14 @@ from __future__ import annotations
 import os
 from decimal import Decimal
 from fastapi import APIRouter,HTTPException
-from pydantic import BaseModel,Field
+from pydantic import BaseModel,Field,ConfigDict
 import execution_guard as guard
 import provider_router
 
 router=APIRouter()
 
 class PlanRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
     seconds:int=Field(ge=1,le=60)
     independent_people:int=Field(ge=0,le=2)
     audio:bool=True
