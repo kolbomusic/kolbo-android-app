@@ -1,8 +1,8 @@
-name: Kolbo Video 4.0 two-person dance motion quality gate and Android APK
+name: Kolbo Video 4.0.2 honest identity reference preview + APK
 on:
   push:
-    branches: [kolbo-video-v40-duo-performance-qa-20261010]
-    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py']
+    branches: [kolbo-video-v402-identity-qa-20261010]
+    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -40,6 +40,8 @@ jobs:
           PY
       - name: Apply verified v4.0.1 prompt and preview repair
         run: python3 patches/kolbo-v401-repair.py android
+      - name: Apply v4.0.2 offline preview and unverified-identity guards
+        run: python3 patches/kolbo-v402-identity-consent.py android
       - name: Static safeguards and prompt QA
         run: |
           python3 - <<'PY'
@@ -47,7 +49,7 @@ jobs:
           main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
           composer=Path('android/app/src/main/java/com/kolbo/videostudio/TwoPersonComposer.java').read_text()
           deps=Path('android/app/build.gradle').read_text()
-          assert 'preview401' in deps and "versionName '4.0.1'" in deps
+          assert 'preview402' in deps and "versionName '4.0.2'" in deps
           assert "segmentation-selfie:16.0.0-beta6" in deps and "face-detection:16.1.7" in deps
           assert "translated.trim().length()<3" in main
           assert "translated.trim().length()<10" not in main
@@ -74,7 +76,13 @@ jobs:
           assert 'NO additional bystanders. " + englishPrompt' not in main
           assert 'NO additional bystanders. " + scenePrompt' in main
           assert 'audioAfterVideo(combined,originalInstruction,motionWarning)' in main
-          assert "versionCode 401" in deps
+          assert "versionCode 402" in deps
+          assert 'private void previewDuoBeforeUpload(' in main
+          assert 'final boolean unverified=identityReviewRequired;' in main
+          assert 'טיוטת AI לא מאומתת' in main
+          assert 'imageMeta=uploadImageBytes(reference!=null?reference:jointReference(first,second)' in main
+          assert 'photoOnePreview.setImageURI(image)' in main
+          assert 'photoTwoPreview.setImageURI(imageTwo)' in main
           print('PASS: separate foreground masks, scene composition, photo face count, short Hebrew')
           PY
       - name: Test rejecting still subjects but not two moving subjects
@@ -91,11 +99,11 @@ jobs:
           unzip -t "$APK" | tail -1
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview401'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview402'
           sha256sum "$APK" | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-4.0.1-Prompt-Routing-Repair-APK
+          name: Kolbo-Video-4.0.2-Identity-Reference-Preview-APK
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             app-debug.apk.sha256
