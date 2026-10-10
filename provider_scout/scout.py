@@ -55,18 +55,21 @@ def scan(max_candidates=9, terms=TERMS, client=None, session=None):
     web=session or requests.Session()
     seen=set(); candidates=[]; now=dt.datetime.now(dt.timezone.utc).isoformat()
     ids=[]
+    # Prioritize previously validated public model demos before broad search results.
+    for seed in PILOT_IDS:
+        if safe_space_id(seed) and seed not in seen and len(ids)<max_candidates:
+            ids.append(seed);seen.add(seed)
     for term in terms:
         try:
             for item in islice(api.search_spaces(term,sdk='gradio',include_non_running=False,token=False),max_candidates):
                 repo_id=getattr(item,'id',None)
+                if repo_id and any(word in repo_id.lower() for word in ('uncensored','eros','nsfw','porn')):
+                    continue
                 if safe_space_id(repo_id) and repo_id not in seen:
                     ids.append(repo_id);seen.add(repo_id)
                 if len(ids)>=max_candidates:break
         except Exception:pass
         if len(ids)>=max_candidates:break
-    for s in PILOT_IDS:
-        if safe_space_id(s) and s not in seen and len(ids)<max_candidates:
-            ids.append(s);seen.add(s)
     for repo_id in ids:
         record={'id':repo_id,'discovered_at':now,'source':'huggingface_spaces_official',
                 'status':'discovered','capabilities':[],'probe':'not_run','pricing_verified':False,
