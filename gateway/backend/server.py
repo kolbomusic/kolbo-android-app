@@ -117,6 +117,26 @@ print('KOLBO_AGNES_CONFIG: api_key_state='+agnes_api_key_state()
       +' price_confirmation='+('present' if AGNES_PROMO_ACK else 'missing')
       +' provider='+RENDER_PROVIDER,flush=True)
 
+def _probe_agnes_without_generation_once():
+    # GET /v1/models only. No video creation or provider credit usage.
+    if RENDER_PROVIDER!='agnes' or agnes_api_key_state()!='configured_not_authenticated':
+        return
+    try:
+        result=agnes_adapter.inspect_access_without_generation(AGNES_KEY)
+        state=result.get('credential_state','unverified')
+        if state not in ('accepted','rejected','missing','unverified'):
+            state='unverified'
+        print('KOLBO_AGNES_READ_ONLY_PROBE: credential_state='+state
+              +' flash_model_visible='+str(bool(result.get('model_visible')))
+              +' zero_price_verified=false',flush=True)
+    except Exception:
+        print('KOLBO_AGNES_READ_ONLY_PROBE: credential_state=unverified'
+              +' flash_model_visible=false zero_price_verified=false',flush=True)
+
+# Starts after import and logs an enumeration only; never keys, model lists,
+# provider errors, URLs, account identifiers, or response content.
+threading.Thread(target=_probe_agnes_without_generation_once,daemon=True).start()
+
 @app.get('/healthz')
 def infrastructure_health():
     # For Render port/health checking only. Does not imply that Agnes credentials,
