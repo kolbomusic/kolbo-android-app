@@ -1,0 +1,42 @@
+name: Kolbo 3.2 provider discovery adapter tests
+on:
+  push:
+    branches: [kolbo-grid-v32-provider-discovery-20261010]
+    paths: ['provider_scout/**','provider_scout_tests/**','provider-scout-requirements.txt','.github/workflows/kolbo-provider-scout-v32-qa.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install source metadata adapters and ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -r provider-scout-requirements.txt
+      - name: Run schema, host, terms, and synthetic upload safety tests
+        run: python -m unittest discover -s provider_scout_tests -v
+      - name: Bounded public HF discovery with no uploads or model execution
+        run: |
+          python -m provider_scout.cli --catalog registry/providers.json --max-candidates 6
+          python - <<'PY'
+          import json
+          p=json.load(open('registry/providers.json'))
+          assert p['never_claims_generation_from_metadata']
+          assert p['verification_level']=='metadata_only'
+          for c in p['candidates']:
+            assert c['production_eligible'] is False and c['probe']=='not_run'
+          print('PASS registry source integrity and no unproven claims',len(p['candidates']))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Grid-v32-bounded-public-discovery-QA
+          path: registry/providers.json
+          retention-days: 5
