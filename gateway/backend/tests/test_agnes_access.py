@@ -59,3 +59,21 @@ def test_25_flash_metadata_url_when_task_completes(monkeypatch):
     assert link=='https://cdn.example.com/agnes-flash.mp4'
     assert len(seen)==1 and seen[0][0]=='GET'
     assert 'model_name=agnes-video-2.5-flash' in seen[0][1]
+
+def test_optional_model_price_metadata_never_unlocks_spending(monkeypatch):
+    for rate,expected in [(0,'zero_metadata_unverified'),
+                          ('0','zero_metadata_unverified'),
+                          ('0.025','positive_rate_detected')]:
+        monkeypatch.setattr(agnes,'api_json',lambda *a,**k: {
+          'data':[{'id':agnes.MODEL,'pricing':{'usd_per_second':rate}}]})
+        state=agnes.inspect_access_without_generation('safe-example-long-key-123456')
+        assert state['price_metadata_state']==expected
+        assert state['pricing_verified'] is False
+        assert state['generation_permitted'] is False
+
+def test_no_price_data_reports_unknown(monkeypatch):
+    monkeypatch.setattr(agnes,'api_json',lambda *a,**k: {
+      'data':[{'id':agnes.MODEL}]})
+    state=agnes.inspect_access_without_generation('safe-example-long-key-123456')
+    assert state['price_metadata_state']=='not_provided'
+    assert state['generation_permitted'] is False
