@@ -24,7 +24,7 @@ final class OutputLengthGate {
             throw new Exception("משך הסרטון המבוקש אינו תקין");
         long actual=duration(f), expected=requestedSeconds*1000L;
         // A 500ms tolerance covers a small final-frame offset, not missing seconds.
-        if(Math.abs(actual-expected)>500L)
+        if(!DurationPolicy.acceptable(actual,requestedSeconds))
             throw new Exception("הספק החזיר "+(actual/1000.0)+
                 " שניות במקום "+requestedSeconds+
                 ". התוצאה לא אושרה. לא נציג קובץ חלקי כאילו הושלם.");
