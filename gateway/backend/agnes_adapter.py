@@ -49,6 +49,26 @@ def api_json(method: str, path: str, api_key: str, payload: dict|None=None, time
     except (URLError,TimeoutError) as e:
         raise AgnesError('לא ניתן ליצור קשר עם שירות Agnes') from e
 
+def inspect_access_without_generation(api_key:str)->dict:
+    """Read-only, non-generation API probe; never creates video, spend, or balance.
+    Does not certify the current account price or guarantee queue capacity.
+    """
+    if not api_key or len(api_key)<12:
+        return {'credential_state':'missing','model_visible':False,
+                'pricing_verified':False,'generation_permitted':False}
+    try:
+        result=api_json('GET','/v1/models',api_key,timeout=18)
+    except AgnesError as exc:
+        safe=str(exc)
+        return {'credential_state':'rejected' if '401/403' in safe else 'unverified',
+                'model_visible':False,'pricing_verified':False,
+                'generation_permitted':False,'detail':safe[:160]}
+    models=result.get('data')
+    ids={m.get('id') for m in models if isinstance(m,dict)} if isinstance(models,list) else set()
+    return {'credential_state':'accepted' if isinstance(models,list) else 'unverified',
+            'model_visible':MODEL in ids,
+            'pricing_verified':False,'generation_permitted':False}
+
 def video_payload(prompt:str,seconds:int,reference_urls:list[str])->dict:
     if not 4<=seconds<=12:raise ValueError('Agnes Flash תומך ב־4 עד 12 שניות לכל סרטון')
     if not 0<=len(reference_urls)<=2:raise ValueError('בגרסה זו אפשר עד שתי תמונות ייחוס נפרדות')
