@@ -1,0 +1,25 @@
+# Template for a new, separate Render web service, NOT the existing Kolbo Video Grid preview.
+# Check the connected Render account and billing settings before enabling.
+services:
+  - type: web
+    name: kolbo-video-agnes-gateway
+    runtime: docker
+    plan: free
+    region: frankfurt
+    autoDeploy: false
+    dockerfilePath: ./backend/Dockerfile.render
+    dockerContext: ./backend
+    healthCheckPath: /healthz
+    envVars:
+      - key: KOLBO_RENDER_PROVIDER
+        value: agnes
+      - key: KOLBO_API_TOKEN
+        sync: false
+      - key: AGNES_API_KEY
+        sync: false
+      - key: KOLBO_PUBLIC_BASE_URL
+        sync: false
+      - key: KOLBO_AGNES_PROMO_ACK
+        value: NOT_YET_CHECKED
+      - key: KOLBO_JOB_TTL_SECONDS
+        value: "3600"
