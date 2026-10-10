@@ -94,3 +94,84 @@ def test_explicit_owner_trial_does_not_claim_account_price_verified(monkeypatch)
     assert info['price_promotion_verified_live'] is False
     assert info['possible_billing_if_promotion_changes'] is True
     assert info['provider']=='agnes-video-2.5-flash'
+
+def test_explicit_agnes_queue_full_rejected_without_video_id(monkeypatch):
+    import pytest
+    for response in (
+        {'code':'video_queue_full','message':'busy'},
+        {'error':{'code':'queue_full','message':'later'}},
+        {'status':'video_queue_full'},
+    ):
+        monkeypatch.setattr(agnes,'api_json',lambda *a,**k:response)
+        with pytest.raises(agnes.AgnesQueueFull):
+            agnes.submit('Two singers on a stage',8,[],'mock-access-key')
+
+def test_queue_busy_retries_only_without_accepted_job(monkeypatch,tmp_path):
+    import time
+    import server
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(server,'TOKEN','mock-kolbo-owner-token-abcdef-12345')
+    monkeypatch.setattr(server,'RENDER_PROVIDER','agnes')
+    monkeypatch.setattr(server,'AGNES_KEY','mock-agnes-key-12345')
+    monkeypatch.setattr(server,'AGNES_PROMO_ACK',True)
+    monkeypatch.setattr(server,'PUBLIC_BASE','https://gateway.example.com')
+    monkeypatch.setattr(server,'WORK_DIR',tmp_path)
+    delays=[]
+    monkeypatch.setattr(server.time,'sleep',lambda n:delays.append(n))
+    calls=[]
+    def submit(*args):
+        calls.append(1)
+        if len(calls)<3:raise agnes.AgnesQueueFull('queue full')
+        return 'confirmed_video_abc123'
+    monkeypatch.setattr(agnes,'submit',submit)
+    monkeypatch.setattr(agnes,'poll',lambda *a:'https://cdn.example.org/example.mp4')
+    monkeypatch.setattr(agnes,'download_mp4',
+                        lambda *a:(_ for _ in ()).throw(agnes.AgnesError('test download stop')))
+    client=TestClient(server.app)
+    response=client.post('/v1/jobs',
+        headers={'Authorization':'Bearer mock-kolbo-owner-token-abcdef-12345'},
+        json={'prompt':'Two people dancing','seconds':8})
+    assert response.status_code==202,response.text
+    jobid=response.json()['job_id']
+    for _ in range(150):
+        job=client.get('/v1/jobs/'+jobid,
+            headers={'Authorization':'Bearer mock-kolbo-owner-token-abcdef-12345'}).json()
+        if job['state']=='failed':break
+        time.sleep(0.01)
+    assert len(calls)==3
+    assert delays[:2]==[20,40]
+    assert job['state']=='failed'
+    assert 'download stop' in job['error']
+    # No other model, no automatic retry after Agnes accepted a valid ID.
+
+def test_persistent_queue_full_stops_after_bounded_attempts(monkeypatch,tmp_path):
+    import time
+    import server
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(server,'TOKEN','mock-kolbo-owner-token-abcdef-12345')
+    monkeypatch.setattr(server,'RENDER_PROVIDER','agnes')
+    monkeypatch.setattr(server,'AGNES_KEY','mock-agnes-key-12345')
+    monkeypatch.setattr(server,'AGNES_PROMO_ACK',True)
+    monkeypatch.setattr(server,'PUBLIC_BASE','https://gateway.example.com')
+    monkeypatch.setattr(server,'WORK_DIR',tmp_path)
+    delays=[]
+    monkeypatch.setattr(server.time,'sleep',lambda n:delays.append(n))
+    calls=[]
+    def submit(*args):
+        calls.append(1)
+        raise agnes.AgnesQueueFull('queue full')
+    monkeypatch.setattr(agnes,'submit',submit)
+    client=TestClient(server.app)
+    response=client.post('/v1/jobs',
+        headers={'Authorization':'Bearer mock-kolbo-owner-token-abcdef-12345'},
+        json={'prompt':'Two people dancing','seconds':8})
+    assert response.status_code==202
+    jobid=response.json()['job_id']
+    for _ in range(150):
+        job=client.get('/v1/jobs/'+jobid,
+            headers={'Authorization':'Bearer mock-kolbo-owner-token-abcdef-12345'}).json()
+        if job['state']=='failed':break
+        time.sleep(0.01)
+    assert len(calls)==5
+    assert delays[:4]==[20,40,80,120]
+    assert job['state']=='failed' and 'חמישה ניסיונות' in job['error']
