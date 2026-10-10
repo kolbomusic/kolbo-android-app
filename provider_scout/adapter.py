@@ -79,7 +79,9 @@ def _slot(p:dict) -> Slot:
         return Slot(name,'image')
     if _PROMPT.search(text) and ('image' not in text or 'prompt' in text):
         return Slot(name,'prompt')
-    if _DURATION.search(text):
+    # Gradio labels often say 'Automatic duration' for the auto_length toggle.
+    # Only the *parameter name* may choose a duration slot.
+    if _DURATION.search(name) and name.lower() not in ('auto_length','automatic_duration','auto_duration'):
         return Slot(name,'duration')
     # Only safe defaults supported. Unsupported required inputs prohibit adaptation.
     default=p.get('parameter_default', DEFAULT_UNSET)
@@ -89,6 +91,12 @@ def _slot(p:dict) -> Slot:
         raise UnsupportedEndpoint('UNMAPPED_REQUIRED_INPUT:'+name)
     if isinstance(default,str) and len(default)>256:
         raise UnsupportedEndpoint('OVERSIZED_DEFAULT:'+name)
+    # Safe probe policy: no automatic length/seed drift; bounded trial resolution.
+    if name.lower() in ('auto_length','automatic_duration','auto_duration','randomize_seed'):
+        if not isinstance(default,bool):raise UnsupportedEndpoint('AUTO_FLAG_NOT_BOOLEAN')
+        default=False
+    if name.lower() in ('width','height') and isinstance(default,(int,float)) and not isinstance(default,bool):
+        default=min(default,512)
     return Slot(name,'default',default)
 
 
