@@ -62,6 +62,7 @@ swap='''        for(String section:SEQUENCE.split(normalized)) {
                 for(String partial:ENGLISH_ACTION_BREAK.split(atom)) {
                     for(String step:HEBREW_ACTION_BREAK.split(partial)) {
                         String cleaned=TAIL.matcher(step.trim()).replaceFirst("").trim();
+                        if(cleaned.equalsIgnoreCase("and"))continue;
                         if(cleaned.length()>=2)clauses.add(cleaned);
                     }
                 }
