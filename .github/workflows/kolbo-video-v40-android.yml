@@ -2,7 +2,7 @@ name: Kolbo Video 4.0 two-person dance motion quality gate and Android APK
 on:
   push:
     branches: [kolbo-video-v40-duo-performance-qa-20261010]
-    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256']
+    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,6 +38,8 @@ jobs:
               assert not path.is_absolute() and '..' not in path.parts
             z.extractall('android')
           PY
+      - name: Apply verified v4.0.1 prompt and preview repair
+        run: python3 patches/kolbo-v401-repair.py android
       - name: Static safeguards and prompt QA
         run: |
           python3 - <<'PY'
@@ -45,7 +47,7 @@ jobs:
           main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
           composer=Path('android/app/src/main/java/com/kolbo/videostudio/TwoPersonComposer.java').read_text()
           deps=Path('android/app/build.gradle').read_text()
-          assert 'preview40' in deps and "versionName '4.0.0'" in deps
+          assert 'preview40' in deps and "versionName '4.0.1'" in deps
           assert "segmentation-selfie:16.0.0-beta6" in deps and "face-detection:16.1.7" in deps
           assert "translated.trim().length()<3" in main
           assert "translated.trim().length()<10" not in main
@@ -69,7 +71,10 @@ jobs:
           assert 'rightMedian>=MIN_CHANGED_FRACTION' in motion
           assert "MIN_CHANGED_FRACTION = 0.11" in motion
           assert 'לא בוצע אימות לשירה' in main
-          assert "versionCode 400" in deps
+          assert 'NO additional bystanders. " + englishPrompt' not in main
+          assert 'NO additional bystanders. " + scenePrompt' in main
+          assert 'audioAfterVideo(combined,originalInstruction,motionWarning)' in main
+          assert "versionCode 401" in deps
           print('PASS: separate foreground masks, scene composition, photo face count, short Hebrew')
           PY
       - name: Test rejecting still subjects but not two moving subjects
@@ -90,7 +95,7 @@ jobs:
           sha256sum "$APK" | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-4.0-Duo-Motion-Quality-APK
+          name: Kolbo-Video-4.0.1-Prompt-Routing-Repair-APK
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             app-debug.apk.sha256
