@@ -246,3 +246,46 @@ def test_ambiguous_http_503_never_retries_and_never_logs_body(monkeypatch):
     assert not isinstance(exc.value,agnes.AgnesQueueFull)
     assert '503' in str(exc.value)
     assert 'photo secret' not in str(exc.value)
+
+def test_second_parallel_agnes_job_rejected_instead_of_invisible_queue(tmp_path,monkeypatch):
+    import threading
+    import server
+    import time
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(server,'TOKEN','mock-kolbo-owner-token-abcdef-12345')
+    monkeypatch.setattr(server,'RENDER_PROVIDER','agnes')
+    monkeypatch.setattr(server,'AGNES_KEY','mock-agnes-key-12345')
+    monkeypatch.setattr(server,'AGNES_PROMO_ACK',True)
+    monkeypatch.setattr(server,'PUBLIC_BASE','https://gateway.example.com')
+    monkeypatch.setattr(server,'WORK_DIR',tmp_path)
+    with server.lock: server.jobs.clear()
+    start=threading.Event()
+    finish=threading.Event()
+    calls=[]
+    def hold_submit(*a):
+        calls.append(1)
+        start.set()
+        if not finish.wait(8):
+            raise RuntimeError('test timed out waiting for release')
+        raise agnes.AgnesError('test controlled failure')
+    monkeypatch.setattr(agnes,'submit',hold_submit)
+    client=TestClient(server.app)
+    auth={'Authorization':'Bearer mock-kolbo-owner-token-abcdef-12345'}
+    first=client.post('/v1/jobs',headers=auth,
+        json={'prompt':'Two performers together on the stage','seconds':8})
+    assert first.status_code==202
+    try:
+        assert start.wait(2)
+        second=client.post('/v1/jobs',headers=auth,
+            json={'prompt':'Different movie, should not queue silently','seconds':8})
+        assert second.status_code==409,second.text
+        assert 'כבר מתבצעת' in second.text
+        assert len(calls)==1
+    finally:
+        finish.set()
+    first_id=first.json()['job_id']
+    for _ in range(80):
+        r=client.get('/v1/jobs/'+first_id,headers=auth).json()
+        if r['state']=='failed':break
+        time.sleep(.02)
+    assert r['state']=='failed'
