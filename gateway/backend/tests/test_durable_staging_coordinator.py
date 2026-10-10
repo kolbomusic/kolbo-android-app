@@ -44,7 +44,7 @@ def create(coordinator,owner,key,digest,*,names=None,submit=None):
     return coordinator.submit(owner_hash=owner,request_key=key,
         spec_digest=digest,credit_points=20,request=request(),
         provider_proofs=names or [provider('agnes_flash')],
-        provider_submit=submit or (lambda n:'task_realistic_mock_001'))
+        provider_submit=submit or (lambda n:'task_'+uuid.uuid4().hex))
 
 def test_full_verified_scene_and_single_credit_charge(env):
     instance,owner,key,digest=env
