@@ -1,0 +1,69 @@
+name: Kolbo Video Grid 3.0 restricted CPU motion-repair acceptance
+on:
+  push:
+    branches: [kolbo-grid-v30-scoped-motion-repair-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact archive SHA256 and safe source extraction
+        run: |
+          python3 - <<'PY'
+          import pathlib,base64,hashlib,zipfile
+          data=base64.b64decode(pathlib.Path("kolbo-grid-v30-src.b64").read_text().strip(),validate=True)
+          expected=pathlib.Path("kolbo-grid-v30-src.sha256").read_text().strip()
+          assert hashlib.sha256(data).hexdigest()==expected,"ARCHIVE_SHA256_MISMATCH"
+          pathlib.Path("src.zip").write_bytes(data)
+          with zipfile.ZipFile("src.zip") as z:
+              assert z.testzip() is None
+              for item in z.infolist():
+                  p=pathlib.PurePosixPath(item.filename)
+                  assert not p.is_absolute() and ".." not in p.parts
+              z.extractall("src")
+          print("SOURCE_SHA256_PASS",expected)
+          PY
+      - name: Install FFmpeg and CPU dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install -q -r src/requirements.txt
+      - name: Run six independent scoped-repair unit and integration tests
+        run: |
+          cd src
+          PYTHONPATH=. python3 -m unittest discover -s tests -v
+      - name: Produce verifyable synthetic three-to-two bounce case and strict AV proof
+        run: |
+          cd src
+          mkdir -p evidence
+          PYTHONPATH=.:tests python3 - <<'PY'
+          from pathlib import Path
+          import json
+          from test_motion_repair import make_bad_video
+          from pilots.repair_live_demo import process
+          p=Path('evidence')
+          src=p/'intentionally-wrong-3-bounce.avi'
+          make_bad_video(src,jumps=3,fading=True)
+          report=process(src,p/'fixed')
+          assert report["state"]=="PASS_EXPLICIT_SCENE_REPAIR_ONLY",report
+          assert report["original_visual_check"]["pass"] is False
+          assert report["visual_check"]["detected_count"]==2
+          assert report["audio_check"]["audio_events_exactly"]==2
+          assert report["fade_check"]["pass"]
+          print("STRICT_EIGHT_SECOND_TWO_BOUNCE_WITH_AUDIBLE_SOUND_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Grid-v30-restricted-scene-motion-and-audio-evidence
+          path: |
+            src/evidence/fixed/report.json
+            src/evidence/fixed/approved.mp4
+          retention-days: 7
