@@ -28,6 +28,8 @@ import longform_av
 import experimental_ltx25_native_av as ltx
 import experimental_scene_builder_v433 as stage_builder
 import scene_integrity_v433 as scene_integrity
+import identity_guard_v435 as identity_gate
+import local_face_repair_v435 as face_repair
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -228,6 +230,10 @@ def health(authorization: str | None = Header(default=None)):
                 "split_screen_is_valid_success":False,
                 "accepts_one_combined_reference":True,
                 "two_person_identity_verified":False,
+                "automated_face_similarity_guard_ready":identity_gate.configured(),
+                "face_similarity_check_mandatory":True,
+                "local_original_face_pixel_repair_enabled":face_repair.enabled(),
+                "identity_guaranteed":False,
                 "crowd_and_stage_semantics_verified":False,
                 "language_and_lip_sync_verified":False,
                 "free_gpu_availability_guaranteed":False},
@@ -394,6 +400,8 @@ def native_av_preflight(payload: NativeAVPlan,
             blockers.append("combined_two_person_reference_required")
         if os.getenv("KOLBO_SCENE_BUILDER_V433")!="EXPLICITLY_ENABLED":
             blockers.append("two_person_scene_builder_unavailable")
+        if not identity_gate.configured():
+            blockers.append("local_face_similarity_guard_unavailable")
     return {"status":"eligible_for_attempt" if not blockers else "blocked",
         "blockers":blockers,"supported_duration_seconds":[1,15],
         "source":"external_public_LTX25_demo",
@@ -408,18 +416,37 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
     with LOCK:
         if job_id not in JOBS:return
         JOBS[job_id]["state"]="running"
+    guard=None
     try:
         folder=ROOT/job_id
         model_reference=reference
         scene_receipt=None
+        face_still_evidence=None
+        face_video_evidence=[]
         if requires_shared_stage_scene:
             if reference is None:
                 raise ValueError("Missing combined two-person source reference")
+            # Before spending ANY free GPU time: require TWO distinct source
+            # faces and available local (not third-party) identity verifier.
+            guard=identity_gate.JobIdentityGuard(reference)
             stage=folder/"generated-shared-stage.png"
             scene_receipt=stage_builder.build(
                 source=reference,prompt=prompt,destination=stage,
                 consent=True,commercial=False)
             model_reference=stage
+            try:
+                face_still_evidence=guard.verify_still(stage)
+            except identity_gate.IdentityMismatch:
+                # One optional LOCAL repair from the user's original face
+                # pixels. It spends no extra external GPU credits. The
+                # repaired stage MUST pass the same strict SFace identity
+                # gate; otherwise no LTX movie is sent or marked success.
+                if not face_repair.enabled():
+                    raise
+                corrected=folder/"local-face-restored-stage.png"
+                face_repair.reconstruct(reference,stage,corrected)
+                face_still_evidence=guard.verify_still(corrected)
+                model_reference=corrected
         receipt=ltx.generate(prompt=prompt,seconds=seconds,
             reference=model_reference,
             destination=folder/"draft.mp4",consent=True,commercial=False)
@@ -428,10 +455,21 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
             raise ValueError("Rejected picture-in-picture or persistent split portrait output")
         if scene.near_static_frames:
             raise ValueError("Rejected nearly frozen output despite valid audio/metadata")
+        if guard is not None:
+            # Three sampled frames: reject when either face drifts, vanishes,
+            # merges or swaps. Similarity is NOT perfect identity proof.
+            face_video_evidence=guard.verify_video(folder/"draft.mp4")
         quality={**receipt.as_dict(),"scene_audit":scene.as_dict(),
             "shared_scene_generated_by_image_model":scene_receipt is not None,
             "stage_builder_quality":scene_receipt.as_dict() if scene_receipt else None,
+            "face_similarity_check_passed":(
+                face_still_evidence is not None and len(face_video_evidence)==3
+                if requires_shared_stage_scene else False),
+            "face_stage_scores":face_still_evidence.as_dict()
+                 if face_still_evidence is not None else None,
+            "face_video_scores":[x.as_dict() for x in face_video_evidence],
             "all_actors_identity_unchanged_verified":False,
+            "automated_face_similarity_is_identity_guarantee":False,
             "duet_singing_verified":False,
             "audience_10k_verified":False,
             "requires_manual_scene_and_voice_review":True}
@@ -443,16 +481,36 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
                 size=receipt.size_bytes,sha256=receipt.sha256,
                 has_audio=True,quality=quality)
     except Exception as exc:
-        kind="acceptance_unknown" if isinstance(exc,ltx.UnknownAcceptance) else "native_av_failed"
+        kind=("identity_guard_unavailable"
+                if isinstance(exc,identity_gate.IdentityUnavailable)
+                else "face_identity_mismatch"
+                if isinstance(exc,identity_gate.IdentityMismatch)
+                else "acceptance_unknown"
+                if isinstance(exc,ltx.UnknownAcceptance)
+                else "native_av_failed")
+        detail=("לא ניתן לאמת כרגע את שתי הפנים במנוע המקומי. ההפקה נעצרה כדי לא להחליף דמויות."
+                 if kind=="identity_guard_unavailable" else
+                "פני הדמויות שהתקבלו אינם תואמים מספיק לתמונות המקור. הסרטון נפסל."
+                 if kind=="face_identity_mismatch" else
+                "מנוע הווידאו והשמע לא החזיר תוצאה מאומתת. לא מנסים שוב אוטומטית.")
         with LOCK:
             if job_id in JOBS:
-                JOBS[job_id].update(state="failed",error=kind,
-                    detail="מנוע הווידאו והשמע הציבורי לא החזיר תוצאה מאומתת. לא ננסה שוב אוטומטית.")
+                JOBS[job_id].update(state="failed",error=kind,detail=detail)
     finally:
+        if guard is not None:guard.discard()
+        # Failed or unverified drafts must never stay downloadable. Source
+        # embeddings are kept solely in memory; source file is removed.
+        with LOCK:
+            approved=JOBS.get(job_id,{}).get("state")=="completed"
+        if not approved:
+            try:(ROOT/job_id/"draft.mp4").unlink(missing_ok=True)
+            except OSError:pass
         if reference is not None:
             try:reference.unlink(missing_ok=True)
             except OSError:pass
         try:(ROOT/job_id/"generated-shared-stage.png").unlink(missing_ok=True)
+        except OSError:pass
+        try:(ROOT/job_id/"local-face-restored-stage.png").unlink(missing_ok=True)
         except OSError:pass
 
 @app.post("/v1/native-av/jobs", status_code=202)
@@ -484,6 +542,10 @@ def new_native_av_job(payload: NativeAVJob,
         if os.getenv("KOLBO_SCENE_BUILDER_V433")!="EXPLICITLY_ENABLED":
             raise HTTPException(503,
                 "הקמת במה משותפת לשתי דמויות עדיין אינה זמינה; לא נשלח וידאו חלקי",
+                headers={"Retry-After":"300"})
+        if not identity_gate.configured():
+            raise HTTPException(503,
+                "בדיקת שמירת שתי הדמויות אינה זמינה כרגע. לא נתחיל הפקה שעלולה להחליף פנים.",
                 headers={"Retry-After":"300"})
     images=[decode_picture(pic) for pic in payload.images]
     digest=hashlib.sha256(
