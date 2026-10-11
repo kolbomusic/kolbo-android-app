@@ -25,7 +25,7 @@ jobs:
             sleep 8
           done
           test "$live" = 1
-          test "$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' "$base/v1/health")" = 401
-          test "$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer invalid-token' "$base/v1/health")" = 401
-          test "$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' -X POST "$base/v1/jobs" -H 'Content-Type: application/json' -d '{}')" = 401
+          code=$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' "$base/v1/health"); echo "No-auth health HTTP $code"; test "$code" = 401
+          code=$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer invalid-token' "$base/v1/health"); echo "Wrong-auth health HTTP $code"; test "$code" = 401
+          code=$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' "$base/v1/jobs/00000000-0000-0000-0000-000000000000"); echo "No-auth job HTTP $code"; test "$code" = 401
           echo 'PASS live Render: public healthz available, sensitive health and video job endpoints reject unauthenticated traffic'
