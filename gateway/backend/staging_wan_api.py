@@ -19,6 +19,7 @@ import experimental_zerogpu_adapter as provider
 import visual_quality
 import audio_evidence
 import creative_intent_guard as intents
+import cpu_photo_studio as studio
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -45,6 +46,13 @@ class NewJob(BaseModel):
     requires_lipsync: bool = False
     requires_two_independent_people: bool = False
     commercial_use: bool = False
+
+class PhotoStudioJob(BaseModel):
+    mode: str = "cpu_photo_motion"
+    seconds: int = Field(ge=2,le=12)
+    images: list[Picture] = Field(min_length=1,max_length=2)
+    soundtrack_wav_base64: str | None = Field(default=None,max_length=9_500_000)
+    media_rights_attested: bool = False
 
 class CreativePreflight(BaseModel):
     prompt: str = Field(min_length=5, max_length=3000)
@@ -149,7 +157,94 @@ def health(authorization: str | None = Header(default=None)):
             "commercial_rights_verified":False,
             "storage_durable":False,
             "free_unlimited":False,
+            "cpu_photo_studio":{"mode":"cpu_photo_motion",
+                "endpoint":"/v1/studio/jobs","supported_image_counts":[1,2],
+                "min_seconds":2,"max_seconds":12,
+                "supports_user_owned_wav_audio":True,
+                "external_provider_calls":False,"ai_video":False,
+                "ephemeral_storage":True},
             "detail":"ניסוי בתמונת ייחוס אחת בלבד; ללא שמע; אישור ידני נדרש"}
+
+@app.post("/v1/studio/jobs", status_code=202)
+def new_photo_studio_job(payload: PhotoStudioJob,
+                         authorization: str | None = Header(default=None)):
+    """Actual CPU MP4 edit, separate from any external AI provider."""
+    require_token(authorization)
+    expire_old()
+    if payload.mode != "cpu_photo_motion":
+        raise HTTPException(422,"מצב עריכה לא נתמך")
+    if not payload.media_rights_attested:
+        raise HTTPException(422,"חובה לאשר זכויות שימוש בתמונות ובפס הקול")
+    images=[decode_picture(pic) for pic in payload.images]
+    audio=None
+    if payload.soundtrack_wav_base64 is not None:
+        try:
+            audio=base64.b64decode(payload.soundtrack_wav_base64,validate=True)
+        except (binascii.Error,ValueError):
+            raise HTTPException(422,"פס הקול אינו תקין")
+        if not 100<=len(audio)<=7_000_000 or audio[:4]!=b"RIFF" or audio[8:12]!=b"WAVE":
+            raise HTTPException(422,"נתמך קובץ WAV מקורי בלבד, עד 7MB")
+    digest=hashlib.sha256(
+        ("cpu_photo_motion:"+str(payload.seconds)).encode()
+        +b"".join(blob for blob,_ in images)+(audio or b"")).hexdigest()
+    with LOCK:
+        existing=DIGESTS.get(digest)
+        if existing in JOBS:
+            return {"job_id":existing,"state":JOBS[existing]["state"],
+                    "mode":"cpu_photo_motion","deduplicated":True}
+        if sum(job["state"] in ("queued","running") for job in JOBS.values())>=LIMIT:
+            raise HTTPException(503,"תור עריכה חינמי מלא",headers={"Retry-After":"30"})
+        job_id=str(uuid.uuid4())
+        folder=ROOT/job_id
+        folder.mkdir(parents=True,exist_ok=False,mode=0o700)
+        photo_paths=[]
+        wav=None
+        try:
+            for index,(blob,ext) in enumerate(images):
+                path=folder/f"photo_{index}.{ext}"
+                path.write_bytes(blob)
+                path.chmod(0o600)
+                photo_paths.append(path)
+            if audio is not None:
+                wav=folder/"user.wav"
+                wav.write_bytes(audio)
+                wav.chmod(0o600)
+        except Exception:
+            shutil.rmtree(folder,ignore_errors=True)
+            raise HTTPException(500,"שמירת קובצי המקור לעריכה נכשלה")
+        JOBS[job_id]={"state":"queued","created_at":time.time(),
+             "digest":digest,"mode":"cpu_photo_motion",
+             "detail":"עריכת תנועת מצלמה לתמונות, ללא יצירת משחק של דמויות AI"}
+        DIGESTS[digest]=job_id
+        POOL.submit(_work_photo_studio,job_id,photos=photo_paths,
+                    soundtrack=wav,seconds=payload.seconds)
+        return {"job_id":job_id,"state":"queued","mode":"cpu_photo_motion"}
+
+def _work_photo_studio(job_id: str, *,
+                       photos:list[Path],soundtrack:Path|None,seconds:int) -> None:
+    with LOCK:
+        if job_id not in JOBS:return
+        JOBS[job_id]["state"]="running"
+    try:
+        folder=ROOT/job_id
+        receipt=studio.render(photos=photos,seconds=seconds,
+                 out=folder/"draft.mp4",user_wav=soundtrack)
+        with LOCK:
+            JOBS[job_id].update(state="completed",
+                detail="נוצר סרטון עריכת תמונות אמיתי; לא AI וידאו",
+                size=receipt.bytes,sha256=receipt.sha256,
+                has_audio=receipt.audio_from_user,
+                media_kind="cpu_photo_motion",quality=receipt.as_dict())
+    except Exception:
+        with LOCK:
+            if job_id in JOBS:
+                JOBS[job_id].update(state="failed",error="cpu_edit_failed",
+                    detail="הפקת סרטון עריכת התמונות לא הצליחה")
+    finally:
+        for item in [*photos,soundtrack]:
+            if item is not None:
+                try:item.unlink(missing_ok=True)
+                except OSError:pass
 
 @app.post("/v1/creative/plan")
 def creative_preflight(payload: CreativePreflight,
