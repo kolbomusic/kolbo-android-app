@@ -1,0 +1,42 @@
+name: Kolbo v436 - Read-only provider API compatibility, ZERO user uploads
+on:
+  push:
+    branches: [kolbo-video-v436-diagnostic-categories-20261011]
+    paths: ['.github/workflows/kolbo-v436-provider-readiness.yml']
+permissions:
+  contents: read
+jobs:
+  check_public_demo_apis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -q 'gradio_client>=2,<3'
+      - name: Probe FLUX and LTX names and parameter count with no GPU generation
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          python - <<'PY'
+          from gradio_client import Client
+          import json
+          endpoints=[
+              ('black-forest-labs/FLUX.1-Kontext-dev','/infer',6),
+              ('ChopperBlu/ltx-2-5-demo','/generate_video',9),
+          ]
+          for name,target,count in endpoints:
+              try:
+                  client=Client(name,verbose=False)
+                  specification=client.view_api(return_format='dict')
+                  endpoint=specification.get('named_endpoints',{}).get(target)
+                  assert endpoint is not None, 'requested API route missing'
+                  fields=endpoint.get('parameters',[])
+                  print('PUBLIC_API_READY',name,target,'parameter_count',len(fields),
+                        'names',[p.get('parameter_name') for p in fields],flush=True)
+                  assert len(fields)==count, 'API changed, do NOT submit user photos'
+              except Exception as exc:
+                  print('PUBLIC_API_NOT_VERIFIED',name,type(exc).__name__,str(exc)[:180],flush=True)
+                  raise
+          print('PASS both public interface contracts load; NOT A GUARANTEE GPU IS AVAILABLE')
+          PY
