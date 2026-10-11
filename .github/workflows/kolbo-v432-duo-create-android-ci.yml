@@ -142,11 +142,11 @@ jobs:
           main=(root/"MainActivity.java").read_text()
           client=(root/"PrivateRenderClient.java").read_text()
           gate=(root/"NativeAudioTrackGate.java").read_text()
-          assert 'renderNativeAV(this,first,seconds' in main
+          assert 'renderNativeAV(this,first,second,seconds' in main
           assert '"/v1/native-av/jobs"' in client
           assert '"/v1/native-av/plan"' in client
-          assert "if(first!=null)images.put(smallCpuImage(ctx,first));" in client
-          assert 'approved_native_ltx_v431' in main
+          assert 'composeDuoReference(ctx,first,second)' in client
+          assert 'approved_native_ltx_duo_v432' in main
           assert "desired<1 || desired>15" in main
           assert 'NativeAudioTrackGate.verify(output)' in main
           assert 'hasAudio' in gate and 'hasVideo' in gate
