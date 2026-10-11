@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import hashlib, hmac, io, os, re, time, uuid
+import hashlib, hmac, io, os, re, time, uuid, tempfile
 from urllib.parse import urlsplit
 
 _OWNER=re.compile(r"^[a-f0-9]{64}$")
@@ -155,6 +155,53 @@ class PrivateObjectStore:
             hashlib.sha256(body).hexdigest(),item.sha256):
             raise StorageError('Downloaded media checksum mismatch')
         return body
+
+    def restore_to_local(self,owner_hash:str,job_id:str,key:str,kind:str,
+                         destination_directory:Path,file_name:str)->Path:
+        """Resume a saved scene after a crashed worker, without RAM-sized video reads.
+
+        The caller must already be authenticated and must verify that this media
+        belongs to an authorized job in the durable PostgreSQL artifact index.
+        """
+        item=self.head(owner_hash,job_id,key,kind)
+        if not isinstance(file_name,str) or not re.fullmatch(
+                r'[A-Za-z0-9_-]{4,100}\\.(?:mp4|jpg|png|webp)',file_name):
+            raise StorageError('Invalid output file name')
+        if not file_name.endswith('.'+_EXT[item.media_type]):
+            raise StorageError('Target extension does not match media type')
+        directory=Path(destination_directory)
+        directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+        directory=directory.resolve(strict=True)
+        target=directory/file_name
+        fd,temporary=tempfile.mkstemp(prefix='.kolbo-restore-',dir=directory)
+        try:
+            received=0
+            digest=hashlib.sha256()
+            response=self.client.get_object(Bucket=self.bucket,Key=key)
+            body=response['Body']
+            try:
+                with os.fdopen(fd,'wb') as output:
+                    os.fchmod(output.fileno(),0o600)
+                    while True:
+                        piece=body.read(1024*1024)
+                        if not piece:break
+                        received+=len(piece)
+                        if received>item.size:raise StorageError('Media download exceeded indexed length')
+                        digest.update(piece)
+                        output.write(piece)
+                    output.flush();os.fsync(output.fileno())
+            finally:
+                body.close()
+            if received!=item.size or not hmac.compare_digest(
+                    digest.hexdigest(),item.sha256):
+                raise StorageError('Restored file integrity mismatch')
+            try:os.link(temporary,target)
+            except FileExistsError as exc:
+                raise StorageError('Refusing to overwrite an existing local scene') from exc
+            return target
+        finally:
+            try:Path(temporary).unlink(missing_ok=True)
+            except OSError:pass
 
     def delete(self,owner_hash:str,job_id:str,key:str,kind:str)->None:
         self.head(owner_hash,job_id,key,kind)
