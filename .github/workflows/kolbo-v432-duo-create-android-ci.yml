@@ -160,7 +160,7 @@ jobs:
           main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
           cli=Path('android/app/src/main/java/com/kolbo/videostudio/PrivateRenderClient.java').read_text()
           gate=Path('android/app/src/main/java/com/kolbo/videostudio/AiMotionGate.java').read_text()
-          assert 'approveOnceAndGenerateAi(chosen,desired,instruction)' in main
+          assert 'approveOnceAndGenerateAi(chosen,second,desired,instruction)' in main
           assert 'startRealAiTrial(' in main
           assert 'AiMotionGate.verify(output)' in main
           assert 'setTitle("אישור חד-פעמי ליצירת AI אמיתית")' in main
@@ -178,7 +178,7 @@ jobs:
           source=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
           assert 'private void confirmCpuPhotoFlow(Uri chosen,Uri second,int desired)' in source
           assert 'if(instruction.isEmpty() && !cpuPhotoRequested' in source
-          assert 'approveOnceAndGenerateAi(chosen,desired,instruction)' in source
+          assert 'approveOnceAndGenerateAi(chosen,second,desired,instruction)' in source
           assert '.setPositiveButton("כן, עריכת תמונות",(d,w)->{' not in source
           assert '.setPositiveButton("צור סרטון MP4 עכשיו",(d,w)->{' in source
           assert 'cpuPhotoRequested=true;\n                    createVideo();' not in source
