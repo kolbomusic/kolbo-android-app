@@ -56,8 +56,25 @@ class NewJob(BaseModel):
     commercial_use: bool = False
 
 class NativeAVJob(BaseModel):
+    """Actual submit: must provide the image bytes selected during preflight."""
     prompt: str = Field(min_length=5, max_length=3000)
     seconds: float = Field(ge=1, le=15)
+    images: list[Picture] = Field(default_factory=list,max_length=1)
+    third_party_transfer_consent: bool = False
+    commercial_use: bool = False
+    requires_shared_stage_scene: bool = False
+
+class NativeAVPlan(BaseModel):
+    """Metadata ONLY: no photo upload, GPU job or quota charge.
+
+    Installed Android v4.3.3 posts image_count=1 but intentionally omits
+    images until POST /v1/native-av/jobs after preflight approval. Using
+    NativeAVJob for /plan silently ignored image_count, causing the
+    erroneous combined_two_person_reference_required blocker.
+    """
+    prompt: str = Field(min_length=5, max_length=3000)
+    seconds: float = Field(ge=1, le=15)
+    image_count: int | None = Field(default=None, ge=0, le=1)
     images: list[Picture] = Field(default_factory=list,max_length=1)
     third_party_transfer_consent: bool = False
     commercial_use: bool = False
@@ -351,21 +368,29 @@ def new_real_ai_motion_job(payload: NewJob,
         return {"job_id":job_id,"state":"queued","mode":"ai_one_image_trial"}
 
 @app.post("/v1/native-av/plan")
-def native_av_preflight(payload: NativeAVJob,
+def native_av_preflight(payload: NativeAVPlan,
                         authorization: str | None=Header(default=None)):
-    """No upload, no provider call, no credits deducted."""
+    """No upload, no provider call, no credits deducted.
+
+    Preflight checks the declared image count without requiring bytes.
+    The actual submission validates and decodes the image separately.
+    """
     studio_owner(authorization)
+    supplied_count=len(payload.images)
+    count=supplied_count if payload.image_count is None else payload.image_count
     blockers=[]
+    if payload.image_count is not None and supplied_count and supplied_count!=count:
+        blockers.append("image_count_and_supplied_images_disagree")
     if not payload.third_party_transfer_consent:
         blockers.append("external_prompt_and_image_transfer_consent_required")
     if payload.commercial_use:
         blockers.append("commercial_use_unverified")
     if os.getenv("KOLBO_NATIVE_LTX25_TRIAL")!="EXPLICITLY_ENABLED" or not ai_trials.enabled() or not enabled():
         blockers.append("public_native_audio_video_model_not_available")
-    if len(payload.images)>1:
+    if count>1:
         blockers.append("at_most_one_start_image")
     if payload.requires_shared_stage_scene:
-        if len(payload.images)!=1:
+        if count!=1:
             blockers.append("combined_two_person_reference_required")
         if os.getenv("KOLBO_SCENE_BUILDER_V433")!="EXPLICITLY_ENABLED":
             blockers.append("two_person_scene_builder_unavailable")
