@@ -1,0 +1,39 @@
+name: Kolbo Video - One-time public ZeroGPU real video proof
+on:
+  push:
+    branches:
+      - kolbo-video-v415-ci-isolation-20261011
+    paths:
+      - .github/workflows/kolbo-zerogpu-public-proof-v415.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kolbo-zerogpu-proof-v415
+  cancel-in-progress: false
+jobs:
+  public-video-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CPU-only client and video tools
+        run: |
+          python -m pip install --disable-pip-version-check 'gradio_client>=1.13,<3' 'pillow>=10,<13'
+          ffprobe -version | head -1
+      - name: Generate ONE real clip using public anonymous ZeroGPU
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: python .github/scripts/kolbo_zerogpu_proof.py
+      - name: Retain synthetic provider proof and provenance only
+        uses: actions/upload-artifact@v4
+        with:
+          name: kolbo-v415-public-zerogpu-ai-original-proof
+          path: |
+            proof-out/zerogpu-original.mp4
+            proof-out/receipt.json
+          retention-days: 3
+          if-no-files-found: error
