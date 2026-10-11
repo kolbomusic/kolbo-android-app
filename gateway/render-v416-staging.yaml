@@ -1,0 +1,19 @@
+# ISOLATED STAGING TEMPLATE ONLY; do NOT overwrite the active Kolbo service.
+# This file is not an instruction to create resources or spend money.
+services:
+  - type: web
+    name: kolbo-video-wan416-staging
+    runtime: docker
+    plan: free
+    region: frankfurt
+    autoDeploy: false
+    dockerfilePath: ./backend/Dockerfile.wan-staging
+    dockerContext: ./backend
+    healthCheckPath: /healthz
+    envVars:
+      - key: KOLBO_ALLOW_EXTERNAL_TEST_MEDIA
+        value: "DISABLED"
+      - key: KOLBO_V416_API_TOKEN
+        sync: false
+      - key: KOLBO_V416_WORK_DIR
+        value: /app/work
