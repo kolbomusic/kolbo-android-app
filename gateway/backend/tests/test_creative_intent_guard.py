@@ -34,11 +34,17 @@ def test_without_background_music_does_not_hide_singing():
     assert p.needs_audio and "requested_audio_unavailable" in p.blockers
 
 
-@pytest.mark.parametrize("length",[0.5,8,12,60])
+@pytest.mark.parametrize("length",[8,12,60])
 def test_no_silent_shortened_fallback(length):
     p=guard.plan(prompt="A golden rocket moves in the sky", seconds=length,
                  image_count=1,consent=True,compute_available=True)
     assert p.status=="blocked" and "duration_unsupported" in p.blockers
+
+
+def test_invalid_subsecond_request_is_not_silently_truncated():
+    with pytest.raises(ValueError):
+        guard.plan(prompt="A rocket starts moving", seconds=0.5,
+                   image_count=1,consent=True,compute_available=True)
 
 
 def test_single_image_silent_trial_is_only_draft():
