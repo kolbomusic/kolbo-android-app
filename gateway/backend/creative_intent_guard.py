@@ -82,9 +82,9 @@ def plan(*, prompt: str, seconds: float, image_count: int,
         raise ValueError("Invalid reference count")
     # Do not infer that a prompt without sound keywords never needs sound.
     # Users and future models must carry explicit structured intent flags.
-    no_audio_requested = bool(NEGATE_SOUND.search(prompt))
-    audio=requires_audio or requires_lipsync or (bool(SOUND.search(prompt)) and not no_audio_requested)
-    lipsync=requires_lipsync or (bool(LIPSYNC.search(prompt)) and not no_audio_requested)
+    sound_prompt = NEGATE_SOUND.sub(" ", prompt)
+    audio=requires_audio or requires_lipsync or bool(SOUND.search(sound_prompt))
+    lipsync=requires_lipsync or bool(LIPSYNC.search(sound_prompt))
     duo=requires_two_independent_people or image_count==2 or bool(MULTI_IDENTITY.search(prompt))
     blockers: list[str]=[]
     if image_count!=1:
