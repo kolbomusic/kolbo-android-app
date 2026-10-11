@@ -5,7 +5,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ffmpeg 
 WORKDIR /app
 COPY requirements.txt requirements.wan-staging.txt ./
 RUN pip install --no-cache-dir -r requirements.wan-staging.txt
-COPY staging_wan_api.py experimental_zerogpu_adapter.py visual_quality.py audio_evidence.py creative_intent_guard.py cpu_photo_studio.py guest_sessions.py procedural_sfx.py compute_supervisor.py ai_trial_guards.py longform_av.py experimental_ltx25_native_av.py ./
+COPY staging_wan_api.py experimental_zerogpu_adapter.py visual_quality.py audio_evidence.py creative_intent_guard.py cpu_photo_studio.py guest_sessions.py procedural_sfx.py compute_supervisor.py ai_trial_guards.py longform_av.py experimental_ltx25_native_av.py experimental_scene_builder_v433.py scene_integrity_v433.py ./
 RUN mkdir -p /app/work && chmod 700 /app/work
 ENV KOLBO_V416_WORK_DIR=/app/work
 EXPOSE 10000
