@@ -147,7 +147,7 @@ jobs:
           assert 'approved_stage_then_video_v433' in main
           assert 'renderNativeAV(this,first,second,seconds' in main
           assert 'composeDuoReference(ctx,first,second)' in client
-          assert 'status.onStage("משלב את שתי הדמויות לתמונת ייחוס אחת...")' in client
+          assert 'status.onStage("מכין תמונת ייחוס זמנית; ייבנה ממנה סטילס של במה משותפת...")' in client
           assert 'The starting reference depicts TWO DIFFERENT people' in client
           assert '"mime_type","image/jpeg"' in client
           assert '"/v1/native-av/jobs"' in client
