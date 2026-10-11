@@ -147,3 +147,67 @@ def test_identity_drift_in_video_rejects_download_and_deletes_failed_mp4(
     assert state["error"]=="face_identity_mismatch"
     assert not (root/job/"draft.mp4").exists()
     assert client.get("/v1/jobs/"+job+"/result",headers=token).status_code==409
+
+
+
+def test_local_face_restore_is_optional_and_disabled_by_default(monkeypatch):
+    import local_face_repair_v435 as repair
+    monkeypatch.delenv("KOLBO_LOCAL_FACE_REPAIR",raising=False)
+    assert repair.enabled() is False
+
+def test_original_pixels_can_be_restored_without_a_second_external_gpu_job(
+        setup,monkeypatch):
+    from PIL import Image
+    import local_face_repair_v435 as repair
+    import experimental_scene_builder_v433 as builder
+    client,_,root=setup
+    token=guest(client)
+    monkeypatch.setenv("KOLBO_LOCAL_FACE_REPAIR","EXPLICITLY_ENABLED")
+    class Inline:
+        def submit(self,fn,*args,**kwargs):fn(*args,**kwargs)
+    monkeypatch.setattr(api,"POOL",Inline())
+    calls=[]
+    class ModelIdentity:
+        def __init__(self,source):calls.append("source")
+        def verify_still(self,image):
+            if "restored" not in str(image):
+                calls.append("original_stage_rejected")
+                raise guard.IdentityMismatch("FLUX changed the faces")
+            calls.append("locally_repaired_stage_passed")
+            return SimpleNamespace(as_dict=lambda:{"left_similarity":.78,
+                              "right_similarity":.82})
+        def verify_video(self,video):
+            calls.append("video_face_check")
+            return [SimpleNamespace(as_dict=lambda:{"left_similarity":.74,
+                     "right_similarity":.75}) for _ in range(3)]
+        def discard(self):calls.append("discard")
+    monkeypatch.setattr(api.identity_gate,"JobIdentityGuard",ModelIdentity)
+    def new_stage(*,source,prompt,destination,consent,commercial):
+        calls.append("external_scene_GPU")
+        Image.new("RGB",(512,512),"purple").save(destination)
+        return builder.SceneReceipt(True,"fake",35.0)
+    def restore(source,stage,destination):
+        calls.append("local_CPU_face_restore")
+        Image.new("RGB",(512,512),"yellow").save(destination)
+        return destination
+    def generate(*,prompt,seconds,reference,destination,consent,commercial):
+        assert "restored" in reference.name
+        calls.append("external_video_GPU")
+        make_video(destination)
+        return SimpleNamespace(as_dict=lambda:{"video":True},
+                sha256="0"*64,size_bytes=destination.stat().st_size)
+    monkeypatch.setattr(api.stage_builder,"build",new_stage)
+    monkeypatch.setattr(api.face_repair,"reconstruct",restore)
+    monkeypatch.setattr(api.ltx,"generate",generate)
+    response=client.post("/v1/native-av/jobs",headers=token,json=body())
+    assert response.status_code==202
+    job=response.json()["job_id"]
+    state=client.get("/v1/jobs/"+job,headers=token).json()
+    assert state["state"]=="completed",state
+    assert state["quality"]["face_similarity_check_passed"] is True
+    assert state["quality"]["face_stage_scores"]["left_similarity"]==.78
+    assert len(state["quality"]["face_video_scores"])==3
+    assert calls==["source","external_scene_GPU","original_stage_rejected",
+        "local_CPU_face_restore","locally_repaired_stage_passed",
+        "external_video_GPU","video_face_check","discard"]
+    assert not (root/job/"local-face-restored-stage.png").exists()
