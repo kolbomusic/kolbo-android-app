@@ -46,6 +46,19 @@ def classify(exc:Exception,phase:str)->SafeFailure:
         return SafeFailure("stage_provider_submission_uncertain",
             "שירות בניית הבמה הציבורי לא החזיר אישור חד־משמעי. כדי לא לבזבז מכסה לא מנסים שוב אוטומטית.",phase)
     if isinstance(exc,stage.SceneUnavailable):
+        reason=getattr(exc,"reason","stage_not_available")
+        if reason=="public_gpu_quota_or_busy":
+            return SafeFailure("stage_public_gpu_quota_or_busy",
+                "ההפקה נעצרה בשירות FLUX הציבורי בגלל מכסה או עומס GPU. אין עיבוד חלופי מאומת, ולכן לא הופק סרטון.",phase)
+        if reason=="public_model_runtime_error":
+            return SafeFailure("stage_model_execution_failed",
+                "מנוע FLUX הציבורי נכשל במהלך יצירת תמונת הבמה. לא נשלח סרטון להנפשה.",phase)
+        if reason=="unchanged_scene":
+            return SafeFailure("stage_was_not_reconstructed",
+                "מנוע FLUX לא יצר סצנה חדשה אלא שימר את תמונת המקור. התוצאה נפסלה.",phase)
+        if reason=="invalid_provider_image":
+            return SafeFailure("stage_returned_invalid_image",
+                "FLUX החזיר תשובת תמונה חסרה, פגומה או בלתי נתמכת. הסרטון לא נוצר.",phase)
         return SafeFailure("stage_provider_unavailable",
             "שירות בניית הבמה הציבורי לא החזיר תמונת סצנה תקינה. לא נוצר סרטון.",phase)
     if isinstance(exc,ltx.UnknownAcceptance):
