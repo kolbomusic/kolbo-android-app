@@ -160,6 +160,15 @@ body=replace_one(body,
         payload.put("seconds",seconds);
         payload.put("fps",16);''')
 client=head+body
+# The screenshots also show a 30-second preset although native AI supports
+# up to 15. Align the visible controls to the actual service capability.
+main=replace_one(main,"durationBar.setMax(59);","durationBar.setMax(14);")
+main=replace_one(main,
+    'משך הסרטון בשניות, מאחת עד שישים',
+    'משך הסרטון בשניות, מאחת עד חמש עשרה')
+main=replace_one(main,
+    'for(int number:new int[]{5,10,15,30})',
+    'for(int number:new int[]{5,10,12,15})')
 for a,z in [
     ("applicationId 'com.kolbo.videostudio.preview431'",
      "applicationId 'com.kolbo.videostudio.preview432'"),
