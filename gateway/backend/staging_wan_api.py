@@ -22,6 +22,7 @@ import creative_intent_guard as intents
 import cpu_photo_studio as studio
 import procedural_sfx
 import guest_sessions as guests
+import compute_supervisor as compute
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -182,6 +183,17 @@ def health(authorization: str | None = Header(default=None)):
                 "ephemeral_storage":True},
             "detail":"ניסוי בתמונת ייחוס אחת בלבד; ללא שמע; אישור ידני נדרש"}
 
+@app.get("/v1/compute/capacity")
+def compute_capacity(authorization: str | None=Header(default=None)):
+    """Live resource indicators: never a paid/GPU/unlimited compute promise."""
+    studio_owner(authorization)
+    expire_old()
+    with LOCK:
+        active=sum(v["state"]=="running" for v in JOBS.values())
+        queued=sum(v["state"]=="queued" for v in JOBS.values())
+    return compute.inspect(work_dir=ROOT,active_jobs=active,
+                           queued_jobs=queued).public()
+
 @app.post("/v1/guest/bootstrap")
 def guest_bootstrap(payload:GuestBootstrapRequest):
     return guests.issue(payload.install_id)
@@ -216,8 +228,19 @@ def new_photo_studio_job(payload: PhotoStudioJob,
         if existing in JOBS:
             return {"job_id":existing,"state":JOBS[existing]["state"],
                     "mode":"cpu_photo_motion","deduplicated":True}
-        if sum(job["state"] in ("queued","running") for job in JOBS.values())>=LIMIT:
+        active=sum(job["state"]=="running" for job in JOBS.values())
+        queued=sum(job["state"]=="queued" for job in JOBS.values())
+        snapshot=compute.inspect(work_dir=ROOT,active_jobs=active,
+                                 queued_jobs=queued)
+        # The hard queue limit remains independently enforced, even if
+        # resource telemetry is missing or one sample becomes stale.
+        if active+queued>=LIMIT:
             raise HTTPException(503,"תור עריכה חינמי מלא",headers={"Retry-After":"30"})
+        pixel_counts=tuple(
+            (lambda frame: frame.size[0]*frame.size[1])(
+                Image.open(io.BytesIO(blob))) for blob,_ in images)
+        compute.admit(snapshot=snapshot,seconds=payload.seconds,
+                      pixel_counts=pixel_counts)
         if owner.startswith("guest:"):
             guests.reserve_seconds(owner[6:],payload.seconds)
         job_id=str(uuid.uuid4())
