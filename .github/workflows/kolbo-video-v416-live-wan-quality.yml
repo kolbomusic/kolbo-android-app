@@ -1,0 +1,54 @@
+name: Kolbo Video v416 - One REAL higher quality public Wan proof
+on:
+  push:
+    branches: [kolbo-video-v416-staging-android-20261011]
+    paths:
+      - .github/workflows/kolbo-video-v416-live-wan-quality.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kolbo-public-wan-real-six-steps-416
+  cancel-in-progress: false
+jobs:
+  real-gpu-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CPU client and video verification tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install --disable-pip-version-check 'gradio_client>=1.13,<3' 'Pillow>=10,<13'
+      - name: Submit one 3.5-second 6-step I2V generation with synthetic reference only
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: python .github/scripts/kolbo_zerogpu_quality_v416.py
+      - name: Audio and motion assessment (never certify identity or semantics)
+        run: |
+          python - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,'gateway/backend')
+          import visual_quality,audio_evidence
+          path=Path('proof-v416/wan-v416-6steps.mp4')
+          vision=visual_quality.inspect_mp4(path,audio_required=False)
+          sound=audio_evidence.inspect_mp4(path,audio_required=False)
+          result={'visual':vision.as_dict(),'audio':sound.as_dict(),
+                  'release_approved':False, 'human_semantic_review_required':True}
+          Path('proof-v416/quality.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-V416-Real-6Step-Wan-Video-and-QA
+          path: |
+            proof-v416/wan-v416-6steps.mp4
+            proof-v416/receipt.json
+            proof-v416/quality.json
+          retention-days: 7
+          if-no-files-found: error
