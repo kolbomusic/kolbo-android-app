@@ -163,3 +163,62 @@ def test_scene_failure_does_not_retry_video(setup):
     assert r.status_code==202
     state=client.get("/v1/jobs/"+r.json()["job_id"],headers=token).json()
     assert state["state"]=="failed" and calls==["scene"]
+
+
+def test_android_433_metadata_only_duo_preflight_accepts_selected_two_photos(setup):
+    """Exact Android request that failed in screenshot: image_count=1, no bytes."""
+    client,monkeypatch,root=setup
+    token=guest(client)
+    request={"prompt":"Two actors singing on stage at Caesarea before 10000 people",
+        "seconds":8,"image_count":1,"requires_shared_stage_scene":True,
+        "third_party_transfer_consent":True}
+    assert "images" not in request
+    result=client.post("/v1/native-av/plan",headers=token,json=request)
+    assert result.status_code==200,result.text
+    assert result.json()["status"]=="eligible_for_attempt",result.text
+    assert "combined_two_person_reference_required" not in result.json()["blockers"]
+    assert result.json()["credits_spent"]==0
+    assert not list(root.iterdir()) and trials.COUNTERS=={}
+    # Preflight should not bypass ACTUAL job's required image contents.
+    incomplete=client.post("/v1/native-av/jobs",headers=token,
+        json={k:v for k,v in request.items() if k!="image_count"})
+    assert incomplete.status_code==422
+    assert trials.COUNTERS=={}
+
+def test_android_one_image_and_text_only_metadata_preflight(setup):
+    client,_,root=setup
+    token=guest(client)
+    for image_count in (0,1):
+        request={"prompt":"Animated cartoon singer waving arms with live music",
+            "seconds":15,"image_count":image_count,
+            "third_party_transfer_consent":True,
+            "requires_shared_stage_scene":False}
+        response=client.post("/v1/native-av/plan",headers=token,json=request)
+        assert response.status_code==200
+        assert response.json()["status"]=="eligible_for_attempt"
+    assert trials.COUNTERS=={} and not list(root.iterdir())
+
+def test_two_people_preflight_with_no_selected_source_remains_blocked(setup):
+    client,_,root=setup
+    token=guest(client)
+    result=client.post("/v1/native-av/plan",headers=token,
+        json={"prompt":"Two people sing together on one stage",
+              "seconds":8,"image_count":0,
+              "requires_shared_stage_scene":True,
+              "third_party_transfer_consent":True})
+    assert result.status_code==200
+    assert result.json()["status"]=="blocked"
+    assert "combined_two_person_reference_required" in result.json()["blockers"]
+    assert not list(root.iterdir())
+
+def test_preflight_rejects_inconsistent_actual_photo_and_count(setup):
+    client,_,root=setup
+    token=guest(client)
+    result=client.post("/v1/native-av/plan",headers=token,
+        json={"prompt":"Two people perform together on stage",
+              "seconds":8,"image_count":0,"images":[photo()],
+              "requires_shared_stage_scene":True,
+              "third_party_transfer_consent":True})
+    assert result.status_code==200
+    assert "image_count_and_supplied_images_disagree" in result.json()["blockers"]
+    assert trials.COUNTERS=={} and not list(root.iterdir())
