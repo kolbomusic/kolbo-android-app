@@ -96,7 +96,7 @@ def submit_one(*, reference: Path, prompt: str, seconds: float,
     # are not private. Account-specific pricing and quotas are NOT controlled here.
     try:
         client=client_factory(SPACE_ID,verbose=False)
-        task=client.submit(handle_file_fn(str(src)),prompt,6,"",
+        task=client.submit(handle_file_fn(str(src)),prompt,8,"",
                            float(seconds),1.0,1.0,42,False,
                            api_name=API_NAME)
     except Exception as exc:
