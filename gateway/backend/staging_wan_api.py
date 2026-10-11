@@ -17,6 +17,7 @@ from PIL import Image, UnidentifiedImageError
 
 import experimental_zerogpu_adapter as provider
 import visual_quality
+import audio_evidence
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -99,10 +100,11 @@ def _work(job_id: str, *, image: Path, prompt: str, seconds: float) -> None:
             destination=dst,consent=True,commercial=False,wants_audio=False,wants_lipsync=False)
         # Output validated by provider.ffprobe then again by decoded-frame QA.
         visual=visual_quality.inspect_mp4(dst,audio_required=False)
+        sound=audio_evidence.inspect_mp4(dst,audio_required=False)
         with LOCK:
             JOBS[job_id].update(state="completed",detail="התקבלה טיוטת וידאו לא מאומתת",
                 size=receipt.bytes,sha256=receipt.sha256,has_audio=receipt.audio,
-                quality=visual.as_dict())
+                quality={'visual':visual.as_dict(),'audio':sound.as_dict()})
     except Exception as exc:
         # No automatic resend: provider might have accepted and spent quota.
         kind="acceptance_unknown" if isinstance(exc,provider.UnknownAcceptance) else "generation_failed"
