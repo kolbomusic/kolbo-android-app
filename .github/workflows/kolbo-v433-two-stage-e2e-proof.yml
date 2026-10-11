@@ -1,0 +1,45 @@
+name: Kolbo v433 - REAL two-stage FLUX scene then LTX native video+sound
+on:
+  push:
+    branches: [kolbo-video-v433-scene-compliance-gates-20261011]
+    paths: ['.github/workflows/kolbo-v433-two-stage-e2e-proof.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: kolbo-v433-single-two-stage-zero-gpu-proof
+  cancel-in-progress: false
+jobs:
+  demo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: Kolbo-v433-real-FLUX-two-person-unified-stage-image
+          run-id: 38147952278
+          github-token: ${{ github.token }}
+          path: prebuilt-stage
+      - name: Install media tooling and public GPU client
+        run: |
+          python -m pip install -q 'gradio_client>=2,<3' 'Pillow>=10,<13'
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
+      - name: ONE LTX image-to-video-and-audio job from genuine FLUX stage image
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: python .github/scripts/kolbo_v433_real_stage_then_motion_proof.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-v433-Real-2-Step-Scene-to-AI-Video-and-Audio
+          path: |
+            v433-two-step-proof/FLUX-stage-then-LTX-motion-audio.mp4
+            v433-two-step-proof/receipt.json
+          retention-days: 7
+          if-no-files-found: warn
