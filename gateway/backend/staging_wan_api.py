@@ -24,6 +24,7 @@ import procedural_sfx
 import guest_sessions as guests
 import compute_supervisor as compute
 import ai_trial_guards as ai_trials
+import longform_av
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -59,6 +60,16 @@ class PhotoStudioJob(BaseModel):
     media_rights_attested: bool = False
     sound_effect_description: str = Field(default="",max_length=3000)
     include_procedural_effect: bool = False
+
+class LongformPreview(BaseModel):
+    seconds: int = Field(ge=1,le=15)
+    image_count: int = Field(ge=0,le=2)
+    audio_source: str = Field(default="none",max_length=40)
+    voice_requested: bool = False
+    singing_requested: bool = False
+    lipsync_requested: bool = False
+    two_independent_people: bool = False
+    third_party_transfer_consent: bool = False
 
 class GuestBootstrapRequest(BaseModel):
     install_id: str = Field(min_length=32,max_length=32)
@@ -180,6 +191,16 @@ def health(authorization: str | None = Header(default=None)):
             "free_unlimited":False,
             "zero_setup":guests.capabilities(),
             "experimental_ai_video":ai_trials.advertised(),
+            "longform_15s_audio":{"supported_by_media_assembler":True,
+                "ready_for_autonomous_generation":False,
+                "supported_output_duration_seconds":[1,15],
+                "segment_max_seconds":5,"max_segments":3,
+                "requires_three_verified_video_submissions_for_15_seconds":True,
+                "has_verified_free_three_segment_gpu_budget":False,
+                "audio_modes":["authorized_wav","original_synthetic_sfx"],
+                "automatic_singing":False,"voice_generation":False,
+                "lip_sync":False,"works_without_output_verification":False,
+                "no_unlicensed_media_submissions":True},
             "cpu_photo_studio":{"mode":"cpu_photo_motion",
                 "endpoint":"/v1/studio/jobs","supported_image_counts":[1,2],
                 "min_seconds":2,"max_seconds":12,
@@ -200,6 +221,27 @@ def compute_capacity(authorization: str | None=Header(default=None)):
         queued=sum(v["state"]=="queued" for v in JOBS.values())
     return compute.inspect(work_dir=ROOT,active_jobs=active,
                            queued_jobs=queued).public()
+
+@app.post("/v1/longform/plan")
+def longform_preflight(payload: LongformPreview,
+                       authorization: str | None=Header(default=None)):
+    """Read-only 15s audio + motion plan; no image or GPU calls."""
+    studio_owner(authorization)
+    result=longform_av.plan(seconds=payload.seconds,
+        image_count=payload.image_count,
+        voice_requested=payload.voice_requested,
+        singing_requested=payload.singing_requested,
+        lipsync_requested=payload.lipsync_requested,
+        two_independent_people=payload.two_independent_people,
+        audio_source=payload.audio_source,
+        # Free public Wan access is 1 trial/install and at most 2
+        # globally/day. Never infer 3 usable free submissions from 2.
+        quota_remaining=0,
+        licensed_provider=False,
+        consent_to_external_transfer=payload.third_party_transfer_consent)
+    return {**result.as_dict(),"media_assembler_implemented":True,
+            "provider_submissions_performed":0,
+            "autonomous_generating_ready":False}
 
 @app.post("/v1/guest/bootstrap")
 def guest_bootstrap(payload:GuestBootstrapRequest):
