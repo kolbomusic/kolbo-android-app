@@ -35,7 +35,7 @@ def setup(tmp_path):
     job=jobs.reserve(owner,secrets.token_urlsafe(32),
           hashlib.sha256(uuid.uuid4().bytes).hexdigest(),20)
     jobs.transition(job.id,owner,'submitting',provider='independent_gpu')
-    jobs.transition(job.id,owner,'accepted',task_id='accepted_video_task_123')
+    jobs.transition(job.id,owner,'accepted',task_id='accepted_video_task_'+uuid.uuid4().hex)
     fake=FakeS3()
     storage=objstore.PrivateObjectStore(fake,'private-kolbo-test-objects',
                                         clock=lambda:time.time())
