@@ -25,6 +25,20 @@ def setup(monkeypatch,tmp_path):
     }.items():monkeypatch.setenv(key,val)
     monkeypatch.setattr(api,"ROOT",tmp_path)
     monkeypatch.setattr(api,"enabled",lambda:True)
+    # The scene-flow tests isolate cloud calls and mock the locally enabled
+    # biometric resemblance comparator; dedicated v435 tests cover fail-closed.
+    monkeypatch.setattr(api.identity_gate,"configured",lambda:True)
+    class UnitFaceScores:
+        def as_dict(self):
+            return {"left_similarity":0.85,"right_similarity":0.88,
+                    "minimum_wrong_pair_margin":0.40,
+                    "same_real_people_guaranteed":False}
+    class UnitFaceGuard:
+        def __init__(self,source):pass
+        def verify_still(self,stage):return UnitFaceScores()
+        def verify_video(self,video):return [UnitFaceScores() for _ in range(3)]
+        def discard(self):pass
+    monkeypatch.setattr(api.identity_gate,"JobIdentityGuard",UnitFaceGuard)
     with api.LOCK:
         api.JOBS.clear();api.DIGESTS.clear()
     with guests.LOCK:guests.COUNTERS.clear()
