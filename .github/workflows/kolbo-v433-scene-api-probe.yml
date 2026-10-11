@@ -19,7 +19,7 @@ jobs:
           python - <<'PY'
           from gradio_client import Client
           import json
-          for name in ['techfreakworm/qwen-image-editor','oindrila13saha/SIGMA-Gen-demo','WithAnyone/WithAnyone_demo']:
+          for name in ['black-forest-labs/FLUX.1-Kontext-dev','bep40/Flux-Kontext-Chat','oindrila13saha/SIGMA-Gen-demo']:
               try:
                   client=Client(name,verbose=False)
                   data=client.view_api(return_format='dict')
