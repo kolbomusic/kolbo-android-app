@@ -1,0 +1,41 @@
+name: Kolbo v425 - Actual free Wan animation proof, not photo slideshow
+on:
+  push:
+    branches: [kolbo-video-v425-real-motion-20261011]
+    paths: ['.github/workflows/kolbo-v425-live-ai-motion.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kolbo-v425-one-zerogpu-only
+  cancel-in-progress: false
+jobs:
+  real_motion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Gradio client for real ZeroGPU proof; no provider credentials
+        run: |
+          command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -qq -y ffmpeg)
+          python -m pip install -q 'gradio_client>=1.13,<3' 'Pillow>=10,<13' 'numpy>=1.26,<3'
+      - name: Generate one AI animation from synthetic test character, measure motion
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: python .github/scripts/kolbo_v425_real_motion_proof.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-v425-real-AI-motion-synthetic-probe
+          path: |
+            v425-real-proof/real-3.5s-wan-ai.mp4
+            v425-real-proof/synthetic-dancer.png
+            v425-real-proof/receipt.json
+            v425-real-proof/f1.png
+            v425-real-proof/f2.png
+            v425-real-proof/f3.png
+          if-no-files-found: warn
+          retention-days: 7
