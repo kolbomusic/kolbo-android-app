@@ -23,6 +23,7 @@ import cpu_photo_studio as studio
 import procedural_sfx
 import guest_sessions as guests
 import compute_supervisor as compute
+import ai_trial_guards as ai_trials
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -139,10 +140,15 @@ def _work(job_id: str, *, image: Path, prompt: str, seconds: float) -> None:
         # Output validated by provider.ffprobe then again by decoded-frame QA.
         visual=visual_quality.inspect_mp4(dst,audio_required=False)
         sound=audio_evidence.inspect_mp4(dst,audio_required=False)
+        # A valid MP4 with nearly identical frames is NOT successful AI.
+        if visual.pixel_change_fraction < 0.012:
+            raise ValueError("Output is visually frozen: no measurable motion")
         with LOCK:
             JOBS[job_id].update(state="completed",detail="התקבלה טיוטת וידאו לא מאומתת",
                 size=receipt.bytes,sha256=receipt.sha256,has_audio=receipt.audio,
-                quality={'visual':visual.as_dict(),'audio':sound.as_dict()})
+                quality={'visual':visual.as_dict(),'audio':sound.as_dict(),
+                         'requires_semantic_review':True,
+                         'motion_measured':True,'voice_verified':False})
     except Exception as exc:
         # No automatic resend: provider might have accepted and spent quota.
         kind="acceptance_unknown" if isinstance(exc,provider.UnknownAcceptance) else "generation_failed"
@@ -173,6 +179,7 @@ def health(authorization: str | None = Header(default=None)):
             "storage_durable":False,
             "free_unlimited":False,
             "zero_setup":guests.capabilities(),
+            "experimental_ai_video":ai_trials.advertised(),
             "cpu_photo_studio":{"mode":"cpu_photo_motion",
                 "endpoint":"/v1/studio/jobs","supported_image_counts":[1,2],
                 "min_seconds":2,"max_seconds":12,
@@ -197,6 +204,69 @@ def compute_capacity(authorization: str | None=Header(default=None)):
 @app.post("/v1/guest/bootstrap")
 def guest_bootstrap(payload:GuestBootstrapRequest):
     return guests.issue(payload.install_id)
+
+@app.post("/v1/ai/jobs", status_code=202)
+def new_real_ai_motion_job(payload: NewJob,
+                           authorization: str | None=Header(default=None)):
+    """Generate actual AI video frames using a public free ZeroGPU demo.
+
+    Explicit third-party photo consent; one image, 1–5s, silent, noncommercial,
+    1 submission/install and 2 globally/day. No automatic retries.
+    """
+    owner=studio_owner(authorization)
+    if not owner.startswith("guest:"):
+        raise HTTPException(401,"נדרשת הרשאת אורח לניסוי מצומצם")
+    expire_old()
+    plan=intents.plan(prompt=payload.prompt,seconds=payload.seconds,
+        image_count=len(payload.images),requires_audio=payload.requires_audio,
+        requires_lipsync=payload.requires_lipsync,
+        requires_two_independent_people=payload.requires_two_independent_people,
+        commercial_use=payload.commercial_use,
+        consent=payload.third_party_transfer_consent,
+        compute_available=ai_trials.enabled() and enabled())
+    if plan.status!="draft_possible":
+        raise HTTPException(422,{
+            "message":"מנוע הווידאו החינמי אינו תומך בבקשה הזאת",
+            "blockers":list(plan.blockers),
+            "alternative_cpu_editor_not_automatic":True})
+    try:
+        provider.validate(references=len(payload.images),
+            seconds=payload.seconds,wants_audio=plan.needs_audio,
+            wants_lipsync=plan.needs_lipsync,
+            commercial=payload.commercial_use,consent=True)
+    except (provider.ProviderUnavailable,provider.UnsupportedRequest) as exc:
+        raise HTTPException(503,"מנוע הווידאו הניסיוני אינו זמין כעת") from exc
+    data,ext=decode_picture(payload.images[0])
+    digest=hashlib.sha256(
+        (owner+":real_ai:"+str(payload.seconds)+payload.prompt).encode()
+        +data).hexdigest()
+    with LOCK:
+        existing=DIGESTS.get(digest)
+        if existing in JOBS:
+            return {"job_id":existing,"state":JOBS[existing]["state"],
+                    "deduplicated":True,"mode":"ai_one_image_trial"}
+        if sum(job["state"] in ("running","queued")
+               for job in JOBS.values()) >= LIMIT:
+            raise HTTPException(503,"מנוע הווידאו נמצא בשימוש כרגע",
+                                headers={"Retry-After":"60"})
+        ai_trials.reserve(owner.removeprefix("guest:"))
+        job_id=str(uuid.uuid4())
+        folder=ROOT/job_id
+        folder.mkdir(parents=True,exist_ok=False,mode=0o700)
+        inp=folder/f"reference.{ext}"
+        try:
+            inp.write_bytes(data)
+            inp.chmod(0o600)
+        except OSError:
+            shutil.rmtree(folder,ignore_errors=True)
+            raise HTTPException(500,"לא ניתן להכין את התמונה להפקה")
+        JOBS[job_id]={"state":"queued","created_at":time.time(),
+            "digest":digest,"owner":owner,"mode":"ai_one_image_trial",
+            "detail":"מפיק תנועה במנוע AI ניסיוני, ללא שמע"}
+        DIGESTS[digest]=job_id
+        POOL.submit(_work,job_id,image=inp,prompt=payload.prompt,
+                    seconds=payload.seconds)
+        return {"job_id":job_id,"state":"queued","mode":"ai_one_image_trial"}
 
 @app.post("/v1/studio/jobs", status_code=202)
 def new_photo_studio_job(payload: PhotoStudioJob,
@@ -305,13 +375,14 @@ def _work_photo_studio(job_id: str, *,
 def creative_preflight(payload: CreativePreflight,
                        authorization: str | None=Header(default=None)):
     """Read-only plan. No images, provider calls or quota use."""
-    require_token(authorization)
+    studio_owner(authorization)
     result=intents.plan(prompt=payload.prompt,seconds=payload.seconds,
         image_count=payload.image_count, requires_audio=payload.requires_audio,
         requires_lipsync=payload.requires_lipsync,
         requires_two_independent_people=payload.requires_two_independent_people,
         commercial_use=payload.commercial_use,
-        consent=payload.third_party_transfer_consent,compute_available=enabled())
+        consent=payload.third_party_transfer_consent,
+        compute_available=enabled() and ai_trials.enabled())
     return result.as_dict()
 
 @app.post("/v1/jobs", status_code=202)
@@ -374,7 +445,8 @@ def owned(job_id: str, authorization: str | None):
     with LOCK:
         job=JOBS.get(job_id)
         if not job:raise HTTPException(404,"העבודה אינה קיימת")
-        if owner!="master" and (job.get("mode")!="cpu_photo_motion"
+        if owner!="master" and (job.get("mode") not in (
+                "cpu_photo_motion","ai_one_image_trial")
                 or job.get("owner")!=owner):
             raise HTTPException(404,"העבודה אינה קיימת")
         return dict(job)

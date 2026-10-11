@@ -65,8 +65,11 @@ def test_guest_scoped_cpu_only_and_job_data_isolated(state):
     assert c.get("/v1/health",headers={"Authorization":one}).status_code==200
     assert c.get("/v1/health",headers={"Authorization":one}).json()["status"]=="not_ready"
     assert c.get("/v1/health",headers={"Authorization":one}).json()["cpu_photo_studio"]["ai_video"] is False
-    assert c.post("/v1/creative/plan",json={"prompt":"singing and dancing","seconds":3,
-                    "image_count":1},headers={"Authorization":one}).status_code==401
+    plan=c.post("/v1/creative/plan",json={"prompt":"singing and dancing","seconds":3,
+                    "image_count":1},headers={"Authorization":one})
+    assert plan.status_code==200
+    assert "requested_audio_unavailable" in plan.json()["blockers"]
+    assert plan.json()["status"]=="blocked"
     assert c.post("/v1/jobs",json={"prompt":"A bird flies over trees","seconds":3,
                     "images":[picture()],"third_party_transfer_consent":True},
                     headers={"Authorization":one}).status_code==401
