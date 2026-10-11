@@ -93,3 +93,31 @@ jobs:
           http_code=$(curl --silent --output /dev/null --write-out '%{http_code}'             --request POST http://127.0.0.1:19876/v1/orchestrator/plan             --header 'Content-Type: application/json'             --data '{"seconds":8,"independent_people":2}')
           test "$http_code" = "401"
           echo "PASS: Docker boot, public health, and authenticated-only staging planner"
+
+      - name: Smoke experimental WAN Docker with all user media transfers disabled
+        run: |
+          docker build -f gateway/backend/Dockerfile.wan-staging gateway/backend -t kolbo-video-wan416:ci
+          docker run -d --name kolbo-wan416-staging-ci \
+            -p 127.0.0.1:19877:10000 \
+            -e KOLBO_ALLOW_EXTERNAL_TEST_MEDIA=DISABLED \
+            -e KOLBO_V416_API_TOKEN=ci_test_token_at_least_32_characters_long \
+            kolbo-video-wan416:ci
+          trap 'docker rm -f kolbo-wan416-staging-ci >/dev/null 2>&1 || true' EXIT
+          ready=0
+          for i in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:19877/healthz | grep -q '"alive":true'; then
+              ready=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != 1 ]; then
+            docker logs kolbo-wan416-staging-ci
+            exit 1
+          fi
+          unauth=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:19877/v1/health)
+          test "$unauth" = "401"
+          curl --fail --silent \
+             -H 'Authorization: Bearer ci_test_token_at_least_32_characters_long' \
+             http://127.0.0.1:19877/v1/health \
+             | python -c 'import json,sys; x=json.load(sys.stdin); assert x["status"]=="not_ready"; assert x["supported_image_counts"]==[1]; assert x["storage_durable"] is False'
+          echo 'PASS: staging WAN container starts, denies unauthenticated requests and cannot submit real media by default'
