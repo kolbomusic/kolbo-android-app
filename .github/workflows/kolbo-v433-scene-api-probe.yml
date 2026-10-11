@@ -23,7 +23,7 @@ jobs:
               try:
                   client=Client(name,verbose=False)
                   data=client.view_api(return_format='dict')
-                  print("SCENE_PROVIDER",name,json.dumps(data,ensure_ascii=False,default=str)[:14000],flush=True)
+                  print('SCENE_METHODS',name,[(k,[p.get('parameter_name') for p in v.get('parameters',[])]) for k,v in data.get('named_endpoints',{}).items()],flush=True)
               except Exception as e:
                   print("SCENE_UNAVAILABLE",name,type(e).__name__,str(e)[:400],flush=True)
           PY
