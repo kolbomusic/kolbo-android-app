@@ -5,7 +5,7 @@ deployment, no database, no durable storage, no commercial right/voice/duo
 claim. Strict opt-in and no automatic retries of uncertain vendor jobs.
 """
 from __future__ import annotations
-import base64, binascii, hashlib, hmac, io, json, os, secrets, shutil, threading, time, uuid
+import base64, binascii, hashlib, hmac, io, json, os, secrets, shutil, threading, time, uuid, logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +30,7 @@ import experimental_scene_builder_v433 as stage_builder
 import scene_integrity_v433 as scene_integrity
 import identity_guard_v435 as identity_gate
 import local_face_repair_v435 as face_repair
+import native_av_failure_codes_v436 as failure_codes
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -39,6 +40,7 @@ TTL = 3600
 LIMIT = 1
 LOCK = threading.RLock()
 POOL = ThreadPoolExecutor(max_workers=LIMIT, thread_name_prefix="kolbo-v416")
+LOG = logging.getLogger("kolbo.native_av")
 JOBS: dict[str, dict] = {}
 DIGESTS: dict[str, str] = {}
 
@@ -416,7 +418,16 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
     with LOCK:
         if job_id not in JOBS:return
         JOBS[job_id]["state"]="running"
+        JOBS[job_id]["phase"]="source_face_check" if requires_shared_stage_scene else "native_video_audio_generation"
+    phase="source_face_check" if requires_shared_stage_scene else "native_video_audio_generation"
     guard=None
+    def next_phase(name:str,detail:str):
+        nonlocal phase
+        phase=name
+        with LOCK:
+            if job_id in JOBS:
+                JOBS[job_id].update(phase=phase,detail=detail)
+    started=time.monotonic()
     try:
         folder=ROOT/job_id
         model_reference=reference
@@ -429,11 +440,13 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
             # Before spending ANY free GPU time: require TWO distinct source
             # faces and available local (not third-party) identity verifier.
             guard=identity_gate.JobIdentityGuard(reference)
+            next_phase("shared_stage_generation","יוצר במת הופעה משותפת משתי הדמויות...")
             stage=folder/"generated-shared-stage.png"
             scene_receipt=stage_builder.build(
                 source=reference,prompt=prompt,destination=stage,
                 consent=True,commercial=False)
             model_reference=stage
+            next_phase("shared_stage_face_check","בודק את פני שתי הדמויות בתמונת הבמה...")
             try:
                 face_still_evidence=guard.verify_still(stage)
             except identity_gate.IdentityMismatch:
@@ -443,19 +456,23 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
                 # gate; otherwise no LTX movie is sent or marked success.
                 if not face_repair.enabled():
                     raise
+                next_phase("local_face_repair","מנסה לשפר את התאמת הפנים באופן מקומי...")
                 corrected=folder/"local-face-restored-stage.png"
                 face_repair.reconstruct(reference,stage,corrected)
                 face_still_evidence=guard.verify_still(corrected)
                 model_reference=corrected
+        next_phase("native_video_audio_generation","מנוע הווידאו והשמע מפיק תנועה ופס קול...")
         receipt=ltx.generate(prompt=prompt,seconds=seconds,
             reference=model_reference,
             destination=folder/"draft.mp4",consent=True,commercial=False)
+        next_phase("video_media_quality_check","בודק שהסרטון כולל תנועה תקינה ושמע...")
         scene=scene_integrity.inspect_video(folder/"draft.mp4")
         if scene.output_is_split_layout:
             raise ValueError("Rejected picture-in-picture or persistent split portrait output")
         if scene.near_static_frames:
             raise ValueError("Rejected nearly frozen output despite valid audio/metadata")
         if guard is not None:
+            next_phase("video_face_check","בודק שהפנים נשמרו בשלושה שלבים לאורך הסרטון...")
             # Three sampled frames: reject when either face drifts, vanishes,
             # merges or swaps. Similarity is NOT perfect identity proof.
             face_video_evidence=guard.verify_video(folder/"draft.mp4")
@@ -473,29 +490,25 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
             "duet_singing_verified":False,
             "audience_10k_verified":False,
             "requires_manual_scene_and_voice_review":True}
+        next_phase("publishing","מפרסם את הטיוטה לאחר בדיקות התקינות...")
         with LOCK:
-            JOBS[job_id].update(state="completed",
+            JOBS[job_id].update(state="completed",phase="completed",
                 detail="טיוטת AI עם תנועה ושמע; נדרשת בדיקת שתי הדמויות, הבמה והשירה.",
                 mode="native_ltx25_av_trial",
                 media_kind="native_ltx25_av_trial",
                 size=receipt.size_bytes,sha256=receipt.sha256,
                 has_audio=True,quality=quality)
     except Exception as exc:
-        kind=("identity_guard_unavailable"
-                if isinstance(exc,identity_gate.IdentityUnavailable)
-                else "face_identity_mismatch"
-                if isinstance(exc,identity_gate.IdentityMismatch)
-                else "acceptance_unknown"
-                if isinstance(exc,ltx.UnknownAcceptance)
-                else "native_av_failed")
-        detail=("לא ניתן לאמת כרגע את שתי הפנים במנוע המקומי. ההפקה נעצרה כדי לא להחליף דמויות."
-                 if kind=="identity_guard_unavailable" else
-                "פני הדמויות שהתקבלו אינם תואמים מספיק לתמונות המקור. הסרטון נפסל."
-                 if kind=="face_identity_mismatch" else
-                "מנוע הווידאו והשמע לא החזיר תוצאה מאומתת. לא מנסים שוב אוטומטית.")
+        safe=failure_codes.classify(exc,phase)
+        # Never log raw exceptions, images, prompts, auth, or face vectors.
+        LOG.warning("native_ai_job_failed diagnostic=%s phase=%s code=%s elapsed_s=%d",
+                    job_id[:8],safe.phase,safe.error,
+                    int(time.monotonic()-started))
         with LOCK:
             if job_id in JOBS:
-                JOBS[job_id].update(state="failed",error=kind,detail=detail)
+                JOBS[job_id].update(state="failed",phase=safe.phase,
+                    error=safe.error,detail=safe.detail,
+                    diagnostic_id=job_id[:8])
     finally:
         if guard is not None:guard.discard()
         # Failed or unverified drafts must never stay downloadable. Source
@@ -574,9 +587,10 @@ def new_native_av_job(payload: NativeAVJob,
             except OSError:
                 shutil.rmtree(folder,ignore_errors=True)
                 raise HTTPException(500,"הכנת תמונת המקור נכשלה")
-        JOBS[job_id]={"state":"queued","created_at":time.time(),
-            "digest":digest,"owner":owner,"mode":"native_ltx25_av_trial",
-            "detail":"מייצר תנועה ושמע יחד במנוע LTX ניסיוני"}
+        JOBS[job_id]={"state":"queued","phase":"queued",
+            "created_at":time.time(),"digest":digest,"owner":owner,
+            "mode":"native_ltx25_av_trial",
+            "detail":"מכין את הפקת הווידאו והשמע; עדיין לא בוצעה בדיקת פנים"}
         DIGESTS[digest]=job_id
         POOL.submit(_work_native_av,job_id,ref,payload.prompt,
                     payload.seconds,payload.requires_shared_stage_scene)
@@ -771,6 +785,8 @@ def status(job_id: str, authorization: str | None=Header(default=None)):
     return {"job_id":job_id,"state":job["state"],
             "detail":job.get("detail",""),
             "error":job.get("error"),
+            "phase":job.get("phase"),
+            "diagnostic_id":job.get("diagnostic_id"),
             "has_audio":job.get("has_audio",False),
             "quality":job.get("quality") if job["state"]=="completed" else None}
 

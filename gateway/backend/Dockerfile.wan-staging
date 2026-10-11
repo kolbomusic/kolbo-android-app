@@ -19,7 +19,7 @@ RUN mkdir -p /app/face-models \
        "https://huggingface.co/opencv/opencv_zoo/resolve/d4938dfc9d4ec5d098bfa33e98b3f3345a236586/models/face_recognition_sface/face_recognition_sface_2021dec_int8.onnx" \
     && echo "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4  /app/face-models/face_detection_yunet_2023mar.onnx" | sha256sum --check --status \
     && echo "2b0e941e6f16cc048c20aee0c8e31f569118f65d702914540f7bfdc14048d78a  /app/face-models/face_recognition_sface_2021dec_int8.onnx" | sha256sum --check --status
-COPY staging_wan_api.py experimental_zerogpu_adapter.py visual_quality.py audio_evidence.py creative_intent_guard.py cpu_photo_studio.py guest_sessions.py procedural_sfx.py compute_supervisor.py ai_trial_guards.py longform_av.py experimental_ltx25_native_av.py experimental_scene_builder_v433.py scene_integrity_v433.py identity_guard_v435.py local_face_repair_v435.py ./
+COPY staging_wan_api.py experimental_zerogpu_adapter.py visual_quality.py audio_evidence.py creative_intent_guard.py cpu_photo_studio.py guest_sessions.py procedural_sfx.py compute_supervisor.py ai_trial_guards.py longform_av.py experimental_ltx25_native_av.py experimental_scene_builder_v433.py scene_integrity_v433.py identity_guard_v435.py local_face_repair_v435.py native_av_failure_codes_v436.py ./
 RUN mkdir -p /app/work && chmod 700 /app/work
 ENV KOLBO_V416_WORK_DIR=/app/work KOLBO_LOCAL_FACE_MODELS_DIR=/app/face-models
 EXPOSE 10000

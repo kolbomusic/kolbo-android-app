@@ -108,7 +108,7 @@ def test_changed_faces_in_new_stage_abort_before_video_model(setup,monkeypatch):
     job=response.json()["job_id"]
     status=client.get("/v1/jobs/"+job,headers=token).json()
     assert status["state"]=="failed"
-    assert status["error"]=="face_identity_mismatch"
+    assert status["error"]=="generated_stage_faces_changed"
     assert calls==["extract_source","create_stage","compare_stage","discard"]
     assert not (root/job/"draft.mp4").exists()
     assert client.get("/v1/jobs/"+job+"/result",headers=token).status_code==409
@@ -144,7 +144,7 @@ def test_identity_drift_in_video_rejects_download_and_deletes_failed_mp4(
     job=response.json()["job_id"]
     state=client.get("/v1/jobs/"+job,headers=token).json()
     assert state["state"]=="failed"
-    assert state["error"]=="face_identity_mismatch"
+    assert state["error"]=="video_faces_changed"
     assert not (root/job/"draft.mp4").exists()
     assert client.get("/v1/jobs/"+job+"/result",headers=token).status_code==409
 
