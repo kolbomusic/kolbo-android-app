@@ -16,8 +16,28 @@ import os,time
 SPACE="black-forest-labs/FLUX.1-Kontext-dev"
 MAX_INPUT=5_000_000
 
-class SceneUnavailable(RuntimeError):pass
+class SceneUnavailable(RuntimeError):
+    """Whitelisted safe error reason; never include provider response or input."""
+    def __init__(self,message:str,reason:str="stage_not_available"):
+        super().__init__(message)
+        self.reason=reason
+
 class SceneUncertain(RuntimeError):pass
+
+def _public_result_kind(exc:Exception)->str:
+    """Conservatively classify public quota vs generic runtime error.
+
+    Reading third-party error text is ONLY to select a whitelisted code.
+    It is NEVER returned/logged and may be unreliable.
+    """
+    message=str(exc).lower()
+    if any(word in message for word in (
+        "quota", "rate limit", "too many requests",
+        "gpu quota", "exceeded gpu", "zero gpu quota", "zerogpu quota",
+        "gpu limit", "insufficient gpu", "over capacity")):
+        return "public_gpu_quota_or_busy"
+    return "public_model_runtime_error"
+
 
 @dataclass(frozen=True)
 class SceneReceipt:
@@ -53,7 +73,8 @@ def build(*,source:Path,prompt:str,destination:Path,consent:bool,
           handle_file_fn:Callable|None=None,wait_seconds:int=450)->SceneReceipt:
     source,destination=Path(source),Path(destination)
     validate(source=source,prompt=prompt,consent=consent,commercial=commercial)
-    if destination.exists():raise SceneUnavailable("Output already exists")
+    if destination.exists():
+        raise SceneUnavailable("Scene already present; refusing overwrite","output_exists")
     with Image.open(source) as im:
         original=im.convert("RGB").resize((512,512))
     scene_prompt=(
@@ -79,33 +100,51 @@ def build(*,source:Path,prompt:str,destination:Path,consent:bool,
     except Exception as e:
         raise SceneUncertain("Public scene model request may have been accepted") from e
     until=time.monotonic()+wait_seconds
-    while not job.done() and time.monotonic()<until:
-        time.sleep(5)
-    if not job.done():
-        job.cancel()
-        raise SceneUncertain("Scene creation timed out; not resubmitting")
     try:
+        while not job.done() and time.monotonic()<until:
+            time.sleep(5)
+        if not job.done():
+            job.cancel()
+            raise SceneUncertain("Scene generation timed out; do not resubmit")
         response=job.result()
-        result=response[0] if isinstance(response,(list,tuple)) and response else None
-        if isinstance(result,dict):result=result.get("path") or result.get("name")
+    except SceneUncertain:
+        raise
+    except Exception as exc:
+        reason=_public_result_kind(exc)
+        raise SceneUnavailable("Public FLUX execution failed",reason) from None
+    try:
+        # gradio_client historically returned either [local-file, seed, ...],
+        # a direct local file path, or FileData with path/name. Never follow
+        # arbitrary remote URLs from provider output (avoids SSRF).
+        result=response[0] if isinstance(response,(list,tuple)) and response else response
+        if isinstance(result,dict):
+            result=result.get("path") or result.get("name")
         output=Path(result) if isinstance(result,str) else None
-        if output is None or not output.is_file() or output.is_symlink():
-            raise SceneUnavailable("Public scene editor returned no image")
+        if output is None or output.is_symlink() or not output.is_file():
+            raise SceneUnavailable("No scene image file produced",
+                "invalid_provider_image")
+        if not 1024<=output.stat().st_size<=MAX_INPUT:
+            raise SceneUnavailable("Scene image file too small or too large",
+                "invalid_provider_image")
         with Image.open(output) as image:
             if image.format not in ("PNG","JPEG","WEBP"):
-                raise SceneUnavailable("Invalid model image format")
+                raise SceneUnavailable("Invalid model image format",
+                    "invalid_provider_image")
             if image.width<256 or image.height<256 or image.width*image.height>8_000_000:
-                raise SceneUnavailable("Invalid model image dimensions")
+                raise SceneUnavailable("Invalid model image dimensions",
+                    "invalid_provider_image")
             new=image.convert("RGB").resize((512,512))
             difference=sum(ImageStat.Stat(ImageChops.difference(
                 original,new)).mean)/3.0
             if difference<18:
-                raise SceneUnavailable("Scene model only reproduced input portraits")
+                raise SceneUnavailable("Scene editor did not meaningfully change input",
+                    "unchanged_scene")
             destination.parent.mkdir(parents=True,exist_ok=True)
             with destination.open("xb") as dest:
                 new.save(dest,"PNG")
         return SceneReceipt(True,SPACE,round(difference,4))
-    except (SceneUnavailable,SceneUncertain):
+    except SceneUnavailable:
         raise
-    except Exception as exc:
-        raise SceneUnavailable("Cannot verify output of public scene editor") from exc
+    except Exception:
+        raise SceneUnavailable("Provider image could not be decoded",
+            "invalid_provider_image") from None
