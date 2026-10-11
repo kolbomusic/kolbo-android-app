@@ -31,6 +31,7 @@ import scene_integrity_v433 as scene_integrity
 import identity_guard_v435 as identity_gate
 import local_face_repair_v435 as face_repair
 import native_av_failure_codes_v436 as failure_codes
+import stage_provider_cooldown_v438 as scene_cooldown
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -227,7 +228,11 @@ def health(authorization: str | None = Header(default=None)):
                 "mode":"FLUX_Kontext_to_LTX_native_AV",
                 "ready":os.getenv("KOLBO_SCENE_BUILDER_V433")=="EXPLICITLY_ENABLED"
                          and os.getenv("KOLBO_NATIVE_LTX25_TRIAL")=="EXPLICITLY_ENABLED"
-                         and ai_trials.enabled() and enabled(),
+                         and ai_trials.enabled() and enabled()
+                         and scene_cooldown.FLUX_COOLDOWN.remaining()==0,
+                "recent_quota_denial_observed":scene_cooldown.FLUX_COOLDOWN.remaining()>0,
+                "retry_after_seconds":scene_cooldown.FLUX_COOLDOWN.remaining(),
+                "provider_global_availability_verified":False,
                 "requires_two_sequential_public_gpu_inferences":True,
                 "split_screen_is_valid_success":False,
                 "accepts_one_combined_reference":True,
@@ -404,8 +409,16 @@ def native_av_preflight(payload: NativeAVPlan,
             blockers.append("two_person_scene_builder_unavailable")
         if not identity_gate.configured():
             blockers.append("local_face_similarity_guard_unavailable")
+        if scene_cooldown.FLUX_COOLDOWN.remaining()>0:
+            blockers.append("מנוע FLUX בהמתנה לאחר מגבלת GPU ציבורית; אין צורך לשלוח את התמונות שוב כרגע")
+    remaining=(scene_cooldown.FLUX_COOLDOWN.remaining()
+               if payload.requires_shared_stage_scene else 0)
     return {"status":"eligible_for_attempt" if not blockers else "blocked",
-        "blockers":blockers,"supported_duration_seconds":[1,15],
+        "blockers":blockers,
+        "cooldown_reason":"recent_public_quota_rejection" if remaining else None,
+        "retry_after_seconds":remaining,
+        "provider_global_availability_verified":False,
+        "supported_duration_seconds":[1,15],
         "source":"external_public_LTX25_demo",
         "native_audio_expected":True,
         "speech_singing_lipsync_quality_not_guaranteed":True,
@@ -441,6 +454,10 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
             # faces and available local (not third-party) identity verifier.
             guard=identity_gate.JobIdentityGuard(reference)
             next_phase("shared_stage_generation","יוצר במת הופעה משותפת משתי הדמויות...")
+            if scene_cooldown.FLUX_COOLDOWN.remaining()>0:
+                raise stage_builder.SceneUnavailable(
+                    "Public FLUX quota cooldown observed on this process",
+                    reason="public_gpu_quota_or_busy")
             stage=folder/"generated-shared-stage.png"
             scene_receipt=stage_builder.build(
                 source=reference,prompt=prompt,destination=stage,
@@ -500,6 +517,9 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
                 has_audio=True,quality=quality)
     except Exception as exc:
         safe=failure_codes.classify(exc,phase)
+        if (safe.error=="stage_public_gpu_quota_or_busy"
+                and phase=="shared_stage_generation"):
+            scene_cooldown.FLUX_COOLDOWN.record_quota_failure()
         # Never log raw exceptions, images, prompts, auth, or face vectors.
         LOG.warning("native_ai_job_failed diagnostic=%s phase=%s code=%s elapsed_s=%d",
                     job_id[:8],safe.phase,safe.error,
@@ -560,6 +580,12 @@ def new_native_av_job(payload: NativeAVJob,
             raise HTTPException(503,
                 "בדיקת שמירת שתי הדמויות אינה זמינה כרגע. לא נתחיל הפקה שעלולה להחליף פנים.",
                 headers={"Retry-After":"300"})
+        remaining=scene_cooldown.FLUX_COOLDOWN.remaining()
+        if remaining>0:
+            raise HTTPException(503,
+                "מנוע FLUX הציבורי דחה לאחרונה בקשה בגלל מכסת GPU או עומס. "
+                "ממתינים לפני ניסיון נוסף כדי לא לשלוח תמונות לשווא.",
+                headers={"Retry-After":str(remaining)})
     images=[decode_picture(pic) for pic in payload.images]
     digest=hashlib.sha256(
         (owner+":ltx_native:"+str(payload.seconds)+":"+
