@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ffmpeg ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt requirements.wan-staging.txt ./
+RUN pip install --no-cache-dir -r requirements.wan-staging.txt
+COPY staging_wan_api.py experimental_zerogpu_adapter.py visual_quality.py ./
+RUN mkdir -p /app/work && chmod 700 /app/work
+ENV KOLBO_V416_WORK_DIR=/app/work
+EXPOSE 10000
+CMD ["sh","-c","exec uvicorn staging_wan_api:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"]
