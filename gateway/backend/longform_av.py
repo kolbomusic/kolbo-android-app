@@ -245,3 +245,70 @@ def assemble(*,segments:list[Path],seconds:int,output:Path,
         "user_prompt_semantics_verified":False,
         "gpu_provider_licensing_verified":False,
     }
+
+
+def generate_shots_then_assemble(*,reference_image:Path,seconds:int,
+            prompt:str,output:Path,generator,
+            authorized_wav:Path|None=None,synthetic_effect:str="none",
+            quota_remaining:int=0,provider_license_verified:bool=False,
+            external_transfer_consent:bool=False)->dict:
+    """Orchestrate genuine motion segments and last-frame continuity.
+
+    Generator is a trusted, injected provider callback. There is NO default
+    GPU, quota bypass, retry, or paid provider. Caller must establish actual
+    free credits and rights on server before running; caller-supplied booleans
+    from an Android request must never be trusted as verification.
+    """
+    import re
+    if not isinstance(prompt,str) or not 5<=len(prompt.strip())<=3000:
+        raise LongformError("Invalid scene instructions")
+    if reference_image.is_symlink() or not reference_image.is_file():
+        raise LongformError("Missing or untrusted initial scene image")
+    if not callable(generator):
+        raise LongformError("Verified video model provider is required")
+    if authorized_wav is None and synthetic_effect=="none":
+        raise LongformError("Audio is required for 15-second mode")
+    if authorized_wav is not None and synthetic_effect!="none":
+        raise LongformError("Choose exactly one audible soundtrack")
+    soundtrack_type="owned_wav" if authorized_wav is not None else "synthetic_sfx"
+    # The parser is deliberately conservative; it is NOT a replacement for
+    # structured prompt understanding or scene semantics QA.
+    singing=bool(re.search(r"\b(?:sing|singing|sings|lyrics)\b|"
+        r"(?:לשיר|שרה|שרות|תשיר|שיר(?:ה|ים)?)",prompt,re.I))
+    speech=bool(re.search(r"\b(?:speaks?|dialogue|talks?|says?)\b|"
+        r"(?:תדבר|מדבר|אומר|דיבור|קריינות)",prompt,re.I))
+    lipsync=bool(re.search(r"\b(?:lipsync|lip.sync)\b|סנכרון\s*שפתיים",prompt,re.I))
+    independent=bool(re.search(r"\b(?:two\s+people|two\s+characters)\b|"
+        r"(?:שני\s+אנשים|שתי\s+דמויות|שניהם)",prompt,re.I))
+    task=plan(seconds=seconds,image_count=1,voice_requested=speech,
+              singing_requested=singing,lipsync_requested=lipsync,
+              two_independent_people=independent,audio_source=soundtrack_type,
+              quota_remaining=quota_remaining,
+              licensed_provider=provider_license_verified,
+              consent_to_external_transfer=external_transfer_consent)
+    if task.status!="eligible_for_attempt":
+        raise LongformError("Long-form generation blocked: "+",".join(task.blockers))
+    with TemporaryDirectory(prefix="kolbo-verified-gpu-shots-") as folder:
+        root=Path(folder)
+        shots=[]
+        current_reference=Path(reference_image)
+        for index,amount in enumerate(task.shots):
+            generated=root/f"ai-part-{index}.mp4"
+            # If this remote request succeeds but transport fails, STOP.
+            # Never auto resend an ambiguous provider submission.
+            generator(reference=current_reference,prompt=prompt,seconds=amount,
+                      destination=generated,consent=True,commercial=False,
+                      wants_audio=False,wants_lipsync=False)
+            _verified_video(generated,amount)
+            shots.append(generated)
+            if index<len(task.shots)-1:
+                current_reference=last_frame(
+                    generated,root/f"reference-for-{index+1}.png")
+        receipt=assemble(segments=shots,seconds=seconds,
+                    output=output,user_soundtrack=authorized_wav,
+                    synthetic_effect=synthetic_effect)
+        receipt["provider_calls"] = len(shots)
+        receipt["continuation_method"]="previous_shot_final_frame_reference"
+        receipt["identity_continuity_verified"]=False
+        receipt["semantic_prompt_adherence_verified"]=False
+        return receipt
