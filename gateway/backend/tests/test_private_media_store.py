@@ -147,3 +147,38 @@ def test_output_upload_random_keys_are_unique_and_never_overwrite(store,source):
     assert a.key!=b.key
     assert len(f.data)==2
     assert all(obj['content']==source.read_bytes() for obj in f.data.values())
+
+
+def test_private_scene_survives_worker_restart_and_restores_as_stream(store,source,tmp_path):
+    s,f=store
+    saved=s.put(OWNER,JOB,'scene',source,'video/mp4')
+    # A different coordinator instance after restart can verify the same
+    # durable object without relying on any ephemeral server process memory.
+    restarted=media.PrivateObjectStore(f,s.bucket,clock=lambda:1001)
+    restored=restarted.restore_to_local(OWNER,JOB,saved.key,'scene',
+        tmp_path/'restarted-worker','scene001.mp4')
+    assert restored.read_bytes()==source.read_bytes()
+    assert restored.stat().st_mode & 0o777==0o600
+    with pytest.raises(media.StorageError,match='overwrite'):
+        restarted.restore_to_local(OWNER,JOB,saved.key,'scene',
+            tmp_path/'restarted-worker','scene001.mp4')
+    assert restored.read_bytes()==source.read_bytes()
+
+def test_restored_mp4_with_tampered_content_is_never_written(store,source,tmp_path):
+    s,f=store
+    saved=s.put(OWNER,JOB,'scene',source,'video/mp4')
+    f.data[(s.bucket,saved.key)]['content']=b'\x00\x00\x00\x20ftypisom'+b'Z'*2500
+    with pytest.raises(media.StorageError,match='integrity mismatch'):
+        s.restore_to_local(OWNER,JOB,saved.key,'scene',
+            tmp_path/'private','scene002.mp4')
+    assert not (tmp_path/'private'/'scene002.mp4').exists()
+
+def test_private_restore_cannot_read_other_account_job(store,source,tmp_path):
+    s,f=store
+    saved=s.put(OWNER,JOB,'scene',source,'video/mp4')
+    with pytest.raises(media.UnauthorizedMedia):
+        s.restore_to_local(OTHER,JOB,saved.key,'scene',
+            tmp_path/'private','scene003.mp4')
+    with pytest.raises(media.UnauthorizedMedia):
+        s.restore_to_local(OWNER,OTHER_JOB,saved.key,'scene',
+            tmp_path/'private','scene003.mp4')
