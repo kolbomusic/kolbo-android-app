@@ -1,0 +1,48 @@
+name: Kolbo v434 - LIVE duo metadata-only image_count check
+on:
+  push:
+    branches: [kolbo-v434-live-preflight-proof-20261011]
+    paths: ['.github/workflows/kolbo-v434-live-preflight.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Check hosted Render preflight without uploads, tokens or GPU inference
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,json,secrets,time
+          base="https://kolbo-video-wan416-staging.onrender.com"
+          def req(path,verb="GET",value=None,auth=None):
+              data=None if value is None else json.dumps(value).encode()
+              request=urllib.request.Request(base+path,data,method=verb)
+              if value is not None:request.add_header("Content-Type","application/json")
+              if auth:request.add_header("Authorization","Bearer "+auth)
+              with urllib.request.urlopen(request,timeout=35) as r:
+                  return json.load(r)
+          r=None
+          for attempt in range(5):
+              try:
+                  r=req("/v1/guest/bootstrap","POST",{"install_id":secrets.token_hex(16)})
+                  if r.get("token"):break
+              except Exception as e:
+                  print("WAITING",str(e)[:90],flush=True)
+                  time.sleep(8)
+          assert r and r.get("token")
+          guest=r["token"]
+          body={"prompt":"Two singers perform together on stage in Caesarea in front of 10000 people","seconds":8,
+                "image_count":1,"requires_shared_stage_scene":True,
+                "third_party_transfer_consent":True}
+          outcome=req("/v1/native-av/plan","POST",body,guest)
+          print("LIVE_ANDROID_433_EXACT_PREFLIGHT",json.dumps(outcome,ensure_ascii=False))
+          assert outcome["status"]=="eligible_for_attempt",outcome
+          assert "combined_two_person_reference_required" not in outcome["blockers"]
+          assert outcome["credits_spent"]==0
+          no_ref=dict(body,image_count=0)
+          blocked=req("/v1/native-av/plan","POST",no_ref,guest)
+          assert blocked["status"]=="blocked"
+          assert "combined_two_person_reference_required" in blocked["blockers"]
+          print("PASS Live server accepted v4.3.3 Android two-person metadata-only preflight. No photo uploaded, no GPU spent.")
+          PY
