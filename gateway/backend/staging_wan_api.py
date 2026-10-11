@@ -20,6 +20,7 @@ import visual_quality
 import audio_evidence
 import creative_intent_guard as intents
 import cpu_photo_studio as studio
+import guest_sessions as guests
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -54,6 +55,9 @@ class PhotoStudioJob(BaseModel):
     soundtrack_wav_base64: str | None = Field(default=None,max_length=9_500_000)
     media_rights_attested: bool = False
 
+class GuestBootstrapRequest(BaseModel):
+    install_id: str = Field(min_length=32,max_length=32)
+
 class CreativePreflight(BaseModel):
     prompt: str = Field(min_length=5, max_length=3000)
     seconds: float = Field(ge=1, le=360)
@@ -70,6 +74,13 @@ def require_token(authorization: str | None) -> None:
         raise HTTPException(401, "נדרש חיבור מאובטח", headers={"WWW-Authenticate":"Bearer"})
     if not hmac.compare_digest(authorization[7:].encode(),secret.encode()):
         raise HTTPException(401, "הרשאה לא תקינה", headers={"WWW-Authenticate":"Bearer"})
+
+def studio_owner(authorization: str | None) -> str:
+    if authorization is not None and authorization.startswith("Bearer g1."):
+        return "guest:"+guests.verify(authorization).owner
+    require_token(authorization)
+    return "master"
+
 
 def enabled() -> bool:
     import importlib.util
@@ -146,9 +157,9 @@ def healthz():
 
 @app.get("/v1/health")
 def health(authorization: str | None = Header(default=None)):
-    require_token(authorization)
+    owner=studio_owner(authorization)
     expire_old()
-    return {"status":"ready" if enabled() else "not_ready",
+    return {"status":"ready" if enabled() and owner=="master" else "not_ready",
             "provider":"zerogpu-wan2.2-experimental",
             "supported_image_counts":[1],
             "min_seconds":1,"max_seconds":5,
@@ -157,6 +168,7 @@ def health(authorization: str | None = Header(default=None)):
             "commercial_rights_verified":False,
             "storage_durable":False,
             "free_unlimited":False,
+            "zero_setup":guests.capabilities(),
             "cpu_photo_studio":{"mode":"cpu_photo_motion",
                 "endpoint":"/v1/studio/jobs","supported_image_counts":[1,2],
                 "min_seconds":2,"max_seconds":12,
@@ -165,11 +177,15 @@ def health(authorization: str | None = Header(default=None)):
                 "ephemeral_storage":True},
             "detail":"ניסוי בתמונת ייחוס אחת בלבד; ללא שמע; אישור ידני נדרש"}
 
+@app.post("/v1/guest/bootstrap")
+def guest_bootstrap(payload:GuestBootstrapRequest):
+    return guests.issue(payload.install_id)
+
 @app.post("/v1/studio/jobs", status_code=202)
 def new_photo_studio_job(payload: PhotoStudioJob,
                          authorization: str | None = Header(default=None)):
     """Actual CPU MP4 edit, separate from any external AI provider."""
-    require_token(authorization)
+    owner=studio_owner(authorization)
     expire_old()
     if payload.mode != "cpu_photo_motion":
         raise HTTPException(422,"מצב עריכה לא נתמך")
@@ -185,7 +201,7 @@ def new_photo_studio_job(payload: PhotoStudioJob,
         if not 100<=len(audio)<=7_000_000 or audio[:4]!=b"RIFF" or audio[8:12]!=b"WAVE":
             raise HTTPException(422,"נתמך קובץ WAV מקורי בלבד, עד 7MB")
     digest=hashlib.sha256(
-        ("cpu_photo_motion:"+str(payload.seconds)).encode()
+        (owner+":cpu_photo_motion:"+str(payload.seconds)).encode()
         +b"".join(blob for blob,_ in images)+(audio or b"")).hexdigest()
     with LOCK:
         existing=DIGESTS.get(digest)
@@ -194,6 +210,8 @@ def new_photo_studio_job(payload: PhotoStudioJob,
                     "mode":"cpu_photo_motion","deduplicated":True}
         if sum(job["state"] in ("queued","running") for job in JOBS.values())>=LIMIT:
             raise HTTPException(503,"תור עריכה חינמי מלא",headers={"Retry-After":"30"})
+        if owner.startswith("guest:"):
+            guests.reserve_seconds(owner[6:],payload.seconds)
         job_id=str(uuid.uuid4())
         folder=ROOT/job_id
         folder.mkdir(parents=True,exist_ok=False,mode=0o700)
@@ -213,7 +231,7 @@ def new_photo_studio_job(payload: PhotoStudioJob,
             shutil.rmtree(folder,ignore_errors=True)
             raise HTTPException(500,"שמירת קובצי המקור לעריכה נכשלה")
         JOBS[job_id]={"state":"queued","created_at":time.time(),
-             "digest":digest,"mode":"cpu_photo_motion",
+             "digest":digest,"mode":"cpu_photo_motion","owner":owner,
              "detail":"עריכת תנועת מצלמה לתמונות, ללא יצירת משחק של דמויות AI"}
         DIGESTS[digest]=job_id
         POOL.submit(_work_photo_studio,job_id,photos=photo_paths,
@@ -312,13 +330,16 @@ def new_job(payload: NewJob, authorization: str | None=Header(default=None)):
         return {"job_id":job_id,"state":"queued"}
 
 def owned(job_id: str, authorization: str | None):
-    require_token(authorization)
+    owner=studio_owner(authorization)
     expire_old()
     try:uuid.UUID(job_id)
     except (ValueError,TypeError):raise HTTPException(404,"העבודה אינה קיימת")
     with LOCK:
         job=JOBS.get(job_id)
         if not job:raise HTTPException(404,"העבודה אינה קיימת")
+        if owner!="master" and (job.get("mode")!="cpu_photo_motion"
+                or job.get("owner")!=owner):
+            raise HTTPException(404,"העבודה אינה קיימת")
         return dict(job)
 
 @app.get("/v1/jobs/{job_id}")
