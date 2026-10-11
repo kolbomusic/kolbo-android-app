@@ -132,6 +132,22 @@ class PostgresArtifactIndex:
             if not item:raise ForeignArtifact('Unknown, expired, or unauthorized artifact')
             return _row(item)
 
+    def find_position(self,*,job_id:str,owner_hash:str,role:str,
+                      sequence_no:int)->Artifact|None:
+        if not _OWNER.fullmatch(owner_hash) or role not in _ROLE or (
+                type(sequence_no)is not int or not 0<=sequence_no<=99):
+            raise ForeignArtifact('Invalid owner or artifact role')
+        try:uuid.UUID(job_id)
+        except (TypeError,ValueError) as e:
+            raise ForeignArtifact('Invalid job ID') from e
+        with self._connection() as c:
+            row=c.execute(
+                f'SELECT {_COLUMNS} FROM kolbo_job_artifacts '
+                'WHERE job_id=%s AND owner_hash=%s AND role=%s '
+                'AND sequence_no=%s AND expires_at>now()',
+                (job_id,owner_hash,role,sequence_no)).fetchone()
+            return _row(row) if row else None
+
     def output_for_owner(self,*,job_id:str,owner_hash:str)->Artifact:
         if not _OWNER.fullmatch(owner_hash):
             raise ForeignArtifact('Invalid owner')
