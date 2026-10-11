@@ -43,11 +43,6 @@ def test_procedural_sfx_encoded_in_real_video_and_audible(tmp_path):
         assert check.verdict!="reject", (effect,check)
 
 
-def test_sfx_api_works_without_ai_provider_and_requires_optin(client,monkeypatch):
-    # The v418 client fixture in tests/test_studio_api_v418.py is
-    # supplied directly in test below as an independent context.
-    pass
-
 
 def test_generated_sfx_sent_only_for_opted_in_cpu_mode(monkeypatch,tmp_path):
     import base64
