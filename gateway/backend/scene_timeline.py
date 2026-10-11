@@ -18,7 +18,7 @@ class SceneCapabilities:
     independent_people:int
     supports_continuation_keyframes:bool
     supports_requested_audio:bool
-    supports_bukhori_lipsync:bool
+    supports_requested_language_lipsync:bool
     commercial_use_approved:bool
 
 @dataclass(frozen=True)
@@ -72,8 +72,10 @@ def build_timeline(job_id:str, *,seconds:int,
         raise UnsupportedScenePlan('Provider cannot preserve separate identity references')
     if audio and not provider.supports_requested_audio:
         raise UnsupportedScenePlan('Provider cannot produce requested audio')
-    if lip_sync and not provider.supports_bukhori_lipsync and language=='bukhori':
-        raise UnsupportedScenePlan('Bukhori lip-sync not verified on this provider')
+    if not re.fullmatch(r'[a-z][a-z0-9_-]{1,23}',language):
+        raise UnsupportedScenePlan('Invalid requested audio language')
+    if lip_sync and not provider.supports_requested_language_lipsync:
+        raise UnsupportedScenePlan('Requested language lip-sync not verified on this provider')
     if commercial and not provider.commercial_use_approved:
         raise UnsupportedScenePlan('Commercial use not verified on provider')
     if not re.fullmatch('[a-z0-9_-]{3,64}',provider.provider):
