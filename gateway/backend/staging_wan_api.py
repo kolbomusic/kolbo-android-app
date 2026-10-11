@@ -25,6 +25,7 @@ import guest_sessions as guests
 import compute_supervisor as compute
 import ai_trial_guards as ai_trials
 import longform_av
+import experimental_ltx25_native_av as ltx
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -50,6 +51,13 @@ class NewJob(BaseModel):
     requires_audio: bool = False
     requires_lipsync: bool = False
     requires_two_independent_people: bool = False
+    commercial_use: bool = False
+
+class NativeAVJob(BaseModel):
+    prompt: str = Field(min_length=5, max_length=3000)
+    seconds: float = Field(ge=1, le=15)
+    images: list[Picture] = Field(default_factory=list,max_length=1)
+    third_party_transfer_consent: bool = False
     commercial_use: bool = False
 
 class PhotoStudioJob(BaseModel):
@@ -191,6 +199,23 @@ def health(authorization: str | None = Header(default=None)):
             "free_unlimited":False,
             "zero_setup":guests.capabilities(),
             "experimental_ai_video":ai_trials.advertised(),
+            "native_audio_video_trial":{
+                "mode":"native_ltx25_av_trial",
+                "ready":os.getenv("KOLBO_NATIVE_LTX25_TRIAL")=="EXPLICITLY_ENABLED"
+                   and ai_trials.enabled() and enabled(),
+                "supported_image_counts":[0,1],
+                "min_seconds":1,"max_seconds":15,
+                "generates_visual_motion":True,"native_audio":True,
+                "speech_language_verified":False,
+                "singing_lipsync_verified":False,
+                "two_people_identity_verified":False,
+                "external_transfer_consent_required":True,
+                "shared_public_gpu_with_quotas":True,
+                "global_daily_trial_submissions":ai_trials.GLOBAL_PER_UTC_DAY,
+                "per_install_daily_submissions":ai_trials.PER_INSTALL_PER_UTC_DAY,
+                "availability_guaranteed":False,
+                "commercial_rights_verified":False,
+                "no_paid_provider_fallback":True},
             "longform_15s_audio":{"supported_by_media_assembler":True,
                 "ready_for_autonomous_generation":False,
                 "supported_output_duration_seconds":[1,15],
@@ -309,6 +334,111 @@ def new_real_ai_motion_job(payload: NewJob,
         POOL.submit(_work,job_id,image=inp,prompt=payload.prompt,
                     seconds=payload.seconds)
         return {"job_id":job_id,"state":"queued","mode":"ai_one_image_trial"}
+
+@app.post("/v1/native-av/plan")
+def native_av_preflight(payload: NativeAVJob,
+                        authorization: str | None=Header(default=None)):
+    """No upload, no provider call, no credits deducted."""
+    studio_owner(authorization)
+    blockers=[]
+    if not payload.third_party_transfer_consent:
+        blockers.append("external_prompt_and_image_transfer_consent_required")
+    if payload.commercial_use:
+        blockers.append("commercial_use_unverified")
+    if os.getenv("KOLBO_NATIVE_LTX25_TRIAL")!="EXPLICITLY_ENABLED" or not ai_trials.enabled() or not enabled():
+        blockers.append("public_native_audio_video_model_not_available")
+    if len(payload.images)>1:
+        blockers.append("at_most_one_start_image")
+    return {"status":"eligible_for_attempt" if not blockers else "blocked",
+        "blockers":blockers,"supported_duration_seconds":[1,15],
+        "source":"external_public_LTX25_demo",
+        "native_audio_expected":True,
+        "speech_singing_lipsync_quality_not_guaranteed":True,
+        "free_compute_unlimited":False,
+        "commercial_rights_verified":False,
+        "credits_spent":0}
+
+def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float) -> None:
+    with LOCK:
+        if job_id not in JOBS:return
+        JOBS[job_id]["state"]="running"
+    try:
+        folder=ROOT/job_id
+        receipt=ltx.generate(prompt=prompt,seconds=seconds,reference=reference,
+            destination=folder/"draft.mp4",consent=True,commercial=False)
+        with LOCK:
+            JOBS[job_id].update(state="completed",
+                detail="נוצר סרטון AI עם שמע מקורי. תוכן הבקשה עדיין דורש בדיקה.",
+                mode="native_ltx25_av_trial",
+                media_kind="native_ltx25_av_trial",
+                size=receipt.size_bytes,sha256=receipt.sha256,
+                has_audio=True,quality=receipt.as_dict())
+    except Exception as exc:
+        kind="acceptance_unknown" if isinstance(exc,ltx.UnknownAcceptance) else "native_av_failed"
+        with LOCK:
+            if job_id in JOBS:
+                JOBS[job_id].update(state="failed",error=kind,
+                    detail="מנוע הווידאו והשמע הציבורי לא החזיר תוצאה מאומתת. לא ננסה שוב אוטומטית.")
+    finally:
+        if reference is not None:
+            try:reference.unlink(missing_ok=True)
+            except OSError:pass
+
+@app.post("/v1/native-av/jobs", status_code=202)
+def new_native_av_job(payload: NativeAVJob,
+                      authorization: str | None=Header(default=None)):
+    """Explicitly opt-in to one free public model with natural motion+sound.
+
+    This demo is neither guaranteed free forever nor a production model SLA.
+    Quotas are per-process and stop double submits; they aren't a paid GPU pool.
+    """
+    owner=studio_owner(authorization)
+    if not owner.startswith("guest:"):
+        raise HTTPException(401,"חיבור אורח מוגבל בלבד למסלול הווידאו החינמי")
+    expire_old()
+    try:
+        ltx.validate(prompt=payload.prompt,seconds=payload.seconds,
+            references=len(payload.images),
+            consent=payload.third_party_transfer_consent,
+            commercial=payload.commercial_use)
+    except ltx.Unsupported as exc:
+        raise HTTPException(422,str(exc)) from exc
+    except ltx.Unavailable as exc:
+        raise HTTPException(503,"מנוע הווידאו והשמע אינו זמין כעת") from exc
+    if not payload.third_party_transfer_consent:
+        raise HTTPException(422,"נדרש אישור להעברת ההנחיה והמדיה לשירות הציבורי")
+    images=[decode_picture(pic) for pic in payload.images]
+    digest=hashlib.sha256(
+        (owner+":ltx_native:"+str(payload.seconds)+":"+payload.prompt).encode()
+        +b"".join(blob for blob,_ in images)).hexdigest()
+    with LOCK:
+        old=DIGESTS.get(digest)
+        if old in JOBS:
+            return {"job_id":old,"state":JOBS[old]["state"],
+                "deduplicated":True,"mode":"native_ltx25_av_trial"}
+        if sum(job["state"] in ("queued","running") for job in JOBS.values())>=LIMIT:
+            raise HTTPException(503,"תור הפקת AI כרגע מלא",
+                                headers={"Retry-After":"60"})
+        ai_trials.reserve(owner.removeprefix("guest:"))
+        job_id=str(uuid.uuid4())
+        folder=ROOT/job_id
+        folder.mkdir(parents=True,exist_ok=False,mode=0o700)
+        ref=None
+        if images:
+            image_bytes,ext=images[0]
+            ref=folder/f"reference.{ext}"
+            try:
+                ref.write_bytes(image_bytes)
+                ref.chmod(0o600)
+            except OSError:
+                shutil.rmtree(folder,ignore_errors=True)
+                raise HTTPException(500,"הכנת תמונת המקור נכשלה")
+        JOBS[job_id]={"state":"queued","created_at":time.time(),
+            "digest":digest,"owner":owner,"mode":"native_ltx25_av_trial",
+            "detail":"מייצר תנועה ושמע יחד במנוע LTX ניסיוני"}
+        DIGESTS[digest]=job_id
+        POOL.submit(_work_native_av,job_id,ref,payload.prompt,payload.seconds)
+        return {"job_id":job_id,"state":"queued","mode":"native_ltx25_av_trial"}
 
 @app.post("/v1/studio/jobs", status_code=202)
 def new_photo_studio_job(payload: PhotoStudioJob,
@@ -488,7 +618,7 @@ def owned(job_id: str, authorization: str | None):
         job=JOBS.get(job_id)
         if not job:raise HTTPException(404,"העבודה אינה קיימת")
         if owner!="master" and (job.get("mode") not in (
-                "cpu_photo_motion","ai_one_image_trial")
+                "cpu_photo_motion","ai_one_image_trial","native_ltx25_av_trial")
                 or job.get("owner")!=owner):
             raise HTTPException(404,"העבודה אינה קיימת")
         return dict(job)
