@@ -1,0 +1,27 @@
+name: Kolbo Video v415 - Visual QA without GPU
+on:
+  push:
+    branches:
+      - kolbo-video-v415-ci-isolation-20261011
+    paths:
+      - gateway/backend/visual_quality.py
+      - gateway/backend/tests/test_visual_quality.py
+      - .github/workflows/kolbo-video-visual-gate-v415.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  visual-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install offline-only frame analysis and tests
+        run: python -m pip install --disable-pip-version-check 'Pillow>=10,<13' pytest
+      - name: Run visual fail-closed regression tests
+        run: |
+          cd gateway/backend
+          python -m pytest -q tests/test_visual_quality.py
