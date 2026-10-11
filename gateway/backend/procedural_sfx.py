@@ -13,7 +13,7 @@ import struct
 import wave
 
 RATE=16000
-MAX_SECONDS=12
+MAX_SECONDS=15
 SFX_KIND=("fart","rain","applause","bird","none")
 
 FART=re.compile(r"(?:\b(?:fart|farts|farting|flatulence)\b|מפליצ|מפליץ|פליצ|נפיח|פלוץ)",re.I)
@@ -36,7 +36,7 @@ def recognize(text:str)->str:
 
 def synthesize(path:Path,*,seconds:int,kind:str)->None:
     if type(seconds) is not int or not 2<=seconds<=MAX_SECONDS:
-        raise ValueError("SFX duration must be 2–12 s")
+        raise ValueError("SFX duration must be 2–15 s")
     if kind not in SFX_KIND or kind=="none":
         raise ValueError("One explicit sound effect is required")
     if path.exists():

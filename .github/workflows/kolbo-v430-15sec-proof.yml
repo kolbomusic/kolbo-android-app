@@ -1,0 +1,60 @@
+name: Kolbo 4.3.0 - Verified fifteen second moving-video + audio proof
+on:
+  push:
+    branches: [kolbo-video-v430-15sec-av-pipeline-20261011]
+    paths: ['.github/workflows/kolbo-v430-15sec-proof.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  render_proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install offline QA dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -q 'Pillow>=10,<13'
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
+          ffmpeg -version | head -1
+      - name: Produce 15 seconds with actual changing frames, continuous AAC, no third-party service
+        run: |
+          PYTHONPATH=gateway/backend python - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          from longform_av import assemble
+          out=Path('proof-15s-audio')
+          out.mkdir(exist_ok=True)
+          segments=[]
+          for i in range(3):
+              name=out/f'synthetic-moving-shot-{i+1}.mp4'
+              subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-f','lavfi',
+                  '-i','testsrc2=s=320x240:r=16:d=5','-vf',f'hue=h={i*31}',
+                  '-c:v','libx264','-preset','ultrafast','-crf','30',
+                  '-pix_fmt','yuv420p',str(name)],check=True,timeout=55)
+              segments.append(name)
+          target=out/'verified-15s-moving-scenes-audio.mp4'
+          receipt=assemble(segments=segments,seconds=15,
+              output=target,synthetic_effect='applause')
+          assert receipt['has_audio']
+          assert receipt['video_segments']==3
+          assert receipt['duration_seconds']==15.0
+          assert not receipt['singing_verified'] and not receipt['actor_identity_continuity_verified']
+          (out/'receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2))
+          print('PASS REAL MP4 15.000s H.264+AAC with audio and actual changing source frames')
+          print('BUT proof input is synthetic moving FFmpeg footage, not a 3-scene AI model generation')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-V430-Proven-15s-Real-Motion-Plus-Audio-NOT-AI
+          path: |
+            proof-15s-audio/verified-15s-moving-scenes-audio.mp4
+            proof-15s-audio/receipt.json
+          retention-days: 7
+          if-no-files-found: error
