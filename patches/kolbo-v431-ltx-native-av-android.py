@@ -31,7 +31,9 @@ main=exact(main,'''            if(desired<1 || desired>5){
                 message("בחר משך סרטון מ-1 עד 15 שניות");
                 return;
             }''')
-main=exact(main,'"approved_v425"','"approved_native_ltx_v431"')
+if main.count('"approved_v425"')!=2:
+    raise SystemExit('v431 native consent anchors missing')
+main=main.replace('"approved_v425"','"approved_native_ltx_v431"')
 main=exact(main,
     'התמונה וההנחיה יישלחו להדגמה ציבורית של Wan דרך Hugging Face. השירות חינמי אך מוגבל, ותמונות שהועלו אינן פרטיות. אל תעלה תמונות רגישות. לא יבוצע חיוב. להמשיך?',
     'ההנחיה והתמונה, אם בחרת אחת, יישלחו להדגמה ציבורית של LTX-2.5 ב-Hugging Face. הסרטון והשמע נוצרים יחד באמצעות AI. השירות הציבורי מוגבל במכסות ואינו פרטי; אל תשתף תמונות רגישות. לא יבוצע חיוב. מאשר לשלוח את ההנחיה ואת התמונה להפקה?')
