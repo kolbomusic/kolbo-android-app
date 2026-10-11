@@ -29,6 +29,7 @@ import experimental_ltx25_native_av as ltx
 import experimental_scene_builder_v433 as stage_builder
 import scene_integrity_v433 as scene_integrity
 import identity_guard_v435 as identity_gate
+import local_face_repair_v435 as face_repair
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -231,6 +232,7 @@ def health(authorization: str | None = Header(default=None)):
                 "two_person_identity_verified":False,
                 "automated_face_similarity_guard_ready":identity_gate.configured(),
                 "face_similarity_check_mandatory":True,
+                "local_original_face_pixel_repair_enabled":face_repair.enabled(),
                 "identity_guaranteed":False,
                 "crowd_and_stage_semantics_verified":False,
                 "language_and_lip_sync_verified":False,
@@ -431,10 +433,20 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
             scene_receipt=stage_builder.build(
                 source=reference,prompt=prompt,destination=stage,
                 consent=True,commercial=False)
-            face_still_evidence=guard.verify_still(stage)
-            # If the FLUX model invented new faces or swapped identities,
-            # the expensive LTX video job is NOT submitted.
             model_reference=stage
+            try:
+                face_still_evidence=guard.verify_still(stage)
+            except identity_gate.IdentityMismatch:
+                # One optional LOCAL repair from the user's original face
+                # pixels. It spends no extra external GPU credits. The
+                # repaired stage MUST pass the same strict SFace identity
+                # gate; otherwise no LTX movie is sent or marked success.
+                if not face_repair.enabled():
+                    raise
+                corrected=folder/"local-face-restored-stage.png"
+                face_repair.reconstruct(reference,stage,corrected)
+                face_still_evidence=guard.verify_still(corrected)
+                model_reference=corrected
         receipt=ltx.generate(prompt=prompt,seconds=seconds,
             reference=model_reference,
             destination=folder/"draft.mp4",consent=True,commercial=False)
@@ -497,6 +509,8 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
             try:reference.unlink(missing_ok=True)
             except OSError:pass
         try:(ROOT/job_id/"generated-shared-stage.png").unlink(missing_ok=True)
+        except OSError:pass
+        try:(ROOT/job_id/"local-face-restored-stage.png").unlink(missing_ok=True)
         except OSError:pass
 
 @app.post("/v1/native-av/jobs", status_code=202)
