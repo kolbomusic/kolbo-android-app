@@ -1,0 +1,31 @@
+name: Kolbo Video v416 - Public staging read-only security smoke
+on:
+  push:
+    branches: [kolbo-video-v416-staging-android-20261011]
+    paths: ['.github/workflows/kolbo-v416-public-staging-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check public liveness and private bearer boundary without credentials
+        run: |
+          set -euo pipefail
+          base='https://kolbo-video-wan416-staging.onrender.com'
+          live=0
+          for i in $(seq 1 9); do
+            if curl --max-time 25 --fail --silent --show-error "$base/healthz" -o /tmp/live.json; then
+              if python3 -c 'import json; assert json.load(open("/tmp/live.json"))["alive"] is True'; then
+                live=1; break
+              fi
+            fi
+            sleep 8
+          done
+          test "$live" = 1
+          test "$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' "$base/v1/health")" = 401
+          test "$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer invalid-token' "$base/v1/health")" = 401
+          test "$(curl --max-time 25 -s -o /dev/null -w '%{http_code}' -X POST "$base/v1/jobs" -H 'Content-Type: application/json' -d '{}')" = 401
+          echo 'PASS live Render: public healthz available, sensitive health and video job endpoints reject unauthenticated traffic'
