@@ -54,10 +54,13 @@ main=once(main,
         }
         if(cpuPhotoRequested){''')
 main=once(main,
-    '''                            if("ready".equals(check.optString("status")))
-                                message("השרת הפרטי מחובר ומוכן ליצירה");
-                            else message("החיבור נשמר, אבל המנוע עדיין לא מוכן: "
-                                +check.optString("detail","נדרש GPU ו־Workflow"));''',
+    '''                            if("ready".equals(check.optString("status"))){
+                                String provider=check.optString("provider","comfy");
+                                if(provider.startsWith("agnes"))
+                                    message("שער Agnes מחובר; התור, ההרשאות והמחיר בפועל לא אומתו בהפקה חיה.");
+                                else message("שרת ההפקה מחובר; איכות הסרטון עדיין טעונה בדיקה.");
+                            }else message("החיבור נשמר, אבל שרת ההפקה עדיין לא מוכן: "
+                                +check.optString("detail","חסרים נתוני שרת או מנוע וידאו"));''',
     '''                            if(check.optJSONObject("cpu_photo_studio")!=null){
                                 message("מנוע עריכת התמונות החינמי מוכן. מנוע יצירת וידאו AI עדיין אינו פעיל.");
                             }else if("ready".equals(check.optString("status")))
