@@ -1,5 +1,8 @@
 name: Kolbo v419 - Hosted restricted guest CPU smoke (synthetic only)
 on:
+  push:
+    branches: [kolbo-video-v419-zero-setup-20261011]
+    paths: ['.github/workflows/kolbo-video-v419-hosted-guest-smoke.yml']
   workflow_dispatch:
 permissions:
   contents: read
