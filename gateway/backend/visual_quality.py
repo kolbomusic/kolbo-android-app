@@ -42,8 +42,10 @@ def _detail(image: Image.Image) -> float:
     # intentionally soft. Do not infer video quality from this number alone.
     horizontal = ImageChops.difference(gray, ImageChops.offset(gray, 1, 0))
     vertical = ImageChops.difference(gray, ImageChops.offset(gray, 0, 1))
-    return (ImageStat.Stat(horizontal).mean[0]
-            + ImageStat.Stat(vertical).mean[0])
+    # Gradient *energy* (squared differences), unlike mean gradient
+    # magnitude, detects when sharp edges spread into blur.
+    return (ImageStat.Stat(horizontal).rms[0] ** 2
+            + ImageStat.Stat(vertical).rms[0] ** 2)
 
 
 def assess_frames(
