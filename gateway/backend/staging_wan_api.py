@@ -18,6 +18,7 @@ from PIL import Image, UnidentifiedImageError
 import experimental_zerogpu_adapter as provider
 import visual_quality
 import audio_evidence
+import creative_intent_guard as intents
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -40,6 +41,20 @@ class NewJob(BaseModel):
     fps: int = Field(default=24, ge=1, le=60)
     images: list[Picture] = Field(min_length=0, max_length=2)
     third_party_transfer_consent: bool = False
+    requires_audio: bool = False
+    requires_lipsync: bool = False
+    requires_two_independent_people: bool = False
+    commercial_use: bool = False
+
+class CreativePreflight(BaseModel):
+    prompt: str = Field(min_length=5, max_length=3000)
+    seconds: float = Field(ge=1, le=360)
+    image_count: int = Field(ge=0, le=2)
+    third_party_transfer_consent: bool = False
+    requires_audio: bool = False
+    requires_lipsync: bool = False
+    requires_two_independent_people: bool = False
+    commercial_use: bool = False
 
 def require_token(authorization: str | None) -> None:
     secret=os.getenv("KOLBO_V416_API_TOKEN","")
@@ -136,18 +151,43 @@ def health(authorization: str | None = Header(default=None)):
             "free_unlimited":False,
             "detail":"ניסוי בתמונת ייחוס אחת בלבד; ללא שמע; אישור ידני נדרש"}
 
+@app.post("/v1/creative/plan")
+def creative_preflight(payload: CreativePreflight,
+                       authorization: str | None=Header(default=None)):
+    """Read-only plan. No images, provider calls or quota use."""
+    require_token(authorization)
+    result=intents.plan(prompt=payload.prompt,seconds=payload.seconds,
+        image_count=payload.image_count, requires_audio=payload.requires_audio,
+        requires_lipsync=payload.requires_lipsync,
+        requires_two_independent_people=payload.requires_two_independent_people,
+        commercial_use=payload.commercial_use,
+        consent=payload.third_party_transfer_consent,compute_available=enabled())
+    return result.as_dict()
+
 @app.post("/v1/jobs", status_code=202)
 def new_job(payload: NewJob, authorization: str | None=Header(default=None)):
     require_token(authorization)
     expire_old()
-    if not enabled():
-        raise HTTPException(503,"שרת הניסוי אינו מופעל; נדרשים אישור, כלי וידאו והרשאות")
-    if not payload.third_party_transfer_consent:
-        raise HTTPException(422,"נדרשת הסכמה מפורשת להעברת תמונה לספק חיצוני")
+    # Diagnose expected scene, speech, identity and duration BEFORE decoding
+    # or forwarding private media. Never substitute a shorter silent video.
+    readiness=intents.plan(prompt=payload.prompt,seconds=payload.seconds,
+         image_count=len(payload.images), requires_audio=payload.requires_audio,
+         requires_lipsync=payload.requires_lipsync,
+         requires_two_independent_people=payload.requires_two_independent_people,
+         commercial_use=payload.commercial_use,
+         consent=payload.third_party_transfer_consent,compute_available=enabled())
+    if readiness.status != "draft_possible":
+        code=503 if "no_enabled_verified_free_gpu_route" in readiness.blockers else 422
+        raise HTTPException(code,
+           {"message":"ההפקה אינה נתמכת במנוע הנוכחי ללא שינוי בתוכן",
+            "blockers":list(readiness.blockers),
+            "available":list(readiness.limits)})
     # Fail before decoding and submitting any private image.
     try:
         provider.validate(references=len(payload.images),seconds=payload.seconds,
-             wants_audio=False,wants_lipsync=False,commercial=False,consent=True)
+             wants_audio=readiness.needs_audio,
+             wants_lipsync=readiness.needs_lipsync,
+             commercial=payload.commercial_use,consent=True)
     except (provider.UnsupportedRequest, provider.ProviderUnavailable) as exc:
         raise HTTPException(422,str(exc)) from exc
     data,ext=decode_picture(payload.images[0])
