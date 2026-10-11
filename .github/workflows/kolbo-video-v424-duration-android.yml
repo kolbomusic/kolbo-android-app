@@ -1,0 +1,259 @@
+name: Kolbo Video 4.2.4 - Honest 10s Video Errors & Android
+on:
+  push:
+    branches: [kolbo-video-v424-duration-route-20261011]
+    paths: ['.github/workflows/kolbo-video-v40-android.yml', 'kolbo-video-v40.src.b64', 'kolbo-video-v40.src.sha256', 'patches/kolbo-v401-repair.py', 'patches/kolbo-v402-identity-consent.py', 'patches/kolbo-v402-msr-connect.py', 'patches/MultiSubjectReferenceClient.java', 'patches/kolbo-v403-general-planner.py', 'patches/StoryboardPlanner.java', 'patches/ProviderFailure.java', 'patches/tests/StoryboardPlannerSmoke.java', 'patches/kolbo-v404-role-binding.py', 'patches/CharacterRoleContract.java', 'patches/tests/RoleAndActions404Smoke.java', 'patches/kolbo-v405-scene-isolation.py', 'patches/SceneIntentContract.java', 'patches/tests/SceneIntent405Smoke.java', 'patches/kolbo-v406-studio-polish.py', 'patches/kolbo-v406-quality-and-scene.py', 'patches/StudioVisuals.java', 'patches/OutputLengthGate.java', 'patches/DurationPolicy.java', 'patches/tests/Quality406Smoke.java', 'patches/kolbo-v407-evidence-integration.py', 'patches/VideoEvidenceAudit.java', 'patches/VideoEvidenceAuditRequest.java', 'patches/tests/Evidence407Smoke.java', 'patches/StudioFailureNotice.java', 'patches/kolbo-v407-terminal-errors.py', 'patches/tests/Failure407Smoke.java', 'patches/PrivateRenderClient.java', 'patches/kolbo-v408-private-engine.py', 'patches/kolbo-v409-agnes-consent.py', 'patches/kolbo-v416-contract.py', 'patches/kolbo-v418-cpu-photo-studio.py', 'patches/kolbo-v419-auto-connect.py', 'patches/kolbo-v420-dialog-flow.py', 'patches/kolbo-v421-procedural-sfx-android.py', 'patches/kolbo-v422-compute-readout-android.py', 'patches/kolbo-v423-mobile-image-normalize.py', 'patches/kolbo-v424-duration-path-security.py', '.github/workflows/kolbo-video-v424-duration-android.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Validate source SHA256 and extract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path,PurePosixPath
+          import base64,hashlib,zipfile
+          data=base64.b64decode(Path('kolbo-video-v40.src.b64').read_text().strip(),validate=True)
+          assert hashlib.sha256(data).hexdigest()==Path('kolbo-video-v40.src.sha256').read_text().strip()
+          Path('source.zip').write_bytes(data)
+          with zipfile.ZipFile('source.zip') as z:
+            assert z.testzip() is None
+            for item in z.infolist():
+              path=PurePosixPath(item.filename)
+              assert not path.is_absolute() and '..' not in path.parts
+            z.extractall('android')
+          PY
+      - name: Apply verified v4.0.1 prompt and preview repair
+        run: python3 patches/kolbo-v401-repair.py android
+      - name: Apply v4.0.2 offline preview and unverified-identity guards
+        run: python3 patches/kolbo-v402-identity-consent.py android
+      - name: Add separate MSR public Gradio provider
+        run: python3 patches/kolbo-v402-msr-connect.py android
+      - name: Apply v4.0.3 storyboard planner and quota guard
+        run: python3 patches/kolbo-v403-general-planner.py android
+      - name: Apply v4.0.4 immutable character slots, actor-target locking, and Hebrew action parsing
+        run: python3 patches/kolbo-v404-role-binding.py android
+      - name: Apply v4.0.5 request-specific intent and inspectable prompts
+        run: python3 patches/kolbo-v405-scene-isolation.py android
+      - name: Apply v4.0.6 studio interface and fail-closed output validation
+        run: python3 patches/kolbo-v406-studio-polish.py android
+      - name: Apply v4.0.6 duet scene semantics and pure duration policy
+        run: python3 patches/kolbo-v406-quality-and-scene.py android
+      - name: Apply v4.0.7 offline evidence reviewer
+        run: python3 patches/kolbo-v407-evidence-integration.py android
+      - name: Apply v4.0.7 terminal failure and retry UI
+        run: python3 patches/kolbo-v407-terminal-errors.py android
+      - name: Apply v4.0.8 encrypted HTTPS private video backend
+        run: python3 patches/kolbo-v408-private-engine.py android
+      - name: Apply v4.0.9 third-party consent and clear provider status
+        run: python3 patches/kolbo-v409-agnes-consent.py android
+      - name: v4.1.6 fail-closed provider capability preflight
+        run: python3 patches/kolbo-v416-contract.py android
+      - name: Add v4.1.8 free CPU photo editor (no ads or paid GPU)
+        run: python3 patches/kolbo-v418-cpu-photo-studio.py android
+      - name: Apply v4.1.9 automatic restricted guest CPU enrollment
+        run: python3 patches/kolbo-v419-auto-connect.py android
+      - name: Apply v4.2.0 photo edit button and no-prompt fix
+        run: python3 patches/kolbo-v420-dialog-flow.py android
+      - name: Add v421 user-approved procedural audio integration
+        run: python3 patches/kolbo-v421-procedural-sfx-android.py android
+      - name: Add bounded compute status on Android 4.2.2
+        run: python3 patches/kolbo-v422-compute-readout-android.py android
+      - name: Normalize mobile gallery photos to measured Free server RAM budget
+        run: python3 patches/kolbo-v423-mobile-image-normalize.py android
+      - name: Verify Android CPU image source normalization isolated from AI route
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('android/app/src/main/java/com/kolbo/videostudio/PrivateRenderClient.java').read_text()
+          assert 'private static JSONObject smallCpuImage' in s
+          assert 'android.media.ExifInterface' in s
+          assert '1280.0f/longEdge' in s
+          assert 'images.put(smallCpuImage(ctx,photoOne));' in s
+          assert 'if(photoTwo!=null)images.put(smallCpuImage(ctx,photoTwo));' in s
+          assert 'if(subjectOne!=null)images.put(image(ctx,subjectOne));' in s
+          assert 'KOLBO_V416_API_TOKEN' not in s
+          print('PASS CPU images bounded on Android; independent AI route unchanged')
+          PY
+      - name: Stop hidden legacy video provider paths and correct duration failure UI
+        run: python3 patches/kolbo-v424-duration-path-security.py android
+      - name: Assert 10-second AI singing cannot silently route to short stock video
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path("android/app/src/main/java/com/kolbo/videostudio/MainActivity.java").read_text()
+          client=Path("android/app/src/main/java/com/kolbo/videostudio/PrivateRenderClient.java").read_text()
+          gate=Path("android/app/src/main/java/com/kolbo/videostudio/OutputLengthGate.java").read_text()
+          x=source.index("private void beginGeneration(")
+          y=source.index("generationInFlight=true;",x)
+          assert "if(!PrivateRenderClient.manualEngineConfigured(this))" in source[x:y]
+          assert "לא נשלחה בקשת וידאו לספק חיצוני" in source[x:y]
+          assert 'retryCreation.setText("הצג סיבת כישלון");' in source
+          assert "לא תישלח בקשה נוספת אוטומטית" in source
+          assert "f.length()<3000" in gate and "if(file.length()<3000)" in client
+          assert "KOLBO_V416_API_TOKEN" not in client
+          print("PASS v424 fail closed on missing verified GPU; show actual duration error; no blind retries")
+          PY
+      - name: Test v420 Android dialog navigation without missing prompts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
+          assert 'private void confirmCpuPhotoFlow(Uri chosen,Uri second,int desired)' in source
+          assert 'if(instruction.isEmpty() && !cpuPhotoRequested' in source
+          assert '.setPositiveButton("כן, עריכת תמונות",(d,w)->{' in source
+          assert '.setPositiveButton("צור סרטון MP4 עכשיו",(d,w)->{' in source
+          assert 'cpuPhotoRequested=true;\n                    createVideo();' not in source
+          assert 'startCpuPhotoMotion(chosen,second,desired)' in source
+          assert 'PrivateRenderClient.ensureAutoConnected(this)' in source
+          print("PASS: CPU photo edit empty-prompt exemption and direct button flow static checks")
+          PY
+      - name: Compile and exercise standalone storyboard planner
+        run: |
+          mkdir -p build/storyboard-test
+          javac -encoding UTF-8 -d build/storyboard-test android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java android/app/src/main/java/com/kolbo/videostudio/ProviderFailure.java android/app/src/main/java/com/kolbo/videostudio/CharacterRoleContract.java android/app/src/main/java/com/kolbo/videostudio/SceneIntentContract.java android/app/src/main/java/com/kolbo/videostudio/DurationPolicy.java android/app/src/main/java/com/kolbo/videostudio/VideoEvidenceAuditRequest.java android/app/src/main/java/com/kolbo/videostudio/StudioFailureNotice.java patches/tests/StoryboardPlannerSmoke.java patches/tests/RoleAndActions404Smoke.java patches/tests/SceneIntent405Smoke.java patches/tests/Quality406Smoke.java patches/tests/Evidence407Smoke.java patches/tests/Failure407Smoke.java
+          java -cp build/storyboard-test com.kolbo.videostudio.StoryboardPlannerSmoke
+          java -cp build/storyboard-test com.kolbo.videostudio.RoleAndActions404Smoke
+          java -cp build/storyboard-test com.kolbo.videostudio.SceneIntent405Smoke
+          java -cp build/storyboard-test com.kolbo.videostudio.Quality406Smoke
+          java -cp build/storyboard-test com.kolbo.videostudio.Evidence407Smoke
+          java -cp build/storyboard-test com.kolbo.videostudio.Failure407Smoke
+      - name: Static safeguards and prompt QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          main=Path('android/app/src/main/java/com/kolbo/videostudio/MainActivity.java').read_text()
+          composer=Path('android/app/src/main/java/com/kolbo/videostudio/TwoPersonComposer.java').read_text()
+          deps=Path('android/app/build.gradle').read_text()
+          assert 'preview424' in deps and "versionName '4.2.4'" in deps
+          assert "segmentation-selfie:16.0.0-beta6" in deps and "face-detection:16.1.7" in deps
+          assert "translated.trim().length()<3" in main
+          assert "translated.trim().length()<10" not in main
+          assert "TwoPersonComposer.compose(a,b)" in main
+          assert "TwoPersonComposer.checkVideoCount(combined)" in main
+          assert "place(c,paint,a,0,0,256,512)" not in main
+          assert "Single shared scene" not in main
+          assert 'if(fa!=1||fb!=1)' in composer
+          assert 'if(count!=2)' in composer
+          assert 'static final int W=512,H=512;' in composer
+          assert 'place(c,left,132,H-24,210,448)' in composer
+          assert 'place(c,right,380,H-24,210,448)' in composer
+          assert 'max>2' in composer and '!sawTwo' in composer
+          assert 'segmentation.close()' in composer and 'fd.close()' in composer
+          assert "getWindow().getDecorView().setLayoutDirection" in main
+          motion=Path("android/app/src/main/java/com/kolbo/videostudio/DuoDanceMotionGate.java").read_text()
+          assert "DuoDanceMotionGate.requireVisibleDuoMovement(combined)" in main
+          assert "wantsGroupDance(originalInstruction)" in main
+          assert 'both dancers' in main.lower() or 'both figures' in main.lower()
+          assert 'leftMedian>=MIN_CHANGED_FRACTION' in motion
+          assert 'rightMedian>=MIN_CHANGED_FRACTION' in motion
+          assert "MIN_CHANGED_FRACTION = 0.11" in motion
+          assert 'לא בוצע אימות לשירה' in main
+          assert 'NO additional bystanders. " + englishPrompt' not in main
+          assert 'NO additional bystanders. " + scenePrompt' in main
+          assert 'audioAfterVideo(combined,originalInstruction,motionWarning)' in main
+          assert "versionCode 424" in deps
+          assert 'private void previewDuoBeforeUpload(' in main
+          assert 'final boolean unverified=identityReviewRequired;' in main
+          assert 'טיוטת AI לא מאומתת' in main
+          assert 'imageMeta=uploadImageBytes(reference!=null?reference:jointReference(first,second)' in main
+          assert 'photoOnePreview.setImageURI(image)' in main
+          assert 'photoTwoPreview.setImageURI(imageTwo)' in main
+          assert 'MultiSubjectReferenceClient.generate(firstBytes,firstMime,secondBytes,secondMime' in main
+          assert 'startMSRVideo(enhanced,chosen,second,instruction,requestedSeconds)' in main
+          assert 'useMultiReferenceProvider=true' in main
+          msr=Path('android/app/src/main/java/com/kolbo/videostudio/MultiSubjectReferenceClient.java').read_text()
+          assert 'p.put(ref1);p.put(ref2);' in msr
+          assert 'hugging-apps-ltx25-multi-subject-reference.hf.space' in msr
+          assert 'p.put((double)seconds)' in msr
+          assert 'MSR' in msr
+          assert 'StoryboardPlanner.plan(translatedPrompt,desiredSeconds)' in main
+          assert 'StoryboardPlanner.plan(englishPrompt,requestedSeconds)' in main
+          assert 'ProviderFailure.explain(e)' in main
+          assert 'showResult(clips.get(0)' not in main
+          assert 'CharacterRoleContract.from(originalInstruction)' in main
+          assert 'styleConstraints+roleLock.prompt(scene.action' in main
+          assert 'String scenePrompt=common+' not in main
+          assert 'CharacterRoleContract.from(request).preview()' in main
+          assert 'HEBREW_ACTION_BREAK' in Path('android/app/src/main/java/com/kolbo/videostudio/StoryboardPlanner.java').read_text()
+          assert 'sceneIntent.sceneSetting()' in main
+          assert 'recordSubmittedPrompt("MSR reference slots 1+2"' in main
+          assert 'lastSubmittedPrompt="";originalForDiagnostics=instruction' in main
+          assert 'הצג אבחון טכני' in main
+          assert "MUSIC_PERFORMANCE" in Path('android/app/src/main/java/com/kolbo/videostudio/SceneIntentContract.java').read_text()
+          assert 'OutputLengthGate.verify(file,expectedDuration)' in main
+          assert 'OutputLengthGate.verify(clip,secs)' in main
+          assert 'OutputLengthGate.verify(file,seconds)' in main
+          assert 'new StudioVisuals.AmbientMotionView(this)' in main
+          assert 'waitingCard.setVisibility(b?View.VISIBLE:View.GONE)' in main
+          assert 'resultCard.setVisibility(View.VISIBLE)' in main
+          assert 'lastPhaseDetail' in main
+          assert 'class StudioVisuals' in Path('android/app/src/main/java/com/kolbo/videostudio/StudioVisuals.java').read_text()
+          assert 'DurationPolicy.acceptable' in Path('android/app/src/main/java/com/kolbo/videostudio/OutputLengthGate.java').read_text()
+          assert 'generationInFlight=true' in main
+          assert 'showFailureUi("ההפקה הסתיימה ללא קובץ וידאו תקין.")' in main
+          assert 'retryCreation.setOnClickListener(v -> createVideo())' in main
+          assert 'StudioFailureNotice.isFailure(s)' in main
+          assert 'VideoEvidenceAudit.inspect(' in main
+          assert 'lastQualityEvidence=evidence.details()' in main
+          assert 'status.setText(qualityHeadline)' in main
+          audit=Path('android/app/src/main/java/com/kolbo/videostudio/VideoEvidenceAudit.java').read_text()
+          assert 'MediaExtractor' in audit and 'FaceDetection.getClient' in audit
+          assert 'לא אומתה זהות הפנים' in audit
+          assert 'PrivateRenderClient.render(this,compiled,first,second' in main
+          assert 'if(PrivateRenderClient.configured(this))' in main
+          assert 'privateSettings.setOnClickListener' in main
+          cli=Path('android/app/src/main/java/com/kolbo/videostudio/PrivateRenderClient.java').read_text()
+          assert 'AndroidKeyStore' in cli and 'AES/GCM/NoPadding' in cli
+          assert 'https' in cli and 'setInstanceFollowRedirects(false)' in cli
+          assert 'supported_image_counts' in cli
+          assert 'third_party_transfer_consent' in cli
+          assert 'max_seconds' in cli
+          assert '/v1/studio/jobs' in cli and 'media_rights_attested' in cli
+          assert 'cpuPhotoRequested' in main and 'startCpuPhotoMotion(' in main
+          assert 'ensureAutoConnected(this)' in main and 'manualEngineConfigured(this)' in main
+          assert 'KOLBO_V416_API_TOKEN' not in cli and 'AUTO_SERVER=' in cli
+          assert 'kolbo_auto_guest_cpu_only' in cli and 'g1.' in cli
+          assert 'אם הוא משתמש ב־Agnes או בספק AI בענן' in main
+          assert 'recordSubmittedPrompt("שרת הפקה מחובר (GPU או Agnes)"' in main
+          assert 'חיבור שרת הפקה (GPU / Agnes)' in main
+          print('PASS: separate foreground masks, scene composition, photo face count, short Hebrew')
+          PY
+      - name: Test rejecting still subjects but not two moving subjects
+        run: |
+          python3 -m pip install -q opencv-python-headless
+          python3 -m unittest discover -s android/tests -v
+      - name: Assemble Android APK
+        run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK signature and app identifier
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q 'com.kolbo.videostudio.preview424'
+          sha256sum "$APK" | tee app-debug.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-4.2.4-Honest-Duration-Preview-APK
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            app-debug.apk.sha256
+          retention-days: 14
