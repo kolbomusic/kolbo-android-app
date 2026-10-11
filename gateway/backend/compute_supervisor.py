@@ -94,15 +94,17 @@ def inspect(*,work_dir:Path,active_jobs:int,queued_jobs:int) -> ComputeSnapshot:
         reason="insufficient_container_memory"
     elif disk_free is not None and disk_free<MIN_FREE_DISK:
         reason="insufficient_ephemeral_disk"
-    elif free_mem is None or disk_free is None:
-        reason="unverified_resources"
+    elif disk_free is None:
+        reason="disk_capacity_unverified"
+    elif free_mem is None:
+        reason="memory_capacity_unverified_tiny_cpu_jobs_only"
     else:
         reason="ready_with_free_tier_limits"
-    # Unknown measurements are tolerated in isolated CI only by explicit
-    # environment opt-in, never inferred to mean unlimited compute.
-    allow_unknown=os.getenv("KOLBO_ALLOW_UNKNOWN_CPU_METRICS")=="CI_TEST_ONLY"
-    ready=(reason=="ready_with_free_tier_limits"
-           or reason=="unverified_resources" and allow_unknown)
+    # On hosts without visible cgroup limits, allow *only* tiny CPU edits
+    # (see admit below) with a disk probe and a single worker. This is not
+    # an unlimited-memory assertion.
+    ready=reason in ("ready_with_free_tier_limits",
+                     "memory_capacity_unverified_tiny_cpu_jobs_only")
     return ComputeSnapshot(
         cpu_quota_cores=_cpu_cores(),
         memory_limit_bytes=memory_limit,
@@ -124,6 +126,9 @@ def admit(*,snapshot:ComputeSnapshot,seconds:int,pixel_counts:tuple[int,...]) ->
         type(n) is not int or n<1 or n>15_000_000 for n in pixel_counts
     ):
         raise HTTPException(422,"נתוני תמונות אינם תקינים")
+    if snapshot.memory_limit_bytes is None:
+        if any(n>1_000_000 for n in pixel_counts):
+            raise HTTPException(422,"נתוני זיכרון המחשוב אינם זמינים; נתמכות רק תמונות קטנות")
     if snapshot.memory_limit_bytes is not None and snapshot.memory_limit_bytes<=600_000_000:
         if any(n>LOW_MEMORY_MAX_INPUT_PIXELS for n in pixel_counts):
             raise HTTPException(422,"התמונה גדולה מכדי לערוך אותה בשרת החינמי. יש להקטין אותה.")
