@@ -10,7 +10,8 @@ COPY server.py agnes_adapter.py agnes_legacy_adapter.py device_pairing.py \
      execution_guard.py provider_router.py operations_feedback.py \
      staging_job_ledger.py staging_orchestrator.py staging_plan_api.py \
      monetization_policy.py rewarded_credits.py scene_assembler.py \
-     postgres_job_store.py durable_staging_coordinator.py ./
+     postgres_job_store.py durable_staging_coordinator.py \
+     scene_planner.py postgres_scene_store.py ./
 RUN mkdir -p /app/work && chmod 700 /app/work
 ENV KOLBO_RENDER_PROVIDER=agnes KOLBO_WORK_DIR=/app/work
 EXPOSE 10000
