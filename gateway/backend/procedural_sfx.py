@@ -16,7 +16,7 @@ RATE=16000
 MAX_SECONDS=12
 SFX_KIND=("fart","rain","applause","bird","none")
 
-FART=re.compile(r"(?:\b(?:fart|farts|farting|flatulence)\b|מפליצ|פליצ|נפיח|פלוץ)",re.I)
+FART=re.compile(r"(?:\b(?:fart|farts|farting|flatulence)\b|מפליצ|מפליץ|פליצ|נפיח|פלוץ)",re.I)
 RAIN=re.compile(r"(?:\b(?:rain|raining|raindrops)\b|גשם|גשמי|טיפות גשם)",re.I)
 CLAP=re.compile(r"(?:\b(?:clap|clapping|applause)\b|מחיאות כפיים|מוחאים כפיים|כפיים)",re.I)
 BIRD=re.compile(r"(?:\b(?:birdsong|chirp|chirping|tweeting)\b|ציוץ|ציפורים מצייצות)",re.I)
