@@ -13,15 +13,17 @@ import re
 # Intent clues only. These lists are intentionally incomplete; a real product
 # needs a structured storyboard/intent model, not an imagined "universal" regex.
 SOUND = re.compile(
-    r"(?:\b(?:audio|sound|sing|singing|sings|song|songs|music|"
+    r"(?:\b(?:audio|sounds?|sing|singing|sings|songs?|music|"
     r"speaks?|says?|talks?|dialog(?:ue)?|voice|fart(?:s|ing)?|"
     r"burp(?:s|ing)?|sfx|narrat(?:ion|or)|lyrics|"
     r"lip[\s-]?sync)\b|"
-    r"(?<![\u0590-\u05ff])(?:שיר(?:ה|ים)?|שר(?:ים|ה)?|שרה|"
-    r"לשיר|שרות|מזמר(?:ת|ים)?|מוזיקה|מנגינה|קול(?:ות)?|סאונד|צליל(?:ים)?|"
-    r"דיבור|מדבר(?:ים|ת)?|אומר(?:ים|ת)?|מפליץ|מפליצים|"
-    r"פליצ(?:ה|ות)|נפיח(?:ה|ות)|קריינ(?:ות|ית)|"
-    r"שפתיים|דיאלוג)(?![\u0590-\u05ff]))",
+    r"(?<![\u0590-\u05ff])(?:[והלבמשתכ]{0,2})?(?:"
+    r"תשיר|לשיר|שיר(?:ה|ים)?|שר(?:ים|ה|ות)?|"
+    r"שרות|מזמר(?:ת|ים)?|מוזיקה|מנגינה|קול(?:ות)?|"
+    r"סאונד|צליל(?:ים)?|דיבור|תדבר|לדבר|דבר|"
+    r"מדבר(?:ים|ת)?|אומר(?:ים|ת)?|תגיד|"
+    r"מפליץ|מפליצים|פליצ(?:ה|ות)|נפיח(?:ה|ות)|"
+    r"קריינ(?:ות|ית)|שפתיים|דיאלוג)(?![\u0590-\u05ff]))",
     re.IGNORECASE,
 )
 LIPSYNC = re.compile(
