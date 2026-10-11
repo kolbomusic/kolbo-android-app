@@ -1,0 +1,72 @@
+name: Kolbo Video v421 - Genuine CPU video with synthesized sound proof
+on:
+  push:
+    branches: [kolbo-video-v421-prompt-audio-cpu-20261011]
+    paths: [".github/workflows/kolbo-video-v421-sound-video-proof.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cpu-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only freely available CPU rendering dependencies
+        run: |
+          python -m pip install -q 'Pillow>=10,<13'
+          command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+      - name: Make two wholly synthetic reference pictures and source-owned audio
+        run: |
+          python - <<'PY'
+          import sys,json,math,struct,wave
+          from pathlib import Path
+          from PIL import Image,ImageDraw
+          sys.path.insert(0,'gateway/backend')
+          from cpu_photo_studio import render
+          target=Path('v418-cpu-proof')
+          target.mkdir(exist_ok=True)
+          images=[]
+          for i,(bg,shape) in enumerate([
+              ((45,78,112),(225,154,64)), ((101,45,88),(76,183,161))]):
+              pic=Image.new('RGB',(500,650),bg)
+              draw=ImageDraw.Draw(pic)
+              draw.rectangle((75,75,425,575),fill=shape)
+              draw.ellipse((140,115,360,335),fill=(237,222,210))
+              dest=target/f'synthetic_{i+1}.png'
+              pic.save(dest)
+              images.append(dest)
+          with wave.open(str(target/'synth.wav'),'wb') as snd:
+              snd.setnchannels(1)
+              snd.setsampwidth(2)
+              snd.setframerate(16000)
+              for block in range(80):
+                  pcm=bytearray()
+                  for k in range(1600):
+                      j=block*1600+k
+                      value=int(1100*math.sin(2*math.pi*440*j/16000))
+                      pcm.extend(struct.pack('<h',value))
+                  snd.writeframes(pcm)
+          receipt=render(photos=images,seconds=8,
+              out=target/'photo-motion-8seconds.mp4',
+              generated_sfx='fart')
+          assert receipt.has_audio_track and receipt.generated_sfx=='fart'
+          assert abs(receipt.actual_seconds-8)<0.15
+          assert receipt.ai_video_generated is False
+          assert receipt.audio_from_user is False
+          (target/'receipt.json').write_text(json.dumps(receipt.as_dict(),indent=2))
+          print(receipt)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-V421-Real-Synthetic-Sound-MP4-Proof
+          path: |
+            v418-cpu-proof/photo-motion-8seconds.mp4
+            v418-cpu-proof/receipt.json
+            v418-cpu-proof/synthetic_1.png
+            v418-cpu-proof/synthetic_2.png
+          retention-days: 7
+          if-no-files-found: error

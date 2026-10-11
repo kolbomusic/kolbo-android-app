@@ -20,6 +20,7 @@ import visual_quality
 import audio_evidence
 import creative_intent_guard as intents
 import cpu_photo_studio as studio
+import procedural_sfx
 import guest_sessions as guests
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
@@ -54,6 +55,8 @@ class PhotoStudioJob(BaseModel):
     images: list[Picture] = Field(min_length=1,max_length=2)
     soundtrack_wav_base64: str | None = Field(default=None,max_length=9_500_000)
     media_rights_attested: bool = False
+    sound_effect_description: str = Field(default="",max_length=3000)
+    include_procedural_effect: bool = False
 
 class GuestBootstrapRequest(BaseModel):
     install_id: str = Field(min_length=32,max_length=32)
@@ -173,6 +176,8 @@ def health(authorization: str | None = Header(default=None)):
                 "endpoint":"/v1/studio/jobs","supported_image_counts":[1,2],
                 "min_seconds":2,"max_seconds":12,
                 "supports_user_owned_wav_audio":True,
+                "generated_effects":["fart","rain","applause","bird"],
+                "synthetic_effects_not_human_voice":True,
                 "external_provider_calls":False,"ai_video":False,
                 "ephemeral_storage":True},
             "detail":"ניסוי בתמונת ייחוס אחת בלבד; ללא שמע; אישור ידני נדרש"}
@@ -200,8 +205,11 @@ def new_photo_studio_job(payload: PhotoStudioJob,
             raise HTTPException(422,"פס הקול אינו תקין")
         if not 100<=len(audio)<=7_000_000 or audio[:4]!=b"RIFF" or audio[8:12]!=b"WAVE":
             raise HTTPException(422,"נתמך קובץ WAV מקורי בלבד, עד 7MB")
+    effect=procedural_sfx.recognize(payload.sound_effect_description) if payload.include_procedural_effect else "none"
+    if audio is not None and effect!="none":
+        raise HTTPException(422,"אי אפשר להחליף אודיו מקורי בלי בחירה מפורשת")
     digest=hashlib.sha256(
-        (owner+":cpu_photo_motion:"+str(payload.seconds)).encode()
+        (owner+":cpu_photo_motion:"+str(payload.seconds)+":"+effect).encode()
         +b"".join(blob for blob,_ in images)+(audio or b"")).hexdigest()
     with LOCK:
         existing=DIGESTS.get(digest)
@@ -235,24 +243,30 @@ def new_photo_studio_job(payload: PhotoStudioJob,
              "detail":"עריכת תנועת מצלמה לתמונות, ללא יצירת משחק של דמויות AI"}
         DIGESTS[digest]=job_id
         POOL.submit(_work_photo_studio,job_id,photos=photo_paths,
-                    soundtrack=wav,seconds=payload.seconds)
+                    soundtrack=wav,seconds=payload.seconds,effect=effect)
         return {"job_id":job_id,"state":"queued","mode":"cpu_photo_motion"}
 
 def _work_photo_studio(job_id: str, *,
-                       photos:list[Path],soundtrack:Path|None,seconds:int) -> None:
+                       photos:list[Path],soundtrack:Path|None,seconds:int,
+                       effect:str="none") -> None:
     with LOCK:
         if job_id not in JOBS:return
         JOBS[job_id]["state"]="running"
     try:
         folder=ROOT/job_id
         receipt=studio.render(photos=photos,seconds=seconds,
-                 out=folder/"draft.mp4",user_wav=soundtrack)
+                 out=folder/"draft.mp4",user_wav=soundtrack,generated_sfx=effect)
+        evidence=audio_evidence.inspect_mp4(folder/"draft.mp4",
+                        audio_required=(soundtrack is not None or effect!="none"))
+        if effect!="none" and evidence.verdict=="reject":
+            raise ValueError("SFX audio not audible after processing")
         with LOCK:
             JOBS[job_id].update(state="completed",
                 detail="נוצר סרטון עריכת תמונות אמיתי; לא AI וידאו",
                 size=receipt.bytes,sha256=receipt.sha256,
-                has_audio=receipt.audio_from_user,
-                media_kind="cpu_photo_motion",quality=receipt.as_dict())
+                has_audio=receipt.has_audio_track,
+                media_kind="cpu_photo_motion",
+                quality={**receipt.as_dict(),"measured_audio":evidence.as_dict()})
     except Exception:
         with LOCK:
             if job_id in JOBS:
