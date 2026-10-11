@@ -1,0 +1,29 @@
+name: Kolbo v433 - Inspect two-person scene builder demos without inference
+on:
+  push:
+    branches: [kolbo-video-v433-scene-compliance-gates-20261011]
+    paths: ['.github/workflows/kolbo-v433-scene-api-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -q 'gradio_client>=2,<3'
+      - name: Public Gradio multi-image scene builder API discovery (NO INFERENCE)
+        run: |
+          python - <<'PY'
+          from gradio_client import Client
+          import json
+          for name in ['techfreakworm/qwen-image-editor','oindrila13saha/SIGMA-Gen-demo','WithAnyone/WithAnyone_demo']:
+              try:
+                  client=Client(name,verbose=False)
+                  data=client.view_api(return_format='dict')
+                  print("SCENE_PROVIDER",name,json.dumps(data,ensure_ascii=False,default=str)[:14000],flush=True)
+              except Exception as e:
+                  print("SCENE_UNAVAILABLE",name,type(e).__name__,str(e)[:400],flush=True)
+          PY
