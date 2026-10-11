@@ -137,7 +137,9 @@ class PostgresArtifactIndex:
             raise ForeignArtifact('Invalid owner')
         with self._connection() as c:
             row=c.execute(
-                f'SELECT {_COLUMNS} FROM kolbo_job_artifacts a '
+                'SELECT a.artifact_id,a.job_id,a.owner_hash,a.role,a.sequence_no,'
+                'a.object_key,a.sha256,a.media_type,a.byte_size,a.expires_at '
+                'FROM kolbo_job_artifacts a '
                 'JOIN kolbo_generation_jobs j USING(job_id) '
                 'WHERE a.job_id=%s AND a.owner_hash=%s AND a.role=%s '
                 'AND a.expires_at>now() AND j.state=%s ',
