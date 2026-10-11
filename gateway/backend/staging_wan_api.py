@@ -157,6 +157,12 @@ def health(authorization: str | None = Header(default=None)):
             "commercial_rights_verified":False,
             "storage_durable":False,
             "free_unlimited":False,
+            "cpu_photo_studio":{"mode":"cpu_photo_motion",
+                "endpoint":"/v1/studio/jobs","supported_image_counts":[1,2],
+                "min_seconds":2,"max_seconds":12,
+                "supports_user_owned_wav_audio":True,
+                "external_provider_calls":False,"ai_video":False,
+                "ephemeral_storage":True},
             "detail":"ניסוי בתמונת ייחוס אחת בלבד; ללא שמע; אישור ידני נדרש"}
 
 @app.post("/v1/studio/jobs", status_code=202)
