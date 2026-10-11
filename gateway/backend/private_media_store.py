@@ -165,7 +165,7 @@ class PrivateObjectStore:
         """
         item=self.head(owner_hash,job_id,key,kind)
         if not isinstance(file_name,str) or not re.fullmatch(
-                r'[A-Za-z0-9_-]{4,100}\\.(?:mp4|jpg|png|webp)',file_name):
+                r'[A-Za-z0-9_-]{4,100}\.(?:mp4|jpg|png|webp)',file_name):
             raise StorageError('Invalid output file name')
         if not file_name.endswith('.'+_EXT[item.media_type]):
             raise StorageError('Target extension does not match media type')
