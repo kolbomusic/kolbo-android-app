@@ -47,7 +47,7 @@ jobs:
           c,_=request("POST","/v1/jobs",{"prompt":"Someone sings a song","seconds":3.5,"images":[]},token=one)
           assert c==401,c
           width,height=96,96
-          pixels=b"".join(b"\x00"+bytes((x*3%256,y*3%256,(x+y)%256) for x in range(width) for _ in range(1))
+          pixels=b"".join(b"\x00"+b"".join(bytes((x*3%256,y*3%256,(x+y)%256)) for x in range(width))
                           for y in range(height))
           # Correct byte count and scanline filter prefix.
           assert len(pixels)==height*(1+width*3)
