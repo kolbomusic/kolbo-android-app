@@ -26,6 +26,8 @@ import compute_supervisor as compute
 import ai_trial_guards as ai_trials
 import longform_av
 import experimental_ltx25_native_av as ltx
+import experimental_scene_builder_v433 as stage_builder
+import scene_integrity_v433 as scene_integrity
 
 APP_TITLE = "Kolbo Video Experimental Wan Gateway (NOT production)"
 app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None, openapi_url=None)
@@ -59,6 +61,7 @@ class NativeAVJob(BaseModel):
     images: list[Picture] = Field(default_factory=list,max_length=1)
     third_party_transfer_consent: bool = False
     commercial_use: bool = False
+    requires_shared_stage_scene: bool = False
 
 class PhotoStudioJob(BaseModel):
     mode: str = "cpu_photo_motion"
@@ -199,6 +202,18 @@ def health(authorization: str | None = Header(default=None)):
             "free_unlimited":False,
             "zero_setup":guests.capabilities(),
             "experimental_ai_video":ai_trials.advertised(),
+            "two_person_scene_builder":{
+                "mode":"FLUX_Kontext_to_LTX_native_AV",
+                "ready":os.getenv("KOLBO_SCENE_BUILDER_V433")=="EXPLICITLY_ENABLED"
+                         and os.getenv("KOLBO_NATIVE_LTX25_TRIAL")=="EXPLICITLY_ENABLED"
+                         and ai_trials.enabled() and enabled(),
+                "requires_two_sequential_public_gpu_inferences":True,
+                "split_screen_is_valid_success":False,
+                "accepts_one_combined_reference":True,
+                "two_person_identity_verified":False,
+                "crowd_and_stage_semantics_verified":False,
+                "language_and_lip_sync_verified":False,
+                "free_gpu_availability_guaranteed":False},
             "native_audio_video_trial":{
                 "mode":"native_ltx25_av_trial",
                 "ready":os.getenv("KOLBO_NATIVE_LTX25_TRIAL")=="EXPLICITLY_ENABLED"
@@ -349,6 +364,11 @@ def native_av_preflight(payload: NativeAVJob,
         blockers.append("public_native_audio_video_model_not_available")
     if len(payload.images)>1:
         blockers.append("at_most_one_start_image")
+    if payload.requires_shared_stage_scene:
+        if len(payload.images)!=1:
+            blockers.append("combined_two_person_reference_required")
+        if os.getenv("KOLBO_SCENE_BUILDER_V433")!="EXPLICITLY_ENABLED":
+            blockers.append("two_person_scene_builder_unavailable")
     return {"status":"eligible_for_attempt" if not blockers else "blocked",
         "blockers":blockers,"supported_duration_seconds":[1,15],
         "source":"external_public_LTX25_demo",
@@ -358,21 +378,45 @@ def native_av_preflight(payload: NativeAVJob,
         "commercial_rights_verified":False,
         "credits_spent":0}
 
-def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float) -> None:
+def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float,
+                    requires_shared_stage_scene:bool=False) -> None:
     with LOCK:
         if job_id not in JOBS:return
         JOBS[job_id]["state"]="running"
     try:
         folder=ROOT/job_id
-        receipt=ltx.generate(prompt=prompt,seconds=seconds,reference=reference,
+        model_reference=reference
+        scene_receipt=None
+        if requires_shared_stage_scene:
+            if reference is None:
+                raise ValueError("Missing combined two-person source reference")
+            stage=folder/"generated-shared-stage.png"
+            scene_receipt=stage_builder.build(
+                source=reference,prompt=prompt,destination=stage,
+                consent=True,commercial=False)
+            model_reference=stage
+        receipt=ltx.generate(prompt=prompt,seconds=seconds,
+            reference=model_reference,
             destination=folder/"draft.mp4",consent=True,commercial=False)
+        scene=scene_integrity.inspect_video(folder/"draft.mp4")
+        if scene.output_is_split_layout:
+            raise ValueError("Rejected picture-in-picture or persistent split portrait output")
+        if scene.near_static_frames:
+            raise ValueError("Rejected nearly frozen output despite valid audio/metadata")
+        quality={**receipt.as_dict(),"scene_audit":scene.as_dict(),
+            "shared_scene_generated_by_image_model":scene_receipt is not None,
+            "stage_builder_quality":scene_receipt.as_dict() if scene_receipt else None,
+            "all_actors_identity_unchanged_verified":False,
+            "duet_singing_verified":False,
+            "audience_10k_verified":False,
+            "requires_manual_scene_and_voice_review":True}
         with LOCK:
             JOBS[job_id].update(state="completed",
-                detail="נוצר סרטון AI עם שמע מקורי. תוכן הבקשה עדיין דורש בדיקה.",
+                detail="טיוטת AI עם תנועה ושמע; נדרשת בדיקת שתי הדמויות, הבמה והשירה.",
                 mode="native_ltx25_av_trial",
                 media_kind="native_ltx25_av_trial",
                 size=receipt.size_bytes,sha256=receipt.sha256,
-                has_audio=True,quality=receipt.as_dict())
+                has_audio=True,quality=quality)
     except Exception as exc:
         kind="acceptance_unknown" if isinstance(exc,ltx.UnknownAcceptance) else "native_av_failed"
         with LOCK:
@@ -383,6 +427,8 @@ def _work_native_av(job_id:str,reference:Path|None,prompt:str,seconds:float) -> 
         if reference is not None:
             try:reference.unlink(missing_ok=True)
             except OSError:pass
+        try:(ROOT/job_id/"generated-shared-stage.png").unlink(missing_ok=True)
+        except OSError:pass
 
 @app.post("/v1/native-av/jobs", status_code=202)
 def new_native_av_job(payload: NativeAVJob,
@@ -407,9 +453,17 @@ def new_native_av_job(payload: NativeAVJob,
         raise HTTPException(503,"מנוע הווידאו והשמע אינו זמין כעת") from exc
     if not payload.third_party_transfer_consent:
         raise HTTPException(422,"נדרש אישור להעברת ההנחיה והמדיה לשירות הציבורי")
+    if payload.requires_shared_stage_scene:
+        if len(payload.images)!=1:
+            raise HTTPException(422,"שתי דמויות מחייבות תמונת מקור משולבת אחת")
+        if os.getenv("KOLBO_SCENE_BUILDER_V433")!="EXPLICITLY_ENABLED":
+            raise HTTPException(503,
+                "הקמת במה משותפת לשתי דמויות עדיין אינה זמינה; לא נשלח וידאו חלקי",
+                headers={"Retry-After":"300"})
     images=[decode_picture(pic) for pic in payload.images]
     digest=hashlib.sha256(
-        (owner+":ltx_native:"+str(payload.seconds)+":"+payload.prompt).encode()
+        (owner+":ltx_native:"+str(payload.seconds)+":"+
+         str(payload.requires_shared_stage_scene)+":"+payload.prompt).encode()
         +b"".join(blob for blob,_ in images)).hexdigest()
     with LOCK:
         old=DIGESTS.get(digest)
@@ -437,7 +491,8 @@ def new_native_av_job(payload: NativeAVJob,
             "digest":digest,"owner":owner,"mode":"native_ltx25_av_trial",
             "detail":"מייצר תנועה ושמע יחד במנוע LTX ניסיוני"}
         DIGESTS[digest]=job_id
-        POOL.submit(_work_native_av,job_id,ref,payload.prompt,payload.seconds)
+        POOL.submit(_work_native_av,job_id,ref,payload.prompt,
+                    payload.seconds,payload.requires_shared_stage_scene)
         return {"job_id":job_id,"state":"queued","mode":"native_ltx25_av_trial"}
 
 @app.post("/v1/studio/jobs", status_code=202)
