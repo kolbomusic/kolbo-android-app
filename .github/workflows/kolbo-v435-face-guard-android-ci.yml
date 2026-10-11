@@ -143,7 +143,7 @@ jobs:
           c=(root/'PrivateRenderClient.java').read_text()
           assert 'approved_strict_face_comparison_v435' in m
           assert 'ל-FLUX Kontext הציבורי' in m
-          assert 'ולא קולאז׳ של תמונות' in m
+          assert 'מכין במה ובודק שמירת שתי הפנים' in m
           assert 'טיוטת וידאו AI עם שמע' in m
           assert 'plan.put("requires_shared_stage_scene",first!=null&&second!=null);' in c
           assert 'payload.put("requires_shared_stage_scene",first!=null&&second!=null);' in c
