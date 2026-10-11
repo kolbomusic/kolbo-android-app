@@ -1,0 +1,39 @@
+name: Kolbo v431 - ONE real LTX 15-second video plus native audio
+on:
+  push:
+    branches: [kolbo-video-v431-native-av-zerogpu-20261011]
+    paths: [".github/workflows/kolbo-v431-real-ltx-15s-native-av.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kolbo-v431-native-av-15s-one-test
+  cancel-in-progress: false
+jobs:
+  fifteen_seconds:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Free public native A/V test dependencies
+        run: |
+          python -m pip install -q 'gradio_client>=2,<3' 'Pillow>=10,<13'
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
+      - name: ONE attempt for full 15s AI video+audio; synthetic scene only
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: python .github/scripts/kolbo_ltx25_native_audio_15s_proof_v431.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-v431-real-LTX-15s-video-native-audio-proof
+          path: |
+            v431-native-av-15s-proof/native-ai-video-plus-audio-15s.mp4
+            v431-native-av-15s-proof/receipt.json
+          if-no-files-found: warn
+          retention-days: 7
