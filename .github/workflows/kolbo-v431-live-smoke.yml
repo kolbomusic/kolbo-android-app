@@ -1,0 +1,51 @@
+name: Kolbo v431 - Live FREE native 15s AI audio preflight (NO GPU)
+on:
+  push:
+    branches: [kolbo-video-v431-live-smoke-20261011]
+    paths: [".github/workflows/kolbo-v431-live-smoke.yml"]
+permissions:
+  contents: read
+jobs:
+  hosted_preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Verify hosted Render native AI model ready and quota policy without spending inference
+        run: |
+          python3 - <<'PY'
+          import json,secrets,urllib.request,urllib.error,time
+          base='https://kolbo-video-wan416-staging.onrender.com'
+          def fetch(method,path,body=None,token=None):
+              raw=None if body is None else json.dumps(body).encode()
+              req=urllib.request.Request(base+path,raw,method=method)
+              if body is not None:req.add_header('Content-Type','application/json')
+              if token:req.add_header('Authorization','Bearer '+token)
+              with urllib.request.urlopen(req,timeout=35) as response:
+                  return response.status,json.load(response)
+          for _ in range(8):
+              try:
+                  c,status=fetch('GET','/healthz')
+                  if c==200 and status['alive']:break
+              except Exception:pass
+              time.sleep(5)
+          else:raise RuntimeError('Render Free deployment unavailable')
+          c,issued=fetch('POST','/v1/guest/bootstrap',{'install_id':secrets.token_hex(16)})
+          assert c==200 and issued['token'].startswith('g1.')
+          key=issued['token']
+          c,health=fetch('GET','/v1/health',token=key)
+          assert c==200
+          x=health['native_audio_video_trial']
+          print('model-capabilities',json.dumps(x,ensure_ascii=False))
+          assert x['ready'] and x['min_seconds']==1 and x['max_seconds']==15
+          assert x['native_audio'] is True
+          assert x['singing_lipsync_verified'] is False
+          assert x['commercial_rights_verified'] is False
+          c,plan=fetch('POST','/v1/native-av/plan',{'prompt':'A cartoon person waves and laughs with a sound effect','seconds':15,'images':[],'third_party_transfer_consent':True},key)
+          print('15-second-preflight',json.dumps(plan,ensure_ascii=False))
+          assert c==200 and plan['status']=='eligible_for_attempt' and plan['credits_spent']==0
+          assert plan['commercial_rights_verified'] is False
+          c,blocked=fetch('POST','/v1/native-av/plan',{'prompt':'A cartoon person waves and laughs with a sound effect','seconds':15,'images':[],'third_party_transfer_consent':False},key)
+          assert c==200 and blocked['status']=='blocked'
+          assert 'external_prompt_and_image_transfer_consent_required' in blocked['blockers']
+          print('PASS: hosted 15s native AI video+sound API wired and guarded; no GPU inference spent')
+          PY
