@@ -157,3 +157,71 @@ def test_can_extract_frame_for_future_provider_continuity(tmp_path):
     clip=tmp_path/"first.mp4";moving(clip,5)
     ref=av.last_frame(clip,tmp_path/"ref.png")
     assert ref.exists() and ref.stat().st_size>300
+
+
+
+def test_3_real_moving_shots_receive_previous_final_frame(tmp_path):
+    from PIL import Image
+    source=tmp_path/"reference.png"
+    Image.new("RGB",(320,240),(82,152,208)).save(source)
+    calls=[]
+    def synthetic_moving_provider(*,reference,prompt,seconds,destination,
+                                   consent,commercial,wants_audio,wants_lipsync):
+        assert consent and not commercial and not wants_audio and not wants_lipsync
+        assert destination.suffix==".mp4"
+        assert seconds==5
+        calls.append(reference)
+        if len(calls)>1:
+            assert reference.suffix==".png" and reference.exists()
+            assert "reference-for-" in reference.name
+        moving(destination,seconds,len(calls))
+    end=tmp_path/"assembled.mp4"
+    receipt=av.generate_shots_then_assemble(
+        reference_image=source,seconds=15,
+        prompt="A moving character clearly waves at the camera",
+        output=end,generator=synthetic_moving_provider,
+        synthetic_effect="bird",quota_remaining=3,
+        provider_license_verified=True,external_transfer_consent=True)
+    assert len(calls)==3
+    assert receipt["provider_calls"]==3
+    assert receipt["continuation_method"]=="previous_shot_final_frame_reference"
+    assert not receipt["identity_continuity_verified"]
+    assert receipt["duration_seconds"]==pytest.approx(15,abs=.085)
+    assert receipt["has_audio"]
+
+
+@pytest.mark.parametrize("quota,license,consent",[
+    (2,True,True),(3,False,True),(3,True,False)
+])
+def test_no_provider_execution_when_quota_license_or_consent_missing(
+        tmp_path,quota,license,consent):
+    from PIL import Image
+    ref=tmp_path/"person.png"
+    Image.new("RGB",(320,240),"blue").save(ref)
+    called=[]
+    with pytest.raises(av.LongformError,match="blocked"):
+        av.generate_shots_then_assemble(
+            reference_image=ref,seconds=15,
+            prompt="The person moves the arms around",
+            output=tmp_path/"never.mp4",
+            generator=lambda **kwargs:called.append(kwargs),
+            synthetic_effect="rain",quota_remaining=quota,
+            provider_license_verified=license,external_transfer_consent=consent)
+    assert not called
+    assert not (tmp_path/"never.mp4").exists()
+
+
+def test_no_provider_execution_for_requested_singing(tmp_path):
+    from PIL import Image
+    ref=tmp_path/"person.png"
+    Image.new("RGB",(320,240),"blue").save(ref)
+    called=[]
+    with pytest.raises(av.LongformError,match="singing_generation_and_sync"):
+        av.generate_shots_then_assemble(
+            reference_image=ref,seconds=15,
+            prompt="הדמות שרה בבוכרית על הבמה",
+            output=tmp_path/"never.mp4",
+            generator=lambda **kwargs:called.append(kwargs),
+            synthetic_effect="applause",quota_remaining=3,
+            provider_license_verified=True,external_transfer_consent=True)
+    assert not called
