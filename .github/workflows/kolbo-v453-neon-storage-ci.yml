@@ -1,0 +1,17 @@
+name: Kolbo v4.5.3 Neon storage preview CI
+on:
+  push:
+    branches: [kolbo-video-v453-neon-storage-proof-20261012]
+    paths: ['staging/**','.github/workflows/kolbo-v453-neon-storage-ci.yml']
+permissions: {contents: read}
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Unit tests without live credentials
+        run: python -m unittest discover -s staging/tests -v
+      - name: Syntax check
+        run: python -m py_compile staging/app.py staging/storage_probe.py
