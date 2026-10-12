@@ -2,6 +2,7 @@
 import json, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+from storage_probe import proof,verify_synthetic_storage
 
 CONFIG = {
  "service":"kolbo-volunteer-mesh","api_contract":449,"minimum_android_client":449,
@@ -9,7 +10,8 @@ CONFIG = {
  "native_mp4_export_supported":True,"preview_only":True,
  "gpu_guaranteed":False,"gpu_ready":False,"persistent_storage_ready":False,
  "private_media_upload_enabled":False,"hybrid_plan_execution_enabled":False,
- "paid_gpu_fallback_enabled":False,"real_video_generation_verified":False
+ "paid_gpu_fallback_enabled":False,"real_video_generation_verified":False,
+ "neon_storage_roundtrip_verified":False
 }
 PAGE="""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -37,12 +39,25 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   route=urlsplit(self.path).path
   if route in ("/","/studio"):return self.send(200,PAGE.encode(),"text/html; charset=utf-8")
-  if route=="/v1/app-config":return self.send(200,json.dumps(CONFIG,ensure_ascii=False).encode(),"application/json")
-  if route=="/healthz":return self.send(200,json.dumps({"alive":True,"preview_only":True,"gpu_ready":False,"storage_ready":False,"accepts_media":False}).encode(),"application/json")
+  if route=="/v1/app-config":
+   safe={**CONFIG,"neon_storage_roundtrip_verified":bool(proof.get("synthetic_roundtrip")),
+       "durable_database_connected":bool(proof.get("db"))}
+   return self.send(200,json.dumps(safe,ensure_ascii=False).encode(),"application/json")
+  if route=="/healthz":
+   health={"alive":True,"preview_only":True,"gpu_ready":False,"storage_ready":bool(proof.get("synthetic_roundtrip")),"accepts_media":False}
+   return self.send(200,json.dumps(health).encode(),"application/json")
   return self.send(404,b"Not found","text/plain")
  def do_HEAD(self):self.do_GET()
  def reject(self):
   self.send(503,json.dumps({"error":"NOT_ACTIVE_FOR_GENERATION","accepted":False,"charged_usd":0,"detail":"No verified GPU or durable media storage"}).encode(),"application/json")
  do_POST=do_PUT=do_PATCH=do_DELETE=reject
 if __name__=="__main__":
+ try:
+  if os.getenv("KOLBO_RUN_STARTUP_STORAGE_PROOF")=="YES":
+   verify_synthetic_storage()
+   print("KOLBO_NEON_PRIVATE_STORAGE_SYNTHETIC_ROUNDTRIP_OK",flush=True)
+  else:
+   print("KOLBO_STORAGE_NOT_PROBED",flush=True)
+ except Exception as exc:
+  print("KOLBO_STORAGE_PROOF_FAILED:"+type(exc).__name__,flush=True)
  ThreadingHTTPServer(("0.0.0.0",int(os.getenv("PORT","8000"))),Handler).serve_forever()
