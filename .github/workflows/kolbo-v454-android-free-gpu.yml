@@ -1,10 +1,10 @@
 name: Kolbo Video 4.5.4 Android client
 on:
   push:
-    branches: [kolbo-video-v454-mobile-contract-20261012]
+    branches: [kolbo-video-v454-real-free-gpu-launcher-20261012]
     paths:
       - 'mobile-kolbo/**'
-      - '.github/workflows/kolbo-v454-mobile-android.yml'
+      - '.github/workflows/kolbo-v454-android-free-gpu.yml'
   workflow_dispatch:
 permissions:
   contents: read
