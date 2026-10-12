@@ -1,0 +1,20 @@
+name: Kolbo Safe HTTPS Preview
+on:
+  push:
+    branches: [kolbo-video-v450-safe-https-preview-20261012]
+    paths:
+      - 'staging/**'
+      - '.github/workflows/kolbo-v450-safe-preview.yml'
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  safe-preview-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Verify uploads cannot be accepted
+        run: python -m unittest discover -s staging/tests -v
+      - name: Verify parseable app
+        run: python -m py_compile staging/app.py
