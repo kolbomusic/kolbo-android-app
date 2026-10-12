@@ -1,0 +1,16 @@
+plugins { id 'com.android.application' }
+android {
+  namespace 'com.kolbomusic.video'
+  compileSdk 35
+  defaultConfig {
+    applicationId 'com.kolbomusic.video'
+    minSdk 26
+    targetSdk 35
+    versionCode 442
+    versionName '4.4.2'
+  }
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+}
