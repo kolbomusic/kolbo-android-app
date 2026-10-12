@@ -1,7 +1,7 @@
 name: Kolbo Video 4.5.5 Android client
 on:
   push:
-    branches: [kolbo-video-v455-real-free-gpu-launcher-20261012]
+    branches: [kolbo-video-v455-zero-setup-studio-20261012]
     paths:
       - 'mobile-kolbo/**'
       - '.github/workflows/kolbo-v455-native-studio.yml'
