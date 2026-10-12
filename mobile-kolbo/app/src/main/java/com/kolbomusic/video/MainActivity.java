@@ -1,0 +1,160 @@
+package com.kolbomusic.video;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.os.Build;
+import android.content.Intent;
+import android.content.ClipData;
+import android.graphics.Color;
+import android.net.Uri;
+import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.CookieManager;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.LinearLayout;
+import android.widget.EditText;
+import android.widget.TextView;
+import android.widget.Button;
+import android.widget.Toast;
+import java.net.URI;
+import java.util.Locale;
+
+public final class MainActivity extends Activity {
+    private static final int FILE_REQUEST=401;
+    private WebView browser;
+    private LinearLayout setup;
+    private EditText server;
+    private android.webkit.ValueCallback<Uri[]> pendingFiles;
+    private String allowedHost="";
+    private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
+    @Override public void onCreate(Bundle saved){
+        super.onCreate(saved);
+        getWindow().setStatusBarColor(Color.rgb(22,18,37));
+        getWindow().setNavigationBarColor(Color.rgb(22,18,37));
+        LinearLayout root=new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        setup=new LinearLayout(this);
+        setup.setOrientation(LinearLayout.VERTICAL);
+        setup.setPadding(dp(18),dp(22),dp(18),dp(16));
+        TextView title=new TextView(this);
+        title.setText("Kolbo Video · התחברות לאולפן");
+        title.setTextSize(23f);
+        setup.addView(title);
+        TextView info=new TextView(this);
+        info.setText("דרוש שרת Kolbo Mesh פרטי ב־HTTPS ומנוע GPU מורשה. אין באפליקציה מנוע AI מובנה או חיוב.");
+        info.setPadding(0,dp(12),0,dp(12));
+        setup.addView(info);
+        server=new EditText(this);
+        server.setHint("https://your-server.example");
+        server.setSingleLine(true);
+        server.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        server.setText(getPreferences(MODE_PRIVATE).getString("hub",""));
+        setup.addView(server);
+        Button open=new Button(this);
+        open.setText("פתח את אולפן הווידאו");
+        open.setOnClickListener(v->connect(server.getText().toString()));
+        setup.addView(open);
+        root.addView(setup);
+        browser=new WebView(this);
+        browser.setVisibility(View.GONE);
+        WebSettings s=browser.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(true);
+        s.setAllowFileAccessFromFileURLs(false);
+        s.setAllowUniversalAccessFromFileURLs(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        if(Build.VERSION.SDK_INT>=26)s.setSafeBrowsingEnabled(true);
+        WebView.setWebContentsDebuggingEnabled(false);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(browser,false);
+        browser.setWebViewClient(new WebViewClient(){
+            @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){
+                String host=request.getUrl().getHost();
+                String scheme=request.getUrl().getScheme();
+                int port=request.getUrl().getPort();
+                if("https".equalsIgnoreCase(scheme)&&port==-1 || "https".equalsIgnoreCase(scheme)&&port==443){
+                    if(host!=null&&host.equalsIgnoreCase(allowedHost))return false;
+                }
+                Toast.makeText(MainActivity.this,"מעבר לשרת חיצוני נחסם",Toast.LENGTH_SHORT).show();
+                return true;
+            }
+            @Override public void onReceivedSslError(WebView v,android.webkit.SslErrorHandler handler,android.net.http.SslError error){
+                handler.cancel();
+                Toast.makeText(MainActivity.this,"אישור HTTPS אינו תקין",Toast.LENGTH_LONG).show();
+            }
+        });
+        browser.setWebChromeClient(new WebChromeClient(){
+            @Override public boolean onShowFileChooser(WebView web,android.webkit.ValueCallback<Uri[]> callback,FileChooserParams params){
+                if(pendingFiles!=null)pendingFiles.onReceiveValue(null);
+                pendingFiles=callback;
+                try{
+                    Intent intent=params.createIntent();
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    startActivityForResult(intent,FILE_REQUEST);
+                    return true;
+                }catch(Exception err){
+                    pendingFiles=null;
+                    callback.onReceiveValue(null);
+                    return false;
+                }
+            }
+        });
+        root.addView(browser,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1));
+        setContentView(root);
+        String restored=server.getText().toString().trim();
+        if(!restored.isEmpty())connect(restored);
+    }
+    private void connect(String candidate){
+        try{
+            URI uri=new URI(candidate.trim());
+            if(!"https".equalsIgnoreCase(uri.getScheme())||uri.getHost()==null||
+               uri.getRawUserInfo()!=null||uri.getRawQuery()!=null||uri.getRawFragment()!=null||
+               (uri.getRawPath()!=null&&!uri.getRawPath().isEmpty()&&!uri.getRawPath().equals("/"))||
+               (uri.getPort()!=-1&&uri.getPort()!=443))
+                throw new IllegalArgumentException();
+            String host=uri.getHost().toLowerCase(Locale.ROOT);
+            if(host.equals("localhost")||host.endsWith(".local")||host.endsWith(".test"))
+                throw new IllegalArgumentException();
+            allowedHost=host;
+            String origin="https://"+host;
+            getPreferences(MODE_PRIVATE).edit().putString("hub",origin).apply();
+            setup.setVisibility(View.GONE);
+            browser.setVisibility(View.VISIBLE);
+            browser.loadUrl(origin+"/studio");
+        }catch(Exception err){
+            Toast.makeText(this,"יש להזין כתובת HTTPS תקינה",Toast.LENGTH_LONG).show();
+        }
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode!=FILE_REQUEST||pendingFiles==null)return;
+        Uri[] selected=null;
+        if(resultCode==RESULT_OK&&data!=null){
+            if(data.getClipData()!=null){
+                ClipData clips=data.getClipData();
+                selected=new Uri[clips.getItemCount()];
+                for(int i=0;i<clips.getItemCount();i++)selected[i]=clips.getItemAt(i).getUri();
+            }else if(data.getData()!=null)selected=new Uri[]{data.getData()};
+        }
+        pendingFiles.onReceiveValue(selected);
+        pendingFiles=null;
+    }
+    @Override public void onBackPressed(){
+        if(browser.getVisibility()==View.VISIBLE&&browser.canGoBack())browser.goBack();
+        else if(browser.getVisibility()==View.VISIBLE){browser.setVisibility(View.GONE);setup.setVisibility(View.VISIBLE);}
+        else super.onBackPressed();
+    }
+    @Override protected void onDestroy(){
+        if(pendingFiles!=null)pendingFiles.onReceiveValue(null);
+        pendingFiles=null;
+        browser.destroy();
+        super.onDestroy();
+    }
+}
