@@ -30,6 +30,7 @@ public final class MainActivity extends Activity {
     private EditText server;
     private android.webkit.ValueCallback<Uri[]> pendingFiles;
     private String allowedHost="";
+    private VideoExportBridge videoExport;
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);
@@ -61,6 +62,8 @@ public final class MainActivity extends Activity {
         setup.addView(open);
         root.addView(setup);
         browser=new WebView(this);
+        videoExport=new VideoExportBridge(this);
+        browser.addJavascriptInterface(videoExport,"KolboExport");
         browser.setVisibility(View.GONE);
         WebSettings s=browser.getSettings();
         s.setJavaScriptEnabled(true);
@@ -124,16 +127,52 @@ public final class MainActivity extends Activity {
                 throw new IllegalArgumentException();
             allowedHost=host;
             String origin="https://"+host;
-            getPreferences(MODE_PRIVATE).edit().putString("hub",origin).apply();
-            setup.setVisibility(View.GONE);
-            browser.setVisibility(View.VISIBLE);
-            browser.loadUrl(origin+"/studio");
+            // Do not open an obsolete /studio endpoint; verify the v4.4.9 API first.
+            Toast.makeText(this,"מאמת תאימות שרת...",Toast.LENGTH_SHORT).show();
+            final String chosenHost=host;
+            new Thread(()->{
+                boolean contractOk=false;
+                try{
+                    java.net.HttpURLConnection connection=(java.net.HttpURLConnection)
+                        new java.net.URL(origin+"/v1/app-config").openConnection();
+                    connection.setConnectTimeout(6000);
+                    connection.setReadTimeout(6000);
+                    connection.setInstanceFollowRedirects(false);
+                    connection.setRequestProperty("Accept","application/json");
+                    try{
+                        if(connection.getResponseCode()==200){
+                            java.io.InputStream stream=connection.getInputStream();
+                            java.io.ByteArrayOutputStream buf=new java.io.ByteArrayOutputStream();
+                            byte[] bytes=new byte[1024]; int n;
+                            while((n=stream.read(bytes))!=-1&&buf.size()<8192)buf.write(bytes,0,n);
+                            stream.close();
+                            org.json.JSONObject config=new org.json.JSONObject(buf.toString("UTF-8"));
+                            contractOk="kolbo-volunteer-mesh".equals(config.optString("service")) &&
+                                config.optInt("api_contract",0)==449 &&
+                                config.optInt("minimum_android_client",9999)<=449 &&
+                                config.optBoolean("owner_auth_required",false);
+                        }
+                    }finally{connection.disconnect();}
+                }catch(Exception ignored){}
+                final boolean compatible=contractOk;
+                runOnUiThread(()->{
+                    if(!compatible||!chosenHost.equals(allowedHost)){
+                        Toast.makeText(this,"השרת אינו זמין או לא תואם ל־4.4.9",Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    getPreferences(MODE_PRIVATE).edit().putString("hub",origin).apply();
+                    setup.setVisibility(View.GONE);
+                    browser.setVisibility(View.VISIBLE);
+                    browser.loadUrl(origin+"/studio");
+                });
+            },"KolboContractCheck").start();
         }catch(Exception err){
             Toast.makeText(this,"יש להזין כתובת HTTPS תקינה",Toast.LENGTH_LONG).show();
         }
     }
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==VideoExportBridge.SAVE_REQUEST){videoExport.handleSave(resultCode,data);return;}
         if(requestCode!=FILE_REQUEST||pendingFiles==null)return;
         Uri[] selected=null;
         if(resultCode==RESULT_OK&&data!=null){
@@ -154,6 +193,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy(){
         if(pendingFiles!=null)pendingFiles.onReceiveValue(null);
         pendingFiles=null;
+        videoExport.abort();
         browser.destroy();
         super.onDestroy();
     }
