@@ -1,7 +1,7 @@
 name: Kolbo Video 4.4.9 Android client
 on:
   push:
-    branches: [kolbo-video-v449-android-shell-20261012]
+    branches: [kolbo-video-v449-mobile-contract-20261012]
     paths:
       - 'mobile-kolbo/**'
       - '.github/workflows/kolbo-v449-mobile-android.yml'
