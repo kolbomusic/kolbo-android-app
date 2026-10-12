@@ -27,6 +27,7 @@ public final class MainActivity extends Activity {
     private static final int FILE_REQUEST=401;
     private WebView browser;
     private LinearLayout setup;
+    private android.widget.ScrollView setupScroll;
     private EditText server;
     private android.webkit.ValueCallback<Uri[]> pendingFiles;
     private String allowedHost="";
@@ -60,7 +61,30 @@ public final class MainActivity extends Activity {
         open.setText("פתח את אולפן הווידאו");
         open.setOnClickListener(v->connect(server.getText().toString()));
         setup.addView(open);
-        root.addView(setup);
+        TextView gpuHeader=new TextView(this);
+        gpuHeader.setText("ניסוי וידאו אמיתי — מחשוב GPU חינמי");
+        gpuHeader.setTextSize(19f);
+        gpuHeader.setPadding(0,dp(24),0,dp(8));
+        setup.addView(gpuHeader);
+        TextView gpuDisclosure=new TextView(this);
+        gpuDisclosure.setText("פתיחת Hugging Face בדפדפן: שירות חיצוני עם מכסות זמן וזמינות משתנה. אין חיוב אוטומטי באפליקציה. תמונות יועברו רק אם תבחר להעלות אותן בשירות החיצוני; מומלץ להשתמש בתמונות שיש לך הרשאה להשתמש בהן.");
+        gpuDisclosure.setTextSize(13f);
+        gpuDisclosure.setPadding(0,0,0,dp(8));
+        setup.addView(gpuDisclosure);
+        Button officialFreeGpu=new Button(this);
+        officialFreeGpu.setText("התנסות ב־GPU חינמי · וידאו עם שמע");
+        officialFreeGpu.setOnClickListener(v->openApprovedGpuPage(
+            "https://huggingface.co/spaces/Lightricks/LTX-2.5"));
+        setup.addView(officialFreeGpu);
+        Button duoGpu=new Button(this);
+        duoGpu.setText("ניסוי שתי דמויות · מחשוב GPU חינמי");
+        duoGpu.setOnClickListener(v->openApprovedGpuPage(
+            "https://huggingface.co/spaces/hugging-apps/ltx25-multi-subject-reference"));
+        setup.addView(duoGpu);
+        setupScroll=new android.widget.ScrollView(this);
+        setupScroll.setFillViewport(true);
+        setupScroll.addView(setup);
+        root.addView(setupScroll,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1));
         browser=new WebView(this);
         videoExport=new VideoExportBridge(this);
         browser.addJavascriptInterface(videoExport,"KolboExport");
@@ -114,6 +138,25 @@ public final class MainActivity extends Activity {
         String restored=server.getText().toString().trim();
         if(!restored.isEmpty())connect(restored);
     }
+    /** Launch only trusted, static public ZeroGPU demos in the system browser.
+     * No photos, owner authentication or private tokens are transmitted by this app.
+     * The external provider controls its own quota, permissions and media retention.
+     */
+    private void openApprovedGpuPage(String candidate){
+        final String first="https://huggingface.co/spaces/Lightricks/LTX-2.5";
+        final String second="https://huggingface.co/spaces/hugging-apps/ltx25-multi-subject-reference";
+        if(!candidate.equals(first)&&!candidate.equals(second)){
+            Toast.makeText(this,"כתובת GPU אינה מאושרת",Toast.LENGTH_LONG).show();
+            return;
+        }
+        try{
+            Intent openPage=new Intent(Intent.ACTION_VIEW,Uri.parse(candidate));
+            openPage.addCategory(Intent.CATEGORY_BROWSABLE);
+            startActivity(openPage);
+        }catch(Exception e){
+            Toast.makeText(this,"לא נמצא דפדפן לפתיחת השירות החיצוני",Toast.LENGTH_LONG).show();
+        }
+    }
     private void connect(String candidate){
         try{
             URI uri=new URI(candidate.trim());
@@ -161,7 +204,7 @@ public final class MainActivity extends Activity {
                         return;
                     }
                     getPreferences(MODE_PRIVATE).edit().putString("hub",origin).apply();
-                    setup.setVisibility(View.GONE);
+                    setupScroll.setVisibility(View.GONE);
                     browser.setVisibility(View.VISIBLE);
                     browser.loadUrl(origin+"/studio");
                 });
@@ -187,7 +230,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onBackPressed(){
         if(browser.getVisibility()==View.VISIBLE&&browser.canGoBack())browser.goBack();
-        else if(browser.getVisibility()==View.VISIBLE){browser.setVisibility(View.GONE);setup.setVisibility(View.VISIBLE);}
+        else if(browser.getVisibility()==View.VISIBLE){browser.setVisibility(View.GONE);setupScroll.setVisibility(View.VISIBLE);}
         else super.onBackPressed();
     }
     @Override protected void onDestroy(){
