@@ -2,7 +2,10 @@
 import json, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
-from storage_probe import proof,verify_synthetic_storage
+try:
+ from .storage_probe import proof,verify_synthetic_storage
+except ImportError:
+ from storage_probe import proof,verify_synthetic_storage
 
 CONFIG = {
  "service":"kolbo-volunteer-mesh","api_contract":449,"minimum_android_client":449,
