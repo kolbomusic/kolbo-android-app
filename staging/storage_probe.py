@@ -27,7 +27,7 @@ def _settings():
 
 def verify_synthetic_storage():
     global proof
-    proof={"db":False,"private_bucket":False,"synthetic_roundtrip":False,"gpu":False}
+    proof.clear();proof.update({"db":False,"private_bucket":False,"synthetic_roundtrip":False,"gpu":False})
     db,url,bucket,key,secret=_settings()
     import psycopg
     import boto3
