@@ -1,0 +1,41 @@
+name: Kolbo Video 4.5.5 Android client
+on:
+  push:
+    branches: [kolbo-video-v455-zero-setup-studio-20261012]
+    paths:
+      - 'mobile-kolbo/**'
+      - '.github/workflows/kolbo-v455-native-studio.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Ensure Android SDK platform is available
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Build APK without any production secrets
+        run: gradle -p mobile-kolbo :app:assembleDebug --stacktrace
+      - name: Verify APK exists
+        run: |
+          test -s mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+          sha256sum mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-v4.5.5-android-debug
+          path: mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
