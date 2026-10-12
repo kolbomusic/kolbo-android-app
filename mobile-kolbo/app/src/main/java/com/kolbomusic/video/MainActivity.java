@@ -27,6 +27,7 @@ public final class MainActivity extends Activity {
     private static final int FILE_REQUEST=401;
     private WebView browser;
     private LinearLayout setup;
+    private android.widget.ScrollView setupScroll;
     private EditText server;
     private android.webkit.ValueCallback<Uri[]> pendingFiles;
     private String allowedHost="";
@@ -80,7 +81,10 @@ public final class MainActivity extends Activity {
         duoGpu.setOnClickListener(v->openApprovedGpuPage(
             "https://huggingface.co/spaces/hugging-apps/ltx25-multi-subject-reference"));
         setup.addView(duoGpu);
-        root.addView(setup);
+        setupScroll=new android.widget.ScrollView(this);
+        setupScroll.setFillViewport(true);
+        setupScroll.addView(setup);
+        root.addView(setupScroll,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1));
         browser=new WebView(this);
         videoExport=new VideoExportBridge(this);
         browser.addJavascriptInterface(videoExport,"KolboExport");
@@ -200,7 +204,7 @@ public final class MainActivity extends Activity {
                         return;
                     }
                     getPreferences(MODE_PRIVATE).edit().putString("hub",origin).apply();
-                    setup.setVisibility(View.GONE);
+                    setupScroll.setVisibility(View.GONE);
                     browser.setVisibility(View.VISIBLE);
                     browser.loadUrl(origin+"/studio");
                 });
@@ -226,7 +230,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onBackPressed(){
         if(browser.getVisibility()==View.VISIBLE&&browser.canGoBack())browser.goBack();
-        else if(browser.getVisibility()==View.VISIBLE){browser.setVisibility(View.GONE);setup.setVisibility(View.VISIBLE);}
+        else if(browser.getVisibility()==View.VISIBLE){browser.setVisibility(View.GONE);setupScroll.setVisibility(View.VISIBLE);}
         else super.onBackPressed();
     }
     @Override protected void onDestroy(){
