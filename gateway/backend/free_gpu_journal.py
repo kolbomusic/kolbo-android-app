@@ -8,11 +8,11 @@ be unknown even after a network timeout. This is a journal, NOT a GPU worker.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import contextmanager
 from pathlib import Path
 import os
 import re
 import sqlite3
-import stat
 import uuid
 
 HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -80,6 +80,15 @@ class FreeGpuJournal:
         conn.row_factory=sqlite3.Row
         return conn
 
+    @contextmanager
+    def _session(self):
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _bootstrap(self):
         conn = self._connect()
         try:
@@ -105,7 +114,7 @@ class FreeGpuJournal:
     def reserve(self, owner: str, key: str, spec_digest: str) -> Receipt:
         if not all(_is_hex(value) for value in (owner,key,spec_digest)):
             raise JournalError("Owner, key and digest must be opaque SHA256 strings")
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row=conn.execute("SELECT * FROM free_gpu_jobs WHERE owner_hash=? AND idem_key=?",
                              (owner,key)).fetchone()
@@ -123,7 +132,7 @@ class FreeGpuJournal:
     def get(self, job_id: str, owner: str) -> Receipt:
         self._id(job_id)
         if not _is_hex(owner): raise JournalError("Invalid owner")
-        with self._connect() as conn:
+        with self._session() as conn:
             row=conn.execute("SELECT * FROM free_gpu_jobs "
                              "WHERE job_id=? AND owner_hash=?",(job_id,owner)).fetchone()
             if row is None:raise JournalError("Unknown job or unauthorized owner")
@@ -146,7 +155,7 @@ class FreeGpuJournal:
             "failed_unverified":set()
         }
         if target not in STATES:raise InvalidTransition("Invalid target state")
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row=conn.execute("SELECT * FROM free_gpu_jobs WHERE job_id=? AND owner_hash=?",
                              (job_id,owner)).fetchone()
@@ -189,7 +198,7 @@ class FreeGpuJournal:
 
     def unresolved(self) -> list[Receipt]:
         """Operator-only call, never expose an unscoped list to mobile/guests."""
-        with self._connect() as conn:
+        with self._session() as conn:
             rows=conn.execute("SELECT * FROM free_gpu_jobs WHERE state NOT IN "
                 "('completed','rejected_before_submission','failed_unverified') "
                 "ORDER BY created_at LIMIT 100").fetchall()
