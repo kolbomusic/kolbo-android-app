@@ -18,7 +18,7 @@ import uuid
 HEX = re.compile(r"^[0-9a-f]{64}$")
 UUID = re.compile(r"^[0-9a-f-]{36}$")
 TASK = re.compile(r"^[A-Za-z0-9_-]{4,150}$")
-STATES = {"prepared", "submitting", "acceptance_unknown", "accepted",
+STATES = {"prepared", "submitting", "acceptance_unknown", "accepted", "result_received",
           "validating", "completed", "rejected_before_submission", "failed_unverified"}
 
 class JournalError(RuntimeError): pass
@@ -146,9 +146,10 @@ class FreeGpuJournal:
         if not _is_hex(owner):raise JournalError("Invalid owner")
         allowed = {
             "prepared":{"submitting","rejected_before_submission"},
-            "submitting":{"acceptance_unknown","accepted","failed_unverified"},
+            "submitting":{"acceptance_unknown","accepted","result_received","failed_unverified"},
             "acceptance_unknown":{"accepted","failed_unverified"},
             "accepted":{"validating","failed_unverified"},
+            "result_received":{"validating","failed_unverified"},
             "validating":{"completed","failed_unverified"},
             "completed":set(),
             "rejected_before_submission":set(),
