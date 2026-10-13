@@ -24,7 +24,7 @@ jobs:
           ui=(root/'src/main/java/com/kolbomusic/video/MainActivity.java').read_text()
           client=(root/'src/main/java/com/kolbomusic/video/WanNativeClient.java').read_text()
           planner=(root/'src/main/java/com/kolbomusic/video/RemoteStoryPlanner.java').read_text()
-          for banned in ('litertlm','face-detection','image-labeling','org.jetbrains.kotlin.android'):
+          for banned in ('litertlm','face-detection','image-labeling','mlkit','org.jetbrains.kotlin.android'):
               assert banned not in manifest,banned
           for className in ('QwenScenePlanner.kt','LocalBrainModelManager.java'):
               assert not (root/'src/main/java/com/kolbomusic/video'/className).exists(),className
