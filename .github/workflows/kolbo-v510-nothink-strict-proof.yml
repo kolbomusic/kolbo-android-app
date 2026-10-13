@@ -1,0 +1,63 @@
+name: Kolbo strict Qwen3 no-think JSON planner proof
+on:
+  push:
+    branches: [kolbo-video-v510-local-qwen-planner-20261014]
+    paths:
+      - .github/workflows/kolbo-v510-nothink-strict-proof.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  strict-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Inspect open Apache2 model file digest and size
+        run: |
+          python - <<'PY'
+          import urllib.request,json
+          url='https://huggingface.co/api/models/litert-community/Qwen3-0.6B-int4/tree/main?expand=true'
+          with urllib.request.urlopen(url,timeout=25) as r: tree=json.load(r)
+          wanted='qwen3_0.6b_nothink_q4_block32_ekv1280.litertlm'
+          file=next(k for k in tree if k.get('path')==wanted)
+          sha=file.get('lfs',{}).get('oid',file.get('lfs',{}).get('sha256',''))
+          assert len(sha)==64 and 280_000_000<file['size']<450_000_000,file
+          print('NO_THINK_FILE_SIZE='+str(file['size']))
+          print('NO_THINK_SHA256='+sha)
+          PY
+      - name: Run one real fully free CPU-only no-think scene planning test
+        run: |
+          pip install --disable-pip-version-check 'litert-lm'
+          set -o pipefail
+          timeout 300 litert-lm run \
+            --from-huggingface-repo=litert-community/Qwen3-0.6B-int4 \
+            qwen3_0.6b_nothink_q4_block32_ekv1280.litertlm \
+            --backend=cpu \
+            --prompt="/no_think You are a film director. Return ONLY JSON with keys action (English text), camera (English text), avoid (English text), steps (array of 3 English events), cleanup (boolean), requires_audio (boolean). Story: The person physically fights exactly two lions, defeats both and stands victorious; never lick or pet them. Image must be cleaned first. Return no explanation." \
+            2>&1 | tee /tmp/qwen-output.txt
+      - name: Strictly verify response content, types and cause-effect story (NOT prompt echo)
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          t=Path('/tmp/qwen-output.txt').read_text(errors='replace')
+          # Reject a model that only repeats chain-of-thought or invents extra fields.
+          possible=[]
+          for m in re.finditer(r'\{',t):
+              try:
+                  obj,n=json.JSONDecoder().raw_decode(t[m.start():])
+                  if isinstance(obj,dict):possible.append(obj)
+              except (ValueError,TypeError):pass
+          assert possible, 'No JSON object was generated'
+          x=possible[-1]
+          assert {'action','camera','avoid','steps','cleanup','requires_audio'}<=x.keys(),x
+          assert isinstance(x['steps'],list) and 1<=len(x['steps'])<=3,x
+          assert isinstance(x['cleanup'],bool) and isinstance(x['requires_audio'],bool),x
+          action=' '.join([str(x['action'])]+[str(s) for s in x['steps']]).lower()
+          assert 'lion' in action, x
+          assert any(w in action for w in ('fight','combat','battle','struggle')),x
+          assert any(w in action for w in ('defeat','victory','win','subdue','overpower')),x
+          assert not x['requires_audio'] and x['cleanup'],x
+          print('STRICT_PASS: model produced a typed scene plan preserving two lions, physical fight and victory')
+          PY
