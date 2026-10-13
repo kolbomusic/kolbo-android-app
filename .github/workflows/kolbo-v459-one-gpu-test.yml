@@ -1,0 +1,44 @@
+name: Kolbo one real free GPU test, no account or paid fallback
+on:
+  push:
+    branches: [kolbo-video-v459-public-gpu-api-probe-20261013]
+    paths:
+      - 'gpu-discovery/one_real_zero_gpu.py'
+      - '.github/workflows/kolbo-v459-one-gpu-test.yml'
+permissions: {contents: read}
+jobs:
+  actual-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Submit exactly one synthetic inference to official ZeroGPU
+        run: python gpu-discovery/one_real_zero_gpu.py
+      - name: Verify media streams, duration and audio track
+        if: success()
+        run: |
+          python - <<'PY'
+          import json,subprocess
+          path='result/synthetic-ai.mp4'
+          meta=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','stream=codec_type,nb_frames','-show_entries','format=duration','-of','json',path],timeout=15))
+          streams=meta['streams']
+          video=[s for s in streams if s['codec_type']=='video']
+          audio=[s for s in streams if s['codec_type']=='audio']
+          assert video and float(meta['format']['duration'])>0.5
+          assert audio,'AI output has no real audio track'
+          r=json.load(open('result/receipt.json'))
+          r['audio_verified']=True
+          r['duration_s']=float(meta['format']['duration'])
+          r['frames_reported']=video[0].get('nb_frames')
+          json.dump(r,open('result/receipt.json','w'),indent=2)
+          print('AI MP4 VIDEO+SOUND PASS duration',r['duration_s'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-LTX25-One-Real-Free-GPU-Test
+          path: result/
+          if-no-files-found: warn
+          retention-days: 7
