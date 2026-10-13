@@ -25,7 +25,7 @@ Cloudflare Workers AI מפרסמת מכסה יומית חינמית של 10,000 
 מנוע ה־image-to-video (Wan on public HF Spaces) **ממשיך להיות חיצוני** וכפוף למכסת ZeroGPU ולהיענות מודל הווידאו עצמו. מוח חזק יותר לא יכריח אותו לצייר שני אריות שנלחמים עם הדמות ואינם מלקקים אותה.
 
 ## בדיקות ואי־ודאות
-- GitHub Actions `kolbo-v520-lightweight-apk.yml`: נכשלת הבנייה אם חוזרות ספריות LiteRT/vision, הורדה מקומית של Qwen או ניסיון LLM מקומי. בודקת חוזה סצנה, מנועי וידאו, בנייה וחתימת APK.
+- GitHub Actions `kolbo-v520-lightweight-apk.yml`: נכשלת הבנייה אם חוזרות ספריות LiteRT/vision, הורדה מקומית של Qwen, תרגום ML Kit או ניסיון LLM מקומי. בודקת חוזה סצנה, מנועי וידאו, בנייה וחתימת APK.
 - `kolbo-v520-cloud-brain-tests.yml`: בדיקות לוגיקת Worker עם AI מדומה: קלט, JSON, כשל מכסה ללא Retry וכשל כאשר Binding חסר. אינה תחליף לפריסה ובקשה אמיתית ל־Cloudflare.
 - לא נבדקה פקודת LLM מלאה על שרת Cloudflare אמיתי ולא נבדקה הפקה מכשיר Android אמיתי. אין להתחייב על זמינות או דיוק עד שתהיה פריסה ובדיקת קצה־לקצה.
 
