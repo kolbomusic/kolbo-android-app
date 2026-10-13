@@ -1,0 +1,26 @@
+name: Kolbo public ZeroGPU SDK one-shot evidence
+on:
+  push:
+    branches: [kolbo-video-v459-public-gpu-api-probe-20261013]
+    paths: ['gpu-discovery/one_sdk_attempt.py','.github/workflows/kolbo-v459-sdk-proof.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  one-free-trial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install official Gradio client
+        run: pip install --disable-pip-version-check gradio_client==2.0.3
+      - name: Submit one anonymous noncommercial synthetic 1s video+audio job
+        run: python gpu-discovery/one_sdk_attempt.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-LTX25-SDK-One-Shot-Evidence
+          path: gpu-sdk-result/
+          if-no-files-found: warn
+          retention-days: 7
