@@ -1,0 +1,23 @@
+name: Kolbo LTX 2.5 public GPU API discovery (no GPU charged)
+on:
+  push:
+    branches: [kolbo-video-v459-public-gpu-api-probe-20261013]
+    paths: ['gpu-discovery/**','.github/workflows/kolbo-v459-free-gpu-api.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Inspect Lightricks Gradio API metadata, no inference
+        run: python gpu-discovery/probe_hf.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-LTX-2.5-Verified-API-Metadata
+          path: kolbo_gpu_api_probe.json
+          if-no-files-found: warn
