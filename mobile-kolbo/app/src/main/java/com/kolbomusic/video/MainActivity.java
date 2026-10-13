@@ -256,7 +256,7 @@ public final class MainActivity extends Activity {
         new android.app.AlertDialog.Builder(this)
             .setTitle("מוח AI חינמי לשימוש חוזר")
             .setMessage("האפליקציה תוריד פעם אחת מודל שפה Qwen3 פתוח "+
-               "(כ־329MB, רק דרך Wi-Fi). התכנון יעבוד מקומית בלי תשלום ובלי חשבון. "+
+               "(כ־331MB, רק דרך Wi-Fi). התכנון יעבוד מקומית בלי תשלום ובלי חשבון. "+
                "העיבוד עשוי להשתמש בזיכרון ובמעבד הטלפון למשך זמן קצר. "+
                "אפשר להמשיך להשתמש במנגנון הגיבוי ללא הורדה.")
             .setNegativeButton("לא כעת",(d,w)->{})
