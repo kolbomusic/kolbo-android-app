@@ -1,0 +1,29 @@
+name: Kolbo donor admission gate tests
+on:
+  push:
+    branches: [kolbo-compute-volunteer-network-20261013]
+    paths: ['gpu-donor/**','.github/workflows/kolbo-donor-admission-ci.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m unittest discover -s gpu-donor/tests -p 'test_*.py' -v
+      - name: Verify no GPU worker is automatically registered
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0,'gpu-donor')
+          from admission_gate import inspect_donor
+          from pathlib import Path
+          check=inspect_donor(hardware_report={'eligible_for_operator_review':True},workflows=Path('gpu-donor/workflows'))
+          assert check['registered_worker'] is False
+          assert check['allowed_to_receive_private_media'] is False
+          assert check['paid_fallback_enabled'] is False
+          print('PASS: donor admissions require separate owner verification')
+          PY
