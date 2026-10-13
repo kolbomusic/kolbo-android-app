@@ -31,17 +31,21 @@ import java.util.UUID;
  */
 public final class WanNativeClient {
     public static final String HOST="zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space";
-    private static final String ORIGIN="https://"+HOST;
+    private WanProviderCatalog.Engine engine=WanProviderCatalog.FAST;
+    private String origin(){return engine.origin();}
+    public String providerId(){return engine.id;}
+    public String providerName(){return engine.name;}
+    public void useForExistingJob(String id){
+        engine=WanProviderCatalog.byId(id);
+    }
     private static final int MAX_JSON=700_000;
     private static final int MAX_VIDEO=100_000_000;
     private static final int MAX_UPLOAD=4_000_000;
-    private static final String[] PARAMS={
-        "input_image","prompt","steps","negative_prompt","duration_seconds",
-        "guidance_scale","guidance_scale_2","seed","randomize_seed"};
 
     public interface Progress {
         void status(String text);
         default void beforeSubmission() {}
+        default void providerSelected(String providerId,String providerName) {}
         default void jobCreated(String id) {}
     }
     public static final class Result {
@@ -54,16 +58,18 @@ public final class WanNativeClient {
     /** Definitive provider terminal error; never automatically retry the same job. */
     public static final class FinalProviderRejection extends IOException {
         public final String reasonCode;
-        FinalProviderRejection(ProviderErrorClassifier.Result result) {
+        public final String providerId;
+        FinalProviderRejection(ProviderErrorClassifier.Result result,String providerId) {
             super(result.hebrew);
             this.reasonCode=result.code;
+            this.providerId=providerId;
         }
     }
 
-    private static HttpURLConnection connection(String url,String method,int readTimeout) throws IOException {
+    private HttpURLConnection connection(String url,String method,int readTimeout) throws IOException {
         URL input=new URL(url);
         if(!"https".equalsIgnoreCase(input.getProtocol()) ||
-            !HOST.equalsIgnoreCase(input.getHost()) ||
+            !engine.host.equalsIgnoreCase(input.getHost()) ||
             (input.getPort()!=-1&&input.getPort()!=443) ||
             input.getUserInfo()!=null) throw new IOException("כתובת הספק אינה מורשית");
         HttpURLConnection c=(HttpURLConnection)input.openConnection();
@@ -72,7 +78,7 @@ public final class WanNativeClient {
         c.setConnectTimeout(18000);
         c.setReadTimeout(readTimeout);
         c.setRequestProperty("Accept","application/json, text/event-stream");
-        c.setRequestProperty("User-Agent","KolboVideoNative/4.7.1");
+        c.setRequestProperty("User-Agent","KolboVideoNative/4.7.4");
         c.setUseCaches(false);
         return c;
     }
@@ -99,17 +105,17 @@ public final class WanNativeClient {
 
     /** Network GET only; this checks exact public parameter names and order. */
     public void preflight() throws Exception {
-        HttpURLConnection c=connection(ORIGIN+"/gradio_api/info","GET",18000);
+        HttpURLConnection c=connection(origin()+"/gradio_api/info","GET",18000);
         try{
             JSONObject document=new JSONObject(body(c,MAX_JSON));
             JSONObject apis=document.optJSONObject("named_endpoints");
             JSONObject endpoint=apis==null?null:apis.optJSONObject("/generate_video");
             JSONArray parameters=endpoint==null?null:endpoint.optJSONArray("parameters");
-            if(parameters==null||parameters.length()!=PARAMS.length)
+            if(parameters==null||parameters.length()!=engine.parameters.length)
                 throw new IOException("ממשק המנוע השתנה; לא נשלחה תמונה");
-            for(int i=0;i<PARAMS.length;i++){
+            for(int i=0;i<engine.parameters.length;i++){
                 JSONObject entry=parameters.optJSONObject(i);
-                if(entry==null||!PARAMS[i].equals(entry.optString("parameter_name")))
+                if(entry==null||!engine.parameters[i].equals(entry.optString("parameter_name")))
                     throw new IOException("ממשק המנוע השתנה; לא נשלחה תמונה");
             }
         }finally{c.disconnect();}
@@ -163,7 +169,7 @@ public final class WanNativeClient {
 
     private String upload(byte[] jpeg) throws Exception {
         String boundary="Kolbo"+UUID.randomUUID().toString().replace("-","");
-        HttpURLConnection c=connection(ORIGIN+"/gradio_api/upload","POST",30000);
+        HttpURLConnection c=connection(origin()+"/gradio_api/upload","POST",30000);
         c.setDoOutput(true);
         c.setChunkedStreamingMode(32*1024);
         c.setRequestProperty("Content-Type","multipart/form-data; boundary="+boundary);
@@ -203,7 +209,7 @@ public final class WanNativeClient {
         args.put((double)seconds);args.put(1.0);args.put(1.0);
         args.put(42);args.put(false);
         JSONObject payload=new JSONObject().put("data",args);
-        HttpURLConnection c=connection(ORIGIN+"/gradio_api/call/generate_video","POST",35000);
+        HttpURLConnection c=connection(origin()+"/gradio_api/call/generate_video","POST",35000);
         c.setDoOutput(true);
         c.setRequestProperty("Content-Type","application/json; charset=UTF-8");
         byte[] bytes=payload.toString().getBytes(StandardCharsets.UTF_8);
@@ -219,7 +225,7 @@ public final class WanNativeClient {
     }
 
     private String poll(String id,Progress progress) throws Exception {
-        HttpURLConnection c=connection(ORIGIN+"/gradio_api/call/generate_video/"+id,"GET",400_000);
+        HttpURLConnection c=connection(origin()+"/gradio_api/call/generate_video/"+id,"GET",400_000);
         try{
             int code=c.getResponseCode();
             if(code!=200)throw new IOException("קריאת תוצאת הווידאו נכשלה ("+code+")");
@@ -239,7 +245,7 @@ public final class WanNativeClient {
                         if("complete".equals(event))return extractVideoUrl(data);
                         if("error".equals(event))
                             throw new FinalProviderRejection(
-                                ProviderErrorClassifier.classify(data));
+                                ProviderErrorClassifier.classify(data),engine.id);
                         if("heartbeat".equals(event))progress.status("מנוע ה־AI עדיין עובד…");
                     }
                 }
@@ -263,11 +269,11 @@ public final class WanNativeClient {
             if(path.isEmpty()||path.length()>2048)
                 throw new IOException("לא התקבלה כתובת לסרטון");
             if(path.startsWith("http://")||path.startsWith("https://"))url=path;
-            else if(path.startsWith("/"))url=ORIGIN+"/gradio_api/file="+path;
+            else if(path.startsWith("/"))url=origin()+"/gradio_api/file="+path;
             else throw new IOException("נתיב תוצאה אינו תקין");
         }
         URL resolved=new URL(url);
-        if(!"https".equals(resolved.getProtocol()) || !HOST.equals(resolved.getHost())
+        if(!"https".equals(resolved.getProtocol()) || !engine.host.equals(resolved.getHost())
             || (resolved.getPort()!=-1&&resolved.getPort()!=443)
             || resolved.getUserInfo()!=null)
             throw new IOException("מקור סרטון לא מורשה");
