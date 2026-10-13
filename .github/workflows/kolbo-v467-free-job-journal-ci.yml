@@ -5,6 +5,9 @@ on:
     paths:
       - gateway/backend/free_gpu_journal.py
       - gateway/backend/tests/test_free_gpu_journal_v467.py
+      - gateway/backend/tests/test_staging_wan_durable_v467.py
+      - gateway/backend/staging_wan_api.py
+      - gateway/backend/Dockerfile.wan-staging
       - .github/workflows/kolbo-v467-free-job-journal-ci.yml
   workflow_dispatch:
 permissions: {contents: read}
@@ -16,9 +19,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - name: Install pytest
-        run: pip install --disable-pip-version-check pytest==8.4.2
+      - name: Install staging FastAPI test dependencies
+        run: |
+          pip install --disable-pip-version-check -r gateway/backend/requirements.wan-staging.txt
+          pip install --disable-pip-version-check pytest==8.4.2 httpx
       - name: Verify disk persistence, concurrency and no duplicate GPU jobs
         env:
           PYTHONPATH: gateway/backend
-        run: pytest -q gateway/backend/tests/test_free_gpu_journal_v467.py
+        run: |
+          pytest -q gateway/backend/tests/test_free_gpu_journal_v467.py
+          pytest -q gateway/backend/tests/test_staging_wan_durable_v467.py
+          pytest -q gateway/backend/tests/test_real_ai_guest_trial_v425.py gateway/backend/tests/test_experimental_zerogpu_adapter.py
