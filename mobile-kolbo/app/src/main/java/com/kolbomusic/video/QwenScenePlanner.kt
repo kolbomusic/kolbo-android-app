@@ -49,7 +49,7 @@ object QwenScenePlanner {
         Engine(config).use { engine ->
             engine.initialize()
             engine.createConversation().use { conversation ->
-                val reply = conversation.sendMessage(prompt, maxOutputToken = 280)
+                val reply = conversation.sendMessage(prompt)
                 return reply.toString().trim()
             }
         }
