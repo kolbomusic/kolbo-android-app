@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, {parsePlan} from '../src/index.js';
 
+const limits={
+  USER_RATE:{async limit(){return {success:true}}},
+  GLOBAL_RATE:{async limit(){return {success:true}}}
+};
 const sample={
   action:"The person physically fights exactly two lions and defeats them.",
   camera:"Medium wide view with all three figures in the frame.",
@@ -16,7 +20,7 @@ test('validate dynamic output schema',()=> {
 });
 test('no AI calls without valid consented input',async()=> {
   let calls=0;
-  const env={AI:{async run(){calls++;return {response:JSON.stringify(sample)}}}};
+  const env={...limits,AI:{async run(){calls++;return {response:JSON.stringify(sample)}}}};
   const req=new Request('https://sample.example/v1/plan',{method:'POST',body:JSON.stringify({
     hebrew_story:'תנקה את התמונה ואז תלחם בשני אריות',
     english_translation:'The person fights two lions and defeats both',
@@ -33,7 +37,7 @@ test('no AI calls without valid consented input',async()=> {
 });
 test('quota/provider failure never sends a second request',async()=>{
   let calls=0;
-  const env={AI:{async run(){calls++;throw Error('daily limit')}}};
+  const env={...limits,AI:{async run(){calls++;throw Error('daily limit')}}};
   const req=new Request('https://sample.example/v1/plan',{method:'POST',body:JSON.stringify({
     hebrew_story:'דמות נלחמת באריה',english_translation:'Human fights a lion',schema_version:1
   })});
@@ -43,4 +47,27 @@ test('quota/provider failure never sends a second request',async()=>{
 test('disabled AI binding fails closed',async()=>{
  const req=new Request('https://sample.example/v1/plan',{method:'POST'});
  assert.equal((await worker.fetch(req,{})).status,503);
+});
+
+test('without limiter binding, no inference occurs',async()=>{
+ let calls=0;
+ const env={AI:{async run(){calls++;return {response:JSON.stringify(sample)}}}};
+ const req=new Request('https://sample.example/v1/plan',{method:'POST',body:JSON.stringify({
+  hebrew_story:'דמות נלחמת באריה',english_translation:'Person fights a lion',schema_version:1
+ })});
+ assert.equal((await worker.fetch(req,env)).status,503);
+ assert.equal(calls,0);
+});
+test('rate limit applies before model and forbids spending free compute',async()=>{
+ let calls=0;
+ const env={
+  USER_RATE:{async limit(){return {success:false}}},
+  GLOBAL_RATE:{async limit(){return {success:true}}},
+  AI:{async run(){calls++;return {response:JSON.stringify(sample)}}}
+ };
+ const req=new Request('https://sample.example/v1/plan',{method:'POST',body:JSON.stringify({
+  hebrew_story:'דמות נלחמת באריה',english_translation:'Person fights a lion',schema_version:1
+ })});
+ assert.equal((await worker.fetch(req,env)).status,429);
+ assert.equal(calls,0);
 });
