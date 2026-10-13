@@ -1,0 +1,58 @@
+name: Kolbo Neon public no-secret live proof
+on:
+  workflow_dispatch:
+  push:
+    branches: [kolbo-neon-public-smoke-20261013]
+    paths:
+      - '.github/workflows/kolbo-neon-public-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  neon-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Confirm live Neon function endpoint, not GPU
+        env:
+          KOLBO_DIAGNOSTIC_URL: https://br-wild-heart-b7m1u2ao-kolbodiagnostic.compute.c-13.us-east-1.aws.neon.tech/healthz
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request,time
+          url=os.environ["KOLBO_DIAGNOSTIC_URL"]
+          seen=None
+          for attempt in range(3):
+              try:
+                  req=urllib.request.Request(url,headers={"Accept":"application/json","User-Agent":"Kolbo-ReadOnly-Synthetic-Probe/1.0"})
+                  with urllib.request.urlopen(req,timeout=20) as res:
+                      if res.status!=200:raise ValueError("HTTP "+str(res.status))
+                      raw=res.read(8193)
+                      if len(raw)>8192:raise ValueError("Unexpected oversized response")
+                      seen=json.loads(raw.decode("utf-8"))
+                  break
+              except Exception as e:
+                  print(f"Attempt {attempt+1}: {type(e).__name__} {str(e)[:80]}")
+                  if attempt<2:time.sleep(5)
+          if seen is None:raise SystemExit("No verified HTTPS response from Neon Function")
+          if seen.get("service")!="kolbo-neon-storage-diagnostic":
+              raise SystemExit("Invalid service identity")
+          expected={"accepts_user_media":False,"accepts_ai_jobs":False,"gpu_ready":False}
+          for k,val in expected.items():
+              if seen.get(k) is not val:raise SystemExit("Fail-closed assertion: "+k)
+          db=seen.get("database_credentials_injected")
+          s3=seen.get("private_bucket_head_verified")
+          if not isinstance(db,bool) or not isinstance(s3,bool):
+              raise SystemExit("Invalid DB/S3 evidence flags")
+          print("NEON_FUNCTION_HTTPS_LIVE: YES")
+          print("NEON_DB_CREDENTIAL_INJECTED:",db)
+          print("NEON_PRIVATE_S3_HEAD_SUCCESS:",s3)
+          print("USER_MEDIA_ACCEPTED: NO")
+          print("AI_JOBS_ACCEPTED: NO")
+          print("GPU_AVAILABLE: NO")
+          summary=os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary,"a",encoding="utf-8") as f:
+                  f.write("# Kolbo Neon live infrastructure smoke check\n")
+                  f.write(f"- HTTPS function: PASS\n- DB credentials injected: {db}\n- Private S3 HEAD: {s3}\n- Media and GPU: BLOCKED\n")
+          if not db or not s3:
+              raise SystemExit("Real DB and S3 integration NOT YET VERIFIED")
+          PY
