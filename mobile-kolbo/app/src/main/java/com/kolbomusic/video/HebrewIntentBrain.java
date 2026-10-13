@@ -220,13 +220,13 @@ public final class HebrewIntentBrain {
     private static int count(String[] words,int index){
         for(int n=Math.max(0,index-3);n<index;n++){
             String w=words[n];
-            if(w.equals("2")||w.equals("שני")||w.equals("שתי")||
-               w.equals("שניים")||w.equals("שתיים")||w.equals("זוג"))return 2;
-            if(w.equals("3")||w.equals("שלושה")||w.equals("שלוש"))return 3;
-            if(w.equals("4")||w.equals("ארבע")||w.equals("ארבעה"))return 4;
-            if(w.equals("1")||w.equals("אחד")||w.equals("אחת"))return 1;
+            if(w.equals("2")||equivalent(w,"שני")||equivalent(w,"שתי")||
+               equivalent(w,"שניים")||equivalent(w,"שתיים")||equivalent(w,"זוג"))return 2;
+            if(w.equals("3")||equivalent(w,"שלושה")||equivalent(w,"שלוש"))return 3;
+            if(w.equals("4")||equivalent(w,"ארבע")||equivalent(w,"ארבעה"))return 4;
+            if(w.equals("1")||equivalent(w,"אחד")||equivalent(w,"אחת"))return 1;
         }
-        // No guessing quantity from plural or from reference image.
+        // Never infer a count merely from grammatical plural.
         return -1;
     }
     private static boolean contains(String normalized,String... options){
