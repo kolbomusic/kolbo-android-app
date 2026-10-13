@@ -17,6 +17,12 @@ jobs:
         with: {python-version: '3.12'}
       - name: Install public Gradio client (no HF token and no paid provider)
         run: pip install --disable-pip-version-check gradio_client==2.0.3
+      - name: Install media tools for real image and video validation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
       - name: Make synthetic test reference, never use or fetch private user media
         run: |
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=navy:size=512x512:rate=1" -vf "drawbox=x=145:y=160:w=220:h=170:color=yellow:t=fill" -frames:v 1 kolbo-synthetic-input.png
