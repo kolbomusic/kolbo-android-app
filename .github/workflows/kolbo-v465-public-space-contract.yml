@@ -1,0 +1,28 @@
+name: Kolbo v4.6.5 public GPU contracts (no inference)
+on:
+  push:
+    branches: [kolbo-video-v465-public-gpu-contract-20261013]
+    paths:
+      - gpu-discovery/public_space_contract.py
+      - gpu-discovery/tests/test_public_space_contract.py
+      - .github/workflows/kolbo-v465-public-space-contract.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  provider-metadata-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Run offline contract tests
+        run: python -m unittest discover -s gpu-discovery/tests -p 'test_public_space_contract.py' -v
+      - name: Check four public Gradio schemas (GET only, zero GPU requests)
+        run: python gpu-discovery/public_space_contract.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-public-provider-contract-readonly
+          path: public-gpu-contract-audit.json
+          retention-days: 7
