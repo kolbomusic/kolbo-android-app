@@ -303,7 +303,7 @@ public final class WanNativeClient {
     }
 
     public Result create(Context context,Uri image,String hebrew,int seconds,Progress progress) throws Exception {
-        if(hebrew==null||hebrew.trim().length()<10||hebrew.length()>1200)
+        if(hebrew==null||hebrew.trim().length()<2||hebrew.length()>1200)
             throw new IOException("יש לכתוב הנחיה מפורטת בעברית");
         if(seconds<1||seconds>5)throw new IOException("המנוע הנוכחי תומך רק בעד 5 שניות");
         HebrewStoryDirector.Plan scene=HebrewStoryDirector.understand(hebrew.trim());
