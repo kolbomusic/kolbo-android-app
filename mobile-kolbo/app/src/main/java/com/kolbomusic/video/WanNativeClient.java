@@ -169,14 +169,13 @@ public final class WanNativeClient {
         }finally{c.disconnect();}
     }
 
-    private static String promptForProvider(String hebrew){
-        // Preserve the literal user story. This is NOT a translation service:
-        // a Hebrew prompt may be interpreted poorly by the hosted model.
+    private static String promptForProvider(String instructionEnglish){
+        // Preserve the translated action. Avoid face-only closeups instead of the requested movement.
         return "Realistic continuous action, wide camera framing, whole body and surroundings visible. "+
             "Follow the actual physical action in this instruction, rather than replacing it "+
             "with a close-up, facial expressions, or talking. "+
-            "Do not invent additional people or objects. User instruction (Hebrew): "+
-            hebrew;
+            "Do not invent additional people or objects. Action to perform (English): "+
+            instructionEnglish;
     }
 
     private String submit(String path,String prompt,int seconds) throws Exception {
@@ -280,6 +279,7 @@ public final class WanNativeClient {
         if(hebrew==null||hebrew.trim().length()<10||hebrew.length()>1200)
             throw new IOException("יש לכתוב הנחיה מפורטת בעברית");
         if(seconds<1||seconds>5)throw new IOException("המנוע הנוכחי תומך רק בעד 5 שניות");
+        String modelInstruction=HebrewActionTranslator.translate(hebrew.trim(),progress);
         progress.status("מאמת את מנוע הווידאו…");
         preflight();
         progress.status("מכין את התמונה בטלפון…");
@@ -288,7 +288,7 @@ public final class WanNativeClient {
         String path=upload(bytes);
         progress.status("שולח בקשה יחידה למנוע AI…");
         progress.beforeSubmission();
-        String id=submit(path,hebrew.trim(),seconds);
+        String id=submit(path,modelInstruction,seconds);
         progress.jobCreated(id);
         progress.status("המשימה התקבלה, ממתין לסרטון…");
         String videoUrl=poll(id,progress);
