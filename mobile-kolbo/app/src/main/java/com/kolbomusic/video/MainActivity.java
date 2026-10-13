@@ -223,8 +223,9 @@ public final class MainActivity extends Activity {
             afterFailed=true;
         });
         gap(10);
-        panel.addView(text("התרגום מתבצע במכשיר; הורדת מודל ראשונית דורשת אינטרנט. "+
-            "ההפקה בענן הציבורי כפופה למכסה. אין תשלום אוטומטי.",12,MUTED));
+        panel.addView(text("בחירה חכמה בין שני מנועי Wan ציבוריים; מעבר למנוע אחר "+
+            "אפשרי בניסיון חדש בלבד. מכסת ZeroGPU החינמית משותפת ומוגבלת. "+
+            "אין תשלום אוטומטי והתרגום מתבצע במכשיר.",12,MUTED));
 
         prompt.setText(getPreferences(MODE_PRIVATE).getString("draft",""));
         if(getPreferences(MODE_PRIVATE).getBoolean("uncertain_submission",false))
@@ -279,6 +280,14 @@ public final class MainActivity extends Activity {
                 WanNativeClient.Result result=engine.create(this,image,story,seconds,
                     new WanNativeClient.Progress(){
                         @Override public void status(String value){show(value);}
+                        @Override public void providerSelected(String providerId,String providerName){
+                            boolean saved=getPreferences(MODE_PRIVATE).edit()
+                                .putString("last_provider",providerId).commit();
+                            if(!saved)throw new IllegalStateException(
+                                "לא ניתן לשמור את מנוע המשימה; לא נשלחה הפקה");
+                            show("נבחר "+providerName+" לפי בדיקת הממשק. "+
+                                "זמינות GPU ומכסה חינמית אינן מובטחות.");
+                        }
                         @Override public void beforeSubmission(){
                             // Persist before network POST: after a crash an accepted job is uncertain.
                             boolean saved=getPreferences(MODE_PRIVATE).edit()
@@ -297,8 +306,15 @@ public final class MainActivity extends Activity {
                 runOnUiThread(()->onVideo(result));
             }catch(Exception e){
                 if(e instanceof WanNativeClient.FinalProviderRejection) {
-                    // A Gradio 'error' event TERMINATED this job: no rerun, but a
-                    // later explicit user request may create a fresh job.
+                    // Explicit provider SSE error is terminal. A different engine
+                    // may be preferred on the NEXT user-triggered creation only.
+                    WanNativeClient.FinalProviderRejection rejection=
+                        (WanNativeClient.FinalProviderRejection)e;
+                    if(!"GPU_QUOTA".equals(rejection.reasonCode)
+                       && !"AUTH_REQUIRED".equals(rejection.reasonCode)) {
+                        getSharedPreferences("gpu_provider",MODE_PRIVATE).edit()
+                            .putString("last_failed",rejection.providerId).commit();
+                    }
                     getPreferences(MODE_PRIVATE).edit()
                         .putBoolean("uncertain_submission",false)
                         .remove("last_event").commit();
@@ -317,7 +333,9 @@ public final class MainActivity extends Activity {
         setBusy(true);
         worker.execute(()->{
             try{
-                WanNativeClient.Result result=engine.resume(this,id,this::show);
+                String provider=getPreferences(MODE_PRIVATE)
+                    .getString("last_provider","fast");
+                WanNativeClient.Result result=engine.resume(this,id,provider,this::show);
                 getPreferences(MODE_PRIVATE).edit().putString("last_event","")
                     .putBoolean("uncertain_submission",false).apply();
                 runOnUiThread(()->onVideo(result));
