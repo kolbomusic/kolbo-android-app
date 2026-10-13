@@ -14,14 +14,14 @@ jobs:
     steps:
       - name: Confirm live Neon function endpoint, not GPU
         env:
-          KOLBO_DIAGNOSTIC_URL: https://br-wild-heart-b7m1u2ao-kolbodiagnostic.compute.c-13.us-east-1.aws.neon.tech/healthz
+          KOLBO_DIAGNOSTIC_URL: https://br-wild-heart-b7m1u2ao-kolbodiagnostic.compute.c-13.us-east-1.aws.neon.tech/api/kolbo-check
         run: |
           python - <<'PY'
           import os,json,urllib.request,time
           url=os.environ["KOLBO_DIAGNOSTIC_URL"]
           from urllib.error import HTTPError
-          for route in ("/", "/healthz", "/v1/kolbohealth", "/v1/jobs"):
-              target=url.split("/healthz")[0]+route
+          for route in ("/", "/api/kolbo-check", "/v1/kolbohealth", "/v1/jobs"):
+              target=url.split("/api/kolbo-check")[0]+route
               try:
                   with urllib.request.urlopen(urllib.request.Request(target,headers={"Accept":"application/json"}),timeout=10) as response:
                       pstatus=response.status
