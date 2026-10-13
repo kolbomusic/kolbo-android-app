@@ -256,7 +256,7 @@ public final class MainActivity extends Activity {
         if(busy)return;
         if(image==null){toast("יש לבחור תמונה תחילה");return;}
         String story=prompt.getText().toString().trim();
-        if(story.length()<5){toast("כתוב מה תרצה שיקרה בסרטון");return;}
+        if(story.length()<2){toast("כתוב במילים שלך מה תרצה שיקרה");return;}
         HebrewStoryDirector.Plan plan=HebrewStoryDirector.understand(story);
         String blocker=plan.supportedLimit();
         if(blocker!=null){show(blocker+" לא נשלחה בקשה.");return;}
