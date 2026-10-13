@@ -24,6 +24,7 @@ import procedural_sfx
 import guest_sessions as guests
 import compute_supervisor as compute
 import ai_trial_guards as ai_trials
+import free_gpu_journal as gpu_journal
 import longform_av
 import experimental_ltx25_native_av as ltx
 import experimental_scene_builder_v433 as stage_builder
@@ -139,6 +140,26 @@ def enabled() -> bool:
        and shutil.which("ffmpeg") is not None
        and importlib.util.find_spec("gradio_client") is not None)
 
+def configured_free_gpu_journal():
+    """Experimental persistence only: an operator must verify a PRIVATE durable volume.
+
+    Does not enable GPU, alter anonymous limits, or make /tmp durable.
+    """
+    path=os.getenv("KOLBO_FREE_GPU_JOURNAL_PATH","")
+    if not path:
+        return None
+    if os.getenv("KOLBO_FREE_GPU_PERSISTENT_VOLUME_VERIFIED")!="EXPLICITLY_ENABLED":
+        raise HTTPException(503,"אין אחסון מתמיד מאומת להפעלת היומן")
+    # Metadata and media must be colocated on the same explicitly verified
+    # private durable root. SQLite alone cannot make ephemeral MP4 persistent.
+    if Path(path).parent.resolve()!=ROOT.resolve() or ROOT.is_symlink():
+        raise HTTPException(503,"יומן המשימות וקובצי הווידאו חייבים אחסון מתמיד משותף")
+    try:
+        return gpu_journal.FreeGpuJournal(path)
+    except (gpu_journal.JournalError,OSError) as exc:
+        raise HTTPException(503,"יומן משימות GPU אינו זמין") from exc
+
+
 def expire_old() -> None:
     now=time.time()
     with LOCK:
@@ -172,21 +193,34 @@ def decode_picture(pic: Picture) -> tuple[bytes,str]:
         raise HTTPException(422,"תוכן התמונה אינו קובץ תמונה תקין")
     return data,mime
 
-def _work(job_id: str, *, image: Path, prompt: str, seconds: float) -> None:
+def _work(job_id: str, *, image: Path, prompt: str, seconds: float,
+          journal=None, owner_hash=None) -> None:
     with LOCK:
         if job_id not in JOBS:return
         JOBS[job_id]["state"]="running"
     folder=ROOT/job_id
     try:
+        # Persist uncertainty before any upload or network submission.
+        if journal is not None:
+            journal.change(job_id,owner_hash,"submitting",provider="wan_fast")
         dst=folder/"draft.mp4"
         receipt=provider.submit_one(reference=image,prompt=prompt,seconds=seconds,
             destination=dst,consent=True,commercial=False,wants_audio=False,wants_lipsync=False)
+        if journal is not None:
+            journal.change(job_id,owner_hash,"result_received")
         # Output validated by provider.ffprobe then again by decoded-frame QA.
         visual=visual_quality.inspect_mp4(dst,audio_required=False)
         sound=audio_evidence.inspect_mp4(dst,audio_required=False)
         # A valid MP4 with nearly identical frames is NOT successful AI.
         if visual.pixel_change_fraction < 0.012:
             raise ValueError("Output is visually frozen: no measurable motion")
+        if journal is not None:
+            journal.change(job_id,owner_hash,"validating")
+            with dst.open("rb") as proof:
+                media_hash=hashlib.file_digest(proof,"sha256").hexdigest()
+            if receipt.sha256!=media_hash:
+                raise ValueError("GPU output digest mismatch")
+            journal.change(job_id,owner_hash,"completed",verified_media_digest=media_hash)
         with LOCK:
             JOBS[job_id].update(state="completed",detail="התקבלה טיוטת וידאו לא מאומתת",
                 size=receipt.bytes,sha256=receipt.sha256,has_audio=receipt.audio,
@@ -196,6 +230,15 @@ def _work(job_id: str, *, image: Path, prompt: str, seconds: float) -> None:
     except Exception as exc:
         # No automatic resend: provider might have accepted and spent quota.
         kind="acceptance_unknown" if isinstance(exc,provider.UnknownAcceptance) else "generation_failed"
+        if journal is not None:
+            try:
+                record=journal.get(job_id,owner_hash)
+                if record.state=="submitting":
+                    journal.change(job_id,owner_hash,"acceptance_unknown")
+                elif record.state in ("result_received","validating","accepted"):
+                    journal.change(job_id,owner_hash,"failed_unverified")
+            except gpu_journal.JournalError:
+                LOG.warning("Free GPU journal needs operator reconciliation")
         with LOCK:
             if job_id in JOBS:
                 JOBS[job_id].update(state="failed",error=kind,
@@ -352,33 +395,61 @@ def new_real_ai_motion_job(payload: NewJob,
     digest=hashlib.sha256(
         (owner+":real_ai:"+str(payload.seconds)+payload.prompt).encode()
         +data).hexdigest()
+    journal=configured_free_gpu_journal()
+    owner_hash=owner.removeprefix("guest:")
     with LOCK:
-        existing=DIGESTS.get(digest)
-        if existing in JOBS:
-            return {"job_id":existing,"state":JOBS[existing]["state"],
-                    "deduplicated":True,"mode":"ai_one_image_trial"}
-        if sum(job["state"] in ("running","queued")
-               for job in JOBS.values()) >= LIMIT:
-            raise HTTPException(503,"מנוע הווידאו נמצא בשימוש כרגע",
-                                headers={"Retry-After":"60"})
-        ai_trials.reserve(owner.removeprefix("guest:"))
-        job_id=str(uuid.uuid4())
-        folder=ROOT/job_id
-        folder.mkdir(parents=True,exist_ok=False,mode=0o700)
-        inp=folder/f"reference.{ext}"
+        if journal is not None:
+            try:
+                record=journal.reserve(owner_hash,digest,digest,
+                    max_daily_owner=ai_trials.PER_INSTALL_PER_UTC_DAY,
+                    max_daily_global=ai_trials.GLOBAL_PER_UTC_DAY)
+            except gpu_journal.QuotaExceeded as exc:
+                raise HTTPException(429,"מכסת ניסוי GPU משותפת נוצלה להיום",
+                                    headers={"Retry-After":"3600"}) from exc
+            except gpu_journal.JournalError as exc:
+                raise HTTPException(503,"יומן הניסויים המתמיד אינו זמין") from exc
+            if not record.created_new:
+                # On restart 'submitting' must never be POSTed again.
+                state=("acceptance_unknown" if record.state=="submitting" else record.state)
+                return {"job_id":record.job_id,"state":state,
+                        "deduplicated":True,"mode":"ai_one_image_trial",
+                        "needs_operator_reconciliation":record.state in
+                            ("submitting","acceptance_unknown")}
+            job_id=record.job_id
+        else:
+            existing=DIGESTS.get(digest)
+            if existing in JOBS:
+                return {"job_id":existing,"state":JOBS[existing]["state"],
+                        "deduplicated":True,"mode":"ai_one_image_trial"}
+            job_id=str(uuid.uuid4())
         try:
-            inp.write_bytes(data)
-            inp.chmod(0o600)
-        except OSError:
-            shutil.rmtree(folder,ignore_errors=True)
-            raise HTTPException(500,"לא ניתן להכין את התמונה להפקה")
-        JOBS[job_id]={"state":"queued","created_at":time.time(),
-            "digest":digest,"owner":owner,"mode":"ai_one_image_trial",
-            "detail":"מפיק תנועה במנוע AI ניסיוני, ללא שמע"}
-        DIGESTS[digest]=job_id
-        POOL.submit(_work,job_id,image=inp,prompt=payload.prompt,
-                    seconds=payload.seconds)
-        return {"job_id":job_id,"state":"queued","mode":"ai_one_image_trial"}
+            if sum(job["state"] in ("running","queued")
+                   for job in JOBS.values()) >= LIMIT:
+                raise HTTPException(503,"מנוע הווידאו נמצא בשימוש כרגע",
+                                    headers={"Retry-After":"60"})
+            ai_trials.reserve(owner_hash)
+            folder=ROOT/job_id
+            folder.mkdir(parents=True,exist_ok=False,mode=0o700)
+            inp=folder/f"reference.{ext}"
+            try:
+                inp.write_bytes(data)
+                inp.chmod(0o600)
+            except OSError:
+                shutil.rmtree(folder,ignore_errors=True)
+                raise HTTPException(500,"לא ניתן להכין את התמונה להפקה")
+            JOBS[job_id]={"state":"queued","created_at":time.time(),
+                "digest":digest,"owner":owner,"mode":"ai_one_image_trial",
+                "detail":"מפיק תנועה במנוע AI ניסיוני, ללא שמע"}
+            DIGESTS[digest]=job_id
+            POOL.submit(_work,job_id,image=inp,prompt=payload.prompt,
+                        seconds=payload.seconds,journal=journal,owner_hash=owner_hash)
+        except Exception:
+            if journal is not None:
+                try:journal.change(job_id,owner_hash,"rejected_before_submission")
+                except gpu_journal.JournalError:pass
+            raise
+        return {"job_id":job_id,"state":"queued","mode":"ai_one_image_trial",
+                "journal_enabled":journal is not None}
 
 @app.post("/v1/native-av/plan")
 def native_av_preflight(payload: NativeAVPlan,
@@ -798,7 +869,24 @@ def owned(job_id: str, authorization: str | None):
     except (ValueError,TypeError):raise HTTPException(404,"העבודה אינה קיימת")
     with LOCK:
         job=JOBS.get(job_id)
-        if not job:raise HTTPException(404,"העבודה אינה קיימת")
+        if not job:
+            journal=configured_free_gpu_journal()
+            if journal is None or not owner.startswith("guest:"):
+                raise HTTPException(404,"העבודה אינה קיימת")
+            try:
+                record=journal.get(job_id,owner.removeprefix("guest:"))
+            except gpu_journal.JournalError:
+                raise HTTPException(404,"העבודה אינה קיימת")
+            state="acceptance_unknown" if record.state=="submitting" else record.state
+            media_file=ROOT/job_id/"draft.mp4"
+            if state=="completed" and (media_file.is_symlink() or
+                    not media_file.is_file() or (ROOT/job_id).is_symlink()):
+                state="result_unavailable"
+            return {"state":state,"owner":owner,"mode":"ai_one_image_trial",
+                    "detail":"התאוששות ממשימה קודמת — אין שליחה אוטומטית נוספת ל־GPU",
+                    "sha256":record.media_sha256,"has_audio":False,"quality":None,
+                    "size":(ROOT/job_id/"draft.mp4").stat().st_size
+                          if state=="completed" else 0}
         if owner!="master" and (job.get("mode") not in (
                 "cpu_photo_motion","ai_one_image_trial","native_ltx25_av_trial")
                 or job.get("owner")!=owner):
@@ -822,7 +910,7 @@ def download(job_id: str, authorization: str | None=Header(default=None)):
     if job["state"]!="completed":
         raise HTTPException(409,"הסרטון עדיין אינו זמין")
     file=ROOT/job_id/"draft.mp4"
-    if not file.is_file() or file.stat().st_size!=job["size"]:
+    if file.is_symlink() or (ROOT/job_id).is_symlink() or not file.is_file() or file.stat().st_size!=job["size"]:
         raise HTTPException(409,"לא ניתן לאמת את שלמות הסרטון")
     with file.open("rb") as f:
         if hashlib.file_digest(f,"sha256").hexdigest()!=job["sha256"]:
