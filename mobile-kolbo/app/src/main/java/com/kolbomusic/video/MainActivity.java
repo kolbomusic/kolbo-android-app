@@ -251,7 +251,7 @@ public final class MainActivity extends Activity {
                         @Override public void status(String value){show(value);}
                         @Override public void jobCreated(String id){
                             getPreferences(MODE_PRIVATE).edit()
-                                .putString("last_event",id).apply();
+                                .putString("last_event",id).commit();
                             runOnUiThread(()->recover.setVisibility(View.VISIBLE));
                         }
                     });
