@@ -111,8 +111,8 @@ public final class HebrewStoryDirector {
         boolean sound=any(s,"שר ","שרה","לשיר","שירה","דיבור",
             "מדבר","מדברת","בקול","קולות","מוזיקה","שומעים","פסקול",
             "צועק","צעקות","משמיע");
-        boolean multiple=any(s,"שתי תמונות","שני צילומים","שתי דמויות מהתמונות",
-            "2 תמונות","שתי תמונות נפרדות");
+        boolean multiple=any(s,"שתי תמונות","שתי התמונות","שני צילומים","שני הצילומים",
+            "שתי דמויות מהתמונות","2 תמונות","שתי תמונות נפרדות");
         boolean complex=(lionsCount>=2 && combat)|| (combat && overcome);
         String action=original;
         if(cleaning){
