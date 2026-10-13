@@ -1,0 +1,78 @@
+name: Kolbo Video 4.6.8 real AI studio APK
+on:
+  push:
+    branches: [kolbo-video-v468-usable-apk-real-provider-20261013]
+    paths:
+      - 'mobile-kolbo/**'
+      - '.github/workflows/kolbo-v468-android-real-ai-studio.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Source invariants - only the demonstrated AI Space, no payment or fake video
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('mobile-kolbo/app/src/main/java/com/kolbomusic/video/MainActivity.java').read_text(encoding='utf-8')
+          required=[
+             'zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space',
+             'WebChromeClient','onShowFileChooser','image/*',
+             'requestDownload','DownloadManager','shouldOverrideUrlLoading',
+             'MIXED_CONTENT_NEVER_ALLOW','handler.cancel()',
+             'אין העלאה של תמונות','15 שניות','שמע',
+             'פתח אולפן AI אמיתי','פתח את המנוע בדפדפן'
+          ]
+          for item in required:
+              assert item in src,item
+          forbidden=['setAllowUniversalAccessFromFileURLs(true)',
+                     'setAllowFileAccess(true)','setWebContentsDebuggingEnabled(true)',
+                     'addJavascriptInterface','your-server.example','HUB_ORIGIN']
+          for item in forbidden:assert item not in src,item
+          manifest=Path('mobile-kolbo/app/src/main/AndroidManifest.xml').read_text()
+          assert 'usesCleartextTraffic="false"' in manifest
+          assert 'android.permission.INTERNET' in manifest
+          assert 'versionName \'4.6.8\'' in Path('mobile-kolbo/app/build.gradle').read_text()
+          print('Kolbo 4.6.8 app network/security and honest capability labels: PASS')
+          PY
+      - name: Check public provider API availability (metadata GET only, no images or GPU)
+        run: |
+          python - <<'PY'
+          import json,urllib.request
+          endpoint='https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space/gradio_api/info'
+          try:
+              with urllib.request.urlopen(endpoint,timeout=20) as response:
+                  obj=json.loads(response.read(700_000))
+              item=obj.get('named_endpoints',{}).get('/generate_video',{})
+              assert item.get('parameters'),'missing generation API'
+              print('Public Wan2.2 video endpoint present; no inference requested')
+          except Exception as error:
+              print('Provider is a separate, quota-limited service; live readiness not guaranteed:',type(error).__name__)
+          PY
+      - name: Ensure Android SDK platform is available
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Compile and package signed debug APK
+        run: gradle -p mobile-kolbo :app:assembleDebug --stacktrace
+      - name: Verify real Android package
+        run: |
+          APK=mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -10
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-v4.6.8-Wan-Fast-real-ai-Android-APK
+          path: mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
