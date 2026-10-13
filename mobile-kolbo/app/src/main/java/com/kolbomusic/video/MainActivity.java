@@ -240,6 +240,7 @@ public final class MainActivity extends Activity {
                             j.optBoolean("persistent_storage_ready",false),
                             j.optBoolean("private_media_upload_enabled",false),
                             j.optBoolean("real_video_generation_verified",false),
+                            j.optBoolean("mobile_session_auth_ready",false),
                             j.optBoolean("paid_gpu_fallback_enabled",true));
                     if(ready)message="המנוע דיווח על מוכנות. ניתן לפתוח את האולפן. האישור הסופי מתבצע בשרת.";
                     else if(j.optBoolean("preview_only",true))
