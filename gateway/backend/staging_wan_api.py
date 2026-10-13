@@ -150,6 +150,10 @@ def configured_free_gpu_journal():
         return None
     if os.getenv("KOLBO_FREE_GPU_PERSISTENT_VOLUME_VERIFIED")!="EXPLICITLY_ENABLED":
         raise HTTPException(503,"אין אחסון מתמיד מאומת להפעלת היומן")
+    # Metadata and media must be colocated on the same explicitly verified
+    # private durable root. SQLite alone cannot make ephemeral MP4 persistent.
+    if Path(path).parent.resolve()!=ROOT.resolve() or ROOT.is_symlink():
+        raise HTTPException(503,"יומן המשימות וקובצי הווידאו חייבים אחסון מתמיד משותף")
     try:
         return gpu_journal.FreeGpuJournal(path)
     except (gpu_journal.JournalError,OSError) as exc:
@@ -874,7 +878,9 @@ def owned(job_id: str, authorization: str | None):
             except gpu_journal.JournalError:
                 raise HTTPException(404,"העבודה אינה קיימת")
             state="acceptance_unknown" if record.state=="submitting" else record.state
-            if state=="completed" and not (ROOT/job_id/"draft.mp4").is_file():
+            media_file=ROOT/job_id/"draft.mp4"
+            if state=="completed" and (media_file.is_symlink() or
+                    not media_file.is_file() or (ROOT/job_id).is_symlink()):
                 state="result_unavailable"
             return {"state":state,"owner":owner,"mode":"ai_one_image_trial",
                     "detail":"התאוששות ממשימה קודמת — אין שליחה אוטומטית נוספת ל־GPU",
@@ -904,7 +910,7 @@ def download(job_id: str, authorization: str | None=Header(default=None)):
     if job["state"]!="completed":
         raise HTTPException(409,"הסרטון עדיין אינו זמין")
     file=ROOT/job_id/"draft.mp4"
-    if not file.is_file() or file.stat().st_size!=job["size"]:
+    if file.is_symlink() or (ROOT/job_id).is_symlink() or not file.is_file() or file.stat().st_size!=job["size"]:
         raise HTTPException(409,"לא ניתן לאמת את שלמות הסרטון")
     with file.open("rb") as f:
         if hashlib.file_digest(f,"sha256").hexdigest()!=job["sha256"]:
