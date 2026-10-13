@@ -51,6 +51,15 @@ public final class WanNativeClient {
         Result(File v,String id,String w){video=v;eventId=id;warning=w;}
     }
 
+    /** Definitive provider terminal error; never automatically retry the same job. */
+    public static final class FinalProviderRejection extends IOException {
+        public final String reasonCode;
+        FinalProviderRejection(ProviderErrorClassifier.Result result) {
+            super(result.hebrew);
+            this.reasonCode=result.code;
+        }
+    }
+
     private static HttpURLConnection connection(String url,String method,int readTimeout) throws IOException {
         URL input=new URL(url);
         if(!"https".equalsIgnoreCase(input.getProtocol()) ||
@@ -63,7 +72,7 @@ public final class WanNativeClient {
         c.setConnectTimeout(18000);
         c.setReadTimeout(readTimeout);
         c.setRequestProperty("Accept","application/json, text/event-stream");
-        c.setRequestProperty("User-Agent","KolboVideoNative/4.6.9");
+        c.setRequestProperty("User-Agent","KolboVideoNative/4.7.1");
         c.setUseCaches(false);
         return c;
     }
@@ -227,7 +236,9 @@ public final class WanNativeClient {
                     if(line.startsWith("data:")){
                         String data=line.substring(5).trim();
                         if("complete".equals(event))return extractVideoUrl(data);
-                        if("error".equals(event))throw new IOException("המנוע נכשל או דחה את הבקשה");
+                        if("error".equals(event))
+                            throw new FinalProviderRejection(
+                                ProviderErrorClassifier.classify(data));
                         if("heartbeat".equals(event))progress.status("מנוע ה־AI עדיין עובד…");
                     }
                 }
