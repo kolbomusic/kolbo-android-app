@@ -47,6 +47,7 @@ public final class MainActivity extends Activity {
     private WanNativeClient engine=new WanNativeClient();
     private Uri image;
     private File video;
+    private V5OutputAudit.Report lastAudit;
     private boolean busy=false;
     private boolean afterFailed=false;
     private boolean unknownAcceptance=false;
@@ -111,10 +112,10 @@ public final class MainActivity extends Activity {
         scroll.addView(panel);
         setContentView(scroll);
 
-        TextView title=text("כלבו וידאו AI",30,TEXT);
+        TextView title=text("Kolbo Video v5",29,TEXT);
         title.setTypeface(null,android.graphics.Typeface.BOLD);
         panel.addView(title);
-        panel.addView(text("אולפן יצירת וידאו · בעברית · ללא אתר בתוך האפליקציה",14,MUTED));
+        panel.addView(text("מבין את הבקשה · מתכנן סצנה · בודק תוצאה",14,MUTED));
         gap(22);
 
         TextView label=text("1. הוסף תמונת ייחוס",19,TEXT);
@@ -180,8 +181,9 @@ public final class MainActivity extends Activity {
             ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
         gap(13);
 
-        limits=text("ניסוי וידאו אילם מתמונה אחת, 2–5 שניות. "+
-            "שמע, שתי דמויות ודיוק מלא בהוראות אינם נתמכים כרגע.",13,MUTED);
+        limits=text("יצירת וידאו ניסיונית: 2–5 שניות, תמונה אחת וללא שמע. "+
+            "לתנועת גוף מלא נבדוק מראש אם התמונה היא תקריב לא מתאים. "+
+            "השרת הציבורי כפוף למכסה, ותוצאת הסיפור תישאר לא מאומתת עד לבדיקת תוכן.",13,MUTED);
         panel.addView(limits);gap(11);
 
         consent=new CheckBox(this);
@@ -211,15 +213,14 @@ public final class MainActivity extends Activity {
         panel.addView(preview,new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,dp(240)));
         gap(10);
-        save=button("שמור סרטון לטלפון",true);
+        save=button("שמור קובץ MP4 לבדיקה",true);
         save.setVisibility(View.GONE);
         save.setOnClickListener(v->saveVideo());
         gap(8);
-        review=button("הסרטון לא ביצע את ההנחיה",true);
+        review=button("לא תואם את הסיפור — סמן כשל",true);
         review.setVisibility(View.GONE);
         review.setOnClickListener(v->{
-            show("הסרטון סומן כלא תואם. לא תבוצע יצירה חוזרת או חיוב אוטומטי. "+
-                "אפשר לנסח מחדש פעולה פיזית מפורטת לפני ניסיון ידני נוסף.");
+            show("נרשם: הסצנה אינה תואמת לבקשה. לא תבוצע הפקה חוזרת אוטומטית ולא יהיה חיוב.");
             afterFailed=true;
         });
         gap(10);
@@ -303,15 +304,19 @@ public final class MainActivity extends Activity {
                     });
                 getPreferences(MODE_PRIVATE).edit().putBoolean("uncertain_submission",false)
                     .putString("last_event","").apply();
-                runOnUiThread(()->onVideo(result));
+                String storyToCheck=story;
+                HebrewIntentBrain.Scene s=HebrewIntentBrain.interpret(storyToCheck);
+                V5OutputAudit.Report audit=V5OutputAudit.check(result.video,seconds,s.complex||s.verbsEnglish.contains("fight")||s.verbsEnglish.contains("defeat"));
+                runOnUiThread(()->onVideo(result,audit));
             }catch(Exception e){
                 if(e instanceof WanNativeClient.FinalProviderRejection) {
                     // Explicit provider SSE error is terminal. A different engine
                     // may be preferred on the NEXT user-triggered creation only.
                     WanNativeClient.FinalProviderRejection rejection=
                         (WanNativeClient.FinalProviderRejection)e;
-                    if(!"GPU_QUOTA".equals(rejection.reasonCode)
-                       && !"AUTH_REQUIRED".equals(rejection.reasonCode)) {
+                    V5RetryPolicy.Decision decision=
+                        V5RetryPolicy.server(rejection.reasonCode);
+                    if(decision.mayPreferDifferentProvider) {
                         getSharedPreferences("gpu_provider",MODE_PRIVATE).edit()
                             .putString("last_failed",rejection.providerId).commit();
                     }
@@ -321,8 +326,12 @@ public final class MainActivity extends Activity {
                     runOnUiThread(()->recover.setVisibility(View.GONE));
                 }
                 String error=e.getMessage()==null?"שגיאה לא צפויה":e.getMessage();
+                String next=e instanceof WanNativeClient.FinalProviderRejection
+                    ? V5RetryPolicy.server(
+                      ((WanNativeClient.FinalProviderRejection)e).reasonCode).guidance
+                    : V5RetryPolicy.server("UNKNOWN").guidance;
                 runOnUiThread(()->show("לא נוצר סרטון: "+error+
-                   "\nלא נעשה ניסיון אוטומטי נוסף."));
+                    "\n"+next+"\nלא נעשה ניסיון אוטומטי נוסף."));
             }finally{runOnUiThread(()->setBusy(false));}
         });
     }
@@ -338,7 +347,11 @@ public final class MainActivity extends Activity {
                 WanNativeClient.Result result=engine.resume(this,id,provider,this::show);
                 getPreferences(MODE_PRIVATE).edit().putString("last_event","")
                     .putBoolean("uncertain_submission",false).apply();
-                runOnUiThread(()->onVideo(result));
+                String storyToCheck=getPreferences(MODE_PRIVATE).getString("draft","");
+                HebrewIntentBrain.Scene s=HebrewIntentBrain.interpret(storyToCheck.isEmpty()?"בדוק וידאו":storyToCheck);
+                int sec=getPreferences(MODE_PRIVATE).getInt("requested_seconds",2);
+                V5OutputAudit.Report audit=V5OutputAudit.check(result.video,sec,s.complex||s.verbsEnglish.contains("fight")||s.verbsEnglish.contains("defeat"));
+                runOnUiThread(()->onVideo(result,audit));
             }catch(Exception e){
                 if(e instanceof WanNativeClient.FinalProviderRejection) {
                     getPreferences(MODE_PRIVATE).edit().remove("last_event")
@@ -349,7 +362,8 @@ public final class MainActivity extends Activity {
             }finally{runOnUiThread(()->setBusy(false));}
         });
     }
-    private void onVideo(WanNativeClient.Result result){
+    private void onVideo(WanNativeClient.Result result,V5OutputAudit.Report audit){
+        lastAudit=audit;
         getSharedPreferences("gpu_provider",MODE_PRIVATE).edit().remove("last_failed").apply();
         video=result.video;
         if(playback!=null){playback.release();playback=null;}
@@ -358,29 +372,21 @@ public final class MainActivity extends Activity {
         preview.setVisibility(View.VISIBLE);
         playback.addListener(new Player.Listener(){
             @Override public void onPlayerError(androidx.media3.common.PlaybackException error){
-                show("הסרטון הורד, אבל הניגון הפנימי נכשל. שמור אותו לטלפון לצפייה.");
+                show("הסרטון הורד אבל הניגון הפנימי נכשל. הקובץ נשמר וניתן להוריד אותו לבדיקה.");
             }
         });
         playback.setMediaItem(MediaItem.fromUri(Uri.fromFile(video)));
         playback.prepare();
         playback.play();
-        save.setVisibility(View.VISIBLE);review.setVisibility(View.VISIBLE);
-        long actualMs=0;
-        MediaMetadataRetriever retriever=new MediaMetadataRetriever();
-        try{
-            retriever.setDataSource(video.getAbsolutePath());
-            String metadata=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-            if(metadata!=null)actualMs=Long.parseLong(metadata);
-        }catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
-        int selected=getPreferences(MODE_PRIVATE).getInt("requested_seconds",requestedSeconds);
-        String durationInfo=actualMs>0
-            ? "ביקשת "+selected+" שניות; התקבלו "+
-              String.format(java.util.Locale.ROOT,"%.2f",actualMs/1000.0)+" שניות. "
-            : "משך הווידאו בפועל לא אומת. ";
-        String mismatch=actualMs>0&&actualMs+400 < selected*1000L
-            ? "התוצאה קצרה מהבקשה ולכן חלקית. ":"";
-        show(durationInfo+mismatch+"לא בוצעה בדיקת ציות חזותי אוטומטית. "+
-             "בדוק שהדמויות והפעולה הנדרשות אכן מופיעות.");
+        save.setVisibility(View.VISIBLE);
+        review.setVisibility(View.VISIBLE);
+        if(audit.hasHardFailure()){
+            show("בדיקת איכות: נכשל. "+audit.message+"\nלא נסמן את הסיפור כהפקה מוצלחת.");
+        }else if(audit.complexStory){
+            show("קובץ וידאו נוצר, אך הסיפור עדיין לא אומת. "+audit.message);
+        }else{
+            show("התקבל קובץ לבדיקה. "+audit.message);
+        }
     }
     private void saveVideo(){
         if(video==null||!video.isFile()){toast("אין סרטון זמין לשמירה");return;}

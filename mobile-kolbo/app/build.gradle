@@ -3,11 +3,11 @@ android {
   namespace 'com.kolbomusic.video'
   compileSdk 35
   defaultConfig {
-    applicationId 'com.kolbomusic.video.smartgpu'
+    applicationId 'com.kolbomusic.video.v5'
     minSdk 26
     targetSdk 35
-    versionCode 474
-    versionName '4.7.4'
+    versionCode 500
+    versionName '5.0.0'
   }
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_17
@@ -19,4 +19,6 @@ dependencies {
   implementation 'com.google.mlkit:translate:17.0.3'
   implementation 'androidx.media3:media3-exoplayer:1.6.1'
   implementation 'androidx.media3:media3-ui:1.6.1'
+  implementation 'com.google.mlkit:face-detection:16.1.7'
+  implementation 'com.google.mlkit:image-labeling:17.0.9'
 }
