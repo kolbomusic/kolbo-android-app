@@ -17,13 +17,21 @@ jobs:
         with: {node-version: '22'}
       - name: Run privacy, JSON schema and no-retry tests with mocked AI
         run: node --test cloud-brain-worker/test/*.test.js
-      - name: Validate disabled cloud endpoint is not fabricated
+      - name: Validate disabled or independently verified cloud endpoint configuration
         run: |
           node - <<'NODE'
           const fs=require('fs');
           const cfg=JSON.parse(fs.readFileSync('cloud-brain-worker/endpoint.json','utf8'));
-          if(cfg.enabled||cfg.url!==null)throw Error('Server is not deployed: no endpoint should be enabled');
+          if(cfg.enabled){
+            if(typeof cfg.url!=='string'||!/^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev\/v1\/plan$/.test(cfg.url))
+              throw Error('Enabled endpoint must be verified HTTPS Cloudflare Workers domain');
+          }else if(cfg.url!==null)throw Error('Disabled endpoint must not include a live URL');
           const config=fs.readFileSync('cloud-brain-worker/wrangler.toml','utf8');
           if(!config.includes('binding = "AI"'))throw Error('Missing Cloudflare AI binding');
           console.log('PASS: no fake live URL, no paid API key in app, free-tier AI binding configured');
           NODE
+      - name: Compile Cloudflare Worker bundle without deploying or spending AI credits
+        working-directory: cloud-brain-worker
+        run: |
+          npm install --no-audit --no-fund
+          npx wrangler deploy --dry-run --outdir=dist
