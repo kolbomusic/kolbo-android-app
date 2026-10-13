@@ -1,0 +1,24 @@
+name: Kolbo v4.6.6 Wan adapter privacy and contract CI
+on:
+  push:
+    branches: [kolbo-video-v466-live-wan-contract-guard-20261013]
+    paths:
+      - gateway/backend/experimental_zerogpu_adapter.py
+      - gateway/backend/tests/test_experimental_zerogpu_adapter.py
+      - .github/workflows/kolbo-v466-wan-adapter-ci.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  guarded-public-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install offline test runner
+        run: pip install --disable-pip-version-check pytest==8.4.2
+      - name: Run strict adapter tests without sending media to any provider
+        env:
+          PYTHONPATH: gateway/backend
+        run: pytest -q gateway/backend/tests/test_experimental_zerogpu_adapter.py
