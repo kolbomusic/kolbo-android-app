@@ -33,7 +33,9 @@ jobs:
           for required in ('RemoteStoryPlanner.plan','QwenPlanContract.compile',
                            'V5SourceAudit.examine','V5OutputAudit.check'):
               assert required in client+ui,required
-          assert 'RemoteStoryPlanner.configured()?View.VISIBLE:View.GONE' in ui
+          assert 'RemoteStoryPlanner.isServiceHealthy()' in ui
+          assert 'plannerConsent.setVisibility(isUp?View.VISIBLE:View.GONE)' in ui
+          assert 'cloudBrainReady' in ui
           assert '&& plannerConsent!=null && plannerConsent.isChecked()' in ui
           assert 'BuildConfig.CLOUD_PLANNER_URL' in planner
           assert 'setInstanceFollowRedirects(false)' in planner
