@@ -1,0 +1,68 @@
+name: Kolbo Video 4.7.2 smart Hebrew story director + native playback
+on:
+  push:
+    branches: [kolbo-video-v472-smart-story-director-20261014]
+    paths:
+      - mobile-kolbo/**
+      - .github/workflows/kolbo-v472-smart-director-apk.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Test natural Hebrew understanding without cloud inference
+        run: |
+          mkdir -p /tmp/story-tests
+          javac -d /tmp/story-tests \
+            mobile-kolbo/app/src/main/java/com/kolbomusic/video/HebrewStoryDirector.java \
+            mobile-kolbo/test/HebrewStoryDirectorTest.java
+          java -cp /tmp/story-tests com.kolbomusic.video.HebrewStoryDirectorTest
+      - name: Ensure natural prompt, image-cleaning and duration checks are wired
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          root=Path("mobile-kolbo/app/src/main/java/com/kolbomusic/video")
+          activity=(root/"MainActivity.java").read_text()
+          client=(root/"WanNativeClient.java").read_text()
+          cleaner=(root/"BasicPhotoCleaner.java").read_text()
+          for required in ("HebrewStoryDirector.understand(story)",
+                           "interpretation.setText", "MediaMetadataRetriever",
+                           "ExoPlayer.Builder", "PlayerView", "ביקשת ", "התוצאה קצרה"):
+              assert required in activity, required
+          for required in ("HebrewStoryDirector.understand(hebrew.trim())",
+                           "scene.directedPrompt(english)",
+                           "BasicPhotoCleaner.adjust(reduced)",
+                           "scene.actionToTranslate"):
+              assert required in client,required
+          assert "getPixels" in cleaner and "setPixels" in cleaner
+          assert "WebView" not in activity
+          assert "versionName '4.7.2'" in Path('mobile-kolbo/app/build.gradle').read_text()
+          print("PASS: natural Hebrew scenario, photo prep, actual duration and native playback")
+          PY
+      - name: Provision Android 35
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Assemble debug APK
+        run: gradle -p mobile-kolbo :app:assembleDebug --stacktrace
+      - name: Verify Android APK signing and manifest
+        run: |
+          APK=mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -10
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-v4.7.2-Smart-Hebrew-Director-Android-APK
+          path: mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: error

@@ -21,7 +21,12 @@ import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.VideoView;
+import android.media.MediaMetadataRetriever;
+import android.widget.MediaController;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.Player;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.PlayerView;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -53,7 +58,10 @@ public final class MainActivity extends Activity {
     private ImageView photoPreview;
     private TextView photoLabel,status,limits;
     private ProgressBar progress;
-    private VideoView preview;
+    private PlayerView preview;
+    private ExoPlayer playback;
+    private TextView interpretation;
+    private int requestedSeconds=2;
     private Button generate,save,review,recover;
 
     private int dp(int x){return Math.round(x*getResources().getDisplayMetrics().density);}
@@ -131,7 +139,7 @@ public final class MainActivity extends Activity {
         prompt.setGravity(Gravity.RIGHT|Gravity.TOP);
         prompt.setTextDirection(View.TEXT_DIRECTION_RTL);
         prompt.setTextColor(TEXT);prompt.setHintTextColor(MUTED);
-        prompt.setHint("לדוגמה: האיש קם מהכיסא, הולך שלושה צעדים ומנופף בידו. מצלמה רחבה שרואים את כל גופו.");
+        prompt.setHint("מה תרצה שיקרה בסרטון? פשוט כתוב במילים שלך.");
         prompt.setTextSize(16);
         prompt.setMinLines(4);prompt.setMaxLines(8);
         prompt.setInputType(android.text.InputType.TYPE_CLASS_TEXT|
@@ -139,6 +147,23 @@ public final class MainActivity extends Activity {
         prompt.setPadding(dp(16),dp(16),dp(16),dp(16));
         prompt.setBackground(shape(PANEL,15));
         panel.addView(prompt);
+        gap(8);
+        interpretation=text("כתוב בחופשיות — האפליקציה תזהה את האירועים והדמויות.",14,MUTED);
+        panel.addView(interpretation);
+        prompt.addTextChangedListener(new android.text.TextWatcher(){
+            @Override public void beforeTextChanged(CharSequence x,int a,int c,int n){}
+            @Override public void onTextChanged(CharSequence x,int a,int before,int count){
+                if(x.length()<3) {
+                    interpretation.setText("כתוב במילים שלך, ללא ניסוח מיוחד.");return;
+                }
+                try{
+                    HebrewStoryDirector.Plan p=HebrewStoryDirector.understand(x.toString());
+                    interpretation.setText("הבנתי: "+p.visibleSummary +
+                       (p.complexScene ? "\nסצנה מורכבת: מנוע הניסוי עשוי לא להצליח בכל הפרטים." : ""));
+                }catch(RuntimeException e){interpretation.setText("הוסף מה תרצה שיקרה.");}
+            }
+            @Override public void afterTextChanged(android.text.Editable x){}
+        });
         gap(20);
 
         TextView time=text("3. משך הסרטון",19,TEXT);
@@ -178,7 +203,9 @@ public final class MainActivity extends Activity {
         status=text("מוכן. הפעולה תישלח רק כשתלחץ על יצירה.",15,MUTED);
         panel.addView(status);gap(14);
 
-        preview=new VideoView(this);
+        preview=new PlayerView(this);
+        preview.setUseController(true);
+        preview.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
         preview.setVisibility(View.GONE);
         preview.setBackground(shape(PANEL,12));
         panel.addView(preview,new LinearLayout.LayoutParams(
@@ -229,8 +256,9 @@ public final class MainActivity extends Activity {
         if(busy)return;
         if(image==null){toast("יש לבחור תמונה תחילה");return;}
         String story=prompt.getText().toString().trim();
-        if(story.length()<10){toast("יש לתאר את ההתרחשות בצורה מפורטת");return;}
-        String blocker=unsupported(story);
+        if(story.length()<2){toast("כתוב במילים שלך מה תרצה שיקרה");return;}
+        HebrewStoryDirector.Plan plan=HebrewStoryDirector.understand(story);
+        String blocker=plan.supportedLimit();
         if(blocker!=null){show(blocker+" לא נשלחה בקשה.");return;}
         if(!consent.isChecked()){
             show("לפני העלאת התמונה יש לאשר העברה לספק החיצוני.");return;
@@ -239,6 +267,8 @@ public final class MainActivity extends Activity {
             show("נותרה בקשה שייתכן שהתקבלה. בדוק אותה לפני ניסיון חדש.");return;
         }
         final int seconds=duration.getSelectedItemPosition()+2;
+        requestedSeconds=seconds;
+        getPreferences(MODE_PRIVATE).edit().putInt("requested_seconds",seconds).apply();
         getPreferences(MODE_PRIVATE).edit().putString("draft",story).apply();
         setBusy(true);preview.setVisibility(View.GONE);
         save.setVisibility(View.GONE);review.setVisibility(View.GONE);
@@ -301,12 +331,35 @@ public final class MainActivity extends Activity {
     }
     private void onVideo(WanNativeClient.Result result){
         video=result.video;
-        preview.setVideoURI(Uri.fromFile(video));
-        preview.setOnPreparedListener(player->{player.setLooping(true);preview.start();});
+        if(playback!=null){playback.release();playback=null;}
+        playback=new ExoPlayer.Builder(this).build();
+        preview.setPlayer(playback);
         preview.setVisibility(View.VISIBLE);
+        playback.addListener(new Player.Listener(){
+            @Override public void onPlayerError(androidx.media3.common.PlaybackException error){
+                show("הסרטון הורד, אבל הניגון הפנימי נכשל. שמור אותו לטלפון לצפייה.");
+            }
+        });
+        playback.setMediaItem(MediaItem.fromUri(Uri.fromFile(video)));
+        playback.prepare();
+        playback.play();
         save.setVisibility(View.VISIBLE);review.setVisibility(View.VISIBLE);
-        show("התקבל קובץ MP4 ממנוע ה־AI. "+result.warning+
-            "\nבדוק בעצמך אם ההתרחשות מתאימה להנחיה.");
+        long actualMs=0;
+        MediaMetadataRetriever retriever=new MediaMetadataRetriever();
+        try{
+            retriever.setDataSource(video.getAbsolutePath());
+            String metadata=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            if(metadata!=null)actualMs=Long.parseLong(metadata);
+        }catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
+        int selected=getPreferences(MODE_PRIVATE).getInt("requested_seconds",requestedSeconds);
+        String durationInfo=actualMs>0
+            ? "ביקשת "+selected+" שניות; התקבלו "+
+              String.format(java.util.Locale.ROOT,"%.2f",actualMs/1000.0)+" שניות. "
+            : "משך הווידאו בפועל לא אומת. ";
+        String mismatch=actualMs>0&&actualMs+400 < selected*1000L
+            ? "התוצאה קצרה מהבקשה ולכן חלקית. ":"";
+        show(durationInfo+mismatch+"לא בוצעה בדיקת ציות חזותי אוטומטית. "+
+             "בדוק שהדמויות והפעולה הנדרשות אכן מופיעות.");
     }
     private void saveVideo(){
         if(video==null||!video.isFile()){toast("אין סרטון זמין לשמירה");return;}
@@ -344,7 +397,7 @@ public final class MainActivity extends Activity {
         }
     }
     @Override protected void onDestroy(){
-        preview.stopPlayback();
+        if(playback!=null){playback.release();playback=null;}
         worker.shutdown();
         super.onDestroy();
     }
