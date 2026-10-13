@@ -1,0 +1,43 @@
+name: Kolbo Video 4.6.8 Android cold-launch emulator smoke
+on:
+  push:
+    branches: [kolbo-video-v468-usable-apk-real-provider-20261013]
+    paths: [".github/workflows/kolbo-v468-emulator-smoke.yml", "mobile-kolbo/**"]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Build installation package
+        run: gradle -p mobile-kolbo :app:assembleDebug
+      - name: Cold launch app on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb install -r mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n com.kolbomusic.video.realgpu/com.kolbomusic.video.MainActivity
+            sleep 7
+            adb shell dumpsys activity activities | grep -F com.kolbomusic.video.realgpu
+            adb shell uiautomator dump /sdcard/kolbo-ui.xml
+            adb shell cat /sdcard/kolbo-ui.xml | grep -F 'Kolbo Video AI'
+            adb exec-out screencap -p > kolbo-468-emulator.png
+            if adb logcat -d | grep -E 'FATAL EXCEPTION.*com.kolbomusic.video.realgpu'; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Video-v4.6.8-emulator-screenshot
+          path: kolbo-468-emulator.png
+          retention-days: 7
+          if-no-files-found: warn
