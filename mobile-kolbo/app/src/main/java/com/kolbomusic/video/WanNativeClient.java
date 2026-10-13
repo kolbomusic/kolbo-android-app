@@ -38,7 +38,11 @@ public final class WanNativeClient {
         "input_image","prompt","steps","negative_prompt","duration_seconds",
         "guidance_scale","guidance_scale_2","seed","randomize_seed"};
 
-    public interface Progress {\n        void status(String text);\n        default void beforeSubmission() {}\n        default void jobCreated(String id) {}\n    }
+    public interface Progress {
+        void status(String text);
+        default void beforeSubmission() {}
+        default void jobCreated(String id) {}
+    }
     public static final class Result {
         public final File video;
         public final String eventId;
@@ -148,14 +152,20 @@ public final class WanNativeClient {
         c.setDoOutput(true);
         c.setChunkedStreamingMode(32*1024);
         c.setRequestProperty("Content-Type","multipart/form-data; boundary="+boundary);
-        String head="--"+boundary+"\r\n"+
-                "Content-Disposition: form-data; name=\"files\"; filename=\"kolbo-photo.jpg\"\r\n"+
-                "Content-Type: image/jpeg\r\n\r\n";
+        String head="--"+boundary+"\r
+"+
+                "Content-Disposition: form-data; name=\"files\"; filename=\"kolbo-photo.jpg\"\r
+"+
+                "Content-Type: image/jpeg\r
+\r
+";
         try{
             try(OutputStream out=c.getOutputStream()){
                 out.write(head.getBytes(StandardCharsets.UTF_8));
                 out.write(jpeg);
-                out.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
+                out.write(("\r
+--"+boundary+"--\r
+").getBytes(StandardCharsets.UTF_8));
             }
             JSONArray files=new JSONArray(body(c,100_000));
             String path=files.optString(0,"");
@@ -283,7 +293,9 @@ public final class WanNativeClient {
         progress.status("מעלה תמונת ייחוס אחת לספק החיצוני…");
         String path=upload(bytes);
         progress.status("שולח בקשה יחידה למנוע AI…");
-        progress.beforeSubmission();\n        String id=submit(path,hebrew.trim(),seconds);\n        progress.jobCreated(id);
+        progress.beforeSubmission();
+        String id=submit(path,hebrew.trim(),seconds);
+        progress.jobCreated(id);
         progress.status("המשימה התקבלה, ממתין לסרטון…");
         String videoUrl=poll(id,progress);
         progress.status("מוריד סרטון AI מקורי…");
