@@ -1,0 +1,77 @@
+name: Kolbo Video v5.2 genuinely light Android
+on:
+  push:
+    branches: [kolbo-video-v520-lightweight-cloud-first-20261014]
+    paths:
+      - mobile-kolbo/**
+      - .github/workflows/kolbo-v520-lightweight-apk.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  thin-client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Assert no on-phone LLM, vision, video rendering or download step
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('mobile-kolbo/app')
+          manifest=(root/'build.gradle').read_text()
+          ui=(root/'src/main/java/com/kolbomusic/video/MainActivity.java').read_text()
+          client=(root/'src/main/java/com/kolbomusic/video/WanNativeClient.java').read_text()
+          planner=(root/'src/main/java/com/kolbomusic/video/RemoteStoryPlanner.java').read_text()
+          for banned in ('litertlm','face-detection','image-labeling','org.jetbrains.kotlin.android'):
+              assert banned not in manifest,banned
+          for className in ('QwenScenePlanner.kt','LocalBrainModelManager.java'):
+              assert not (root/'src/main/java/com/kolbomusic/video'/className).exists(),className
+          for banned in ('LocalBrainModelManager','QwenScenePlanner','offerLocalBrainInstallation'):
+              assert banned not in client+ui,banned
+          for required in ('RemoteStoryPlanner.plan','QwenPlanContract.compile',
+                           'V5SourceAudit.examine','V5OutputAudit.check'):
+              assert required in client+ui,required
+          assert 'RemoteStoryPlanner.configured()?View.VISIBLE:View.GONE' in ui
+          assert '&& plannerConsent!=null && plannerConsent.isChecked()' in ui
+          assert 'BuildConfig.CLOUD_PLANNER_URL' in planner
+          assert 'setInstanceFollowRedirects(false)' in planner
+          assert 'versionName \'5.2.0\'' in manifest
+          print('PASS: no AI inference or 331MB model on the phone; optional HTTPS remote planner requires consent')
+          PY
+      - name: Test Hebrew scene safety and routing without AI libraries
+        run: |
+          mkdir -p /tmp/light-tests
+          javac -encoding UTF-8 -d /tmp/light-tests \
+            mobile-kolbo/app/src/main/java/com/kolbomusic/video/HebrewIntentBrain.java \
+            mobile-kolbo/app/src/main/java/com/kolbomusic/video/V5SceneContract.java \
+            mobile-kolbo/app/src/main/java/com/kolbomusic/video/V5RetryPolicy.java \
+            mobile-kolbo/test/V5SceneContractTest.java \
+            mobile-kolbo/test/HebrewIntentBrainTest.java \
+            mobile-kolbo/app/src/main/java/com/kolbomusic/video/WanProviderCatalog.java \
+            mobile-kolbo/test/WanProviderCatalogTest.java
+          java -cp /tmp/light-tests com.kolbomusic.video.HebrewIntentBrainTest
+          java -cp /tmp/light-tests com.kolbomusic.video.V5SceneContractTest
+          java -cp /tmp/light-tests com.kolbomusic.video.WanProviderCatalogTest
+      - name: Prepare Android platform
+        run: |
+          TOOL=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)
+          "$TOOL" --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Build light Android APK
+        run: gradle -p mobile-kolbo :app:assembleDebug --stacktrace
+      - name: Cryptographically verify APK
+        run: |
+          APK=mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -12
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Video-v5.2-Lightweight-APK
+          path: mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: error
