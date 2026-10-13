@@ -149,15 +149,14 @@ public final class MainActivity extends Activity {
         ArrayAdapter<String> adapter=new ArrayAdapter<>(this,
             android.R.layout.simple_spinner_dropdown_item,choices);
         duration.setAdapter(adapter);
-        duration.setSelection(3);
+        duration.setSelection(0); // 2s was proven on public ZeroGPU; 5s may exceed quota.
         duration.setBackground(shape(PANEL,12));
         panel.addView(duration,new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
         gap(13);
 
-        limits=text("מגבלות הניסוי הנוכחי: תמונה אחת, עד 5 שניות, ללא שמע או שירה. "+
-            "שמירת שתי זהויות וציות מדויק לכל תיאור עדיין אינם מאומתים. "+
-            "אם הבקשה מחייבת יכולת שאינה קיימת, ההפקה תיחסם — לא ייווצר תחליף שגוי.",14,MUTED);
+        limits=text("ניסוי וידאו אילם מתמונה אחת, 2–5 שניות. "+
+            "שמע, שתי דמויות ודיוק מלא בהוראות אינם נתמכים כרגע.",13,MUTED);
         panel.addView(limits);gap(11);
 
         consent=new CheckBox(this);
@@ -197,10 +196,8 @@ public final class MainActivity extends Activity {
             afterFailed=true;
         });
         gap(10);
-        panel.addView(text("להבנת הנחיות בעברית ייתכן שתתבצע הורדה חד־פעמית של מודל תרגום מקומי (כ־30 MB). "+
-            "התרגום מתבצע בטלפון, ההפקה בענן. "+
-            "לא נדרשים מפתח API או מחשב אישי. מנוע הענן הציבורי "+
-            "עלול להיות עמוס, להגביל שימוש או לדחות בקשות. אין מסלול בתשלום.",13,MUTED));
+        panel.addView(text("התרגום מתבצע במכשיר; הורדת מודל ראשונית דורשת אינטרנט. "+
+            "ההפקה בענן הציבורי כפופה למכסה. אין תשלום אוטומטי.",12,MUTED));
 
         prompt.setText(getPreferences(MODE_PRIVATE).getString("draft",""));
         if(getPreferences(MODE_PRIVATE).getBoolean("uncertain_submission",false))
@@ -242,8 +239,7 @@ public final class MainActivity extends Activity {
             show("נותרה בקשה שייתכן שהתקבלה. בדוק אותה לפני ניסיון חדש.");return;
         }
         final int seconds=duration.getSelectedItemPosition()+2;
-        getPreferences(MODE_PRIVATE).edit().putString("draft",story)
-            .putBoolean("uncertain_submission",true).apply();
+        getPreferences(MODE_PRIVATE).edit().putString("draft",story).apply();
         setBusy(true);preview.setVisibility(View.GONE);
         save.setVisibility(View.GONE);review.setVisibility(View.GONE);
         worker.execute(()->{
@@ -251,6 +247,13 @@ public final class MainActivity extends Activity {
                 WanNativeClient.Result result=engine.create(this,image,story,seconds,
                     new WanNativeClient.Progress(){
                         @Override public void status(String value){show(value);}
+                        @Override public void beforeSubmission(){
+                            // Persist before network POST: after a crash an accepted job is uncertain.
+                            boolean saved=getPreferences(MODE_PRIVATE).edit()
+                                .putBoolean("uncertain_submission",true).commit();
+                            if(!saved)throw new IllegalStateException(
+                                "לא ניתן לשמור מצב משימה בבטחה; ההפקה לא נשלחה");
+                        }
                         @Override public void jobCreated(String id){
                             getPreferences(MODE_PRIVATE).edit()
                                 .putString("last_event",id).commit();
@@ -261,9 +264,17 @@ public final class MainActivity extends Activity {
                     .putString("last_event","").apply();
                 runOnUiThread(()->onVideo(result));
             }catch(Exception e){
+                if(e instanceof WanNativeClient.FinalProviderRejection) {
+                    // A Gradio 'error' event TERMINATED this job: no rerun, but a
+                    // later explicit user request may create a fresh job.
+                    getPreferences(MODE_PRIVATE).edit()
+                        .putBoolean("uncertain_submission",false)
+                        .remove("last_event").commit();
+                    runOnUiThread(()->recover.setVisibility(View.GONE));
+                }
                 String error=e.getMessage()==null?"שגיאה לא צפויה":e.getMessage();
-                runOnUiThread(()->show("לא התקבל סרטון מאומת: "+error+
-                   "\nאין ניסיון חוזר אוטומטי. ניתן לבדוק משימה קודמת."));
+                runOnUiThread(()->show("לא נוצר סרטון: "+error+
+                   "\nלא נעשה ניסיון אוטומטי נוסף."));
             }finally{runOnUiThread(()->setBusy(false));}
         });
     }
@@ -279,7 +290,12 @@ public final class MainActivity extends Activity {
                     .putBoolean("uncertain_submission",false).apply();
                 runOnUiThread(()->onVideo(result));
             }catch(Exception e){
-                show("לא ניתן לשחזר כרגע: "+(e.getMessage()==null?"השרת לא זמין":e.getMessage()));
+                if(e instanceof WanNativeClient.FinalProviderRejection) {
+                    getPreferences(MODE_PRIVATE).edit().remove("last_event")
+                        .putBoolean("uncertain_submission",false).commit();
+                    runOnUiThread(()->recover.setVisibility(View.GONE));
+                }
+                show("לא ניתן לשחזר: "+(e.getMessage()==null?"השרת לא זמין":e.getMessage()));
             }finally{runOnUiThread(()->setBusy(false));}
         });
     }
