@@ -1,0 +1,25 @@
+name: Kolbo v474 live video provider contract preflight
+on:
+  push:
+    branches: [kolbo-video-v474-smart-gpu-failover-20261014]
+    paths:
+      - gpu-discovery/public_provider_contract_v474.py
+      - .github/workflows/kolbo-v474-contract-probe.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  public-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Inspect image to video public API schema; GET only
+        run: python gpu-discovery/public_provider_contract_v474.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-v474-public-provider-contracts
+          path: provider-contract-probe-v474.json
+          retention-days: 7
+          if-no-files-found: error
