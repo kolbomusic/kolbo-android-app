@@ -379,7 +379,8 @@ public final class WanNativeClient {
         return new Result(video,id,"התאמת ההתרחשות להנחיה מחייבת בדיקה שלך; לא בוצע אימות סמנטי.");
     }
 
-    public Result resume(Context context,String eventId,Progress progress) throws Exception {
+    public Result resume(Context context,String eventId,String selectedProvider,Progress progress) throws Exception {
+        useForExistingJob(selectedProvider);
         if(eventId==null||!eventId.matches("[a-zA-Z0-9_-]{4,160}"))
             throw new IOException("מזהה משימה אינו תקין");
         String url=poll(eventId,progress);
