@@ -395,7 +395,15 @@ def new_real_ai_motion_job(payload: NewJob,
     owner_hash=owner.removeprefix("guest:")
     with LOCK:
         if journal is not None:
-            record=journal.reserve(owner_hash,digest,digest)
+            try:
+                record=journal.reserve(owner_hash,digest,digest,
+                    max_daily_owner=ai_trials.PER_INSTALL_PER_UTC_DAY,
+                    max_daily_global=ai_trials.GLOBAL_PER_UTC_DAY)
+            except gpu_journal.QuotaExceeded as exc:
+                raise HTTPException(429,"מכסת ניסוי GPU משותפת נוצלה להיום",
+                                    headers={"Retry-After":"3600"}) from exc
+            except gpu_journal.JournalError as exc:
+                raise HTTPException(503,"יומן הניסויים המתמיד אינו זמין") from exc
             if not record.created_new:
                 # On restart 'submitting' must never be POSTed again.
                 state=("acceptance_unknown" if record.state=="submitting" else record.state)
