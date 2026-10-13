@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "url": null,
+  "note": "The Cloudflare Worker has not been deployed. Publishing its live URL here activates optional cloud planning in already installed APKs."
+}
