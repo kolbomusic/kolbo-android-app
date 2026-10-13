@@ -115,7 +115,7 @@ public final class WanNativeClient {
         }finally{c.disconnect();}
     }
 
-    public byte[] compressPhoto(Context context,Uri uri) throws Exception {
+    public byte[] compressPhoto(Context context,Uri uri,boolean cleanPhoto) throws Exception {
         if(uri==null || !"content".equalsIgnoreCase(uri.getScheme()))
             throw new IOException("נדרשת תמונה שנבחרה דרך הטלפון");
         BitmapFactory.Options options=new BitmapFactory.Options();
@@ -144,6 +144,11 @@ public final class WanNativeClient {
                 Math.max(1,Math.round(bitmap.getWidth()*scale)),
                 Math.max(1,Math.round(bitmap.getHeight()*scale)),true);
             bitmap.recycle();
+        }
+        if(cleanPhoto){
+            Bitmap cleaned=BasicPhotoCleaner.adjust(reduced);
+            reduced.recycle();
+            reduced=cleaned;
         }
         try{
             ByteArrayOutputStream out=new ByteArrayOutputStream();
@@ -179,13 +184,9 @@ public final class WanNativeClient {
         }finally{c.disconnect();}
     }
 
-    private static String promptForProvider(String instructionEnglish){
-        // Preserve the translated action. Avoid face-only closeups instead of the requested movement.
-        return "Realistic continuous action, wide camera framing, whole body and surroundings visible. "+
-            "Follow the actual physical action in this instruction, rather than replacing it "+
-            "with a close-up, facial expressions, or talking. "+
-            "Do not invent additional people or objects. Action to perform (English): "+
-            instructionEnglish;
+    private static String promptForProvider(String directedStoryboard){
+        // Semantic director owns subject counts, action and outcome.
+        return directedStoryboard;
     }
 
     private String submit(String path,String prompt,int seconds) throws Exception {
@@ -305,11 +306,16 @@ public final class WanNativeClient {
         if(hebrew==null||hebrew.trim().length()<10||hebrew.length()>1200)
             throw new IOException("יש לכתוב הנחיה מפורטת בעברית");
         if(seconds<1||seconds>5)throw new IOException("המנוע הנוכחי תומך רק בעד 5 שניות");
-        String modelInstruction=HebrewActionTranslator.translate(hebrew.trim(),progress);
+        HebrewStoryDirector.Plan scene=HebrewStoryDirector.understand(hebrew.trim());
+        if(scene.supportedLimit()!=null)throw new IOException(scene.supportedLimit());
+        progress.status("מפרש את הבקשה שלך: "+scene.visibleSummary);
+        String english=HebrewActionTranslator.translate(scene.actionToTranslate,progress);
+        String modelInstruction=scene.directedPrompt(english);
         progress.status("מאמת את מנוע הווידאו…");
         preflight();
         progress.status("מכין את התמונה בטלפון…");
-        byte[] bytes=compressPhoto(context,image);
+        if(scene.cleanPhoto)progress.status("מנקה רעש ומתאים בהירות בתמונת המקור…");
+        byte[] bytes=compressPhoto(context,image,scene.cleanPhoto);
         progress.status("מעלה תמונת ייחוס אחת לספק החיצוני…");
         String path=upload(bytes);
         progress.status("שולח בקשה יחידה למנוע AI…");
