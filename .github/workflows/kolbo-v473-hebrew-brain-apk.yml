@@ -39,7 +39,7 @@ jobs:
           brain=(base/"HebrewIntentBrain.java").read_text()
           ui=(base/"MainActivity.java").read_text()
           wan=(base/"WanNativeClient.java").read_text()
-          for value in ("original hand-authored","actionText","soundtrack",
+          for value in ("Original hand-authored","actionText","soundtrack",
                         "count","negated","getPixels" if False else "normalize"):
               assert value in brain, value
           assert "HebrewIntentBrain.interpret(x.toString())" in ui
