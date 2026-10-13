@@ -72,6 +72,34 @@ public final class RemoteStoryPlanner {
         return url;
     }
 
+    /** Lightweight readiness check. GET only, no user story or image transferred. */
+    public static boolean isServiceHealthy(){
+        try {
+            URL original=endpoint();
+            URL health=new URL(original.getProtocol(),original.getHost(),
+                original.getPort(),"/health");
+            HttpURLConnection c=(HttpURLConnection)health.openConnection();
+            c.setInstanceFollowRedirects(false);
+            c.setConnectTimeout(5500);
+            c.setReadTimeout(5500);
+            try{
+                if(c.getResponseCode()!=200||c.getContentLengthLong()>1000)return false;
+                StringBuilder answer=new StringBuilder(100);
+                try(InputStream in=c.getInputStream();
+                    BufferedReader r=new BufferedReader(
+                        new InputStreamReader(in,StandardCharsets.UTF_8))){
+                    char[] buf=new char[256];int n;
+                    while((n=r.read(buf))!=-1){
+                        answer.append(buf,0,n);
+                        if(answer.length()>1000)return false;
+                    }
+                }
+                JSONObject status=new JSONObject(answer.toString());
+                return status.optBoolean("ready",false)&&status.optInt("version")==1;
+            }finally{c.disconnect();}
+        }catch(Exception e){return false;}
+    }
+
     public static String plan(String hebrew,String english) throws IOException {
         if(hebrew==null||hebrew.length()>1600||english==null||english.length()>3200)
             throw new IOException("בקשת תכנון לא תקינה");
