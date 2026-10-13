@@ -3,14 +3,18 @@ android {
   namespace 'com.kolbomusic.video'
   compileSdk 35
   defaultConfig {
-    applicationId 'com.kolbomusic.video.realgpu'
+    applicationId 'com.kolbomusic.video.hebrewstudio'
     minSdk 26
     targetSdk 35
-    versionCode 469
-    versionName '4.6.9'
+    versionCode 470
+    versionName '4.7.0'
   }
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_17
     targetCompatibility JavaVersion.VERSION_17
   }
+}
+
+dependencies {
+  implementation 'com.google.mlkit:translate:17.0.3'
 }

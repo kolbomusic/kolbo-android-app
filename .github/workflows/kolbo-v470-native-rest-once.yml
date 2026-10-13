@@ -1,0 +1,26 @@
+name: Kolbo native REST synthetic GPU integration once
+on:
+  push:
+    branches: [kolbo-video-v470-hebrew-action-translation-20261014]
+    paths:
+      - gpu-discovery/native_rest_one_synthetic_attempt.py
+      - .github/workflows/kolbo-v470-native-rest-once.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  rest-one-shot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: One synthetic public REST generation; no retries or user images
+        run: python gpu-discovery/native_rest_one_synthetic_attempt.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-native-REST-synthetic-provider-receipt
+          path: native-rest-proof/receipt.json
+          retention-days: 5
+          if-no-files-found: warn

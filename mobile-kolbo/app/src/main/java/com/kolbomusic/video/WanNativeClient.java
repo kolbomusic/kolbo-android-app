@@ -13,6 +13,7 @@ import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -169,14 +170,13 @@ public final class WanNativeClient {
         }finally{c.disconnect();}
     }
 
-    private static String promptForProvider(String hebrew){
-        // Preserve the literal user story. This is NOT a translation service:
-        // a Hebrew prompt may be interpreted poorly by the hosted model.
+    private static String promptForProvider(String instructionEnglish){
+        // Preserve the translated action. Avoid face-only closeups instead of the requested movement.
         return "Realistic continuous action, wide camera framing, whole body and surroundings visible. "+
             "Follow the actual physical action in this instruction, rather than replacing it "+
             "with a close-up, facial expressions, or talking. "+
-            "Do not invent additional people or objects. User instruction (Hebrew): "+
-            hebrew;
+            "Do not invent additional people or objects. Action to perform (English): "+
+            instructionEnglish;
     }
 
     private String submit(String path,String prompt,int seconds) throws Exception {
@@ -239,17 +239,25 @@ public final class WanNativeClient {
     private String extractVideoUrl(String data) throws Exception {
         JSONArray outputs=new JSONArray(data);
         Object first=outputs.opt(0);
-        JSONObject file=first instanceof JSONObject?(JSONObject)first:null;
-        if(file==null)throw new IOException("המנוע לא החזיר MP4");
+        JSONObject outer=first instanceof JSONObject?(JSONObject)first:null;
+        if(outer==null)throw new IOException("המנוע לא החזיר קובץ וידאו");
+        // A raw Gradio gr.Video SSE response commonly wraps FileData under
+        // {"video":{...},"subtitles":null}; deserialized SDK results differ.
+        JSONObject nested=outer.optJSONObject("video");
+        JSONObject file=nested!=null?nested:outer;
         String url=file.optString("url","");
         if(url.isEmpty()){
             String path=file.optString("path","");
             if(path.isEmpty()||path.length()>2048)
                 throw new IOException("לא התקבלה כתובת לסרטון");
-            url=ORIGIN+"/gradio_api/file="+path;
+            if(path.startsWith("http://")||path.startsWith("https://"))url=path;
+            else if(path.startsWith("/"))url=ORIGIN+"/gradio_api/file="+path;
+            else throw new IOException("נתיב תוצאה אינו תקין");
         }
         URL resolved=new URL(url);
-        if(!"https".equals(resolved.getProtocol()) || !HOST.equals(resolved.getHost()))
+        if(!"https".equals(resolved.getProtocol()) || !HOST.equals(resolved.getHost())
+            || (resolved.getPort()!=-1&&resolved.getPort()!=443)
+            || resolved.getUserInfo()!=null)
             throw new IOException("מקור סרטון לא מורשה");
         return url;
     }
@@ -270,6 +278,12 @@ public final class WanNativeClient {
                 }
             }
             if(size<3000)throw new IOException("לא התקבל קובץ וידאו שלם");
+            try(FileInputStream probe=new FileInputStream(result)){
+                byte[] header=new byte[12];
+                if(probe.read(header)!=12 || header[4]!='f'||header[5]!='t'||
+                    header[6]!='y'||header[7]!='p')
+                    throw new IOException("התקבל קובץ שאינו MP4 תקין");
+            }
             progress.status("הסרטון התקבל — יש לבדוק שהוא תואם לבקשה");
             return result;
         }catch(Exception e){result.delete();throw e;}
@@ -280,6 +294,7 @@ public final class WanNativeClient {
         if(hebrew==null||hebrew.trim().length()<10||hebrew.length()>1200)
             throw new IOException("יש לכתוב הנחיה מפורטת בעברית");
         if(seconds<1||seconds>5)throw new IOException("המנוע הנוכחי תומך רק בעד 5 שניות");
+        String modelInstruction=HebrewActionTranslator.translate(hebrew.trim(),progress);
         progress.status("מאמת את מנוע הווידאו…");
         preflight();
         progress.status("מכין את התמונה בטלפון…");
@@ -288,7 +303,7 @@ public final class WanNativeClient {
         String path=upload(bytes);
         progress.status("שולח בקשה יחידה למנוע AI…");
         progress.beforeSubmission();
-        String id=submit(path,hebrew.trim(),seconds);
+        String id=submit(path,modelInstruction,seconds);
         progress.jobCreated(id);
         progress.status("המשימה התקבלה, ממתין לסרטון…");
         String videoUrl=poll(id,progress);
