@@ -1,0 +1,26 @@
+name: Kolbo Wan2.2 one real AI video attempt (no billing)
+on:
+  push:
+    branches: [kolbo-video-v463-wan-free-gpu-real-proof-20261013]
+    paths: ['gpu-discovery/wan22_one_real_attempt.py','.github/workflows/kolbo-v463-wan-single-attempt.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  render-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install official Gradio API client
+        run: pip install --disable-pip-version-check gradio_client==2.0.3
+      - name: Submit exactly one 1 second synthetic video to open public ZeroGPU
+        run: python gpu-discovery/wan22_one_real_attempt.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Wan22-Single-AI-Video-Real-Proof
+          path: wan22-real-proof/
+          retention-days: 7
+          if-no-files-found: warn
