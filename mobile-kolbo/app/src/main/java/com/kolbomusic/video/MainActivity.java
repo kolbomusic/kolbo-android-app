@@ -48,6 +48,7 @@ public final class MainActivity extends Activity {
     private Uri image;
     private File video;
     private V5OutputAudit.Report lastAudit;
+    private volatile boolean cloudBrainReady=false;
     private boolean busy=false;
     private boolean afterFailed=false;
     private boolean unknownAcceptance=false;
@@ -57,7 +58,7 @@ public final class MainActivity extends Activity {
     private Spinner duration;
     private CheckBox consent,plannerConsent;
     private ImageView photoPreview;
-    private TextView photoLabel,status,limits;
+    private TextView photoLabel,status,limits,brainStatus;
     private ProgressBar progress;
     private PlayerView preview;
     private ExoPlayer playback;
@@ -117,9 +118,10 @@ public final class MainActivity extends Activity {
         panel.addView(title);
         panel.addView(text("כתיבה חופשית בעברית · תכנון סצנה · וידאו",14,MUTED));
         gap(14);
-        panel.addView(text("ללא התקנת מודל AI בטלפון. "+
-            "המוח המתקדם פועל בשרת חיצוני רק לאחר חיבורו; "+
-            "הסיפור והווידאו לא מעובדים במודל מקומי.",14,MUTED));
+        panel.addView(text("ללא הורדת מודלים וללא עיבוד AI כבד בטלפון.",14,MUTED));
+        gap(8);
+        brainStatus=text("בודק אם מוח ה־AI בענן מחובר…",13,MUTED);
+        panel.addView(brainStatus);
         gap(18);
 
         TextView label=text("1. הוסף תמונת ייחוס",19,TEXT);
@@ -202,7 +204,7 @@ public final class MainActivity extends Activity {
         plannerConsent.setTextColor(TEXT);plannerConsent.setTextSize(14);
         plannerConsent.setButtonTintList(android.content.res.ColorStateList.valueOf(
              Color.rgb(178,142,255)));
-        plannerConsent.setVisibility(RemoteStoryPlanner.configured()?View.VISIBLE:View.GONE);
+        plannerConsent.setVisibility(View.GONE);
         panel.addView(plannerConsent);gap(15);
 
         generate=button("צור סרטון AI",false);
@@ -237,13 +239,29 @@ public final class MainActivity extends Activity {
         gap(10);
         panel.addView(text("הטלפון אינו מריץ מודל שפה או ראייה. בחירה בין שני מנועי Wan ציבוריים; מעבר למנוע אחר "+
             "אפשרי בניסיון חדש בלבד. מכסת ZeroGPU החינמית משותפת ומוגבלת. "+
-            "אין תשלום אוטומטי והתרגום מתבצע במכשיר.",12,MUTED));
+            "אין תשלום אוטומטי. בזמן שאין שרת AI זמין, פועל מתכנן גיבוי בסיסי ללא מודל.",12,MUTED));
 
         prompt.setText(getPreferences(MODE_PRIVATE).getString("draft",""));
         if(getPreferences(MODE_PRIVATE).getBoolean("uncertain_submission",false))
             status.setText("ייתכן שבקשה קודמת התקבלה במנוע. בדוק אותה לפני ניסיון נוסף.");
         recover.setVisibility(getPreferences(MODE_PRIVATE).getString("last_event","").isEmpty()
             ?View.GONE:View.VISIBLE);
+        refreshCloudAvailability();
+    }
+    private void refreshCloudAvailability(){
+        worker.execute(()->{
+            boolean isUp=RemoteStoryPlanner.isServiceHealthy();
+            cloudBrainReady=isUp;
+            runOnUiThread(()->{
+                if(brainStatus!=null)brainStatus.setText(isUp
+                    ? "מוח ה־AI בענן זמין. אפשר לאשר בנפרד שליחת טקסט לתכנון."
+                    : "שרת מוח ה־AI טרם הופעל. כרגע זמינה הבנת הוראות בסיסית.");
+                if(plannerConsent!=null){
+                    plannerConsent.setVisibility(isUp?View.VISIBLE:View.GONE);
+                    if(!isUp)plannerConsent.setChecked(false);
+                }
+            });
+        });
     }
     private void selectImage(){
         if(busy)return;
@@ -282,7 +300,7 @@ public final class MainActivity extends Activity {
             show("נותרה בקשה שייתכן שהתקבלה. בדוק אותה לפני ניסיון חדש.");return;
         }
         getSharedPreferences("remote_brain",MODE_PRIVATE).edit()
-            .putBoolean("allow_cloud",RemoteStoryPlanner.configured()
+            .putBoolean("allow_cloud",cloudBrainReady
                 && plannerConsent!=null && plannerConsent.isChecked()).commit();
         final int seconds=duration.getSelectedItemPosition()+2;
         requestedSeconds=seconds;
