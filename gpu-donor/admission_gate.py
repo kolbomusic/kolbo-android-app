@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from proof_validation import inspect_local_receipt
 
 def inspect_graph(path:Path, image_count:int) -> dict:
     out={"present":False,"structural_api_graph":False,"bindings_ok":False,"sha256":None}
@@ -26,26 +27,20 @@ def inspect_graph(path:Path, image_count:int) -> dict:
     return out
 
 def inspect_receipt(path:Path|None)->bool:
-    if path is None:return False
-    try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size>=16_384:return False
-        o=json.loads(path.read_text())
-        return (o.get("verified") is True and o.get("audio_verified") is True and
-                o.get("audible_audio_verified") is True and
-                type(o.get("changing_frame_intervals")) is int and o["changing_frame_intervals"]>0 and
-                isinstance(o.get("sha256"),str) and
-                re.fullmatch(r"[0-9a-f]{64}",o["sha256"]) is not None)
-    except (OSError,ValueError,UnicodeError,TypeError):return False
+    """Receipt assertions alone are insufficient; inspect the local MP4."""
+    return bool(path is not None and inspect_local_receipt(path)["verified"])
 
 def inspect_donor(*,hardware_report:dict,workflows:Path,receipt:Path|None=None)->dict:
     zero=inspect_graph(workflows/"workflow_0_images.json",0)
     one=inspect_graph(workflows/"workflow_1_images.json",1)
-    local_proof=inspect_receipt(receipt)
+    media_evidence=inspect_local_receipt(receipt) if receipt is not None else {"verified":False}
+    local_proof=media_evidence["verified"]
     ready=(hardware_report.get("eligible_for_operator_review") is True and
            zero["bindings_ok"] and one["bindings_ok"] and local_proof)
     # Local evidence is not trust. A human owner separately verifies proof and scopes.
     return {"hardware_reported_eligible":hardware_report.get("eligible_for_operator_review") is True,
-            "workflow_0":zero,"workflow_1":one,"synthetic_local_proof":local_proof,
+            "workflow_0":zero,"workflow_1":one,"synthetic_local_proof":local_proof,"synthetic_media_evidence":media_evidence,
+            "gpu_inference_verified":False,
             "eligible_for_independent_review":bool(ready),
             "owner_approved":False,"registered_worker":False,
             "allowed_to_receive_private_media":False,
