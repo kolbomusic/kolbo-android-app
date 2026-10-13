@@ -51,13 +51,14 @@ jobs:
               except (ValueError,TypeError):pass
           assert possible, 'No JSON object was generated'
           x=possible[-1]
-          assert {'action','camera','avoid','steps','cleanup','requires_audio'}<=x.keys(),x
+          assert {'action','camera','steps','cleanup','requires_audio'}<=x.keys(),x
           assert isinstance(x['steps'],list) and 1<=len(x['steps'])<=3,x
           assert isinstance(x['cleanup'],bool) and isinstance(x['requires_audio'],bool),x
           action=' '.join([str(x['action'])]+[str(s) for s in x['steps']]).lower()
           assert 'lion' in action, x
+          assert ('two lions' in action or ('first lion' in action and 'second lion' in action)),x
           assert any(w in action for w in ('fight','combat','battle','struggle')),x
           assert any(w in action for w in ('defeat','victory','win','subdue','overpower')),x
           assert not x['requires_audio'] and x['cleanup'],x
-          print('STRICT_PASS: model produced a typed scene plan preserving two lions, physical fight and victory')
+          print('STRICT_PASS: model produced a typed scene plan preserving two lions, physical fight and victory; negative constraints are anchored in V5 code')
           PY
