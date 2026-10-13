@@ -23,6 +23,7 @@ STATES = {"prepared", "submitting", "acceptance_unknown", "accepted", "result_re
 
 class JournalError(RuntimeError): pass
 class Conflict(JournalError): pass
+class QuotaExceeded(JournalError): pass
 class InvalidTransition(JournalError): pass
 
 SCHEMA = """
@@ -111,9 +112,14 @@ class FreeGpuJournal:
         except ValueError as exc:
             raise JournalError("Invalid job UUID") from exc
 
-    def reserve(self, owner: str, key: str, spec_digest: str) -> Receipt:
+    def reserve(self, owner: str, key: str, spec_digest: str, *,
+                max_daily_owner: int | None = None,
+                max_daily_global: int | None = None) -> Receipt:
         if not all(_is_hex(value) for value in (owner,key,spec_digest)):
             raise JournalError("Owner, key and digest must be opaque SHA256 strings")
+        for limit in (max_daily_owner,max_daily_global):
+            if limit is not None and (type(limit) is not int or limit < 1):
+                raise JournalError("Invalid daily cap")
         with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row=conn.execute("SELECT * FROM free_gpu_jobs WHERE owner_hash=? AND idem_key=?",
@@ -122,6 +128,16 @@ class FreeGpuJournal:
                 if row["spec_digest"] != spec_digest:
                     raise Conflict("An existing idempotency key has different terms")
                 return self._receipt(row)
+            if max_daily_global is not None:
+                count=conn.execute("SELECT count(*) FROM free_gpu_jobs "
+                    "WHERE created_at>=date('now')").fetchone()[0]
+                if count>=max_daily_global:
+                    raise QuotaExceeded("Public free GPU trial daily capacity exhausted")
+            if max_daily_owner is not None:
+                count=conn.execute("SELECT count(*) FROM free_gpu_jobs "
+                    "WHERE owner_hash=? AND created_at>=date('now')",(owner,)).fetchone()[0]
+                if count>=max_daily_owner:
+                    raise QuotaExceeded("Owner's daily free GPU trial limit reached")
             job_id=str(uuid.uuid4())
             conn.execute("INSERT INTO free_gpu_jobs "
                          "(job_id,owner_hash,idem_key,spec_digest,state) "
