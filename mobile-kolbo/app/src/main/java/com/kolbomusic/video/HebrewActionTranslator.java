@@ -29,7 +29,7 @@ public final class HebrewActionTranslator {
 
     public static String translate(String original, WanNativeClient.Progress progress)
         throws Exception {
-        if(original==null || original.trim().length()<10)
+        if(original==null || original.trim().length()<2)
             throw new IOException("ההנחיה קצרה מדי");
         if(!containsHebrew(original))return original;
         TranslatorOptions options = new TranslatorOptions.Builder()
