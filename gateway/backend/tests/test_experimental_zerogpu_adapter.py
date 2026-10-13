@@ -12,6 +12,10 @@ class Task:
 
 class Client:
     def __init__(self, result):self.result=result;self.called=[]
+    def view_api(self,return_format="dict"):
+        assert return_format=="dict"
+        return {"named_endpoints":{worker.API_NAME:{"parameters":[
+            {"parameter_name":p} for p in worker.API_PARAMETER_NAMES]}}}
     def submit(self,*args,**kwargs):
         self.called.append((args,kwargs))
         return Task(self.result)
@@ -77,6 +81,8 @@ def test_acceptance_uncertainty_never_retry(monkeypatch,tmp_path):
     inp=tmp_path/"ref.png";inp.write_bytes(b"img")
     called=[]
     class Broken:
+        def view_api(self,return_format="dict"):
+            return Client([]).view_api(return_format)
         def submit(self,*args,**kwargs):
             called.append(1);raise TimeoutError("unknown")
     with pytest.raises(worker.UnknownAcceptance):
@@ -84,3 +90,40 @@ def test_acceptance_uncertainty_never_retry(monkeypatch,tmp_path):
             seconds=3.5,destination=tmp_path/"out.mp4",consent=True,
             client_factory=lambda *args,**kw:Broken(),handle_file_fn=lambda p:p)
     assert len(called)==1
+
+def test_changed_api_fails_before_upload_and_before_submit(monkeypatch,tmp_path):
+    monkeypatch.setenv("KOLBO_ALLOW_EXTERNAL_TEST_MEDIA","EXPLICITLY_ENABLED")
+    reference=tmp_path/"reference.png";reference.write_bytes(b"png-for-test")
+    uploaded=[];submitted=[]
+    class ChangedAPI:
+        def view_api(self,return_format="dict"):
+            return {"named_endpoints":{worker.API_NAME:{"parameters":[
+                {"parameter_name":"prompt"},{"parameter_name":"input_image"}]}}}
+        def submit(self,*args,**kwargs):
+            submitted.append(1)
+    with pytest.raises(worker.ProviderUnavailable,match="no image uploaded"):
+        worker.submit_one(reference=reference,prompt="yellow origami boat moving",
+             seconds=2,destination=tmp_path/"out.mp4",consent=True,
+             client_factory=lambda *a,**k:ChangedAPI(),
+             handle_file_fn=lambda x:uploaded.append(x))
+    assert not submitted and not uploaded
+
+def test_symlink_source_rejected_before_external_client(monkeypatch,tmp_path):
+    monkeypatch.setenv("KOLBO_ALLOW_EXTERNAL_TEST_MEDIA","EXPLICITLY_ENABLED")
+    real=tmp_path/"real.png";real.write_bytes(b"secret")
+    source=tmp_path/"photo.png";source.symlink_to(real)
+    with pytest.raises(worker.UnsupportedRequest):
+        worker.submit_one(reference=source,prompt="yellow origami boat moving",
+             seconds=2,destination=tmp_path/"out.mp4",consent=True,
+             client_factory=lambda *a,**k:pytest.fail("must not initialize client"),
+             handle_file_fn=lambda x:pytest.fail("must not upload"))
+
+def test_broken_output_symlink_rejected_before_external_client(monkeypatch,tmp_path):
+    monkeypatch.setenv("KOLBO_ALLOW_EXTERNAL_TEST_MEDIA","EXPLICITLY_ENABLED")
+    reference=tmp_path/"photo.png";reference.write_bytes(b"image")
+    output=tmp_path/"out.mp4";output.symlink_to(tmp_path/"missing.mp4")
+    with pytest.raises(worker.UnsupportedRequest,match="replace"):
+        worker.submit_one(reference=reference,prompt="yellow origami boat moving",
+             seconds=2,destination=output,consent=True,
+             client_factory=lambda *a,**k:pytest.fail("must not initialize client"),
+             handle_file_fn=lambda x:pytest.fail("must not upload"))
