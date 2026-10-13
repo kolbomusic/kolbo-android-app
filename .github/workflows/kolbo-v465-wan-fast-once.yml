@@ -1,0 +1,31 @@
+name: Kolbo v4.6.5 one Wan Fast public GPU proof (anonymous, one attempt)
+on:
+  push:
+    branches: [kolbo-video-v465-public-gpu-contract-20261013]
+    paths:
+      - gpu-discovery/wan22_fast_one_attempt.py
+      - .github/workflows/kolbo-v465-wan-fast-once.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  synthetic-one-shot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install public Gradio client (no HF token and no paid provider)
+        run: pip install --disable-pip-version-check gradio_client==2.0.3
+      - name: Make synthetic test reference, never use or fetch private user media
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=navy:size=512x512:rate=1" -vf "drawbox=x=145:y=160:w=220:h=170:color=yellow:t=fill" -frames:v 1 kolbo-synthetic-input.png
+      - name: One anonymous public Space generation request, then validate media
+        run: python gpu-discovery/wan22_fast_one_attempt.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Wan-Fast-single-synthetic-proof
+          path: wan-fast-proof/
+          retention-days: 5
+          if-no-files-found: warn
