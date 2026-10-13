@@ -73,7 +73,7 @@ jobs:
           sha256sum "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Video-v5.2-Lightweight-APK
+          name: Kolbo-Video-v5.3-Lightweight-Cloud-Ready-APK
           path: mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
           if-no-files-found: error
