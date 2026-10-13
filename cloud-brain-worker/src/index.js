@@ -37,6 +37,24 @@ export default {
     // Never collect an image, photo or video: planning only, text under 4.5KB.
     if(Number(request.headers.get("content-length")||0)>MAX_BYTES)
       return new Response(JSON.stringify({error:"too_large"}),{status:413,headers:HEADERS});
+    // Built-in edge limiters: do not expose a publicly usable free-GPU faucet.
+    // Requests WITHOUT configured limiter bindings fail closed by default.
+    if(!env.USER_RATE || !env.GLOBAL_RATE)
+      return new Response(JSON.stringify({error:"rate_limiter_not_configured"}),
+                          {status:503,headers:HEADERS});
+    const originIP=(request.headers.get("cf-connecting-ip")||"unknown").slice(0,90);
+    try {
+      const [individual,whole] = await Promise.all([
+        env.USER_RATE.limit({key:originIP}),
+        env.GLOBAL_RATE.limit({key:"kolbo-story-planner"})
+      ]);
+      if(!individual.success || !whole.success)
+        return new Response(JSON.stringify({error:"rate_limited",retry:false}),
+                           {status:429,headers:HEADERS});
+    } catch(_) {
+      return new Response(JSON.stringify({error:"rate_limiter_unavailable"}),
+                         {status:503,headers:HEADERS});
+    }
     let body;
     try{
       const text=await request.text();
@@ -66,7 +84,8 @@ export default {
             english_translation:body.english_translation
           })}
         ],
-        stream:false,temperature:0.15,max_completion_tokens:450
+        stream:false,temperature:0.1,max_completion_tokens:450,
+        reasoning_effort:null,chat_template_kwargs:{enable_thinking:false}
       });
       const response=typeof output?.response==="string" ? output.response
         : output?.choices?.[0]?.message?.content;
