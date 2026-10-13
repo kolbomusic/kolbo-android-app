@@ -1,0 +1,48 @@
+name: Kolbo 4.7.0 Android native Hebrew cold launch QA
+on:
+  push:
+    branches: [kolbo-video-v470-hebrew-action-translation-20261014]
+    paths:
+      - '.github/workflows/kolbo-v470-native-ui-emulator.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Build the app for the emulator
+        run: gradle -p mobile-kolbo :app:assembleDebug --no-daemon
+      - name: Install, cold launch and screenshot Hebrew studio
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          target: google_apis
+          ram-size: 2048M
+          heap-size: 256M
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb install -r mobile-kolbo/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n com.kolbomusic.video.hebrewstudio/com.kolbomusic.video.MainActivity
+            sleep 8
+            adb shell dumpsys activity activities | grep -F 'com.kolbomusic.video.hebrewstudio'
+            adb shell uiautomator dump /sdcard/kolbo470.xml
+            adb shell cat /sdcard/kolbo470.xml | grep -F 'כלבו וידאו AI'
+            adb exec-out screencap -p > kolbo-470-native-ui.png
+            test -s kolbo-470-native-ui.png
+            echo 'Android cold launch and RTL Hebrew UI verified'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-470-Native-Hebrew-UI-Screenshot
+          path: kolbo-470-native-ui.png
+          if-no-files-found: warn
+          retention-days: 5
