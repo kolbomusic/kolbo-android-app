@@ -119,7 +119,7 @@ public final class MainActivity extends Activity {
         panel.addView(photoPreview,new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,dp(210)));
         gap(7);
-        photoLabel=text("עדיין לא נבחרה תמונה. שום תמונה לא הועלתה.",14,MUTED);
+        photoLabel=text("עדיין לא נבחרה תמונה. לתנועת גוף מלאה מומלץ צילום גוף מלא ולא תקריב פנים.",14,MUTED);
         panel.addView(photoLabel);gap(12);
         button("בחר תמונה מהטלפון",true).setOnClickListener(v->selectImage());
         gap(22);
@@ -197,7 +197,9 @@ public final class MainActivity extends Activity {
             afterFailed=true;
         });
         gap(10);
-        panel.addView(text("לא נדרשים מפתח API או מחשב אישי. מנוע הענן הציבורי "+
+        panel.addView(text("להבנת הנחיות בעברית ייתכן שתתבצע הורדה חד־פעמית של מודל תרגום מקומי (כ־30 MB). "+
+            "התרגום מתבצע בטלפון, ההפקה בענן. "+
+            "לא נדרשים מפתח API או מחשב אישי. מנוע הענן הציבורי "+
             "עלול להיות עמוס, להגביל שימוש או לדחות בקשות. אין מסלול בתשלום.",13,MUTED));
 
         prompt.setText(getPreferences(MODE_PRIVATE).getString("draft",""));
@@ -287,7 +289,7 @@ public final class MainActivity extends Activity {
         preview.setOnPreparedListener(player->{player.setLooping(true);preview.start();});
         preview.setVisibility(View.VISIBLE);
         save.setVisibility(View.VISIBLE);review.setVisibility(View.VISIBLE);
-        show("נוצר MP4 עם תנועה ממנוע AI. "+result.warning+
+        show("התקבל קובץ MP4 ממנוע ה־AI. "+result.warning+
             "\nבדוק בעצמך אם ההתרחשות מתאימה להנחיה.");
     }
     private void saveVideo(){
