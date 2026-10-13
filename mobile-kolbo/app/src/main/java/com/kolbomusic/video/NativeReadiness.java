@@ -13,9 +13,10 @@ public final class NativeReadiness {
             boolean durableStorageReady,
             boolean privateMediaEnabled,
             boolean realAiRenderVerified,
+            boolean mobileSessionAuthReady,
             boolean paidFallbackEnabled) {
         return trustedService && supportedContract && ownerAuthRequired &&
                 !previewOnly && gpuReady && durableStorageReady &&
-                privateMediaEnabled && realAiRenderVerified && !paidFallbackEnabled;
+                privateMediaEnabled && realAiRenderVerified && mobileSessionAuthReady && !paidFallbackEnabled;
     }
 }
