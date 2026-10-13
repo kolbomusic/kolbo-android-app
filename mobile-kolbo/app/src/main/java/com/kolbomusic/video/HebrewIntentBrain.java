@@ -26,7 +26,7 @@ public final class HebrewIntentBrain {
         final String en,he;
         final String[] forms;
         Term(String english,String hebrew,String... forms) {
-            en=english;he=he;this.forms=forms;
+            en=english;he=hebrew;this.forms=forms;
         }
     }
     private static final class Hit {
