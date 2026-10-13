@@ -1,0 +1,24 @@
+name: Kolbo 4.6.7 free GPU crash-consistent journal
+on:
+  push:
+    branches: [kolbo-video-v467-durable-free-job-journal-20261013]
+    paths:
+      - gateway/backend/free_gpu_journal.py
+      - gateway/backend/tests/test_free_gpu_journal_v467.py
+      - .github/workflows/kolbo-v467-free-job-journal-ci.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  journal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install pytest
+        run: pip install --disable-pip-version-check pytest==8.4.2
+      - name: Verify disk persistence, concurrency and no duplicate GPU jobs
+        env:
+          PYTHONPATH: gateway/backend
+        run: pytest -q gateway/backend/tests/test_free_gpu_journal_v467.py
