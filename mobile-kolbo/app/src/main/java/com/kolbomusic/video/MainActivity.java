@@ -350,6 +350,7 @@ public final class MainActivity extends Activity {
         });
     }
     private void onVideo(WanNativeClient.Result result){
+        getSharedPreferences("gpu_provider",MODE_PRIVATE).edit().remove("last_failed").apply();
         video=result.video;
         if(playback!=null){playback.release();playback=null;}
         playback=new ExoPlayer.Builder(this).build();
