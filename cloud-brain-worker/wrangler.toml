@@ -19,5 +19,5 @@ namespace_id = "827431"
 name = "GLOBAL_RATE"
 namespace_id = "827432"
   [ratelimits.simple]
-  limit = 12
+  limit = 3
   period = 60
