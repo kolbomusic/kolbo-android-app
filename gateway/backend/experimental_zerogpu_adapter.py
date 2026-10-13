@@ -18,6 +18,8 @@ from typing import Callable
 
 SPACE_ID = "zerogpu-aoti/wan2-2-fp8da-aoti-faster"
 API_NAME = "/generate_video"
+API_PARAMETER_NAMES = ("input_image", "prompt", "steps", "negative_prompt", "duration_seconds",
+                       "guidance_scale", "guidance_scale_2", "seed", "randomize_seed")
 MAX_MP4_BYTES = 300 * 1024 * 1024
 MAX_SOURCE_BYTES = 10 * 1024 * 1024
 
@@ -81,21 +83,35 @@ def submit_one(*, reference: Path, prompt: str, seconds: float,
     if not isinstance(prompt,str) or not 5<=len(prompt.strip())<=3000:
         raise UnsupportedRequest("Invalid video scene prompt")
     src=Path(reference)
-    if not src.is_file() or not 0<src.stat().st_size<=MAX_SOURCE_BYTES:
+    if src.is_symlink() or not src.is_file() or not 0<src.stat().st_size<=MAX_SOURCE_BYTES:
         raise UnsupportedRequest("Reference image missing or exceeds size limit")
     if not src.name.lower().endswith((".jpg",".jpeg",".png",".webp")):
         raise UnsupportedRequest("Only supported reference image formats may be sent")
     dst=Path(destination)
-    if dst.exists():
+    if dst.exists() or dst.is_symlink():
         raise UnsupportedRequest("Cannot replace an existing output")
     if client_factory is None or handle_file_fn is None:
         from gradio_client import Client, handle_file
         client_factory = client_factory or Client
         handle_file_fn = handle_file_fn or handle_file
-    # Never include input media or prompts in diagnostics. Gradio demo providers
-    # are not private. Account-specific pricing and quotas are NOT controlled here.
+    # Check the current *read-only* API signature BEFORE handing image bytes
+    # to the Gradio upload client. Never guess parameter positions after changes.
     try:
         client=client_factory(SPACE_ID,verbose=False)
+        published_api=client.view_api(return_format="dict")
+        entry=(published_api.get("named_endpoints") or {}).get(API_NAME)
+        parameters=entry.get("parameters") if isinstance(entry,dict) else None
+        if not isinstance(parameters,list):
+            raise ValueError("Missing expected public generation endpoint")
+        actual=tuple(p.get("parameter_name") for p in parameters
+                     if isinstance(p,dict))
+        if actual != API_PARAMETER_NAMES:
+            raise ValueError("Provider API parameter order changed")
+    except Exception as exc:
+        raise ProviderUnavailable("Supplier contract unavailable; no image uploaded") from exc
+    # Never include media or prompts in diagnostics. This demo is not private.
+    # Only an explicit per-request user consent and the server policy enable upload.
+    try:
         task=client.submit(handle_file_fn(str(src)),prompt,8,"",
                            float(seconds),1.0,1.0,42,False,
                            api_name=API_NAME)
