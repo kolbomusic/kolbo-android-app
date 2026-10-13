@@ -1,0 +1,21 @@
+name: Kolbo public model readiness comparison (zero GPU)
+on:
+  push:
+    branches: [kolbo-video-v459-public-gpu-api-probe-20261013]
+    paths: ['gpu-discovery/multi_readiness.py','.github/workflows/kolbo-readiness-compare.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  compare-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python gpu-discovery/multi_readiness.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Four-Public-Spaces-Readiness-Comparison
+          path: public-spaces-readiness.json
