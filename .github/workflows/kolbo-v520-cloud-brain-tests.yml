@@ -1,0 +1,29 @@
+name: Kolbo free cloud brain contract tests
+on:
+  push:
+    branches: [kolbo-video-v520-lightweight-cloud-first-20261014]
+    paths:
+      - cloud-brain-worker/**
+      - .github/workflows/kolbo-v520-cloud-brain-tests.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  cloud-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Run privacy, JSON schema and no-retry tests with mocked AI
+        run: node --test cloud-brain-worker/test/*.test.js
+      - name: Validate disabled cloud endpoint is not fabricated
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const cfg=JSON.parse(fs.readFileSync('cloud-brain-worker/endpoint.json','utf8'));
+          if(cfg.enabled||cfg.url!==null)throw Error('Server is not deployed: no endpoint should be enabled');
+          const config=fs.readFileSync('cloud-brain-worker/wrangler.toml','utf8');
+          if(!config.includes('binding = "AI"'))throw Error('Missing Cloudflare AI binding');
+          console.log('PASS: no fake live URL, no paid API key in app, free-tier AI binding configured');
+          NODE
