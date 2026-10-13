@@ -1,0 +1,34 @@
+name: Kolbo Qwen3 actual free CPU story planner smoke
+on:
+  push:
+    branches: [kolbo-video-v510-local-qwen-planner-20261014]
+    paths:
+      - .github/workflows/kolbo-v510-qwen-cpu-proof.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  one-synthetic-llm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install Google's public LiteRT-LM CLI, no paid API
+        run: pip install --disable-pip-version-check 'litert-lm'
+      - name: ONE CPU-only free Qwen3 model planning test with no user content
+        run: |
+          set -o pipefail
+          timeout 310 litert-lm run \
+            --from-huggingface-repo=litert-community/Qwen3-0.6B \
+            Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm \
+            --backend=cpu \
+            --prompt="Return only compact JSON with keys action, camera, avoid, steps, cleanup, requires_audio. Story: Clean an old image and then a person physically fights exactly two lions and defeats them. Avoid licking, petting and facial closeup. Scene must show the fight and victory." \
+            2>&1 | tee /tmp/kolbo-actual-qwen-result.log
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('/tmp/kolbo-actual-qwen-result.log').read_text(errors='replace').lower()
+          assert 'lion' in text, 'Model did not mention lions'
+          assert any(w in text for w in ('fight','combat','battle')), 'Model did not preserve physical conflict'
+          assert any(w in text for w in ('defeat','victory','win','subdue')), 'Model missed victory'
+          print('PASS: real on-CPU open Qwen model responded to arbitrary physical-action narrative.')
+          PY
