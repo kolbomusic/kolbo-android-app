@@ -331,9 +331,9 @@ public final class WanNativeClient {
      * Changing engine AFTER a submitted job is forbidden.
      * A provider marked failed is skipped only for the user's next EXPLICIT job.
      */
-    public void selectForNewJob(String lastFailed,Progress progress) throws Exception {
+    public void selectForNewJob(String lastFailed,boolean complexScene,Progress progress) throws Exception {
         IOException last=null;
-        for(WanProviderCatalog.Engine candidate:WanProviderCatalog.order(lastFailed)){
+        for(WanProviderCatalog.Engine candidate:WanProviderCatalog.order(lastFailed,complexScene)){
             engine=candidate;
             try {
                 progress.status("בודק אפשרות הפקה ב־"+candidate.name+"…");
@@ -362,7 +362,7 @@ public final class WanNativeClient {
         // An explicit user action is required for EACH new inference.
         String lastFailed=context.getSharedPreferences("gpu_provider",Context.MODE_PRIVATE)
             .getString("last_failed",null);
-        selectForNewJob(lastFailed,progress);
+        selectForNewJob(lastFailed,scene.complex,progress);
         progress.status("מכין את התמונה בטלפון…");
         if(scene.photoCleanup)progress.status("מנקה רעש ומתאים בהירות בתמונת המקור…");
         byte[] bytes=compressPhoto(context,image,scene.photoCleanup);
