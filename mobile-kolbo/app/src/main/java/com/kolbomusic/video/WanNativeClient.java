@@ -38,7 +38,7 @@ public final class WanNativeClient {
         "input_image","prompt","steps","negative_prompt","duration_seconds",
         "guidance_scale","guidance_scale_2","seed","randomize_seed"};
 
-    public interface Progress { void status(String text); }
+    public interface Progress {\n        void status(String text);\n        default void beforeSubmission() {}\n        default void jobCreated(String id) {}\n    }
     public static final class Result {
         public final File video;
         public final String eventId;
@@ -283,7 +283,7 @@ public final class WanNativeClient {
         progress.status("מעלה תמונת ייחוס אחת לספק החיצוני…");
         String path=upload(bytes);
         progress.status("שולח בקשה יחידה למנוע AI…");
-        String id=submit(path,hebrew.trim(),seconds);
+        progress.beforeSubmission();\n        String id=submit(path,hebrew.trim(),seconds);\n        progress.jobCreated(id);
         progress.status("המשימה התקבלה, ממתין לסרטון…");
         String videoUrl=poll(id,progress);
         progress.status("מוריד סרטון AI מקורי…");
