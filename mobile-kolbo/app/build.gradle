@@ -6,8 +6,8 @@ android {
     applicationId 'com.kolbomusic.video.realgpu'
     minSdk 26
     targetSdk 35
-    versionCode 468
-    versionName '4.6.8'
+    versionCode 469
+    versionName '4.6.9'
   }
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_17
