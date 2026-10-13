@@ -42,6 +42,18 @@ def probe():
         except Exception as e:
             report["limits"].append({"path":path,"error_type":type(e).__name__})
     report["api_names"]=sorted(set(report["api_names"]))
+    try:
+        metadata=fetch_json("/gradio_api/info")
+        run=(metadata.get("named_endpoints") or {}).get("/run",{})
+        report["run_parameters"]=[
+            {"name":x.get("parameter_name"),"component":x.get("component"),
+             "type":str(x.get("type"))[:150],
+             "example":str(x.get("example_input"))[:100]}
+            for x in run.get("parameters",[]) if isinstance(x,dict)
+        ][:25]
+        report["run_returns"]=len(run.get("returns",[]))
+    except Exception as e:
+        report["limits"].append({"path":"run_parameter_details","error_type":type(e).__name__})
     return report
 
 if __name__=="__main__":
