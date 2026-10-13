@@ -76,7 +76,7 @@ public final class V5OutputAudit {
                 // Respect battery/memory: only four reduced temporal samples.
                 for(double fraction:new double[]{0.08,0.34,0.63,0.9}){
                     Bitmap raw=r.getFrameAtTime((long)(seconds*fraction*1_000_000.0),
-                                               MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                                               MediaMetadataRetriever.OPTION_CLOSEST);
                     if(raw==null)continue;
                     Bitmap bitmap=Bitmap.createScaledBitmap(raw,224,224,true);
                     raw.recycle();
