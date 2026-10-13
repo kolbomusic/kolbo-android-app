@@ -28,7 +28,7 @@ export default {
   async fetch(request,env) {
     const url=new URL(request.url);
     if(url.pathname==="/health"&&request.method==="GET")
-      return new Response(JSON.stringify({service:"kolbo-cloud-story",ready:Boolean(env.AI),
+      return new Response(JSON.stringify({service:"kolbo-cloud-story",ready:Boolean(env.AI && env.USER_RATE && env.GLOBAL_RATE),
         model:MODEL,version:1}),{headers:HEADERS});
     if(url.pathname!=="/v1/plan"||request.method!=="POST")
       return new Response(JSON.stringify({error:"not_found"}),{status:404,headers:HEADERS});
