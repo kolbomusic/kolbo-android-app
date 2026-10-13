@@ -55,13 +55,13 @@ public final class MainActivity extends Activity {
     private LinearLayout panel;
     private EditText prompt;
     private Spinner duration;
-    private CheckBox consent;
+    private CheckBox consent,plannerConsent;
     private ImageView photoPreview;
     private TextView photoLabel,status,limits;
     private ProgressBar progress;
     private PlayerView preview;
     private ExoPlayer playback;
-    private TextView interpretation,localBrainStatus;
+    private TextView interpretation;
     private int requestedSeconds=2;
     private Button generate,save,review,recover;
 
@@ -117,11 +117,9 @@ public final class MainActivity extends Activity {
         panel.addView(title);
         panel.addView(text("כתיבה חופשית בעברית · תכנון סצנה · וידאו",14,MUTED));
         gap(14);
-        localBrainStatus=text("מוח השפה המקומי: בבדיקה…",13,MUTED);
-        panel.addView(localBrainStatus);
-        gap(7);
-        button("התקן מוח AI חינמי במכשיר (חד־פעמי)",true)
-            .setOnClickListener(v->offerLocalBrainInstallation());
+        panel.addView(text("ללא התקנת מודל AI בטלפון. "+
+            "המוח המתקדם פועל בשרת חיצוני רק לאחר חיבורו; "+
+            "הסיפור והווידאו לא מעובדים במודל מקומי.",14,MUTED));
         gap(18);
 
         TextView label=text("1. הוסף תמונת ייחוס",19,TEXT);
@@ -155,7 +153,7 @@ public final class MainActivity extends Activity {
         prompt.setBackground(shape(PANEL,15));
         panel.addView(prompt);
         gap(8);
-        interpretation=text("כתוב כרגיל בעברית. המוח המקומי ירכיב תסריט כשהוא מותקן.",14,MUTED);
+        interpretation=text("כתוב חופשי בעברית. כשהשרת מחובר הוא יבנה את התוכנית; עד אז יש תכנון בסיסי.",14,MUTED);
         panel.addView(interpretation);
         prompt.addTextChangedListener(new android.text.TextWatcher(){
             @Override public void beforeTextChanged(CharSequence x,int a,int c,int n){}
@@ -198,7 +196,14 @@ public final class MainActivity extends Activity {
         consent.setTextSize(14);
         consent.setButtonTintList(android.content.res.ColorStateList.valueOf(
             Color.rgb(178,142,255)));
-        panel.addView(consent);gap(15);
+        panel.addView(consent);gap(9);
+        plannerConsent=new CheckBox(this);
+        plannerConsent.setText("אני מאשר לשלוח את תיאור הסיפור לשרת תכנון AI חיצוני.");
+        plannerConsent.setTextColor(TEXT);plannerConsent.setTextSize(14);
+        plannerConsent.setButtonTintList(android.content.res.ColorStateList.valueOf(
+             Color.rgb(178,142,255)));
+        plannerConsent.setVisibility(RemoteStoryPlanner.configured()?View.VISIBLE:View.GONE);
+        panel.addView(plannerConsent);gap(15);
 
         generate=button("צור סרטון AI",false);
         generate.setOnClickListener(v->begin());
@@ -230,7 +235,7 @@ public final class MainActivity extends Activity {
             afterFailed=true;
         });
         gap(10);
-        panel.addView(text("בחירה חכמה בין שני מנועי Wan ציבוריים; מעבר למנוע אחר "+
+        panel.addView(text("הטלפון אינו מריץ מודל שפה או ראייה. בחירה בין שני מנועי Wan ציבוריים; מעבר למנוע אחר "+
             "אפשרי בניסיון חדש בלבד. מכסת ZeroGPU החינמית משותפת ומוגבלת. "+
             "אין תשלום אוטומטי והתרגום מתבצע במכשיר.",12,MUTED));
 
@@ -240,46 +245,6 @@ public final class MainActivity extends Activity {
         recover.setVisibility(getPreferences(MODE_PRIVATE).getString("last_event","").isEmpty()
             ?View.GONE:View.VISIBLE);
     }
-    private void refreshLocalBrainStatus(){
-        if(localBrainStatus==null)return;
-        worker.execute(()->{
-            String state;
-            try{state=LocalBrainModelManager.downloadStatus(this);}
-            catch(Exception e){state="מוח AI אינו זמין באחסון זה";}
-            String finalState=state;
-            runOnUiThread(()->{
-                if(localBrainStatus!=null)localBrainStatus.setText(finalState);
-            });
-        });
-    }
-    private void offerLocalBrainInstallation(){
-        new android.app.AlertDialog.Builder(this)
-            .setTitle("מוח AI חינמי לשימוש חוזר")
-            .setMessage("האפליקציה תוריד פעם אחת מודל שפה Qwen3 פתוח "+
-               "(כ־331MB, רק דרך Wi-Fi). התכנון יעבוד מקומית בלי תשלום ובלי חשבון. "+
-               "העיבוד עשוי להשתמש בזיכרון ובמעבד הטלפון למשך זמן קצר. "+
-               "אפשר להמשיך להשתמש במנגנון הגיבוי ללא הורדה.")
-            .setNegativeButton("לא כעת",(d,w)->{})
-            .setPositiveButton("הורד והתקן",(d,w)->{
-                localBrainStatus.setText("מכין הורדה מאובטחת ב־Wi-Fi…");
-                worker.execute(()->{
-                    try{
-                        long id=LocalBrainModelManager.startWiFiDownload(this);
-                        runOnUiThread(()->localBrainStatus.setText(
-                           id==-2 ? "המוח כבר מותקן ומאומת" :
-                           "המודל יורד כעת ב־Wi-Fi. כשההורדה תסתיים, התכנון יעבור אוטומטית למוח החדש."));
-                    }catch(Exception e){
-                        runOnUiThread(()->localBrainStatus.setText(
-                          e.getMessage()==null?"הורדת המודל לא הופעלה":e.getMessage()));
-                    }
-                });
-            }).show();
-    }
-    @Override protected void onResume(){
-        super.onResume();
-        if(localBrainStatus!=null)refreshLocalBrainStatus();
-    }
-
     private void selectImage(){
         if(busy)return;
         Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -316,6 +281,9 @@ public final class MainActivity extends Activity {
         if(getPreferences(MODE_PRIVATE).getBoolean("uncertain_submission",false)){
             show("נותרה בקשה שייתכן שהתקבלה. בדוק אותה לפני ניסיון חדש.");return;
         }
+        getSharedPreferences("remote_brain",MODE_PRIVATE).edit()
+            .putBoolean("allow_cloud",RemoteStoryPlanner.configured()
+                && plannerConsent!=null && plannerConsent.isChecked()).commit();
         final int seconds=duration.getSelectedItemPosition()+2;
         requestedSeconds=seconds;
         getPreferences(MODE_PRIVATE).edit().putInt("requested_seconds",seconds).apply();
