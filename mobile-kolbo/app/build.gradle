@@ -14,4 +14,7 @@ android {
     targetCompatibility JavaVersion.VERSION_17
   }
 }
-\ndependencies {\n  implementation 'com.google.mlkit:translate:17.0.3'\n}\n
+
+dependencies {
+  implementation 'com.google.mlkit:translate:17.0.3'
+}
