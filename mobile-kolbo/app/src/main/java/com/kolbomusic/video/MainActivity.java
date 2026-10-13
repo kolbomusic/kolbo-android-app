@@ -314,8 +314,9 @@ public final class MainActivity extends Activity {
                     // may be preferred on the NEXT user-triggered creation only.
                     WanNativeClient.FinalProviderRejection rejection=
                         (WanNativeClient.FinalProviderRejection)e;
-                    if(!"GPU_QUOTA".equals(rejection.reasonCode)
-                       && !"AUTH_REQUIRED".equals(rejection.reasonCode)) {
+                    V5RetryPolicy.Decision decision=
+                        V5RetryPolicy.server(rejection.reasonCode);
+                    if(decision.mayPreferDifferentProvider) {
                         getSharedPreferences("gpu_provider",MODE_PRIVATE).edit()
                             .putString("last_failed",rejection.providerId).commit();
                     }
@@ -325,8 +326,12 @@ public final class MainActivity extends Activity {
                     runOnUiThread(()->recover.setVisibility(View.GONE));
                 }
                 String error=e.getMessage()==null?"שגיאה לא צפויה":e.getMessage();
+                String next=e instanceof WanNativeClient.FinalProviderRejection
+                    ? V5RetryPolicy.server(
+                      ((WanNativeClient.FinalProviderRejection)e).reasonCode).guidance
+                    : V5RetryPolicy.server("UNKNOWN").guidance;
                 runOnUiThread(()->show("לא נוצר סרטון: "+error+
-                   "\nלא נעשה ניסיון אוטומטי נוסף."));
+                    "\n"+next+"\nלא נעשה ניסיון אוטומטי נוסף."));
             }finally{runOnUiThread(()->setBusy(false));}
         });
     }
