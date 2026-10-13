@@ -1,0 +1,22 @@
+name: Kolbo Wan2.2 external API readiness only
+on:
+  push:
+    branches: [kolbo-video-v463-wan-free-gpu-real-proof-20261013]
+    paths: ['gpu-discovery/wan22_status.py','.github/workflows/kolbo-v463-wan-readonly.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  public-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Read public Gradio metadata (zero GPU charge)
+        run: python gpu-discovery/wan22_status.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Wan22-API-readiness-no-GPU-call
+          path: wan22_provider_report.json
