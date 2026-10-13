@@ -238,17 +238,25 @@ public final class WanNativeClient {
     private String extractVideoUrl(String data) throws Exception {
         JSONArray outputs=new JSONArray(data);
         Object first=outputs.opt(0);
-        JSONObject file=first instanceof JSONObject?(JSONObject)first:null;
-        if(file==null)throw new IOException("המנוע לא החזיר MP4");
+        JSONObject outer=first instanceof JSONObject?(JSONObject)first:null;
+        if(outer==null)throw new IOException("המנוע לא החזיר קובץ וידאו");
+        // A raw Gradio gr.Video SSE response commonly wraps FileData under
+        // {"video":{...},"subtitles":null}; deserialized SDK results differ.
+        JSONObject nested=outer.optJSONObject("video");
+        JSONObject file=nested!=null?nested:outer;
         String url=file.optString("url","");
         if(url.isEmpty()){
             String path=file.optString("path","");
             if(path.isEmpty()||path.length()>2048)
                 throw new IOException("לא התקבלה כתובת לסרטון");
-            url=ORIGIN+"/gradio_api/file="+path;
+            if(path.startsWith("http://")||path.startsWith("https://"))url=path;
+            else if(path.startsWith("/"))url=ORIGIN+"/gradio_api/file="+path;
+            else throw new IOException("נתיב תוצאה אינו תקין");
         }
         URL resolved=new URL(url);
-        if(!"https".equals(resolved.getProtocol()) || !HOST.equals(resolved.getHost()))
+        if(!"https".equals(resolved.getProtocol()) || !HOST.equals(resolved.getHost())
+            || (resolved.getPort()!=-1&&resolved.getPort()!=443)
+            || resolved.getUserInfo()!=null)
             throw new IOException("מקור סרטון לא מורשה");
         return url;
     }
