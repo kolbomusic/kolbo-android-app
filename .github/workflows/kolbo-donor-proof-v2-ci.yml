@@ -1,0 +1,43 @@
+name: Kolbo donor proof v2 strict CI
+on:
+  push:
+    branches: [kolbo-gpu-proof-media-gate-20261013]
+    paths:
+      - gpu-donor/**
+      - .github/workflows/kolbo-donor-proof-v2-ci.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  offline-proof-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install and strictly verify FFmpeg and FFprobe
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version >/dev/null
+          ffprobe -version >/dev/null
+      - name: Exercise admission, hardware, and real decoded-media tests
+        run: python -m unittest discover -s gpu-donor/tests -p 'test_*.py' -v
+      - name: Invariants (no registration, private media, paid fallback)
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,"gpu-donor")
+          from admission_gate import inspect_donor
+          gate=inspect_donor(hardware_report={"eligible_for_operator_review":True},
+                             workflows=Path("gpu-donor/workflows"))
+          assert gate["owner_approved"] is False
+          assert gate["registered_worker"] is False
+          assert gate["allowed_to_receive_private_media"] is False
+          assert gate["paid_fallback_enabled"] is False
+          assert gate["gpu_inference_verified"] is False
+          print("PASS: no media transfer, GPU, worker, or billing claim")
+          PY
