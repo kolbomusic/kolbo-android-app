@@ -16,11 +16,11 @@ import java.security.MessageDigest;
  */
 public final class LocalBrainModelManager {
     private LocalBrainModelManager() {}
-    public static final String MODEL_NAME="Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm";
-    public static final long EXPECTED_SIZE=344671744L;
+    public static final String MODEL_NAME="qwen3_0.6b_nothink_q4_block32_ekv1280.litertlm";
+    public static final long EXPECTED_SIZE=347251840L;
     public static final String EXPECTED_SHA256=
-        "03e7da1eb1108b50dffaa9bb52cc7bcbad2eb0c66ca990267f480c1e545d2856";
-    public static final String URL="https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/"+
+        "2df6821ec12702dafd33915e7a1a1adc7c4b053f3672fd9555dfaf3a114c4139";
+    public static final String URL="https://huggingface.co/litert-community/Qwen3-0.6B-int4/resolve/main/"+
         MODEL_NAME+"?download=true";
     private static final String PREF="kolbo-local-qwen";
     private static final String ID="download_id";
@@ -66,7 +66,7 @@ public final class LocalBrainModelManager {
                     return "הורדת המודל הסתיימה — נדרש אימות הקובץ";
                 if(state==DownloadManager.STATUS_FAILED)
                     return "ההורדה נכשלה. אפשר להתחיל הורדה חדשה ב-Wi-Fi.";
-                return "מודל השפה מורד ברקע ב-Wi-Fi; כ־329MB פעם אחת.";
+                return "מודל השפה מורד ברקע ב-Wi-Fi; כ־331MB פעם אחת.";
             }
         }catch(Exception ignored){}
         return "מצב הורדה לא ידוע";
