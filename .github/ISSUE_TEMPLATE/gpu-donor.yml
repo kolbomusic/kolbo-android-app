@@ -1,0 +1,61 @@
+name: "הצעת תרומת GPU · Volunteer GPU"
+description: "הצע מחשב GPU לפיילוט קולבו. אין חיבור או הרצת משימות אוטומטיים."
+title: "[GPU DONOR] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **שלב התעניינות בלבד.** אל תכלול כאן סיסמאות, כתובות IP, תמונות פרטיות, מפתחות API, פרטי אשראי או מספרים סידוריים. אין תמורה מובטחת ואין בקשת גישה למחשב שלך.
+  - type: input
+    id: gpu
+    attributes:
+      label: "דגם GPU / GPU model"
+      description: "למשל NVIDIA RTX A6000"
+      placeholder: "NVIDIA ..."
+    validations:
+      required: true
+  - type: input
+    id: vram
+    attributes:
+      label: "VRAM (GiB)"
+      placeholder: "48"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: "מערכת הפעלה / OS"
+      options:
+        - "Linux"
+        - "Windows + WSL2"
+        - "Other"
+    validations:
+      required: true
+  - type: dropdown
+    id: availability
+    attributes:
+      label: "זמינות משוערת / Availability"
+      options:
+        - "Less than 4 hours / week"
+        - "4–12 hours / week"
+        - "12–30 hours / week"
+        - "More than 30 hours / week"
+    validations:
+      required: true
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: "הצהרות / Consent"
+      description: "הצהרות לצורך בירור היתכנות בלבד."
+      options:
+        - label: "אני הבעלים של הציוד או מורשה להפעילו. / I own or am authorized to operate the GPU."
+          required: true
+        - label: "אני מבין שהצטרפות דורשת בדיקות נוספות ואישור נפרד; אין הפעלה אוטומטית. / Separate approval required."
+          required: true
+        - label: "אני מבין שיש לציית לרישיונות המודלים ולתנאי ספק האינטרנט והחומרה. / I will comply with license and hosting terms."
+          required: true
+  - type: textarea
+    id: note
+    attributes:
+      label: "הערות טכניות אופציונליות / Optional notes"
+      description: "נא לא לצרף סודות או פרטי משתמשים."
