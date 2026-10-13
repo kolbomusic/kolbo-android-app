@@ -6,7 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import pytest
 
-from free_gpu_journal import FreeGpuJournal, Conflict, JournalError, InvalidTransition
+from free_gpu_journal import FreeGpuJournal, Conflict, JournalError, InvalidTransition, QuotaExceeded
 
 OWNER = "a" * 64
 OTHER = "b" * 64
@@ -121,3 +121,16 @@ def test_rejection_before_submit_is_terminal(journal):
     assert repeat.state=="rejected_before_submission" and not repeat.created_new
     with pytest.raises(InvalidTransition):
         journal.change(r.job_id,OWNER,"submitting",provider="wan_fast")
+
+def test_persistent_daily_cap_survives_restart(journal):
+    first=journal.reserve(OWNER,KEY,DIGEST,max_daily_owner=1,max_daily_global=2)
+    assert first.created_new
+    again=FreeGpuJournal(journal.path).reserve(OWNER,KEY,DIGEST,max_daily_owner=1,max_daily_global=2)
+    assert not again.created_new and again.job_id==first.job_id
+    with pytest.raises(QuotaExceeded):
+        journal.reserve(OWNER,"3"*64,"4"*64,max_daily_owner=1,max_daily_global=2)
+    other=FreeGpuJournal(journal.path).reserve(OTHER,"5"*64,"6"*64,
+        max_daily_owner=1,max_daily_global=2)
+    assert other.created_new
+    with pytest.raises(QuotaExceeded):
+        journal.reserve("c"*64,"7"*64,"8"*64,max_daily_owner=1,max_daily_global=2)
