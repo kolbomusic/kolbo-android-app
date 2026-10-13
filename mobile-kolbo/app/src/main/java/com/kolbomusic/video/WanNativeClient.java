@@ -195,7 +195,7 @@ public final class WanNativeClient {
         return directedStoryboard;
     }
 
-    private String submit(String path,String prompt,int seconds) throws Exception {
+    private String submit(String path,String prompt,String negative,int seconds) throws Exception {
         JSONObject image=new JSONObject();
         image.put("path",path);
         image.put("orig_name","kolbo-photo.jpg");
@@ -203,8 +203,7 @@ public final class WanNativeClient {
         image.put("is_stream",false);
         image.put("meta",new JSONObject().put("_type","gradio.FileData"));
         JSONArray args=new JSONArray();
-        String neg="static closeup, exaggerated facial expressions, only moving lips, blurry, "+
-             "extra limbs, distorted identity, unwanted objects, watermark, subtitles";
+        String neg=negative;
         args.put(image);
         if(engine.isLightning()){
             // Exact, separately audited 16-input contract. No guesswork across providers.
@@ -362,7 +361,13 @@ public final class WanNativeClient {
         if(scene.multiPhoto)throw new IOException("המנוע החיצוני מקבל כרגע תמונה אחת בלבד.");
         progress.status("האפליקציה הבינה: "+scene.summary);
         String english=HebrewActionTranslator.translate(scene.actionText,progress);
-        String modelInstruction=scene.prompt(english);
+        V5SceneContract contract=V5SceneContract.compile(scene,english,seconds);
+        String modelInstruction=contract.compiledPrompt;
+        progress.status("בודק את תמונת המקור לפני הפקה…");
+        V5SourceAudit.Result source=V5SourceAudit.examine(context,image,contract.requiresNewBody);
+        if(!source.safeToAttempt())
+            throw new IOException(source.explanation+" לא נשלחה תמונה לשרת.");
+        if(!"OK".equals(source.level)) progress.status(source.explanation);
         // An explicit user action is required for EACH new inference.
         String lastFailed=context.getSharedPreferences("gpu_provider",Context.MODE_PRIVATE)
             .getString("last_failed",null);
@@ -374,13 +379,13 @@ public final class WanNativeClient {
         String path=upload(bytes);
         progress.status("שולח בקשה יחידה למנוע AI…");
         progress.beforeSubmission();
-        String id=submit(path,modelInstruction,seconds);
+        String id=submit(path,modelInstruction,contract.negativePrompt,seconds);
         progress.jobCreated(id);
         progress.status("המשימה התקבלה, ממתין לסרטון…");
         String videoUrl=poll(id,progress);
         progress.status("מוריד סרטון AI מקורי…");
         File video=download(videoUrl,context,progress);
-        return new Result(video,id,"התאמת ההתרחשות להנחיה מחייבת בדיקה שלך; לא בוצע אימות סמנטי.");
+        return new Result(video,id,"התוצאה חייבת לעבור בדיקת קובץ, תנועה ותוכן. קרב וניצחון אינם מאומתים אוטומטית.");
     }
 
     public Result resume(Context context,String eventId,String selectedProvider,Progress progress) throws Exception {
