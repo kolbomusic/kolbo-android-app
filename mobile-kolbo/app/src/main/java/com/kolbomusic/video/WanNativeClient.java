@@ -274,28 +274,32 @@ public final class WanNativeClient {
 
     private String extractVideoUrl(String data) throws Exception {
         JSONArray outputs=new JSONArray(data);
-        Object first=outputs.opt(0);
-        JSONObject outer=first instanceof JSONObject?(JSONObject)first:null;
-        if(outer==null)throw new IOException("המנוע לא החזיר קובץ וידאו");
-        // A raw Gradio gr.Video SSE response commonly wraps FileData under
-        // {"video":{...},"subtitles":null}; deserialized SDK results differ.
-        JSONObject nested=outer.optJSONObject("video");
-        JSONObject file=nested!=null?nested:outer;
-        String url=file.optString("url","");
-        if(url.isEmpty()){
-            String path=file.optString("path","");
-            if(path.isEmpty()||path.length()>2048)
-                throw new IOException("לא התקבלה כתובת לסרטון");
-            if(path.startsWith("http://")||path.startsWith("https://"))url=path;
-            else if(path.startsWith("/"))url=origin()+"/gradio_api/file="+path;
-            else throw new IOException("נתיב תוצאה אינו תקין");
+        // Gradio video components can return FileData under video:{...},
+        // or a separate downloadable FileData item. Do not trust arbitrary
+        // client URLs or off-host paths, including for the second provider.
+        for(int i=0;i<Math.min(3,outputs.length());i++){
+            Object current=outputs.opt(i);
+            JSONObject value=current instanceof JSONObject?(JSONObject)current:null;
+            if(value==null)continue;
+            JSONObject nested=value.optJSONObject("video");
+            JSONObject file=nested!=null?nested:value;
+            String url=file.optString("url","");
+            if(url.isEmpty()){
+                String path=file.optString("path","");
+                if(path.isEmpty()||path.length()>2048)continue;
+                if(path.startsWith("/"))url=origin()+"/gradio_api/file="+path;
+                else if(path.startsWith("https://"))url=path;
+                else continue;
+            }
+            URL resolved=new URL(url);
+            if(!"https".equalsIgnoreCase(resolved.getProtocol())
+                ||!engine.host.equalsIgnoreCase(resolved.getHost())
+                || (resolved.getPort()!=-1&&resolved.getPort()!=443)
+                || resolved.getUserInfo()!=null)
+                throw new IOException("מקור סרטון לא מורשה");
+            return url;
         }
-        URL resolved=new URL(url);
-        if(!"https".equals(resolved.getProtocol()) || !engine.host.equals(resolved.getHost())
-            || (resolved.getPort()!=-1&&resolved.getPort()!=443)
-            || resolved.getUserInfo()!=null)
-            throw new IOException("מקור סרטון לא מורשה");
-        return url;
+        throw new IOException("המנוע לא החזיר קובץ וידאו תקין");
     }
 
     private File download(String url, Context context,Progress progress) throws Exception {
