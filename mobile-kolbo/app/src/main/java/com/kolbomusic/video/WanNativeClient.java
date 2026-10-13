@@ -203,11 +203,29 @@ public final class WanNativeClient {
         image.put("is_stream",false);
         image.put("meta",new JSONObject().put("_type","gradio.FileData"));
         JSONArray args=new JSONArray();
-        args.put(image);args.put(promptForProvider(prompt));args.put(8);
-        args.put("static closeup, exaggerated facial expressions, only moving lips, blurry, "+
-            "extra limbs, distorted identity, unwanted objects, watermark, subtitles");
-        args.put((double)seconds);args.put(1.0);args.put(1.0);
-        args.put(42);args.put(false);
+        String neg="static closeup, exaggerated facial expressions, only moving lips, blurry, "+
+             "extra limbs, distorted identity, unwanted objects, watermark, subtitles";
+        args.put(image);
+        if(engine.isLightning()){
+            // Exact, separately audited 16-input contract. No guesswork across providers.
+            args.put(JSONObject.NULL);                  // last_image optional
+            args.put(promptForProvider(prompt));        // prompt
+            args.put(4);                                // lightning step budget
+            args.put(neg);                              // negative prompt
+            args.put((double)seconds);                  // actual requested seconds
+            args.put(1.0);args.put(1.0);                // guidance scales
+            args.put(42);args.put(false);               // seed and randomize
+            args.put(5);                                // output quality
+            args.put("UniPCMultistep");                 // scheduler
+            args.put(3.0);                              // flow shift
+            args.put(16);                               // 16 fps; no extra frame interpolation
+            args.put(false);                            // no 30% extra GPU time
+            args.put(true);                             // gr.Video output
+        }else{
+            args.put(promptForProvider(prompt));args.put(8);
+            args.put(neg);args.put((double)seconds);
+            args.put(1.0);args.put(1.0);args.put(42);args.put(false);
+        }
         JSONObject payload=new JSONObject().put("data",args);
         HttpURLConnection c=connection(origin()+"/gradio_api/call/generate_video","POST",35000);
         c.setDoOutput(true);
@@ -308,6 +326,29 @@ public final class WanNativeClient {
         finally{c.disconnect();}
     }
 
+    /**
+     * Probe both known contracts using GET only, before any photo upload.
+     * Changing engine AFTER a submitted job is forbidden.
+     * A provider marked failed is skipped only for the user's next EXPLICIT job.
+     */
+    public void selectForNewJob(String lastFailed,Progress progress) throws Exception {
+        IOException last=null;
+        for(WanProviderCatalog.Engine candidate:WanProviderCatalog.order(lastFailed)){
+            engine=candidate;
+            try {
+                progress.status("בודק אפשרות הפקה ב־"+candidate.name+"…");
+                preflight();
+                progress.providerSelected(candidate.id,candidate.name);
+                progress.status("מנוע נבחר: "+candidate.name+
+                    ". זמינות API אינה מבטיחה GPU או מכסה פנויה.");
+                return;
+            }catch(Exception e){
+                last=new IOException("בדיקת המנוע "+candidate.name+" נכשלה",e);
+            }
+        }
+        throw new IOException("שני ממשקי הווידאו הציבוריים אינם זמינים או שונו. לא נשלחה תמונה.",last);
+    }
+
     public Result create(Context context,Uri image,String hebrew,int seconds,Progress progress) throws Exception {
         if(hebrew==null||hebrew.trim().length()<2||hebrew.length()>1200)
             throw new IOException("כתוב במילים שלך מה תרצה לראות בסרטון");
@@ -318,8 +359,10 @@ public final class WanNativeClient {
         progress.status("האפליקציה הבינה: "+scene.summary);
         String english=HebrewActionTranslator.translate(scene.actionText,progress);
         String modelInstruction=scene.prompt(english);
-        progress.status("מאמת את מנוע הווידאו…");
-        preflight();
+        // An explicit user action is required for EACH new inference.
+        String lastFailed=context.getSharedPreferences("gpu_provider",Context.MODE_PRIVATE)
+            .getString("last_failed",null);
+        selectForNewJob(lastFailed,progress);
         progress.status("מכין את התמונה בטלפון…");
         if(scene.photoCleanup)progress.status("מנקה רעש ומתאים בהירות בתמונת המקור…");
         byte[] bytes=compressPhoto(context,image,scene.photoCleanup);
