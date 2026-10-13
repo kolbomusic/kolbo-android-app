@@ -41,8 +41,14 @@ public final class WanProviderCatalog {
      * an earlier event ID. Preference after a definite provider failure is
      * to TRY a different contract first, not to increase ZeroGPU quota.
      */
-    public static List<Engine> order(String lastFailed){
+    public static List<Engine> order(String lastFailed,boolean complexScene){
+        // No automatic resubmission and NO assumption that either GPU is available.
         if("fast".equals(lastFailed))return Arrays.asList(LIGHTNING,FAST);
+        if("lightning".equals(lastFailed))return Arrays.asList(FAST,LIGHTNING);
+        // The experimental Lightning engine uses fewer diffusion steps for
+        // complicated action. Only API availability, not story adherence,
+        // has been verified; the user sees the chosen provider before upload.
+        if(complexScene)return Arrays.asList(LIGHTNING,FAST);
         return Arrays.asList(FAST,LIGHTNING);
     }
 }
