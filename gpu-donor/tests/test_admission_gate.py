@@ -31,13 +31,13 @@ class AdmissionTests(unittest.TestCase):
     def test_invalid_receipt(self):
         p=self.path/"proof.json";p.write_text('{"verified":true}')
         self.assertFalse(inspect_receipt(p))
-    def test_no_real_worker_even_if_local_proof(self):
+    def test_forged_receipt_cannot_qualify_worker(self):
         self.graph(0);self.graph(1)
         p=self.path/"receipt.json"
         p.write_text(json.dumps({"verified":True,"audio_verified":True,
             "audible_audio_verified":True,"changing_frame_intervals":2,"sha256":"a"*64}))
         r=inspect_donor(hardware_report={"eligible_for_operator_review":True},workflows=self.path,receipt=p)
-        self.assertTrue(r["eligible_for_independent_review"])
+        self.assertFalse(r["eligible_for_independent_review"])
         self.assertFalse(r["owner_approved"])
         self.assertFalse(r["registered_worker"])
         self.assertFalse(r["allowed_to_receive_private_media"])
