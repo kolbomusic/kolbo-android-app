@@ -1,0 +1,37 @@
+name: Kolbo Qwen3 Apache2 model artifact provenance
+on:
+  push:
+    branches: [kolbo-video-v510-local-qwen-planner-20261014]
+    paths:
+      - .github/workflows/kolbo-v510-model-provenance.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  inspect-license-and-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Check public Hugging Face repository LFS digest and license; no model download
+        run: |
+          python - <<'PY'
+          import urllib.request,json
+          repo='litert-community/Qwen3-0.6B'
+          path='Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm'
+          def read(url):
+              req=urllib.request.Request(url,headers={'User-Agent':'Kolbo-Provenance/1.0'})
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  return json.load(response)
+          meta=read('https://huggingface.co/api/models/'+repo)
+          assert meta.get('cardData',{}).get('license')=='apache-2.0',meta.get('cardData')
+          tree=read('https://huggingface.co/api/models/'+repo+'/tree/main?expand=true')
+          entry=next(x for x in tree if x.get('path')==path)
+          sha=entry.get('lfs',{}).get('oid',entry.get('lfs',{}).get('sha256',''))
+          assert len(sha)==64 and all(c in '0123456789abcdef' for c in sha),entry
+          assert 250_000_000<entry['size']<450_000_000,entry
+          print('VERIFIED_PUBLIC_MODEL='+repo+'/'+path)
+          print('LICENSE=apache-2.0')
+          print('LFS_SHA256='+sha)
+          print('MODEL_BYTES='+str(entry['size']))
+          PY

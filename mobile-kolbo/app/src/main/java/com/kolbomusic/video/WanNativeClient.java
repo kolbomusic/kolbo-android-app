@@ -362,7 +362,23 @@ public final class WanNativeClient {
         progress.status("האפליקציה הבינה: "+scene.summary);
         String english=HebrewActionTranslator.translate(scene.actionText,progress);
         V5SceneContract contract=V5SceneContract.compile(scene,english,seconds);
-        String modelInstruction=contract.compiledPrompt;
+        String localAdvice=null;
+        try {
+            if(LocalBrainModelManager.isVerified(context)){
+                progress.status("מוח השפה Qwen3 מתכנן את הסיפור באופן מקומי, ללא API בתשלום…");
+                localAdvice=QwenScenePlanner.plan(context,english,hebrew.trim());
+            }
+        }catch(Exception | LinkageError e){
+            // Optional model failure is not a reason to waste a GPU request,
+            // and never gets silently presented as successful Qwen inference.
+            progress.status("המוח המקומי לא היה זמין; משתמש בתכנון הגיבוי, ללא חיוב.");
+        }
+        QwenPlanContract.Result plan=QwenPlanContract.compile(contract,localAdvice);
+        if(plan.requiresAudio)
+            throw new IOException("הבקשה דורשת שמע או שירה; מנוע הווידאו המחובר אילם.");
+        progress.status(plan.usedLocalModel ? "תוכנית הפקה נבנתה על ידי Qwen3" :
+            "מוח הגיבוי מבין פעולות בסיסיות; אפשר להפעיל מודל שפה חינמי.");
+        String modelInstruction=plan.prompt;
         progress.status("בודק את תמונת המקור לפני הפקה…");
         V5SourceAudit.Result source=V5SourceAudit.examine(context,image,contract.requiresNewBody);
         if(!source.safeToAttempt())
@@ -373,13 +389,13 @@ public final class WanNativeClient {
             .getString("last_failed",null);
         selectForNewJob(lastFailed,scene.complex,progress);
         progress.status("מכין את התמונה בטלפון…");
-        if(scene.photoCleanup)progress.status("מנקה רעש ומתאים בהירות בתמונת המקור…");
-        byte[] bytes=compressPhoto(context,image,scene.photoCleanup);
+        if(plan.cleanupRequested)progress.status("מנקה רעש ומתאים בהירות בתמונת המקור…");
+        byte[] bytes=compressPhoto(context,image,plan.cleanupRequested);
         progress.status("מעלה תמונת ייחוס אחת לספק החיצוני…");
         String path=upload(bytes);
         progress.status("שולח בקשה יחידה למנוע AI…");
         progress.beforeSubmission();
-        String id=submit(path,modelInstruction,contract.negativePrompt,seconds);
+        String id=submit(path,modelInstruction,plan.negatives,seconds);
         progress.jobCreated(id);
         progress.status("המשימה התקבלה, ממתין לסרטון…");
         String videoUrl=poll(id,progress);

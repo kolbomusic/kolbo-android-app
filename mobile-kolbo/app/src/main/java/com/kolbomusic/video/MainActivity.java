@@ -61,7 +61,7 @@ public final class MainActivity extends Activity {
     private ProgressBar progress;
     private PlayerView preview;
     private ExoPlayer playback;
-    private TextView interpretation;
+    private TextView interpretation,localBrainStatus;
     private int requestedSeconds=2;
     private Button generate,save,review,recover;
 
@@ -112,11 +112,17 @@ public final class MainActivity extends Activity {
         scroll.addView(panel);
         setContentView(scroll);
 
-        TextView title=text("Kolbo Video v5",29,TEXT);
+        TextView title=text("כלבו וידאו AI",29,TEXT);
         title.setTypeface(null,android.graphics.Typeface.BOLD);
         panel.addView(title);
-        panel.addView(text("מבין את הבקשה · מתכנן סצנה · בודק תוצאה",14,MUTED));
-        gap(22);
+        panel.addView(text("כתיבה חופשית בעברית · תכנון סצנה · וידאו",14,MUTED));
+        gap(14);
+        localBrainStatus=text("מוח השפה המקומי: בבדיקה…",13,MUTED);
+        panel.addView(localBrainStatus);
+        gap(7);
+        button("התקן מוח AI חינמי במכשיר (חד־פעמי)",true)
+            .setOnClickListener(v->offerLocalBrainInstallation());
+        gap(18);
 
         TextView label=text("1. הוסף תמונת ייחוס",19,TEXT);
         label.setTypeface(null,android.graphics.Typeface.BOLD);
@@ -149,7 +155,7 @@ public final class MainActivity extends Activity {
         prompt.setBackground(shape(PANEL,15));
         panel.addView(prompt);
         gap(8);
-        interpretation=text("כתוב כרצונך. האפליקציה תאתר פעולות, דמויות ומספרים.",14,MUTED);
+        interpretation=text("כתוב כרגיל בעברית. המוח המקומי ירכיב תסריט כשהוא מותקן.",14,MUTED);
         panel.addView(interpretation);
         prompt.addTextChangedListener(new android.text.TextWatcher(){
             @Override public void beforeTextChanged(CharSequence x,int a,int c,int n){}
@@ -234,6 +240,46 @@ public final class MainActivity extends Activity {
         recover.setVisibility(getPreferences(MODE_PRIVATE).getString("last_event","").isEmpty()
             ?View.GONE:View.VISIBLE);
     }
+    private void refreshLocalBrainStatus(){
+        if(localBrainStatus==null)return;
+        worker.execute(()->{
+            String state;
+            try{state=LocalBrainModelManager.downloadStatus(this);}
+            catch(Exception e){state="מוח AI אינו זמין באחסון זה";}
+            String finalState=state;
+            runOnUiThread(()->{
+                if(localBrainStatus!=null)localBrainStatus.setText(finalState);
+            });
+        });
+    }
+    private void offerLocalBrainInstallation(){
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("מוח AI חינמי לשימוש חוזר")
+            .setMessage("האפליקציה תוריד פעם אחת מודל שפה Qwen3 פתוח "+
+               "(כ־331MB, רק דרך Wi-Fi). התכנון יעבוד מקומית בלי תשלום ובלי חשבון. "+
+               "העיבוד עשוי להשתמש בזיכרון ובמעבד הטלפון למשך זמן קצר. "+
+               "אפשר להמשיך להשתמש במנגנון הגיבוי ללא הורדה.")
+            .setNegativeButton("לא כעת",(d,w)->{})
+            .setPositiveButton("הורד והתקן",(d,w)->{
+                localBrainStatus.setText("מכין הורדה מאובטחת ב־Wi-Fi…");
+                worker.execute(()->{
+                    try{
+                        long id=LocalBrainModelManager.startWiFiDownload(this);
+                        runOnUiThread(()->localBrainStatus.setText(
+                           id==-2 ? "המוח כבר מותקן ומאומת" :
+                           "המודל יורד כעת ב־Wi-Fi. כשההורדה תסתיים, התכנון יעבור אוטומטית למוח החדש."));
+                    }catch(Exception e){
+                        runOnUiThread(()->localBrainStatus.setText(
+                          e.getMessage()==null?"הורדת המודל לא הופעלה":e.getMessage()));
+                    }
+                });
+            }).show();
+    }
+    @Override protected void onResume(){
+        super.onResume();
+        if(localBrainStatus!=null)refreshLocalBrainStatus();
+    }
+
     private void selectImage(){
         if(busy)return;
         Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);

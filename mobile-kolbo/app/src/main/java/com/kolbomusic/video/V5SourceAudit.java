@@ -76,9 +76,9 @@ public final class V5SourceAudit {
                               opt.outWidth,opt.outHeight);
         }finally{detector.close();img.recycle();}
         if(fullBodyAction && maxFraction>0.20f)
-            return new Result("BLOCK","תמונת המקור היא תקריב פנים. היא לא כוללת מידע על הגוף "+
-                "הדרוש לקרב רחב. אין כאן מנוע מאומת להשלמת גוף אוטומטית, "+
-                "ולכן לא אבזבז הפקה על הבטחה שאי אפשר לקיים.",maxFraction,opt.outWidth,opt.outHeight);
+            return new Result("WARNING","זוהה תקריב פנים: המנוע עלול להתקשות "+
+                "ליצור תנועת גוף מלא. תבוצע הפקה רק לאחר אישור העלאת התמונה, "+
+                "והתוצאה תישאר לא מאומתת עד בדיקה.",maxFraction,opt.outWidth,opt.outHeight);
         if(fullBodyAction && (maxFraction>0.065f || !detected))
             return new Result("WARNING","לסצנת קרב נדרש גוף וסביבה. התמונה אינה מוכיחה שהם "+
                 "גלויים; הספק עלול ליצור תקריבי פנים במקום לחימה.",maxFraction,opt.outWidth,opt.outHeight);
