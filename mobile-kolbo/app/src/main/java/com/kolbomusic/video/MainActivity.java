@@ -139,7 +139,7 @@ public final class MainActivity extends Activity {
         prompt.setGravity(Gravity.RIGHT|Gravity.TOP);
         prompt.setTextDirection(View.TEXT_DIRECTION_RTL);
         prompt.setTextColor(TEXT);prompt.setHintTextColor(MUTED);
-        prompt.setHint("מה תרצה שיקרה בסרטון? פשוט כתוב במילים שלך.");
+        prompt.setHint("מה תרצה שיקרה? כתוב כרגיל בעברית. אני אסדר לבד את הפעולות.");
         prompt.setTextSize(16);
         prompt.setMinLines(4);prompt.setMaxLines(8);
         prompt.setInputType(android.text.InputType.TYPE_CLASS_TEXT|
@@ -148,7 +148,7 @@ public final class MainActivity extends Activity {
         prompt.setBackground(shape(PANEL,15));
         panel.addView(prompt);
         gap(8);
-        interpretation=text("כתוב בחופשיות — האפליקציה תזהה את האירועים והדמויות.",14,MUTED);
+        interpretation=text("כתוב כרצונך. האפליקציה תאתר פעולות, דמויות ומספרים.",14,MUTED);
         panel.addView(interpretation);
         prompt.addTextChangedListener(new android.text.TextWatcher(){
             @Override public void beforeTextChanged(CharSequence x,int a,int c,int n){}
@@ -157,9 +157,9 @@ public final class MainActivity extends Activity {
                     interpretation.setText("כתוב במילים שלך, ללא ניסוח מיוחד.");return;
                 }
                 try{
-                    HebrewStoryDirector.Plan p=HebrewStoryDirector.understand(x.toString());
-                    interpretation.setText("הבנתי: "+p.visibleSummary +
-                       (p.complexScene ? "\nסצנה מורכבת: מנוע הניסוי עשוי לא להצליח בכל הפרטים." : ""));
+                    HebrewIntentBrain.Scene p=HebrewIntentBrain.interpret(x.toString());
+                    interpretation.setText("זיהיתי: "+p.summary +
+                       (p.complex ? "\nיש כאן כמה פעולות או דמויות; ההפקה תלויה ביכולת המנוע." : ""));
                 }catch(RuntimeException e){interpretation.setText("הוסף מה תרצה שיקרה.");}
             }
             @Override public void afterTextChanged(android.text.Editable x){}
@@ -257,8 +257,10 @@ public final class MainActivity extends Activity {
         if(image==null){toast("יש לבחור תמונה תחילה");return;}
         String story=prompt.getText().toString().trim();
         if(story.length()<2){toast("כתוב במילים שלך מה תרצה שיקרה");return;}
-        HebrewStoryDirector.Plan plan=HebrewStoryDirector.understand(story);
-        String blocker=plan.supportedLimit();
+        HebrewIntentBrain.Scene plan=HebrewIntentBrain.interpret(story);
+        String blocker=plan.soundtrack ? "הבקשה כוללת שמע; המנוע החיצוני כרגע אילם."
+            : plan.multiPhoto ? "המנוע החיצוני מקבל כעת תמונה אחת, לא שילוב של תמונות."
+            : null;
         if(blocker!=null){show(blocker+" לא נשלחה בקשה.");return;}
         if(!consent.isChecked()){
             show("לפני העלאת התמונה יש לאשר העברה לספק החיצוני.");return;
