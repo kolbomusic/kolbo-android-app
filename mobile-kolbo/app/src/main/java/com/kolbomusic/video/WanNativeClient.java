@@ -304,18 +304,19 @@ public final class WanNativeClient {
 
     public Result create(Context context,Uri image,String hebrew,int seconds,Progress progress) throws Exception {
         if(hebrew==null||hebrew.trim().length()<2||hebrew.length()>1200)
-            throw new IOException("יש לכתוב הנחיה מפורטת בעברית");
+            throw new IOException("כתוב במילים שלך מה תרצה לראות בסרטון");
         if(seconds<1||seconds>5)throw new IOException("המנוע הנוכחי תומך רק בעד 5 שניות");
-        HebrewStoryDirector.Plan scene=HebrewStoryDirector.understand(hebrew.trim());
-        if(scene.supportedLimit()!=null)throw new IOException(scene.supportedLimit());
-        progress.status("מפרש את הבקשה שלך: "+scene.visibleSummary);
-        String english=HebrewActionTranslator.translate(scene.actionToTranslate,progress);
-        String modelInstruction=scene.directedPrompt(english);
+        HebrewIntentBrain.Scene scene=HebrewIntentBrain.interpret(hebrew.trim());
+        if(scene.soundtrack)throw new IOException("הבקשה כוללת שמע או דיבור, אך המנוע הנוכחי אילם.");
+        if(scene.multiPhoto)throw new IOException("המנוע החיצוני מקבל כרגע תמונה אחת בלבד.");
+        progress.status("האפליקציה הבינה: "+scene.summary);
+        String english=HebrewActionTranslator.translate(scene.actionText,progress);
+        String modelInstruction=scene.prompt(english);
         progress.status("מאמת את מנוע הווידאו…");
         preflight();
         progress.status("מכין את התמונה בטלפון…");
-        if(scene.cleanPhoto)progress.status("מנקה רעש ומתאים בהירות בתמונת המקור…");
-        byte[] bytes=compressPhoto(context,image,scene.cleanPhoto);
+        if(scene.photoCleanup)progress.status("מנקה רעש ומתאים בהירות בתמונת המקור…");
+        byte[] bytes=compressPhoto(context,image,scene.photoCleanup);
         progress.status("מעלה תמונת ייחוס אחת לספק החיצוני…");
         String path=upload(bytes);
         progress.status("שולח בקשה יחידה למנוע AI…");
