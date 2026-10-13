@@ -152,20 +152,14 @@ public final class WanNativeClient {
         c.setDoOutput(true);
         c.setChunkedStreamingMode(32*1024);
         c.setRequestProperty("Content-Type","multipart/form-data; boundary="+boundary);
-        String head="--"+boundary+"\r
-"+
-                "Content-Disposition: form-data; name=\"files\"; filename=\"kolbo-photo.jpg\"\r
-"+
-                "Content-Type: image/jpeg\r
-\r
-";
+        String head="--"+boundary+"\r\n"+
+                "Content-Disposition: form-data; name=\"files\"; filename=\"kolbo-photo.jpg\"\r\n"+
+                "Content-Type: image/jpeg\r\n\r\n";
         try{
             try(OutputStream out=c.getOutputStream()){
                 out.write(head.getBytes(StandardCharsets.UTF_8));
                 out.write(jpeg);
-                out.write(("\r
---"+boundary+"--\r
-").getBytes(StandardCharsets.UTF_8));
+                out.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
             }
             JSONArray files=new JSONArray(body(c,100_000));
             String path=files.optString(0,"");
