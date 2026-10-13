@@ -12,7 +12,7 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
+import java.io.FileOutputStream;\nimport java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -277,6 +277,12 @@ public final class WanNativeClient {
                 }
             }
             if(size<3000)throw new IOException("לא התקבל קובץ וידאו שלם");
+            try(FileInputStream probe=new FileInputStream(result)){
+                byte[] header=new byte[12];
+                if(probe.read(header)!=12 || header[4]!='f'||header[5]!='t'||
+                    header[6]!='y'||header[7]!='p')
+                    throw new IOException("התקבל קובץ שאינו MP4 תקין");
+            }
             progress.status("הסרטון התקבל — יש לבדוק שהוא תואם לבקשה");
             return result;
         }catch(Exception e){result.delete();throw e;}
