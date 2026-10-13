@@ -1,0 +1,23 @@
+name: Kolbo alternative free GPU read-only model readiness
+on:
+  push:
+    branches: [kolbo-video-v459-public-gpu-api-probe-20261013]
+    paths: ['gpu-discovery/chopperblu_readiness.py','.github/workflows/kolbo-chopperblu-readonly.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  public-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Public Gradio config and model readiness (no GPU)
+        run: python gpu-discovery/chopperblu_readiness.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-LTX-Alternate-Public-Readiness
+          path: chopperblu-public-metadata.json
+          if-no-files-found: warn
