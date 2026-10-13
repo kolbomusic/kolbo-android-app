@@ -1,355 +1,333 @@
 package com.kolbomusic.video;
 
 import android.app.Activity;
-import android.app.DownloadManager;
 import android.content.ClipData;
-import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.CookieManager;
-import android.webkit.DownloadListener;
-import android.webkit.SslErrorHandler;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.VideoView;
 
-import java.util.UUID;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.OutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-/**
- * Kolbo Video 4.6.8: an honest, direct window into a demonstrated AI video model.
- *
- * This APK does not impersonate a GPU or claim the 15-second + 2-person + singing
- * experience is solved. It allows an actual hosted model to perform generation
- * through its own public, first-party Gradio UI. No app-owned server, account,
- * payment proxy, API key, auto retries, or unsolicited photo upload.
- */
+/** Real Android studio in Hebrew, not an embedded English Gradio website. */
 public final class MainActivity extends Activity {
-    private static final String PROVIDER_HOST =
-        "zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space";
-    private static final String PROVIDER_URL =
-        "https://" + PROVIDER_HOST + "/";
-    private static final int PICK_IMAGES = 468;
-    private static final int BG = Color.rgb(15, 18, 31);
-    private static final int PANEL = Color.rgb(31, 39, 61);
-    private static final int TEXT = Color.rgb(249, 248, 255);
-    private static final int MUTED = Color.rgb(185, 194, 215);
-    private static final int VIOLET = Color.rgb(102, 53, 211);
+    private static final int CHOOSE_IMAGE=469;
+    private static final int SAVE_VIDEO=470;
+    private static final int BG=Color.rgb(17,20,32);
+    private static final int PANEL=Color.rgb(35,42,65);
+    private static final int TEXT=Color.rgb(247,249,255);
+    private static final int MUTED=Color.rgb(190,199,224);
+    private static final int ACCENT=Color.rgb(111,63,215);
+    private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private WanNativeClient engine=new WanNativeClient();
+    private Uri image;
+    private File video;
+    private boolean busy=false;
+    private boolean afterFailed=false;
+    private boolean unknownAcceptance=false;
+    private ScrollView scroll;
+    private LinearLayout panel;
+    private EditText prompt;
+    private Spinner duration;
+    private CheckBox consent;
+    private ImageView photoPreview;
+    private TextView photoLabel,status,limits;
+    private ProgressBar progress;
+    private VideoView preview;
+    private Button generate,save,review,recover;
 
-    private LinearLayout root, home;
-    private TextView message;
-    private WebView browser;
-    private ProgressBar loading;
-    private android.webkit.ValueCallback<Uri[]> waitingForImage;
-    private boolean inStudio = false;
-    private boolean pageLoaded = false;
-
-    private int dp(int x) {
-        return Math.round(x * getResources().getDisplayMetrics().density);
+    private int dp(int x){return Math.round(x*getResources().getDisplayMetrics().density);}
+    private GradientDrawable shape(int color,int radius){
+        GradientDrawable g=new GradientDrawable();
+        g.setColor(color);g.setCornerRadius(dp(radius));return g;
     }
-    private GradientDrawable bg(int color, int radius) {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(color);
-        shape.setCornerRadius(dp(radius));
-        return shape;
+    private TextView text(String t,int size,int color){
+        TextView v=new TextView(this);
+        v.setText(t);v.setTextColor(color);v.setTextSize(size);
+        v.setGravity(Gravity.RIGHT);v.setTextDirection(View.TEXT_DIRECTION_RTL);
+        v.setLineSpacing(dp(3),1.05f);return v;
     }
-    private TextView text(String content, int sp, int color) {
-        TextView t = new TextView(this);
-        t.setText(content);
-        t.setTextSize(sp);
-        t.setTextColor(color);
-        t.setTextDirection(View.TEXT_DIRECTION_RTL);
-        t.setGravity(Gravity.RIGHT);
-        return t;
+    private void gap(int height){
+        View v=new View(this);
+        panel.addView(v,new LinearLayout.LayoutParams(1,dp(height)));
     }
-    private Button button(String caption, Runnable action, boolean secondary) {
-        Button b = new Button(this);
-        b.setText(caption);
-        b.setAllCaps(false);
-        b.setTextColor(TEXT);
-        b.setTextSize(16);
-        b.setBackground(bg(secondary ? PANEL : VIOLET, 14));
-        b.setOnClickListener(v -> action.run());
+    private Button button(String name,boolean secondary){
+        Button b=new Button(this);
+        b.setText(name);b.setAllCaps(false);
+        b.setTextSize(16);b.setTextColor(TEXT);
+        b.setBackground(shape(secondary?PANEL:ACCENT,15));
+        panel.addView(b,new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
         return b;
     }
-    private void space(int height) {
-        View v = new View(this);
-        home.addView(v, new LinearLayout.LayoutParams(1, dp(height)));
+    private void toast(String t){Toast.makeText(this,t,Toast.LENGTH_LONG).show();}
+    private void show(String t){runOnUiThread(()->status.setText(t));}
+    private void setBusy(boolean active){
+        busy=active;
+        progress.setVisibility(active?View.VISIBLE:View.GONE);
+        generate.setEnabled(!active);
+        recover.setEnabled(!active);
+        generate.setAlpha(active?.5f:1f);
     }
-    private void toast(String message) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-    }
-    private void openExternally() {
-        try {
-            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(PROVIDER_URL));
-            i.addCategory(Intent.CATEGORY_BROWSABLE);
-            startActivity(i);
-        } catch (Exception e) {
-            toast("לא נמצא דפדפן זמין");
-        }
-    }
-    @Override public void onCreate(Bundle state) {
-        super.onCreate(state);
+    @Override public void onCreate(Bundle bundle){
+        super.onCreate(bundle);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        root.setBackgroundColor(BG);
-
-        ScrollView scroll = new ScrollView(this);
+        scroll=new ScrollView(this);
         scroll.setFillViewport(true);
-        home = new LinearLayout(this);
-        home.setOrientation(LinearLayout.VERTICAL);
-        home.setPadding(dp(20), dp(27), dp(20), dp(30));
-        scroll.addView(home);
-        root.addView(scroll, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        scroll.setBackgroundColor(BG);
+        scroll.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18),dp(24),dp(18),dp(28));
+        scroll.addView(panel);
+        setContentView(scroll);
 
-        TextView title = text("Kolbo Video AI", 30, TEXT);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        home.addView(title);
-        space(6);
-        home.addView(text("הפקת תנועה אמיתית באמצעות מנוע AI בענן", 16, MUTED));
-        space(23);
+        TextView title=text("כלבו וידאו AI",30,TEXT);
+        title.setTypeface(null,android.graphics.Typeface.BOLD);
+        panel.addView(title);
+        panel.addView(text("אולפן יצירת וידאו · בעברית · ללא אתר בתוך האפליקציה",14,MUTED));
+        gap(22);
 
-        LinearLayout info = new LinearLayout(this);
-        info.setPadding(dp(16), dp(15), dp(16), dp(18));
-        info.setOrientation(LinearLayout.VERTICAL);
-        info.setBackground(bg(PANEL, 16));
-        TextView heading = text("ניסוי פעיל — Wan2.2 Fast", 19, TEXT);
-        heading.setTypeface(null, android.graphics.Typeface.BOLD);
-        info.addView(heading);
-        TextView detail = text(
-            "מנוע הווידאו הפיק אצלנו MP4 אמיתי עם תנועה. " +
-            "הוא פועל בשרת ציבורי של Hugging Face, ולכן היצירה תלויה בזמינות ובמכסה שלו." +
-            "\n\nמה ניתן לעשות: להוסיף תמונה אחת, לכתוב הנחיה ולבקש סרטון קצר (עד כ־5 שניות)." +
-            "\n\nעדיין לא נתמך בניסוי: שתי תמונות של דמויות שונות, 15 שניות, שמע, דיבור, " +
-            "שירה וסנכרון שפתיים. לא ייווצר במקומם סרטון מדומה.",
-            14, MUTED);
-        detail.setLineSpacing(dp(5), 1f);
-        detail.setPadding(0, dp(10), 0, 0);
-        info.addView(detail);
-        home.addView(info);
-        space(22);
+        TextView label=text("1. הוסף תמונת ייחוס",19,TEXT);
+        label.setTypeface(null,android.graphics.Typeface.BOLD);
+        panel.addView(label);gap(8);
+        photoPreview=new ImageView(this);
+        photoPreview.setBackground(shape(PANEL,16));
+        photoPreview.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        photoPreview.setVisibility(View.GONE);
+        panel.addView(photoPreview,new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(210)));
+        gap(7);
+        photoLabel=text("עדיין לא נבחרה תמונה. שום תמונה לא הועלתה.",14,MUTED);
+        panel.addView(photoLabel);gap(12);
+        button("בחר תמונה מהטלפון",true).setOnClickListener(v->selectImage());
+        gap(22);
 
-        home.addView(button("פתח אולפן AI אמיתי", this::openStudio, false));
-        space(10);
-        home.addView(button("פתח את המנוע בדפדפן", this::openExternally, true));
-        space(18);
-        message = text("אין העלאה של תמונות עד שאתה בוחר אותן באולפן של הספק.", 14, MUTED);
-        message.setLineSpacing(dp(4), 1);
-        home.addView(message);
-        space(18);
-        home.addView(text("השירות החיצוני עשוי לבקש התחברות או להפעיל מגבלות יומיות. " +
-            "Kolbo Video אינה עוקפת מגבלות ספקים ואינה מפעילה מסלול בתשלום.", 13, MUTED));
+        TextView story=text("2. תאר מה באמת צריך לקרות בסרטון",19,TEXT);
+        story.setTypeface(null,android.graphics.Typeface.BOLD);
+        panel.addView(story);gap(9);
+        prompt=new EditText(this);
+        prompt.setGravity(Gravity.RIGHT|Gravity.TOP);
+        prompt.setTextDirection(View.TEXT_DIRECTION_RTL);
+        prompt.setTextColor(TEXT);prompt.setHintTextColor(MUTED);
+        prompt.setHint("לדוגמה: האיש קם מהכיסא, הולך שלושה צעדים ומנופף בידו. מצלמה רחבה שרואים את כל גופו.");
+        prompt.setTextSize(16);
+        prompt.setMinLines(4);prompt.setMaxLines(8);
+        prompt.setInputType(android.text.InputType.TYPE_CLASS_TEXT|
+            android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        prompt.setPadding(dp(16),dp(16),dp(16),dp(16));
+        prompt.setBackground(shape(PANEL,15));
+        panel.addView(prompt);
+        gap(20);
 
-        LinearLayout studioBar = new LinearLayout(this);
-        studioBar.setPadding(dp(8), dp(8), dp(8), dp(8));
-        studioBar.setOrientation(LinearLayout.HORIZONTAL);
-        studioBar.setBackgroundColor(PANEL);
-        Button close = button("חזור", this::closeStudio, true);
-        studioBar.addView(close, new LinearLayout.LayoutParams(0, dp(44), 1));
-        Button reload = button("רענן", () -> {
-            if (browser != null) browser.reload();
-        }, true);
-        studioBar.addView(reload, new LinearLayout.LayoutParams(0, dp(44), 1));
-        Button external = button("דפדפן", this::openExternally, true);
-        studioBar.addView(external, new LinearLayout.LayoutParams(0, dp(44), 1));
-        studioBar.setVisibility(View.GONE);
-        root.addView(studioBar);
+        TextView time=text("3. משך הסרטון",19,TEXT);
+        time.setTypeface(null,android.graphics.Typeface.BOLD);
+        panel.addView(time);gap(8);
+        duration=new Spinner(this);
+        String[] choices={"2 שניות","3 שניות","4 שניות","5 שניות"};
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,
+            android.R.layout.simple_spinner_dropdown_item,choices);
+        duration.setAdapter(adapter);
+        duration.setSelection(3);
+        duration.setBackground(shape(PANEL,12));
+        panel.addView(duration,new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+        gap(13);
 
-        loading = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        loading.setIndeterminate(true);
-        loading.setVisibility(View.GONE);
-        root.addView(loading, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
+        limits=text("מגבלות הניסוי הנוכחי: תמונה אחת, עד 5 שניות, ללא שמע או שירה. "+
+            "שמירת שתי זהויות וציות מדויק לכל תיאור עדיין אינם מאומתים. "+
+            "אם הבקשה מחייבת יכולת שאינה קיימת, ההפקה תיחסם — לא ייווצר תחליף שגוי.",14,MUTED);
+        panel.addView(limits);gap(11);
 
-        browser = new WebView(this);
-        browser.setVisibility(View.GONE);
-        browser.setBackgroundColor(BG);
-        WebSettings settings = browser.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setJavaScriptCanOpenWindowsAutomatically(false);
-        settings.setSupportMultipleWindows(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(true); // Android document picker image URIs.
-        settings.setAllowFileAccessFromFileURLs(false);
-        settings.setAllowUniversalAccessFromFileURLs(false);
-        if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
-        WebView.setWebContentsDebuggingEnabled(false);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false);
-        browser.setWebChromeClient(new WebChromeClient() {
-            @Override public boolean onShowFileChooser(
-                WebView view, android.webkit.ValueCallback<Uri[]> callback,
-                FileChooserParams params) {
-                if (waitingForImage != null) waitingForImage.onReceiveValue(null);
-                waitingForImage = callback;
-                try {
-                    Intent choose = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                    choose.addCategory(Intent.CATEGORY_OPENABLE);
-                    choose.setType("image/*");
-                    choose.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false);
-                    startActivityForResult(choose, PICK_IMAGES);
-                    return true;
-                } catch (Exception error) {
-                    waitingForImage = null;
-                    callback.onReceiveValue(null);
-                    toast("לא ניתן לבחור תמונה");
-                    return false;
-                }
-            }
-            @Override public void onProgressChanged(WebView view, int progress) {
-                loading.setVisibility(progress >= 100 ? View.GONE : View.VISIBLE);
-            }
+        consent=new CheckBox(this);
+        consent.setText("אני מאשר לשלוח את תמונת הייחוס למנוע החיצוני של Hugging Face לצורך ההפקה.");
+        consent.setTextColor(TEXT);
+        consent.setTextSize(14);
+        consent.setButtonTintList(android.content.res.ColorStateList.valueOf(
+            Color.rgb(178,142,255)));
+        panel.addView(consent);gap(15);
+
+        generate=button("צור סרטון AI",false);
+        generate.setOnClickListener(v->begin());
+        gap(12);
+        recover=button("בדוק משימה קודמת בלי לשלוח מחדש",true);
+        recover.setOnClickListener(v->recoverPending());
+        gap(15);
+        progress=new ProgressBar(this);
+        progress.setVisibility(View.GONE);panel.addView(progress);
+        status=text("מוכן. הפעולה תישלח רק כשתלחץ על יצירה.",15,MUTED);
+        panel.addView(status);gap(14);
+
+        preview=new VideoView(this);
+        preview.setVisibility(View.GONE);
+        preview.setBackground(shape(PANEL,12));
+        panel.addView(preview,new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(240)));
+        gap(10);
+        save=button("שמור סרטון לטלפון",true);
+        save.setVisibility(View.GONE);
+        save.setOnClickListener(v->saveVideo());
+        gap(8);
+        review=button("הסרטון לא ביצע את ההנחיה",true);
+        review.setVisibility(View.GONE);
+        review.setOnClickListener(v->{
+            show("הסרטון סומן כלא תואם. לא תבוצע יצירה חוזרת או חיוב אוטומטי. "+
+                "אפשר לנסח מחדש פעולה פיזית מפורטת לפני ניסיון ידני נוסף.");
+            afterFailed=true;
         });
-        browser.setWebViewClient(new WebViewClient() {
-            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri u = request.getUrl();
-                if (approved(u)) return false;
-                if ("https".equalsIgnoreCase(u.getScheme())) {
-                    try { startActivity(new Intent(Intent.ACTION_VIEW, u)); }
-                    catch (Exception e) { toast("לא ניתן לפתוח קישור חיצוני"); }
-                }
-                return true;
-            }
-            @Override public void onPageFinished(WebView view, String url) {
-                if (approved(Uri.parse(url))) {
-                    pageLoaded = true;
-                    loading.setVisibility(View.GONE);
-                }
-            }
-            @Override public void onReceivedSslError(
-                WebView view, SslErrorHandler handler, android.net.http.SslError error) {
-                handler.cancel();
-                toast("אישור האבטחה של שרת הווידאו אינו תקין");
-            }
-            @Override public void onReceivedHttpError(
-                WebView view, WebResourceRequest request,
-                android.webkit.WebResourceResponse response) {
-                if (request.isForMainFrame() && response.getStatusCode() >= 400) {
-                    toast("השרת החיצוני החזיר שגיאת " + response.getStatusCode() +
-                        ". אפשר לפתוח בדפדפן ולבדוק זמינות.");
-                }
-            }
-        });
-        browser.setDownloadListener(new DownloadListener() {
-            @Override public void onDownloadStart(String url, String userAgent,
-                String contentDisposition, String mimeType, long length) {
-                requestDownload(url, mimeType, length);
-            }
-        });
-        root.addView(browser, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        setContentView(root);
+        gap(10);
+        panel.addView(text("לא נדרשים מפתח API או מחשב אישי. מנוע הענן הציבורי "+
+            "עלול להיות עמוס, להגביל שימוש או לדחות בקשות. אין מסלול בתשלום.",13,MUTED));
 
-        // Hold UI references for returning without reloading provider jobs.
-        this.scroll = scroll;
-        this.studioBar = studioBar;
+        prompt.setText(getPreferences(MODE_PRIVATE).getString("draft",""));
+        if(getPreferences(MODE_PRIVATE).getBoolean("uncertain_submission",false))
+            status.setText("ייתכן שבקשה קודמת התקבלה במנוע. בדוק אותה לפני ניסיון נוסף.");
+        recover.setVisibility(getPreferences(MODE_PRIVATE).getString("last_event","").isEmpty()
+            ?View.GONE:View.VISIBLE);
     }
-    private ScrollView scroll;
-    private LinearLayout studioBar;
-
-    private boolean approved(Uri u) {
-        return u != null && "https".equalsIgnoreCase(u.getScheme())
-            && PROVIDER_HOST.equalsIgnoreCase(u.getHost())
-            && (u.getPort() == -1 || u.getPort() == 443);
+    private void selectImage(){
+        if(busy)return;
+        Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,false);
+        try{startActivityForResult(i,CHOOSE_IMAGE);}
+        catch(Exception e){toast("לא ניתן לפתוח את התמונות");}
     }
-    private void openStudio() {
-        scroll.setVisibility(View.GONE);
-        studioBar.setVisibility(View.VISIBLE);
-        browser.setVisibility(View.VISIBLE);
-        inStudio = true;
-        if (!pageLoaded) {
-            loading.setVisibility(View.VISIBLE);
-            browser.loadUrl(PROVIDER_URL);
+    private String unsupported(String text){
+        String p=text.toLowerCase(java.util.Locale.ROOT);
+        if(p.contains("שר ")||p.contains("שרה")||p.contains("לשיר")||
+            p.contains("שירה")||p.contains("מדבר")||p.contains("אומר")||
+            p.contains("בקול")||p.contains("דיבור")||p.contains("קולות")||
+            p.contains("בוכרית")||p.contains("מוזיקה")||p.contains("שומעים"))
+            return "הבקשה מחייבת קול או שירה; המנוע הנוכחי מפיק וידאו אילם בלבד.";
+        if(p.contains("שתי דמויות")||p.contains("שני אנשים")||
+            p.contains("2 דמויות")||p.contains("שתי תמונות"))
+            return "המנוע הנוכחי אינו מסוגל לשמור שתי דמויות נפרדות מתמונות שונות.";
+        return null;
+    }
+    private void begin(){
+        if(busy)return;
+        if(image==null){toast("יש לבחור תמונה תחילה");return;}
+        String story=prompt.getText().toString().trim();
+        if(story.length()<10){toast("יש לתאר את ההתרחשות בצורה מפורטת");return;}
+        String blocker=unsupported(story);
+        if(blocker!=null){show(blocker+" לא נשלחה בקשה.");return;}
+        if(!consent.isChecked()){
+            show("לפני העלאת התמונה יש לאשר העברה לספק החיצוני.");return;
         }
+        if(getPreferences(MODE_PRIVATE).getBoolean("uncertain_submission",false)){
+            show("נותרה בקשה שייתכן שהתקבלה. בדוק אותה לפני ניסיון חדש.");return;
+        }
+        final int seconds=duration.getSelectedItemPosition()+2;
+        getPreferences(MODE_PRIVATE).edit().putString("draft",story)
+            .putBoolean("uncertain_submission",true).apply();
+        setBusy(true);preview.setVisibility(View.GONE);
+        save.setVisibility(View.GONE);review.setVisibility(View.GONE);
+        worker.execute(()->{
+            try{
+                WanNativeClient.Result result=engine.create(this,image,story,seconds,
+                    new WanNativeClient.Progress(){
+                        @Override public void status(String value){show(value);}
+                        @Override public void jobCreated(String id){
+                            getPreferences(MODE_PRIVATE).edit()
+                                .putString("last_event",id).apply();
+                            runOnUiThread(()->recover.setVisibility(View.VISIBLE));
+                        }
+                    });
+                getPreferences(MODE_PRIVATE).edit().putBoolean("uncertain_submission",false)
+                    .putString("last_event","").apply();
+                runOnUiThread(()->onVideo(result));
+            }catch(Exception e){
+                String error=e.getMessage()==null?"שגיאה לא צפויה":e.getMessage();
+                runOnUiThread(()->show("לא התקבל סרטון מאומת: "+error+
+                   "\nאין ניסיון חוזר אוטומטי. ניתן לבדוק משימה קודמת."));
+            }finally{runOnUiThread(()->setBusy(false));}
+        });
     }
-    private void closeStudio() {
-        browser.setVisibility(View.GONE);
-        studioBar.setVisibility(View.GONE);
-        loading.setVisibility(View.GONE);
-        scroll.setVisibility(View.VISIBLE);
-        inStudio = false;
+    private void recoverPending(){
+        if(busy)return;
+        String id=getPreferences(MODE_PRIVATE).getString("last_event","");
+        if(id.isEmpty()){show("אין מזהה משימה קודם. לא תישלח בקשת יצירה חדשה.");return;}
+        setBusy(true);
+        worker.execute(()->{
+            try{
+                WanNativeClient.Result result=engine.resume(this,id,this::show);
+                getPreferences(MODE_PRIVATE).edit().putString("last_event","")
+                    .putBoolean("uncertain_submission",false).apply();
+                runOnUiThread(()->onVideo(result));
+            }catch(Exception e){
+                show("לא ניתן לשחזר כרגע: "+(e.getMessage()==null?"השרת לא זמין":e.getMessage()));
+            }finally{runOnUiThread(()->setBusy(false));}
+        });
     }
-    /** Only download links on the vetted Space's HTTPS host are acceptable. */
-    private void requestDownload(String raw, String mime, long length) {
-        Uri uri;
-        try { uri = Uri.parse(raw); }
-        catch (Exception e) { toast("קישור ההורדה אינו תקין"); return; }
-        if (!approved(uri) || length > 150_000_000L ||
-            !(("video/mp4".equalsIgnoreCase(mime)) ||
-              (raw.contains("/file") && raw.toLowerCase().contains(".mp4")))) {
-            toast("לא ניתן לאמת הורדת MP4 מהספק. נסה פתיחה בדפדפן.");
+    private void onVideo(WanNativeClient.Result result){
+        video=result.video;
+        preview.setVideoURI(Uri.fromFile(video));
+        preview.setOnPreparedListener(player->{player.setLooping(true);preview.start();});
+        preview.setVisibility(View.VISIBLE);
+        save.setVisibility(View.VISIBLE);review.setVisibility(View.VISIBLE);
+        show("נוצר MP4 עם תנועה ממנוע AI. "+result.warning+
+            "\nבדוק בעצמך אם ההתרחשות מתאימה להנחיה.");
+    }
+    private void saveVideo(){
+        if(video==null||!video.isFile()){toast("אין סרטון זמין לשמירה");return;}
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("video/mp4");
+        intent.putExtra(Intent.EXTRA_TITLE,"Kolbo-Video-AI.mp4");
+        try{startActivityForResult(intent,SAVE_VIDEO);}
+        catch(Exception e){toast("לא ניתן לבחור מקום לשמירת הסרטון");}
+    }
+    @Override protected void onActivityResult(int req,int code,Intent data){
+        super.onActivityResult(req,code,data);
+        if(req==CHOOSE_IMAGE&&code==RESULT_OK&&data!=null&&data.getData()!=null){
+            image=data.getData();
+            photoPreview.setImageURI(image);
+            photoPreview.setVisibility(View.VISIBLE);
+            photoLabel.setText("התמונה נבחרה מקומית. טרם הועלתה לספק.");
+            consent.setChecked(false);
             return;
         }
-        try {
-            DownloadManager.Request request = new DownloadManager.Request(uri);
-            request.setMimeType("video/mp4");
-            request.setTitle("Kolbo Video AI");
-            request.setDescription("קובץ MP4 שהופק במנוע AI חיצוני");
-            request.setNotificationVisibility(
-                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            request.addRequestHeader("User-Agent", browser.getSettings().getUserAgentString());
-            String cookies = CookieManager.getInstance().getCookie(PROVIDER_URL);
-            if (cookies != null && !cookies.isEmpty()) request.addRequestHeader("Cookie", cookies);
-            String filename = "Kolbo-Video-" + UUID.randomUUID().toString().substring(0,8) + ".mp4";
-            // Public Downloads on scoped storage, app-private fallback on Android 8.
-            if (Build.VERSION.SDK_INT >= 29) {
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,filename);
-            } else {
-                request.setDestinationInExternalFilesDir(MainActivity.this,
-                    Environment.DIRECTORY_MOVIES,filename);
-            }
-            DownloadManager mgr=(DownloadManager)getSystemService(Context.DOWNLOAD_SERVICE);
-            if (mgr == null) throw new IllegalStateException("Download Manager missing");
-            mgr.enqueue(request);
-            toast("הורדת הסרטון התחילה. בדוק את ההורדות של המכשיר.");
-        } catch (Exception e) {
-            toast("ההורדה לא הופעלה. נסה דרך הדפדפן.");
+        if(req==SAVE_VIDEO&&code==RESULT_OK&&data!=null&&data.getData()!=null&&
+            video!=null&&video.isFile()){
+            File source=video;
+            Uri dest=data.getData();
+            worker.execute(()->{
+                try(FileInputStream in=new FileInputStream(source);
+                    OutputStream out=getContentResolver().openOutputStream(dest,"w")){
+                    if(out==null)throw new Exception("אין גישה לתיקיית השמירה");
+                    byte[] buf=new byte[32768];int n;
+                    while((n=in.read(buf))!=-1)out.write(buf,0,n);
+                    out.flush();
+                    runOnUiThread(()->toast("הסרטון נשמר במכשיר"));
+                }catch(Exception ex){runOnUiThread(()->toast("שמירת הסרטון נכשלה"));}
+            });
         }
     }
-    @Override protected void onActivityResult(int request, int result, Intent data) {
-        super.onActivityResult(request,result,data);
-        if (request == PICK_IMAGES && waitingForImage != null) {
-            Uri[] files=null;
-            if (result == RESULT_OK && data != null && data.getData()!=null) {
-                files = new Uri[]{data.getData()};
-            }
-            waitingForImage.onReceiveValue(files);
-            waitingForImage=null;
-        }
-    }
-    @Override public void onBackPressed() {
-        if (inStudio && browser.canGoBack()) browser.goBack();
-        else if (inStudio) closeStudio();
-        else super.onBackPressed();
-    }
-    @Override protected void onDestroy() {
-        if (waitingForImage != null) waitingForImage.onReceiveValue(null);
-        waitingForImage=null;
-        if (browser != null) {
-            browser.setDownloadListener(null);
-            browser.destroy();
-        }
+    @Override protected void onDestroy(){
+        preview.stopPlayback();
+        worker.shutdown();
         super.onDestroy();
     }
 }
