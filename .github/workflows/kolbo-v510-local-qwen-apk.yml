@@ -35,7 +35,7 @@ jobs:
           kotlin=(app/"QwenScenePlanner.kt").read_text()
           video=(app/"WanNativeClient.java").read_text()
           ui=(app/"MainActivity.java").read_text()
-          for s in ("EXPECTED_SIZE=344671744L","03e7da1eb1108b50dffaa9bb52cc7bcbad2eb0c66ca990267f480c1e545d2856",
+          for s in ("EXPECTED_SIZE=347251840L","2df6821ec12702dafd33915e7a1a1adc7c4b053f3672fd9555dfaf3a114c4139",
                     "NETWORK_WIFI","SHA-256","DownloadManager"):
             assert s in manager,s
           for s in ("EngineConfig","Backend.CPU()","conversation.sendMessage",
