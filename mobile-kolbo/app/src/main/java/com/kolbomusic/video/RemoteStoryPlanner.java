@@ -18,25 +18,64 @@ import java.nio.charset.StandardCharsets;
  * Deliberately no on-device LLM, image model, GGUF, bundled weights,
  * hardware accelerator or phone-side reasoning jobs.
  *
- * An approved deployment is REQUIRED for this optional API. The default
- * release BuildConfig.CLOUD_PLANNER_URL="" does not upload any story.
- * A valid, permitted endpoint must be deployed and configured at build time.
+ * An approved deployment is REQUIRED for this optional API.
+ * The app discovers the approved HTTPS Worker URL from a small GitHub JSON
+ * file, allowing deployment changes without another APK update.
+ * The manifest is disabled until an actual, tested backend exists.
  */
 public final class RemoteStoryPlanner {
     private RemoteStoryPlanner(){}
+    // This is a *read-only* URL; the discovery document holds no user data.
+    // Only a trusted GitHub repository owner may enable its Worker endpoint.
+    private static final String DISCOVERY=
+        "https://raw.githubusercontent.com/kolbomusic/kolbo-android-app/"+
+        "kolbo-video-v520-lightweight-cloud-first-20261014/cloud-brain-worker/endpoint.json";
+
     public static boolean configured(){
-        return BuildConfig.CLOUD_PLANNER_URL!=null
-            && BuildConfig.CLOUD_PLANNER_URL.startsWith("https://");
+        // True means the integration exists, NOT that a remote model is deployed.
+        return true;
+    }
+    private static URL endpoint() throws IOException {
+        String target=BuildConfig.CLOUD_PLANNER_URL;
+        if(target==null || target.isEmpty()){
+            HttpURLConnection lookup=(HttpURLConnection)new URL(DISCOVERY).openConnection();
+            lookup.setInstanceFollowRedirects(false);
+            lookup.setConnectTimeout(7000);
+            lookup.setReadTimeout(7000);
+            try{
+                if(lookup.getResponseCode()!=200 || lookup.getContentLengthLong()>2200)
+                    throw new IOException("הגדרת השרת אינה זמינה");
+                StringBuilder text=new StringBuilder(800);
+                try(InputStream in=lookup.getInputStream();
+                    BufferedReader rd=new BufferedReader(
+                        new InputStreamReader(in,StandardCharsets.UTF_8))){
+                    char[] buf=new char[512];int n;
+                    while((n=rd.read(buf))!=-1){
+                        text.append(buf,0,n);
+                        if(text.length()>2200)throw new IOException("הגדרת שרת ארוכה מדי");
+                    }
+                }
+                JSONObject config=new JSONObject(text.toString());
+                if(config.optInt("schema_version")!=1 || !config.optBoolean("enabled",false))
+                    throw new IOException("שרת המוח עדיין לא הופעל. ממשיך בתכנון בסיסי.");
+                target=config.optString("url","");
+            }catch(org.json.JSONException e){
+                throw new IOException("הגדרת שרת המוח אינה תקינה",e);
+            }finally{lookup.disconnect();}
+        }
+        URL url=new URL(target);
+        if(!"https".equalsIgnoreCase(url.getProtocol()) || url.getUserInfo()!=null ||
+           (url.getPort()!=-1 && url.getPort()!=443) ||
+           !url.getHost().endsWith(".workers.dev") ||
+           !"/v1/plan".equals(url.getPath()) || url.getQuery()!=null)
+            throw new IOException("שרת המוח אינו ברשימת מקורות Cloudflare מורשים");
+        return url;
     }
 
     public static String plan(String hebrew,String english) throws IOException {
-        if(!configured())throw new IOException("שרת המוח עדיין לא חובר");
         if(hebrew==null||hebrew.length()>1600||english==null||english.length()>3200)
             throw new IOException("בקשת תכנון לא תקינה");
-        final URL url=new URL(BuildConfig.CLOUD_PLANNER_URL);
-        if(!"https".equalsIgnoreCase(url.getProtocol())||url.getUserInfo()!=null
-           ||(url.getPort()!=-1 && url.getPort()!=443))
-            throw new IOException("כתובת מנוע השפה אינה מאושרת");
+        final URL url=endpoint();
         HttpURLConnection c=(HttpURLConnection)url.openConnection();
         c.setInstanceFollowRedirects(false);
         c.setConnectTimeout(8000);
