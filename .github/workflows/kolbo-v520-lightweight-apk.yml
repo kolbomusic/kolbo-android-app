@@ -39,7 +39,7 @@ jobs:
           assert '&& plannerConsent!=null && plannerConsent.isChecked()' in ui
           assert 'BuildConfig.CLOUD_PLANNER_URL' in planner
           assert 'setInstanceFollowRedirects(false)' in planner
-          assert 'versionName \'5.2.0\'' in manifest
+          assert 'versionName \'5.3.0\'' in manifest
           print('PASS: no AI inference or 331MB model on the phone; optional HTTPS remote planner requires consent')
           PY
       - name: Test Hebrew scene safety and routing without AI libraries
