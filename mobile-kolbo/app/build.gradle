@@ -3,11 +3,11 @@ android {
   namespace 'com.kolbomusic.video'
   compileSdk 35
   defaultConfig {
-    applicationId 'com.kolbomusic.video.hebrewbrain'
+    applicationId 'com.kolbomusic.video.smartgpu'
     minSdk 26
     targetSdk 35
-    versionCode 473
-    versionName '4.7.3'
+    versionCode 474
+    versionName '4.7.4'
   }
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_17

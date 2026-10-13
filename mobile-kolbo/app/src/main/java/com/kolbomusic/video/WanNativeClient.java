@@ -31,17 +31,21 @@ import java.util.UUID;
  */
 public final class WanNativeClient {
     public static final String HOST="zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space";
-    private static final String ORIGIN="https://"+HOST;
+    private WanProviderCatalog.Engine engine=WanProviderCatalog.FAST;
+    private String origin(){return engine.origin();}
+    public String providerId(){return engine.id;}
+    public String providerName(){return engine.name;}
+    public void useForExistingJob(String id){
+        engine=WanProviderCatalog.byId(id);
+    }
     private static final int MAX_JSON=700_000;
     private static final int MAX_VIDEO=100_000_000;
     private static final int MAX_UPLOAD=4_000_000;
-    private static final String[] PARAMS={
-        "input_image","prompt","steps","negative_prompt","duration_seconds",
-        "guidance_scale","guidance_scale_2","seed","randomize_seed"};
 
     public interface Progress {
         void status(String text);
         default void beforeSubmission() {}
+        default void providerSelected(String providerId,String providerName) {}
         default void jobCreated(String id) {}
     }
     public static final class Result {
@@ -54,16 +58,18 @@ public final class WanNativeClient {
     /** Definitive provider terminal error; never automatically retry the same job. */
     public static final class FinalProviderRejection extends IOException {
         public final String reasonCode;
-        FinalProviderRejection(ProviderErrorClassifier.Result result) {
+        public final String providerId;
+        FinalProviderRejection(ProviderErrorClassifier.Result result,String providerId) {
             super(result.hebrew);
             this.reasonCode=result.code;
+            this.providerId=providerId;
         }
     }
 
-    private static HttpURLConnection connection(String url,String method,int readTimeout) throws IOException {
+    private HttpURLConnection connection(String url,String method,int readTimeout) throws IOException {
         URL input=new URL(url);
         if(!"https".equalsIgnoreCase(input.getProtocol()) ||
-            !HOST.equalsIgnoreCase(input.getHost()) ||
+            !engine.host.equalsIgnoreCase(input.getHost()) ||
             (input.getPort()!=-1&&input.getPort()!=443) ||
             input.getUserInfo()!=null) throw new IOException("כתובת הספק אינה מורשית");
         HttpURLConnection c=(HttpURLConnection)input.openConnection();
@@ -72,7 +78,7 @@ public final class WanNativeClient {
         c.setConnectTimeout(18000);
         c.setReadTimeout(readTimeout);
         c.setRequestProperty("Accept","application/json, text/event-stream");
-        c.setRequestProperty("User-Agent","KolboVideoNative/4.7.1");
+        c.setRequestProperty("User-Agent","KolboVideoNative/4.7.4");
         c.setUseCaches(false);
         return c;
     }
@@ -99,17 +105,17 @@ public final class WanNativeClient {
 
     /** Network GET only; this checks exact public parameter names and order. */
     public void preflight() throws Exception {
-        HttpURLConnection c=connection(ORIGIN+"/gradio_api/info","GET",18000);
+        HttpURLConnection c=connection(origin()+"/gradio_api/info","GET",18000);
         try{
             JSONObject document=new JSONObject(body(c,MAX_JSON));
             JSONObject apis=document.optJSONObject("named_endpoints");
             JSONObject endpoint=apis==null?null:apis.optJSONObject("/generate_video");
             JSONArray parameters=endpoint==null?null:endpoint.optJSONArray("parameters");
-            if(parameters==null||parameters.length()!=PARAMS.length)
+            if(parameters==null||parameters.length()!=engine.parameters.length)
                 throw new IOException("ממשק המנוע השתנה; לא נשלחה תמונה");
-            for(int i=0;i<PARAMS.length;i++){
+            for(int i=0;i<engine.parameters.length;i++){
                 JSONObject entry=parameters.optJSONObject(i);
-                if(entry==null||!PARAMS[i].equals(entry.optString("parameter_name")))
+                if(entry==null||!engine.parameters[i].equals(entry.optString("parameter_name")))
                     throw new IOException("ממשק המנוע השתנה; לא נשלחה תמונה");
             }
         }finally{c.disconnect();}
@@ -163,7 +169,7 @@ public final class WanNativeClient {
 
     private String upload(byte[] jpeg) throws Exception {
         String boundary="Kolbo"+UUID.randomUUID().toString().replace("-","");
-        HttpURLConnection c=connection(ORIGIN+"/gradio_api/upload","POST",30000);
+        HttpURLConnection c=connection(origin()+"/gradio_api/upload","POST",30000);
         c.setDoOutput(true);
         c.setChunkedStreamingMode(32*1024);
         c.setRequestProperty("Content-Type","multipart/form-data; boundary="+boundary);
@@ -197,13 +203,31 @@ public final class WanNativeClient {
         image.put("is_stream",false);
         image.put("meta",new JSONObject().put("_type","gradio.FileData"));
         JSONArray args=new JSONArray();
-        args.put(image);args.put(promptForProvider(prompt));args.put(8);
-        args.put("static closeup, exaggerated facial expressions, only moving lips, blurry, "+
-            "extra limbs, distorted identity, unwanted objects, watermark, subtitles");
-        args.put((double)seconds);args.put(1.0);args.put(1.0);
-        args.put(42);args.put(false);
+        String neg="static closeup, exaggerated facial expressions, only moving lips, blurry, "+
+             "extra limbs, distorted identity, unwanted objects, watermark, subtitles";
+        args.put(image);
+        if(engine.isLightning()){
+            // Exact, separately audited 16-input contract. No guesswork across providers.
+            args.put(JSONObject.NULL);                  // last_image optional
+            args.put(promptForProvider(prompt));        // prompt
+            args.put(4);                                // lightning step budget
+            args.put(neg);                              // negative prompt
+            args.put((double)seconds);                  // actual requested seconds
+            args.put(1.0);args.put(1.0);                // guidance scales
+            args.put(42);args.put(false);               // seed and randomize
+            args.put(5);                                // output quality
+            args.put("UniPCMultistep");                 // scheduler
+            args.put(3.0);                              // flow shift
+            args.put(16);                               // 16 fps; no extra frame interpolation
+            args.put(false);                            // no 30% extra GPU time
+            args.put(true);                             // gr.Video output
+        }else{
+            args.put(promptForProvider(prompt));args.put(8);
+            args.put(neg);args.put((double)seconds);
+            args.put(1.0);args.put(1.0);args.put(42);args.put(false);
+        }
         JSONObject payload=new JSONObject().put("data",args);
-        HttpURLConnection c=connection(ORIGIN+"/gradio_api/call/generate_video","POST",35000);
+        HttpURLConnection c=connection(origin()+"/gradio_api/call/generate_video","POST",35000);
         c.setDoOutput(true);
         c.setRequestProperty("Content-Type","application/json; charset=UTF-8");
         byte[] bytes=payload.toString().getBytes(StandardCharsets.UTF_8);
@@ -219,7 +243,7 @@ public final class WanNativeClient {
     }
 
     private String poll(String id,Progress progress) throws Exception {
-        HttpURLConnection c=connection(ORIGIN+"/gradio_api/call/generate_video/"+id,"GET",400_000);
+        HttpURLConnection c=connection(origin()+"/gradio_api/call/generate_video/"+id,"GET",400_000);
         try{
             int code=c.getResponseCode();
             if(code!=200)throw new IOException("קריאת תוצאת הווידאו נכשלה ("+code+")");
@@ -239,7 +263,7 @@ public final class WanNativeClient {
                         if("complete".equals(event))return extractVideoUrl(data);
                         if("error".equals(event))
                             throw new FinalProviderRejection(
-                                ProviderErrorClassifier.classify(data));
+                                ProviderErrorClassifier.classify(data),engine.id);
                         if("heartbeat".equals(event))progress.status("מנוע ה־AI עדיין עובד…");
                     }
                 }
@@ -250,28 +274,32 @@ public final class WanNativeClient {
 
     private String extractVideoUrl(String data) throws Exception {
         JSONArray outputs=new JSONArray(data);
-        Object first=outputs.opt(0);
-        JSONObject outer=first instanceof JSONObject?(JSONObject)first:null;
-        if(outer==null)throw new IOException("המנוע לא החזיר קובץ וידאו");
-        // A raw Gradio gr.Video SSE response commonly wraps FileData under
-        // {"video":{...},"subtitles":null}; deserialized SDK results differ.
-        JSONObject nested=outer.optJSONObject("video");
-        JSONObject file=nested!=null?nested:outer;
-        String url=file.optString("url","");
-        if(url.isEmpty()){
-            String path=file.optString("path","");
-            if(path.isEmpty()||path.length()>2048)
-                throw new IOException("לא התקבלה כתובת לסרטון");
-            if(path.startsWith("http://")||path.startsWith("https://"))url=path;
-            else if(path.startsWith("/"))url=ORIGIN+"/gradio_api/file="+path;
-            else throw new IOException("נתיב תוצאה אינו תקין");
+        // Gradio video components can return FileData under video:{...},
+        // or a separate downloadable FileData item. Do not trust arbitrary
+        // client URLs or off-host paths, including for the second provider.
+        for(int i=0;i<Math.min(3,outputs.length());i++){
+            Object current=outputs.opt(i);
+            JSONObject value=current instanceof JSONObject?(JSONObject)current:null;
+            if(value==null)continue;
+            JSONObject nested=value.optJSONObject("video");
+            JSONObject file=nested!=null?nested:value;
+            String url=file.optString("url","");
+            if(url.isEmpty()){
+                String path=file.optString("path","");
+                if(path.isEmpty()||path.length()>2048)continue;
+                if(path.startsWith("/"))url=origin()+"/gradio_api/file="+path;
+                else if(path.startsWith("https://"))url=path;
+                else continue;
+            }
+            URL resolved=new URL(url);
+            if(!"https".equalsIgnoreCase(resolved.getProtocol())
+                ||!engine.host.equalsIgnoreCase(resolved.getHost())
+                || (resolved.getPort()!=-1&&resolved.getPort()!=443)
+                || resolved.getUserInfo()!=null)
+                throw new IOException("מקור סרטון לא מורשה");
+            return url;
         }
-        URL resolved=new URL(url);
-        if(!"https".equals(resolved.getProtocol()) || !HOST.equals(resolved.getHost())
-            || (resolved.getPort()!=-1&&resolved.getPort()!=443)
-            || resolved.getUserInfo()!=null)
-            throw new IOException("מקור סרטון לא מורשה");
-        return url;
+        throw new IOException("המנוע לא החזיר קובץ וידאו תקין");
     }
 
     private File download(String url, Context context,Progress progress) throws Exception {
@@ -302,6 +330,29 @@ public final class WanNativeClient {
         finally{c.disconnect();}
     }
 
+    /**
+     * Probe both known contracts using GET only, before any photo upload.
+     * Changing engine AFTER a submitted job is forbidden.
+     * A provider marked failed is skipped only for the user's next EXPLICIT job.
+     */
+    public void selectForNewJob(String lastFailed,boolean complexScene,Progress progress) throws Exception {
+        IOException last=null;
+        for(WanProviderCatalog.Engine candidate:WanProviderCatalog.order(lastFailed,complexScene)){
+            engine=candidate;
+            try {
+                progress.status("בודק אפשרות הפקה ב־"+candidate.name+"…");
+                preflight();
+                progress.providerSelected(candidate.id,candidate.name);
+                progress.status("מנוע נבחר: "+candidate.name+
+                    ". זמינות API אינה מבטיחה GPU או מכסה פנויה.");
+                return;
+            }catch(Exception e){
+                last=new IOException("בדיקת המנוע "+candidate.name+" נכשלה",e);
+            }
+        }
+        throw new IOException("שני ממשקי הווידאו הציבוריים אינם זמינים או שונו. לא נשלחה תמונה.",last);
+    }
+
     public Result create(Context context,Uri image,String hebrew,int seconds,Progress progress) throws Exception {
         if(hebrew==null||hebrew.trim().length()<2||hebrew.length()>1200)
             throw new IOException("כתוב במילים שלך מה תרצה לראות בסרטון");
@@ -312,8 +363,10 @@ public final class WanNativeClient {
         progress.status("האפליקציה הבינה: "+scene.summary);
         String english=HebrewActionTranslator.translate(scene.actionText,progress);
         String modelInstruction=scene.prompt(english);
-        progress.status("מאמת את מנוע הווידאו…");
-        preflight();
+        // An explicit user action is required for EACH new inference.
+        String lastFailed=context.getSharedPreferences("gpu_provider",Context.MODE_PRIVATE)
+            .getString("last_failed",null);
+        selectForNewJob(lastFailed,scene.complex,progress);
         progress.status("מכין את התמונה בטלפון…");
         if(scene.photoCleanup)progress.status("מנקה רעש ומתאים בהירות בתמונת המקור…");
         byte[] bytes=compressPhoto(context,image,scene.photoCleanup);
@@ -330,7 +383,8 @@ public final class WanNativeClient {
         return new Result(video,id,"התאמת ההתרחשות להנחיה מחייבת בדיקה שלך; לא בוצע אימות סמנטי.");
     }
 
-    public Result resume(Context context,String eventId,Progress progress) throws Exception {
+    public Result resume(Context context,String eventId,String selectedProvider,Progress progress) throws Exception {
+        useForExistingJob(selectedProvider);
         if(eventId==null||!eventId.matches("[a-zA-Z0-9_-]{4,160}"))
             throw new IOException("מזהה משימה אינו תקין");
         String url=poll(eventId,progress);

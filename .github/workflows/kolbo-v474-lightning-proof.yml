@@ -1,0 +1,26 @@
+name: Kolbo v4.7.4 one Lightning provider synthetic proof
+on:
+  push:
+    branches: [kolbo-video-v474-smart-gpu-failover-20261014]
+    paths:
+      - gpu-discovery/lightning_rest_one_synthetic_attempt.py
+      - .github/workflows/kolbo-v474-lightning-proof.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  synthetic-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: ONE public synthetic 2-second Lightning job; no user media/auth or retries
+        run: python gpu-discovery/lightning_rest_one_synthetic_attempt.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-v474-one-Lightning-synthetic-rest-proof
+          path: native-lightning-proof/receipt.json
+          retention-days: 7
+          if-no-files-found: warn
