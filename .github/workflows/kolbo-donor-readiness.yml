@@ -1,0 +1,31 @@
+name: Kolbo volunteer compute donor doctor CI
+on:
+  push:
+    branches: [kolbo-compute-volunteer-network-20261013]
+    paths: ['gpu-donor/**','.github/workflows/kolbo-donor-readiness.yml','gpu-donor-site/**']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Verify no enrolling without a real host
+        run: python -m unittest discover -s gpu-donor/tests -p 'test_*.py' -v
+      - name: Inspect host without uploading anything
+        run: |
+          set +e
+          python gpu-donor/doctor.py > /tmp/doctor.json
+          status=$?
+          set -e
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/doctor.json'))
+          assert data['worker_registered'] is False
+          assert data['gpu_generation_proven'] is False
+          assert data['payments_started'] is False
+          assert data['user_media_transferred'] is False
+          print('Local readiness report is fail-closed')
+          PY
