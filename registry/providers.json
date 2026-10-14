@@ -58,7 +58,7 @@
           "supports_explicit_duration": true
         }
       ],
-      "discovered_at": "2026-10-13T11:55:11.011080+00:00",
+      "discovered_at": "2026-10-14T09:35:50.854385+00:00",
       "id": "chopperblu/ltx-2-5-demo",
       "license_declared": null,
       "pricing_verified": false,
@@ -68,24 +68,9 @@
       "space_url": "https://huggingface.co/spaces/chopperblu/ltx-2-5-demo",
       "status": "schema_matched",
       "terms_verified": false
-    },
-    {
-      "api_host": "https://hugging-apps-ltx-2-5-alpha-matte.hf.space",
-      "automated_public_demo_probe_candidate": false,
-      "capabilities": [],
-      "discovered_at": "2026-10-13T11:55:11.011080+00:00",
-      "id": "hugging-apps/ltx-2-5-alpha-matte",
-      "license_declared": null,
-      "pricing_verified": false,
-      "probe": "not_run",
-      "production_eligible": false,
-      "source": "huggingface_spaces_official",
-      "space_url": "https://huggingface.co/spaces/hugging-apps/ltx-2-5-alpha-matte",
-      "status": "schema_not_compatible",
-      "terms_verified": false
     }
   ],
-  "discovered_at": "2026-10-13T11:55:11.011080+00:00",
+  "discovered_at": "2026-10-14T09:35:50.854385+00:00",
   "never_claims_generation_from_metadata": true,
   "verification_level": "metadata_only",
   "version": "3.2.0"
