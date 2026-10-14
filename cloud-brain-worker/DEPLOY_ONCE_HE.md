@@ -1,5 +1,18 @@
 # הפעלת המוח בענן — פעם אחת בלבד
 
+## האפשרות הפשוטה יותר — כפתור Deploy to Cloudflare
+
+**[הפעל את מוח ה־AI בענן ב־Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/kolbomusic/kolbo-android-app/tree/kolbo-video-v520-lightweight-cloud-first-20261014/cloud-brain-worker)**
+
+הקישור הרשמי של Cloudflare פותח תהליך חיבור ופריסה של ה־Worker עם קובץ התצורה שלו, כולל Workers AI. בחר **Workers Free**, התחבר לחשבון Cloudflare ואשר פריסה. אל תאשר תוכנית בתשלום.
+
+לאחר שהפריסה הושלמה, העתק לצ'אט **רק** את הכתובת הציבורית שמסתיימת ב־`workers.dev`, למשל `https://kolbo-cloud-story-brain.example.workers.dev` — **זו דוגמה, לא כתובת פעילה**. אל תשלח סיסמה, Token או Account ID. אבדוק בעצמי שה־`/health` עובד ואת בקשת הניסוי בעברית, ורק אחרי הצלחה אעדכן את `endpoint.json` בענף הפרויקט. ה־APK 5.3 שהותקן יגלה את השרת בעצמו ללא התקנה חוזרת.
+
+אם מסלול Deploy to Cloudflare אינו מצליח עם מבנה המאגר, ניתן להשתמש במסלול GitHub Actions שלהלן. גם במסלול הראשון עדיין נדרש אישור חד־פעמי שלך דרך Cloudflare — אין כאן פריסה לחשבון בלי הרשאה.
+
+---
+
+
 **מצב נוכחי:** קוד Cloudflare Worker קיים; `endpoint.json` כבוי בכוונה. אין שרת AI פעיל ואין להציג את תכנון הענן כמחובר עד מעבר בדיקת API אמיתית. האפליקציה 5.3.0 נשארת קלה, ללא מודלי AI או הורדות משקלים לטלפון.
 
 ## ההרשאה החד-פעמית הדרושה
