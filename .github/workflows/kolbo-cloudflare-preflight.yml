@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - uses: actions/checkout@v4
       - name: Check whether one-time owner account connection is already present
         env:
           HAVE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
