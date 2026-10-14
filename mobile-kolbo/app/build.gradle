@@ -1,14 +1,18 @@
-plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+plugins { id 'com.android.application' }
 android {
+  buildFeatures { buildConfig true }
   namespace 'com.kolbomusic.video'
   compileSdk 35
   defaultConfig {
-    applicationId 'com.kolbomusic.video.localbrain'
+    def plannerUrl = (System.getenv('KOLBO_PLANNER_URL') ?: '').trim()
+    if(plannerUrl && !(plannerUrl ==~ /^https:\/\/[a-zA-Z0-9.-]+\/v1\/plan$/))
+      throw new GradleException("KOLBO_PLANNER_URL must be an HTTPS /v1/plan URL with no token or query")
+    buildConfigField 'String', 'CLOUD_PLANNER_URL', '"'+plannerUrl+'"'
+    applicationId 'com.kolbomusic.video.lightcloud'
     minSdk 26
     targetSdk 35
-    versionCode 510
-    versionName '5.1.0'
-    ndk { abiFilters 'arm64-v8a' }
+    versionCode 530
+    versionName '5.3.0'
   }
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_17
@@ -17,10 +21,6 @@ android {
 }
 
 dependencies {
-  implementation 'com.google.mlkit:translate:17.0.3'
-  implementation 'com.google.ai.edge.litertlm:litertlm-android:0.13.0'
   implementation 'androidx.media3:media3-exoplayer:1.6.1'
   implementation 'androidx.media3:media3-ui:1.6.1'
-  implementation 'com.google.mlkit:face-detection:16.1.7'
-  implementation 'com.google.mlkit:image-labeling:17.0.9'
 }

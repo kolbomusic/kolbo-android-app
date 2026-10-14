@@ -362,22 +362,22 @@ public final class WanNativeClient {
         progress.status("האפליקציה הבינה: "+scene.summary);
         String english=HebrewActionTranslator.translate(scene.actionText,progress);
         V5SceneContract contract=V5SceneContract.compile(scene,english,seconds);
-        String localAdvice=null;
-        try {
-            if(LocalBrainModelManager.isVerified(context)){
-                progress.status("מוח השפה Qwen3 מתכנן את הסיפור באופן מקומי, ללא API בתשלום…");
-                localAdvice=QwenScenePlanner.plan(context,english,hebrew.trim());
+        String remoteAdvice=null;
+        if(RemoteStoryPlanner.configured() &&
+           context.getSharedPreferences("remote_brain",Context.MODE_PRIVATE)
+                 .getBoolean("allow_cloud",false)){
+            try{
+                progress.status("מתכנן את הסצנה בשרת AI, ללא עיבוד כבד בטלפון…");
+                remoteAdvice=RemoteStoryPlanner.plan(hebrew.trim(),english);
+            }catch(IOException e){
+                progress.status("שרת התכנון אינו זמין; ממשיך בתכנון בסיסי ולא שולח בקשת תכנון נוספת.");
             }
-        }catch(Exception | LinkageError e){
-            // Optional model failure is not a reason to waste a GPU request,
-            // and never gets silently presented as successful Qwen inference.
-            progress.status("המוח המקומי לא היה זמין; משתמש בתכנון הגיבוי, ללא חיוב.");
         }
-        QwenPlanContract.Result plan=QwenPlanContract.compile(contract,localAdvice);
+        QwenPlanContract.Result plan=QwenPlanContract.compile(contract,remoteAdvice);
         if(plan.requiresAudio)
             throw new IOException("הבקשה דורשת שמע או שירה; מנוע הווידאו המחובר אילם.");
-        progress.status(plan.usedLocalModel ? "תוכנית הפקה נבנתה על ידי Qwen3" :
-            "מוח הגיבוי מבין פעולות בסיסיות; אפשר להפעיל מודל שפה חינמי.");
+        progress.status(plan.usedLocalModel ? "התקבלה תוכנית מפורטת משרת הבינה" :
+            "מנוע תכנון הענן טרם חובר או לא זמין; נעשה שימוש בתכנון בסיסי.");
         String modelInstruction=plan.prompt;
         progress.status("בודק את תמונת המקור לפני הפקה…");
         V5SourceAudit.Result source=V5SourceAudit.examine(context,image,contract.requiresNewBody);

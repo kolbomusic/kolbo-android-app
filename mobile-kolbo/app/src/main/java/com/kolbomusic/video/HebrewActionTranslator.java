@@ -1,54 +1,47 @@
 package com.kolbomusic.video;
 
-import android.content.Context;
-
-import com.google.android.gms.tasks.Tasks;
-import com.google.mlkit.common.model.DownloadConditions;
-import com.google.mlkit.nl.translate.TranslateLanguage;
-import com.google.mlkit.nl.translate.Translation;
-import com.google.mlkit.nl.translate.Translator;
-import com.google.mlkit.nl.translate.TranslatorOptions;
-
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 
-/** Offline-on-device Hebrew-to-English prompt translation for the video model.
- * Only the ML model is downloaded; user text is translated on device.
+/**
+ * Zero-neural fallback only. No ML Kit, tokenizer or model on Android.
+ *
+ * This DOES NOT replace a server-side LLM for arbitrary Hebrew instructions.
+ * It preserves recognized entities/actions for a basic fallback when the
+ * remote AI model is not yet deployed, and retains original text as context.
  */
 public final class HebrewActionTranslator {
-    private HebrewActionTranslator() {}
-
-    public static boolean containsHebrew(String value){
-        if(value==null)return false;
-        for(int i=0;i<value.length();i++){
-            char c=value.charAt(i);
-            if(c>=0x0590 && c<=0x05ff)return true;
-        }
+    private HebrewActionTranslator(){}
+    public static boolean containsHebrew(String input){
+        if(input==null)return false;
+        for(int i=0;i<input.length();i++)
+            if(input.charAt(i)>=0x0590&&input.charAt(i)<=0x05FF)return true;
         return false;
     }
-
-    public static String translate(String original, WanNativeClient.Progress progress)
-        throws Exception {
-        if(original==null || original.trim().length()<2)
-            throw new IOException("ההנחיה קצרה מדי");
-        if(!containsHebrew(original))return original;
-        TranslatorOptions options = new TranslatorOptions.Builder()
-            .setSourceLanguage(TranslateLanguage.HEBREW)
-            .setTargetLanguage(TranslateLanguage.ENGLISH)
-            .build();
-        Translator translator=Translation.getClient(options);
-        try {
-            progress.status("מכין תרגום עברית־אנגלית מקומי. בפעם הראשונה ייתכן שתידרש הורדת מודל של כ־30MB…");
-            Tasks.await(translator.downloadModelIfNeeded(
-                new DownloadConditions.Builder().build()),150,TimeUnit.SECONDS);
-            progress.status("מתרגם את הפעולות שתיארת, ללא שליחת הטקסט לשרת תרגום…");
-            String translated=Tasks.await(translator.translate(original),40,TimeUnit.SECONDS);
-            if(translated==null || translated.trim().length()<9)
-                throw new IOException("לא ניתן היה לתרגם את ההוראות במידה מספקת");
-            return translated.trim();
-        }catch(Exception e){
-            throw new IOException("לא ניתן לתרגם את ההנחיה כעת. "+
-                "לא נשלחה תמונה ולא הוזמנה הפקה; בדוק חיבור לרשת ונסה שוב.",e);
-        }finally{translator.close();}
+    public static String translate(String original,WanNativeClient.Progress progress)
+        throws IOException {
+        if(original==null||original.trim().length()<2)
+            throw new IOException("יש לכתוב מה תרצה שיקרה בסרטון");
+        if(!containsHebrew(original))return original.trim();
+        HebrewIntentBrain.Scene scene=HebrewIntentBrain.interpret(original.trim());
+        StringBuilder output=new StringBuilder(1100);
+        output.append("Video scene featuring the reference person. ");
+        if(!scene.cast.isEmpty()){
+            output.append("Visible subjects: ");
+            for(HebrewIntentBrain.Cast cast:scene.cast) {
+                if(cast.count>0)output.append("exactly ").append(cast.count).append(' ');
+                output.append(cast.english).append("; ");
+            }
+        }
+        if(!scene.verbsEnglish.isEmpty()){
+            output.append("Physical events in story order: ");
+            for(String verb:scene.verbsEnglish)output.append(verb).append("; ");
+        }else{
+            output.append("Do not invent an action when the scene is unclear. ");
+        }
+        output.append("Original user story in Hebrew for detail retention: ");
+        output.append(original.trim());
+        progress.status("הוכן תיאור בסיסי, ללא הרצת מודל בטלפון. "+
+            "תכנון חופשי מתקדם יתאפשר אחרי חיבור שרת AI.");
+        return output.toString();
     }
 }

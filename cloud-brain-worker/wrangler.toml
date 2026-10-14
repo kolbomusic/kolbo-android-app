@@ -1,0 +1,23 @@
+name = "kolbo-cloud-story-brain"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[ai]
+binding = "AI"
+
+# These are defensive application-level limits. Namespace ids should be unique
+# within the Cloudflare account to avoid collision with other Workers.
+[[ratelimits]]
+name = "USER_RATE"
+namespace_id = "827431"
+  [ratelimits.simple]
+  limit = 2
+  period = 60
+
+[[ratelimits]]
+name = "GLOBAL_RATE"
+namespace_id = "827432"
+  [ratelimits.simple]
+  limit = 3
+  period = 60

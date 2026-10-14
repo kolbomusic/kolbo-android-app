@@ -1,0 +1,108 @@
+name: Kolbo Cloudflare deployment (only after owner config)
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  deploy-and-enable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Require owner-authorized Cloudflare credentials
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CF_TOKEN" || { echo "Cloudflare token was not connected"; exit 1; }
+          test -n "$CF_ACCOUNT" || { echo "Cloudflare account ID was not connected"; exit 1; }
+          echo "Owner-authorized Cloudflare credentials available."
+      - name: Deploy Worker and free AI binding on owner's Cloudflare account
+        working-directory: cloud-brain-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm install --no-audit --no-fund
+          npx wrangler deploy --name kolbo-cloud-story-brain
+      - name: Find authoritative worker domain
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          req=urllib.request.Request(
+            f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/subdomain',
+            headers={'Authorization':'Bearer '+token})
+          with urllib.request.urlopen(req,timeout=20) as r: data=json.load(r)
+          subdomain=data.get('result',{}).get('subdomain')
+          if not isinstance(subdomain,str) or not subdomain.replace('-','').isalnum():
+            raise RuntimeError('Worker subdomain was not confirmed. Discovery remains disabled.')
+          endpoint='https://kolbo-cloud-story-brain.'+subdomain+'.workers.dev/v1/plan'
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('KOLBO_WORKER_URL='+endpoint+'\n')
+          print('Worker domain was obtained from Cloudflare API.')
+          PY
+      - name: Smoke check deployed AI with synthetic Hebrew scene
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request,time
+          base=os.environ['KOLBO_WORKER_URL'][:-len('/v1/plan')]
+          # Worker deployment may require several seconds to propagate.
+          ready=False
+          for attempt in range(5):
+            try:
+              with urllib.request.urlopen(base+'/health',timeout=10) as r:
+                status=json.load(r)
+              if status.get('ready') is True and status.get('version')==1:
+                ready=True
+                break
+            except Exception:pass
+            time.sleep(3)
+          assert ready,'Worker health is not ready; endpoint will stay disabled.'
+          payload=json.dumps({'schema_version':1,
+             'hebrew_story':'אדם קופץ מעל כדור ורוקד ליד עץ',
+             'english_translation':'A person jumps over a ball then dances beside a tree'
+          }).encode()
+          req=urllib.request.Request(base+'/v1/plan',data=payload,
+              headers={'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=100) as r:
+            plan=json.load(r)['plan']
+          assert len(plan.get('steps',[]))>=1,plan
+          assert len(plan.get('action',''))>=8,plan
+          print('PASS: deployed Cloudflare AI returned valid synthetic story plan.')
+          PY
+      - name: Enable the verified endpoint without a new Android APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request,base64
+          repo=os.environ['REPO']
+          ref=os.environ['REF']
+          assert ref=='kolbo-video-v520-lightweight-cloud-first-20261014','Wrong branch'
+          path='cloud-brain-worker/endpoint.json'
+          api=f'https://api.github.com/repos/{repo}/contents/{path}'
+          token=os.environ['GH_TOKEN']
+          headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json',
+                   'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'}
+          with urllib.request.urlopen(urllib.request.Request(api+'?ref='+ref,headers=headers),timeout=25) as response:
+            blob=json.load(response)
+          config={'schema_version':1,'enabled':True,
+                  'url':os.environ['KOLBO_WORKER_URL'],
+                  'note':'Verified by real Cloudflare health and one synthetic text-only inference.'}
+          payload={'message':'deploy: enable tested Cloudflare AI planner for existing light Android APKs',
+            'branch':ref,'sha':blob['sha'],
+            'content':base64.b64encode((json.dumps(config,indent=2,ensure_ascii=False)+'\n').encode()).decode()}
+          request=urllib.request.Request(api,
+              data=json.dumps(payload).encode(),headers=headers,method='PUT')
+          with urllib.request.urlopen(request,timeout=30) as response:
+            assert response.status in (200,201)
+          print('PASS: owner-controlled discovery enabled only after live proof.')
+          PY
