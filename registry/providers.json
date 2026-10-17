@@ -58,7 +58,7 @@
           "supports_explicit_duration": true
         }
       ],
-      "discovered_at": "2026-10-16T09:06:13.175130+00:00",
+      "discovered_at": "2026-10-17T08:38:52.060471+00:00",
       "id": "chopperblu/ltx-2-5-demo",
       "license_declared": null,
       "pricing_verified": false,
@@ -70,7 +70,7 @@
       "terms_verified": false
     }
   ],
-  "discovered_at": "2026-10-16T09:06:13.175130+00:00",
+  "discovered_at": "2026-10-17T08:38:52.060471+00:00",
   "never_claims_generation_from_metadata": true,
   "verification_level": "metadata_only",
   "version": "3.2.0"
