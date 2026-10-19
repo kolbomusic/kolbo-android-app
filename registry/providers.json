@@ -58,7 +58,7 @@
           "supports_explicit_duration": true
         }
       ],
-      "discovered_at": "2026-10-18T08:55:12.882079+00:00",
+      "discovered_at": "2026-10-19T10:02:06.298646+00:00",
       "id": "chopperblu/ltx-2-5-demo",
       "license_declared": null,
       "pricing_verified": false,
@@ -73,7 +73,7 @@
       "api_host": "https://kulkas2pintu-wan777.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-10-18T08:55:12.882079+00:00",
+      "discovered_at": "2026-10-19T10:02:06.298646+00:00",
       "id": "kulkas2pintu/wan777",
       "license_declared": null,
       "pricing_verified": false,
@@ -85,7 +85,7 @@
       "terms_verified": false
     }
   ],
-  "discovered_at": "2026-10-18T08:55:12.882079+00:00",
+  "discovered_at": "2026-10-19T10:02:06.298646+00:00",
   "never_claims_generation_from_metadata": true,
   "verification_level": "metadata_only",
   "version": "3.2.0"
