@@ -57,6 +57,15 @@ const latest=document.createElement('p');latest.id='ownerTodayDate';latest.class
 const refresh=document.createElement('button');refresh.type='button';refresh.id='ownerRefreshButton';refresh.className='secondary';refresh.textContent='⟳ בדוק עדכון עכשיו';refresh.style.margin='8px 0';daily.append(refresh);
 const feedback=document.createElement('p');feedback.className='owner-hint';feedback.id='ownerRefreshMessage';daily.append(feedback);
 const memberText=document.createElement('p');memberText.className='owner-hint';memberText.textContent='רשימת המנויים היא רישום מקומי לניסוי בלבד. תשלומים אינם נגבים מתוך האפליקציה ואין בקרה מרכזית על מנויים.';users.prepend(memberText);
+const fillDaily=document.createElement('button');
+fillDaily.type='button';fillDaily.id='ownerFillDaily';fillDaily.className='secondary';fillDaily.textContent='הכנס את סקירת היום להמלצה האישית';fillDaily.style.margin='10px 0';
+issue.prepend(fillDaily);
+fillDaily.onclick=()=>{
+ const draft=$('dailyOwnerCopy').value;
+ if(!draft)return alert('אין עדיין סקירה מאומתת להיום. בדוק עדכונים במסך הראשי.');
+ $('recommendation').value=draft;
+ $('recommendation').focus();
+};
 const shareText=document.createElement('p');shareText.className='owner-hint';shareText.textContent='השיתוף נעשה ביוזמתך דרך חלונית השיתוף של Android. פעולה זו אינה מאשרת שהודעה הגיעה ללקוח, אינה חושפת הודעות פרטיות, ואינה מאפשרת שליחה אוטומטית לא מורשית בוואטסאפ.';issue.prepend(shareText);
 const newsText=document.createElement('p');newsText.className='owner-hint';newsText.textContent='טיוטת ההודעה נשמרת במכשיר הבעלים בלבד. כדי לפרסם אותה יש להעתיק ולשתף באופן יזום. אין כרגע שליחה אוטומטית למנויים.';news.prepend(newsText);
 const shareNews=document.createElement('button');shareNews.type='button';shareNews.textContent='שתף את טיוטת ההודעה';shareNews.className='secondary';shareNews.style.margin='0 0 16px';news.append(shareNews);
