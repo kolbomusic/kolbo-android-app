@@ -21,12 +21,25 @@ table{width:100%;border-collapse:collapse;min-width:530px}th,td{font-size:12px;t
 .scroll{overflow:auto}small{color:var(--sub)}.pill{border-radius:15px;padding:3px 9px;background:#243e4f;color:#aadcd7}
 @media(max-width:520px){.summary{grid-template-columns:1fr 1fr}.flex{display:block}main{padding:10px}.panel{padding:14px}}
 </style></head><body>
-<header><b style="color:var(--accent)">KOLBO CHANCE — OWNER</b><h1>מרכז ניהול פרטי</h1><p>גרסה 0.1 לניסוי בלבד • נתונים נשמרים במכשיר המנהל, ללא שרת או סליקה</p></header>
+<header><b style="color:var(--accent)">KOLBO CHANCE — OWNER</b><h1>מרכז ניהול פרטי</h1><p>גרסה 0.2 לניסוי בלבד • נתונים נשמרים במכשיר המנהל, ללא שרת או סליקה</p></header>
 <main>
 <div class="notice"><b>ניהול בניסוי בלבד.</b> נתונים אלה אינם מתעדכנים בטלפוני הלקוחות. אין להכניס פרטי אשראי או נתונים מזהים רגישים. האימות מוגבל לנעילת מסך של Android.</div>
+<section class="panel" id="dailyOwnerPanel" aria-label="הסקירה היומית">
+<h2>🃏 זוג ושלשה שכיחים היום — על פי נתוני עבר</h2>
+<p class="notice" id="dailyOwnerState" role="status">בודק נתוני הגרלות מעודכנים. אם הנתונים אינם זמינים לא תוצג המלצה כעדכנית.</p>
+<div class="summary" id="dailyOwnerCards"></div>
+<p id="dailyOwnerSource" style="font-size:12px;color:#b9c6dc"></p>
+<label for="dailyOwnerCopy">הודעה מוכנה לקבוצת צ'אנס נכנס</label>
+<textarea id="dailyOwnerCopy" rows="9" readonly placeholder="נוסח יופיע כאן אחרי קליטת ההמלצה היומית"></textarea>
+<div class="flex">
+ <button id="dailyOwnerShare" type="button">שתף בוואטסאפ או יישום אחר</button>
+ <button id="dailyOwnerCopyBtn" class="secondary" type="button">העתק הודעה</button>
+</div>
+<p><small>השיתוף מתבצע רק לאחר לחיצה שלך. אין דרך מאושרת להבטיח שליחה אוטומטית חינמית לקבוצת וואטסאפ פרטית.</small></p>
+</section>
 <div class="summary" id="summary"></div>
 <section class="panel"><h2>מנויים — רישום פנימי</h2><div class="flex"><div><label>כינוי לקוח (עדיף קוד/שם בדוי)</label><input id="nickname" maxlength="50" placeholder="לדוגמה: לקוח-001"></div>
-<div><label>מסלול</label><select id="plan"><option value="monthly">חודשי • ₪29</option><option value="halfyear">חצי שנתי • ₪149</option><option value="yearly">שנתי • ₪249</option></select></div></div>
+<div><label>מסלול</label><select id="plan"><option value="monthly">חודשי • ₪350</option><option value="halfyear">חצי שנתי • ₪400</option><option value="yearly">שנתי • ₪500</option></select></div></div>
 <div class="flex"><div><label>תאריך תחילה</label><input id="start" type="date"></div><div><label>סטטוס תשלום (ידני בלבד)</label><select id="payment"><option value="pending">ממתין</option><option value="manual">סומן כמשולם ידנית — לא אומת מול סולק</option></select></div></div>
 <button id="add">הוסף לרשימת ניסיון</button><div class="scroll"><table><thead><tr><th>קוד</th><th>לקוח</th><th>מסלול</th><th>תוקף</th><th>תשלום</th><th>פעולה</th></tr></thead><tbody id="users"></tbody></table></div>
 </section>
@@ -49,7 +62,7 @@ table{width:100%;border-collapse:collapse;min-width:530px}th,td{font-size:12px;t
 (function(){
 'use strict';
 const $=id=>document.getElementById(id);
-const plans={monthly:{n:'חודשי',days:30,cost:29},halfyear:{n:'חצי שנתי',days:183,cost:149},yearly:{n:'שנתי',days:365,cost:249}};
+const plans={monthly:{n:'חודשי',days:30,cost:350},halfyear:{n:'חצי שנתי',days:183,cost:400},yearly:{n:'שנתי',days:365,cost:500}};
 let db;
 try{db=JSON.parse(localStorage.getItem('kolbo-owner-demo')||'{}')}catch(e){db={}}
 db.users=Array.isArray(db.users)?db.users:[];db.issues=Array.isArray(db.issues)?db.issues:[];
@@ -94,6 +107,50 @@ const s=JSON.stringify(db,null,2);
 if(navigator.clipboard)navigator.clipboard.writeText(s).then(()=>alert('הועתק גיבוי לא מוצפן; יש לשמור אותו במקום מאובטח')).catch(()=>alert('העתקה אינה זמינה'));
 };
 $('wipe').onclick=()=>{if(confirm('למחוק את כל נתוני הניסיון המקומיים ללא אפשרות ביטול?')){localStorage.removeItem('kolbo-owner-demo');db={users:[],issues:[],news:''};paint()}};
+
+function reloadDaily() {
+  let obj=null;
+  const state=$('dailyOwnerState');
+  try{
+    if(window.KolboOwnerBridge && typeof window.KolboOwnerBridge.getDailyJson==='function'){
+      const raw=window.KolboOwnerBridge.getDailyJson();
+      if(raw)obj=JSON.parse(raw);
+    }
+  }catch(e){obj=null;}
+  const today=window.KolboOwnerBridge?.todayIsrael?.();
+  if(!obj || !today || obj.date_israel!==today){
+    state.textContent='אין עדיין סקירה עדכנית להיום במכשיר. הנתונים יתעדכנו אוטומטית כשהרשת זמינה. לא מפרסמים נתוני יום קודם בתור המלצה חדשה.';
+    $('dailyOwnerCards').innerHTML='';
+    $('dailyOwnerCopy').value='';
+    $('dailyOwnerSource').textContent='יש לפתוח את האפליקציה עם חיבור אינטרנט. התראות רק לאחר אישור הרשאת Android.';
+    return;
+  }
+  const pair=obj.pair,tri=obj.triple;
+  if(!pair || !tri || !Array.isArray(pair.cards)||!Array.isArray(tri.cards))return;
+  const clean=(t)=>String(t||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  state.textContent='נוצרה סקירה לתאריך '+obj.date_israel+' · חלון של '+obj.historical_window+' תוצאות עבר, ללא חיזוי זכייה.';
+  $('dailyOwnerCards').innerHTML=
+    '<div><b style="font-size:23px">'+clean(pair.label)+'</b>זוג שכיח בעבר · '+pair.historical_hits+' מתוך '+pair.sample_draws+'</div>'+
+    '<div><b style="font-size:20px">'+clean(tri.label)+'</b>שלשה שכיחה בעבר · '+tri.historical_hits+' מתוך '+tri.sample_draws+'</div>'+
+    '<div><b>1 ל־64</b>הסיכוי התאורטי לכל זוג מוגדר בהגרלה הוגנת</div>';
+  $('dailyOwnerSource').textContent='מקור נתונים: '+(obj.data_source||'מקור חיצוני')+'. תוצאת הגרלה אחרונה: '+(obj.last_recorded_draw?.id||'לא ידוע')+'. ללא התחייבות לזכייה.';
+  $('dailyOwnerCopy').value=obj.whatsapp_draft||'';
+}
+window.KolboOwnerDailyRefresh=reloadDaily;
+$('dailyOwnerShare').onclick=()=>{
+  const draft=$('dailyOwnerCopy').value;
+  if(!draft)return alert('טרם התקבלה סקירה מעודכנת להיום');
+  if(window.KolboOwnerBridge?.share)window.KolboOwnerBridge.share(draft);
+  else if(navigator.share)navigator.share({text:draft});
+  else alert('השתמש באפשרות העתקת ההודעה');
+};
+$('dailyOwnerCopyBtn').onclick=()=>{
+  const draft=$('dailyOwnerCopy').value;
+  if(!draft)return alert('טרם התקבלה סקירה מעודכנת להיום');
+  if(navigator.clipboard?.writeText)navigator.clipboard.writeText(draft).then(()=>alert('ההודעה הועתקה')).catch(()=>alert('העתקה אינה זמינה בדפדפן זה'));
+};
+setInterval(reloadDaily,60000);
+reloadDaily();
 paint();
 })();
 </script></body></html>
