@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "chance-data" / "chance-latest.csv"
 SOURCE = ROOT / "chance-data" / "source.txt"
 VALID = set(("7", "8", "9", "10", "J", "Q", "K", "A"))
