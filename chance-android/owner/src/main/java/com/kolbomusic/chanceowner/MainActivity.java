@@ -1,6 +1,10 @@
 package com.kolbomusic.chanceowner;
 
 import android.app.Activity;
+import android.app.job.JobInfo;
+import android.app.job.JobScheduler;
+import android.content.ComponentName;
+import android.os.Build;
 import android.app.KeyguardManager;
 import android.os.Bundle;
 import android.content.Intent;
@@ -55,8 +59,28 @@ public final class MainActivity extends Activity {
         web.addJavascriptInterface(new OwnerBridge(),"KolboOwnerBridge");
         setContentView(web);
         web.loadUrl("file:///android_asset/index.html");
+        final JobScheduler scheduler=(JobScheduler)getSystemService(JOB_SCHEDULER_SERVICE);
+        if(scheduler!=null) {
+            JobInfo job=new JobInfo.Builder(92811,new ComponentName(this,OwnerDailyJob.class))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setPersisted(true).setPeriodic(24L*60L*60L*1000L)
+                .build();
+            scheduler.schedule(job);
+        }
+        if(Build.VERSION.SDK_INT>=33 &&
+           checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},442);
+        }
+        new Thread(()->{
+            OwnerDailyJob.refresh(getApplicationContext(),true);
+            runOnUiThread(()->{
+                if(web!=null)web.evaluateJavascript("window.KolboOwnerDailyRefresh && window.KolboOwnerDailyRefresh()",null);
+            });
+        },"KolboChanceOwnerInitialSync").start();
     }
     final class OwnerBridge {
+        @JavascriptInterface public String getDailyJson(){ return OwnerDailyJob.getCache(getApplicationContext()); }
+        @JavascriptInterface public String todayIsrael(){ return OwnerDailyJob.todayIsrael(); }
         @JavascriptInterface public void share(String text){
             if(text==null||text.isEmpty())return;
             runOnUiThread(()->{
