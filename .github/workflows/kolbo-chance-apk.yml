@@ -26,6 +26,10 @@ jobs:
         run: python3 chance-android/sync/refresh_chance_csv.py
       - name: Validate product JS
         run: node --check chance-android/app/src/main/assets/upgrade.js
+      - name: Verify Owner JavaScript syntax
+        run: |
+          node -e "const fs=require('fs');const content=fs.readFileSync('chance-android/owner/src/main/assets/index.html','utf8');const block=content.match(/<script>([\s\S]*?)<\/script>/);if(!block)process.exit(1);fs.writeFileSync('/tmp/chance-owner.js',block[1]);"
+          node --check /tmp/chance-owner.js
       - name: Install Android SDK
         run: |
           SDKMANAGER=$(find /usr/local/lib/android/sdk/cmdline-tools -name sdkmanager -type f | head -n 1)
@@ -60,15 +64,6 @@ jobs:
           name: kolbo-chance-production-unsigned-tools
           path: unsigned/*
           retention-days: 2
-      - name: Verify Android APK signature and publish direct download
+      - name: Verify signed debug APK signature
         run: |
-          APK=out/Kolbo-Chance-AI-dev-signed.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          mkdir -p chance-releases
-          cp "$APK" chance-releases/Kolbo-Chance-AI-v1.1.0-signed-development.apk
-          sha256sum chance-releases/Kolbo-Chance-AI-v1.1.0-signed-development.apk > chance-releases/Kolbo-Chance-AI-v1.1.0.sha256
-          git config user.name "kolbo-build-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f chance-releases/Kolbo-Chance-AI-v1.1.0-signed-development.apk chance-releases/Kolbo-Chance-AI-v1.1.0.sha256
-          git commit -m "Publish verified Android Chance v1.1 signed development APK" || true
-          git push origin HEAD:feature/kolbo-chance-apk-20261025
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose out/Kolbo-Chance-AI-dev-signed.apk
