@@ -40,6 +40,20 @@ jobs:
           name: kolbo-chance-signed-development-apk
           path: out/*
           retention-days: 2
+      - name: Compile unsigned production release for local private signing
+        working-directory: chance-android
+        run: gradle --no-daemon --stacktrace :app:assembleRelease
+      - name: Package unsigned release and signing utilities
+        run: |
+          mkdir -p unsigned
+          cp chance-android/app/build/outputs/apk/release/app-release-unsigned.apk unsigned/Kolbo-Chance-AI-release-unsigned.apk
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" unsigned/apksigner.jar
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" unsigned/zipalign
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kolbo-chance-production-unsigned-tools
+          path: unsigned/*
+          retention-days: 2
       - name: Verify Android APK signature and publish direct download
         run: |
           APK=out/Kolbo-Chance-AI-dev-signed.apk
