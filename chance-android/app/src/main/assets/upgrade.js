@@ -7,6 +7,8 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const style=document.createElement('style');
 style.textContent=[
+'#pane-data .panel:nth-of-type(n+3){display:none}',
+'#pane-data .section-heading{margin-top:18px}',
 '.tabs{position:sticky;top:0;z-index:20;background:#0b1024f5;backdrop-filter:blur(12px);padding:8px 1px}',
 '.tab{min-height:43px}',
 '.k-intro{background:linear-gradient(120deg,#222347,#17324c);border:1px solid #5b5685;border-radius:18px;padding:20px;margin:6px 0 15px}',
