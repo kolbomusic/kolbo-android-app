@@ -1,6 +1,12 @@
 package com.kolbomusic.chanceai;
 
 import android.app.Activity;
+import android.app.job.JobInfo;
+import android.app.job.JobScheduler;
+import android.content.ComponentName;
+import android.os.Build;
+import java.io.File;
+import java.nio.file.Files;
 import android.os.Bundle;
 import android.content.Intent;
 import android.graphics.Color;
@@ -67,9 +73,45 @@ public final class MainActivity extends Activity {
             }
         });
         web.loadUrl("file:///android_asset/index.html");
+        final JobScheduler scheduler=(JobScheduler)getSystemService(JOB_SCHEDULER_SERVICE);
+        if(scheduler != null) {
+            JobInfo periodic=new JobInfo.Builder(92801,new ComponentName(this,ChanceSyncJob.class))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setPersisted(true)
+                .setPeriodic(24L*60L*60L*1000L)
+                .build();
+            scheduler.schedule(periodic);
+        }
+        // Refresh immediately at startup too; the periodic job covers closed-app days.
+        new Thread(() -> {
+            try {
+                ChanceSyncJob.fetchAndStore(getApplicationContext());
+                runOnUiThread(() -> {
+                    if(web != null)web.evaluateJavascript("window.KolboAutoSyncFromNative && window.KolboAutoSyncFromNative()",null);
+                });
+            } catch(Exception ignored) {}
+        }, "KolboChanceStartSync").start();
     }
 
     public final class NativeBridge {
+        @JavascriptInterface public String getCsvCache() {
+            try {
+                File file=new File(getFilesDir(),"chance-current.csv");
+                if(!file.exists() || file.length()>1500000) return "";
+                return new String(Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8);
+            } catch(Exception ignored) { return ""; }
+        }
+        @JavascriptInterface public long getCsvUpdatedAt() {
+            File file=new File(getFilesDir(),"chance-current.csv");
+            return file.exists()?file.lastModified():0;
+        }
+        @JavascriptInterface public String getCsvSource() {
+            try {
+                File file=new File(getFilesDir(),"chance-source.txt");
+                if(!file.exists() || file.length()>1000) return "מאגר מראה, מקור לא רשמי";
+                return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            } catch(Exception ignored) {return "מאגר מראה, מקור לא רשמי";}
+        }
         @JavascriptInterface public void saveCsv(String text) {
             runOnUiThread(() -> {
                 csvPending = text;
