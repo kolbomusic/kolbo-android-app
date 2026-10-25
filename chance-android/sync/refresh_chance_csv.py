@@ -31,7 +31,7 @@ MIN_FRESH_ROWS = 10
 
 def fetch(url):
     req = Request(url, headers=HEADERS)
-    with urlopen(req, timeout=24) as response:
+    with urlopen(req, timeout=12) as response:
         content = response.read(4_000_000)
         if response.read(1):
             raise ValueError("Response exceeded size cap")
@@ -152,7 +152,7 @@ def collect():
             print("Official endpoint unavailable:", official, str(error)[:130])
     combined = []
     for page in range(1, 5):
-        url = ARCHIVE if page == 1 else ARCHIVE + "?page=" + str(page)
+        url = ARCHIVE if page == 1 else ARCHIVE + "/" + str(page)
         try:
             text = fetch(url)
             rows = parse_archive(text)
