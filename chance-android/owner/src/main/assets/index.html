@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="he" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#142037"><title>Kolbo Chance — מנהל בעלים</title>
+<style>
+:root{--bg:#0b1120;--panel:#17233a;--line:#2e4161;--accent:#edbe6d;--text:#f7f8fd;--sub:#b5c3d6}
+*{box-sizing:border-box}body{font-family:Arial,system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0}
+header{padding:22px 18px;background:#192846;border-bottom:1px solid #394d67}header h1{font-size:23px;margin:5px 0}header p{font-size:13px;color:var(--sub)}
+main{max-width:860px;margin:auto;padding:16px 13px 70px}.notice{border-right:3px solid var(--accent);padding:13px;background:#2b3446;border-radius:7px;margin:12px 0;font-size:13px}
+.panel{padding:19px;background:var(--panel);border:1px solid var(--line);border-radius:16px;margin:17px 0;box-shadow:0 7px 17px #0002}
+h2{font-size:18px;color:#f3d18f}label{font-size:13px;color:#c3cfdf;display:block;margin:9px 0 4px}
+input,select,textarea{width:100%;font:inherit;background:#0e192b;color:white;padding:12px;border:1px solid #49617f;border-radius:9px;margin:4px 0 10px}
+textarea{min-height:85px;resize:vertical}
+button{border:0;padding:11px 15px;border-radius:10px;font:inherit;font-weight:700;cursor:pointer;background:#ab91ee;color:#141424;min-height:43px}
+button.secondary{background:#2b3c56;color:white;border:1px solid #476083}
+button.danger{background:#5a2c39;color:#ffe0e0}
+.flex{display:flex;gap:10px;flex-wrap:wrap}.flex>*{flex:1}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.summary>div{padding:12px;background:#20304e;border-radius:10px;font-size:12px;color:#c4d0e8}
+.summary b{font-size:20px;display:block;color:#fff}
+table{width:100%;border-collapse:collapse;min-width:530px}th,td{font-size:12px;text-align:right;padding:10px 7px;border-bottom:1px solid var(--line)}
+.scroll{overflow:auto}small{color:var(--sub)}.pill{border-radius:15px;padding:3px 9px;background:#243e4f;color:#aadcd7}
+@media(max-width:520px){.summary{grid-template-columns:1fr 1fr}.flex{display:block}main{padding:10px}.panel{padding:14px}}
+</style></head><body>
+<header><b style="color:var(--accent)">KOLBO CHANCE — OWNER</b><h1>מרכז ניהול פרטי</h1><p>גרסה 0.1 לניסוי בלבד • נתונים נשמרים במכשיר המנהל, ללא שרת או סליקה</p></header>
+<main>
+<div class="notice"><b>ניהול בניסוי בלבד.</b> נתונים אלה אינם מתעדכנים בטלפוני הלקוחות. אין להכניס פרטי אשראי או נתונים מזהים רגישים. האימות מוגבל לנעילת מסך של Android.</div>
+<div class="summary" id="summary"></div>
+<section class="panel"><h2>מנויים — רישום פנימי</h2><div class="flex"><div><label>כינוי לקוח (עדיף קוד/שם בדוי)</label><input id="nickname" maxlength="50" placeholder="לדוגמה: לקוח-001"></div>
+<div><label>מסלול</label><select id="plan"><option value="monthly">חודשי • ₪29</option><option value="halfyear">חצי שנתי • ₪149</option><option value="yearly">שנתי • ₪249</option></select></div></div>
+<div class="flex"><div><label>תאריך תחילה</label><input id="start" type="date"></div><div><label>סטטוס תשלום (ידני בלבד)</label><select id="payment"><option value="pending">ממתין</option><option value="manual">סומן כמשולם ידנית — לא אומת מול סולק</option></select></div></div>
+<button id="add">הוסף לרשימת ניסיון</button><div class="scroll"><table><thead><tr><th>קוד</th><th>לקוח</th><th>מסלול</th><th>תוקף</th><th>תשלום</th><th>פעולה</th></tr></thead><tbody id="users"></tbody></table></div>
+</section>
+<section class="panel"><h2>סימון המלצה לפי לקוח</h2><p style="font-size:13px;color:#b9c6dc">המערכת יוצרת סימן מקור ייחודי להמלצה. אם עותק מסומן יגיע אליך, אפשר יהיה להשוות אותו לרשומה. <b>אין יכולת לעקוב אחרי העברה בוואטסאפ או לזהות נמענים פרטיים.</b></p>
+<label>בחר מנוי רשום</label><select id="recipient"></select>
+<label>תוכן המלצה — תצפיות היסטוריות בלבד</label><textarea id="recommendation" placeholder="למשל: זוג היסטורי ♣Q ♦A. נצפה X פעמים מתוך N. אין הבטחת זכייה."></textarea>
+<button id="issue">הפק המלצה מסומנת</button>
+<label>נוסח להעתקה או שיתוף</label><textarea id="output" readonly></textarea><div class="flex"><button id="copy" class="secondary">העתק</button><button id="share" class="secondary">שתף דרך הטלפון</button></div>
+<div class="scroll"><table><thead><tr><th>מזהה המלצה</th><th>ללקוח</th><th>מועד</th></tr></thead><tbody id="issues"></tbody></table></div>
+</section>
+<section class="panel"><h2>טיוטת הודעת עדכון</h2><p><small>תצוגה מקומית בלבד. אין פרסום אוטומטי למנויים עד שיותקן שרת מורשה.</small></p>
+<label>מה תרצה לפרסם?</label><textarea id="news" placeholder="עדכון על דוח סטטיסטי חדש, מסלול חדש או שינוי בתנאי השירות."></textarea>
+<button id="saveNews" class="secondary">שמור טיוטת הודעה במכשיר</button><p id="msg"></p>
+</section>
+<section class="panel"><h2>פרטיות וגיבוי</h2><p style="font-size:12px;color:#c4d0de">שימוש בכינוי ולא בשם מלא מפחית סיכון. הייצוא הוא JSON לא מוצפן לצורך שחזור ואינו מכיל פרטי תשלום. שמור במקום מאובטח; מחיקת אפליקציה יכולה למחוק את המידע המקומי.</p>
+<div class="flex"><button class="secondary" id="backup">העתק גיבוי JSON</button><button class="danger" id="wipe">מחק את נתוני הניסוי</button></div>
+</section>
+</main>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const plans={monthly:{n:'חודשי',days:30,cost:29},halfyear:{n:'חצי שנתי',days:183,cost:149},yearly:{n:'שנתי',days:365,cost:249}};
+let db;
+try{db=JSON.parse(localStorage.getItem('kolbo-owner-demo')||'{}')}catch(e){db={}}
+db.users=Array.isArray(db.users)?db.users:[];db.issues=Array.isArray(db.issues)?db.issues:[];
+function save(){localStorage.setItem('kolbo-owner-demo',JSON.stringify(db));paint()}
+function id(len){const bs=new Uint8Array(len);crypto.getRandomValues(bs);return Array.from(bs,b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();}
+function txt(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function expiry(u){let d=new Date(u.start+'T12:00:00');d.setDate(d.getDate()+plans[u.plan].days);return d.toLocaleDateString('he-IL')}
+function active(u){let d=new Date(u.start+'T12:00:00');d.setDate(d.getDate()+plans[u.plan].days);return d>new Date() }
+function paint(){
+const activeUsers=db.users.filter(active).length;
+$('summary').innerHTML='<div><b>'+db.users.length+'</b>מנויים רשומים לניסוי</div><div><b>'+activeUsers+'</b>בטווח תוקף (לא נבדק תשלום)</div><div><b>'+db.issues.length+'</b>המלצות מסומנות</div>';
+$('users').innerHTML=db.users.map(u=>'<tr><td>'+txt(u.id)+'</td><td>'+txt(u.name)+'</td><td>'+plans[u.plan].n+'</td><td>'+expiry(u)+'</td><td>'+txt(u.payment)+'</td><td><button class="danger" data-remove="'+txt(u.id)+'">הסר</button></td></tr>').join('');
+$('recipient').innerHTML=db.users.map(u=>'<option value="'+txt(u.id)+'">'+txt(u.name)+' · '+txt(u.id)+'</option>').join('');
+$('issues').innerHTML=db.issues.slice().reverse().slice(0,100).map(e=>'<tr><td>'+txt(e.id)+'</td><td>'+txt(e.owner)+'</td><td>'+txt(e.date)+'</td></tr>').join('');
+$('news').value=db.news||'';
+}
+$('start').value=new Date().toISOString().slice(0,10);
+$('add').onclick=()=>{
+const name=$('nickname').value.trim(),start=$('start').value,plan=$('plan').value;
+if(name.length<2||!start)return alert('יש להזין כינוי ותאריך התחלה');
+db.users.push({id:'KC-'+id(3),name:name.slice(0,50),plan,start,payment:$('payment').value});$('nickname').value='';save();
+};
+$('users').onclick=e=>{const i=e.target.dataset.remove;if(!i)return;if(confirm('למחוק את הרשומה המקומית?')){db.users=db.users.filter(u=>u.id!==i);save();}};
+$('issue').onclick=()=>{
+ const u=db.users.find(x=>x.id===$('recipient').value);
+ const desc=$('recommendation').value.trim();
+ if(!u||desc.length<10)return alert('בחר לקוח וכתוב תוכן המלצה');
+ const uid='REC-'+id(6),date=new Date().toLocaleString('he-IL');
+ const output='Kolbo Chance AI • מחקר סטטיסטי בלבד\n'+desc+'\n\nרשומת הפצה: '+uid+'\nשויכה למנוי: '+u.id+'\nתאריך: '+date+'\nתוצאות עבר אינן מנבאות הגרלות עתידיות. 18+';
+ db.issues.push({id:uid,owner:u.id,date});$('output').value=output;save();
+};
+$('saveNews').onclick=()=>{db.news=$('news').value.slice(0,2000);save();$('msg').textContent='טיוטה נשמרה מקומית בלבד'};
+$('copy').onclick=()=>navigator.clipboard?.writeText($('output').value).then(()=>alert('ההמלצה הועתקה')).catch(()=>alert('אפשר לסמן ולהעתיק ידנית'));
+$('share').onclick=()=>{
+ if(!$('output').value)return alert('צריך להפיק המלצה תחילה');
+ if(window.KolboOwnerBridge&&window.KolboOwnerBridge.share)window.KolboOwnerBridge.share($('output').value);
+ else if(navigator.share)navigator.share({text:$('output').value});
+ else alert('השתמש בהעתק לצורך שיתוף');
+};
+$('backup').onclick=()=>{
+const s=JSON.stringify(db,null,2);
+if(navigator.clipboard)navigator.clipboard.writeText(s).then(()=>alert('הועתק גיבוי לא מוצפן; יש לשמור אותו במקום מאובטח')).catch(()=>alert('העתקה אינה זמינה'));
+};
+$('wipe').onclick=()=>{if(confirm('למחוק את כל נתוני הניסיון המקומיים ללא אפשרות ביטול?')){localStorage.removeItem('kolbo-owner-demo');db={users:[],issues:[],news:''};paint()}};
+paint();
+})();
+</script></body></html>
