@@ -1,0 +1,36 @@
+name: Kolbo Chance Daily CSV
+on:
+  schedule:
+    - cron: '43 22 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kolbo-chance-daily-sync.yml'
+      - 'chance-android/sync/refresh_chance_csv.py'
+permissions:
+  contents: write
+concurrency:
+  group: kolbo-chance-csv-refresh
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Fetch and validate Chance results
+        run: python3 chance-android/sync/refresh_chance_csv.py
+      - name: Publish updated normalized CSV
+        run: |
+          git config user.name "kolbo-chance-data-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add chance-data/chance-latest.csv chance-data/source.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "data: refresh Chance results (automated)"
+            git push origin HEAD:main
+          else
+            echo "No changes"
+          fi
