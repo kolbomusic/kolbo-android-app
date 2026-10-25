@@ -30,6 +30,8 @@ jobs:
         run: |
           node -e "const fs=require('fs');const content=fs.readFileSync('chance-android/owner/src/main/assets/index.html','utf8');const block=content.match(/<script>([\s\S]*?)<\/script>/);if(!block)process.exit(1);fs.writeFileSync('/tmp/chance-owner.js',block[1]);"
           node --check /tmp/chance-owner.js
+      - name: Validate owner-only presentation JS
+        run: node --check chance-android/owner/src/main/assets/owner-ui.js
       - name: Install Android SDK
         run: |
           SDKMANAGER=$(find /usr/local/lib/android/sdk/cmdline-tools -name sdkmanager -type f | head -n 1)
