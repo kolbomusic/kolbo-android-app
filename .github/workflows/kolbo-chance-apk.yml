@@ -24,6 +24,8 @@ jobs:
           gradle-version: '8.10.2'
       - name: Verify CSV source and auto-refresh parser
         run: python3 chance-android/sync/refresh_chance_csv.py
+      - name: Validate product JS
+        run: node --check chance-android/app/src/main/assets/upgrade.js
       - name: Install Android SDK
         run: |
           SDKMANAGER=$(find /usr/local/lib/android/sdk/cmdline-tools -name sdkmanager -type f | head -n 1)
