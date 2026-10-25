@@ -79,6 +79,14 @@ public final class MainActivity extends Activity {
         },"KolboChanceOwnerInitialSync").start();
     }
     final class OwnerBridge {
+        @JavascriptInterface public void refreshDaily(){
+            new Thread(()->{
+                boolean updated=OwnerDailyJob.refresh(getApplicationContext(),true);
+                runOnUiThread(()->{
+                    if(web!=null)web.evaluateJavascript("window.KolboOwnerRefreshDone && window.KolboOwnerRefreshDone("+updated+")",null);
+                });
+            },"KolboOwnerManualRefresh").start();
+        }
         @JavascriptInterface public String getDailyJson(){ return OwnerDailyJob.getCache(getApplicationContext()); }
         @JavascriptInterface public String todayIsrael(){ return OwnerDailyJob.todayIsrael(); }
         @JavascriptInterface public void share(String text){
