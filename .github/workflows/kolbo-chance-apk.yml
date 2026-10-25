@@ -45,10 +45,14 @@ jobs:
       - name: Compile unsigned production release for local private signing
         working-directory: chance-android
         run: gradle --no-daemon --stacktrace :app:assembleRelease
+      - name: Compile isolated owner app (unsigned)
+        working-directory: chance-android
+        run: gradle --no-daemon :owner:assembleRelease
       - name: Package unsigned release and signing utilities
         run: |
           mkdir -p unsigned
           cp chance-android/app/build/outputs/apk/release/app-release-unsigned.apk unsigned/Kolbo-Chance-AI-release-unsigned.apk
+          cp chance-android/owner/build/outputs/apk/release/owner-release-unsigned.apk unsigned/Kolbo-Chance-Owner-release-unsigned.apk
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" unsigned/apksigner.jar
           cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" unsigned/zipalign
       - uses: actions/upload-artifact@v4
