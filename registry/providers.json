@@ -58,7 +58,7 @@
           "supports_explicit_duration": true
         }
       ],
-      "discovered_at": "2026-10-25T09:13:37.876117+00:00",
+      "discovered_at": "2026-10-26T10:16:31.698763+00:00",
       "id": "chopperblu/ltx-2-5-demo",
       "license_declared": null,
       "pricing_verified": false,
@@ -73,7 +73,7 @@
       "api_host": "https://kulkas2pintu-wan777.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-10-25T09:13:37.876117+00:00",
+      "discovered_at": "2026-10-26T10:16:31.698763+00:00",
       "id": "kulkas2pintu/wan777",
       "license_declared": null,
       "pricing_verified": false,
@@ -83,9 +83,24 @@
       "space_url": "https://huggingface.co/spaces/kulkas2pintu/wan777",
       "status": "schema_not_compatible",
       "terms_verified": false
+    },
+    {
+      "api_host": "https://lightricks-ltx-video-distilled.hf.space",
+      "automated_public_demo_probe_candidate": false,
+      "capabilities": [],
+      "discovered_at": "2026-10-26T10:16:31.698763+00:00",
+      "id": "Lightricks/ltx-video-distilled",
+      "license_declared": null,
+      "pricing_verified": false,
+      "probe": "not_run",
+      "production_eligible": false,
+      "source": "huggingface_spaces_official",
+      "space_url": "https://huggingface.co/spaces/Lightricks/ltx-video-distilled",
+      "status": "schema_not_compatible",
+      "terms_verified": false
     }
   ],
-  "discovered_at": "2026-10-25T09:13:37.876117+00:00",
+  "discovered_at": "2026-10-26T10:16:31.698763+00:00",
   "never_claims_generation_from_metadata": true,
   "verification_level": "metadata_only",
   "version": "3.2.0"
