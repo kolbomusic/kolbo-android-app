@@ -26,7 +26,7 @@ button{border:0;border-radius:13px;min-height:52px;padding:10px 20px;color:#1206
 button:disabled{opacity:.6;cursor:not-allowed}button.secondary{background:#37294e;color:#f3e8ff;border:1px solid #8a76ae}
 .actions{display:flex;gap:10px;flex-wrap:wrap}.actions>*{flex:1}
 #status{padding:14px 0;color:#e5d6fc;min-height:25px}progress{width:100%;height:16px;accent-color:#c47aff;border-radius:10px}
-audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:block}
+audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46b;border-radius:13px;background:#372d27;color:#fff3d8;white-space:pre-wrap;line-height:1.6;margin:13px 0}#result{display:none}#result.visible{display:block}
 #files{margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.foot{text-align:center;color:#9286ab;font-size:12px;padding-top:22px}
 @media(max-width:560px){.grid{grid-template-columns:1fr}main{padding:16px 10px 75px}.panel{padding:16px}}
 </style>
@@ -103,7 +103,8 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <progress id="progress" max="100" value="0" hidden></progress>
 
 </section>
-<section class="panel" id="result"><h2>✓ ההפקה מוכנה!</h2>
+<section class="panel" id="result"><h2 id="resultTitle">✓ ההפקה מוכנה!</h2>
+<div id="videoNotice" role="alert" hidden></div>
 <div id="videoResult" hidden>
 <label for="videoPlayer">וידאו אמיתי שמותאם לפעולות שנאמרו</label>
 <video id="videoPlayer" controls playsinline preload="metadata" style="width:100%;max-height:620px;border-radius:14px;background:#000"></video>
@@ -206,6 +207,8 @@ files.forEach(function(f){form.append('audio',f,f.name)});
 form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
 form.set('make_video',videoAllowed?'on':'off');
+form.set('video_requested',wantsVideo?'on':'off');
+form.set('transcription_failed',wantsVideo&&!videoAllowed?'on':'off');
 form.set('transcript',videoAllowed?recognized:'');
 form.set('transcript_origin','auto');
 var variation=$('variation').value;
@@ -226,7 +229,7 @@ if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד א
 if(resultUrl)URL.revokeObjectURL(resultUrl);
 if(voiceUrl)URL.revokeObjectURL(voiceUrl);
 if(originalUrl)URL.revokeObjectURL(originalUrl);
-videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;
+videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;
 resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);resultServerUrl=j.download_url;
 if(j.voice_url){
   var voiceResponse=await fetch(j.voice_url,{credentials:'same-origin'});
@@ -260,7 +263,17 @@ if(j.video_url){
   }catch(e){}
  }
 }
-if(j.video_status==='error'||j.video_status==='unavailable'){videoReason=j.video_error||'לא נמצאו קטעי וידאו מתאימים.';}
+if(j.video_status==='error'||j.video_status==='unavailable'){
+ videoReason=j.storyboard_source==='automatic_transcription_failed'&&videoReason?
+   videoReason:(j.video_error||videoReason||'לא נמצאו קטעי וידאו מתאימים.');
+}
+if(wantsVideo&&!j.video_url){
+ $('resultTitle').textContent='המיקס מוכן — לא הופק סרטון';
+ $('videoNotice').textContent='סרטון MP4 לא נוצר. '+(videoReason||'לא אותר מקור וידאו מתאים לדיבור. המיקס זמין.');
+ $('videoNotice').hidden=false;
+}else{
+ $('resultTitle').textContent=j.video_url?'✓ הסרטון והמיקס מוכנים':'✓ המיקס מוכן';
+}
 $('player').src=resultUrl;$('result').classList.add('visible');
 $('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות. '+(videoReason?'לא הופק סרטון לא קשור: '+videoReason:'אפשר להשוות בין הקול המקורי לקול המעובד.');
 message(j.video_url?'ה־MP4 והמיקס מוכנים.':(videoReason||'המיקס מוכן להשמעה ולשיתוף.'));$('result').scrollIntoView({behavior:'smooth'});
