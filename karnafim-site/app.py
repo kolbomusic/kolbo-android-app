@@ -96,7 +96,7 @@ def login():
   guard();email=request.form.get("email","").strip().lower()
   rows=sql("SELECT * FROM members WHERE email=%s",(email,),True)
   if rows and verify(request.form.get("password",""),rows[0]["password"]):
-   session.clear();session["uid"]=rows[0]["id"];return redirect("/directory")
+   session.clear();session["uid"]=rows[0]["id"];return redirect("/")
   return view("כניסה",'<p class="error">פרטי ההתחברות לא נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
  return view("כניסה",'<h1>כניסה לחשבון</h1><form method="post" class="card">'+formwrap(field("email","דוא״ל","email",True)+field("password","סיסמה","password",True)+'<button>כניסה לחשבון</button></form><p>עדיין אין לך חשבון? <a href="/register"><strong>להרשמה לקהילה</strong></a></p><p>התחברות באמצעות Google תתווסף לאחר הגדרת OAuth מאובטחת מול Google.</p>'))
 @app.route("/logout")
@@ -105,20 +105,46 @@ def logout():session.clear();return redirect("/")
 def directory():
  u=me()
  if not u:return redirect("/login")
- if not u["approved"]:return view("בהמתנה",'<h1>הבקשה שלך בהמתנה לאישור</h1><p>רק משתמשים מאושרים יכולים לצפות במדריך.</p>')
+ if not u["approved"]:return view("ממתין לאישור",'<div class="card"><h2>בקשת ההצטרפות ממתינה לאישור</h2><p>בינתיים אפשר לצפות בארכיון המורשת, למצוא קבוצות חיפוש ולהזמין חברים.</p><a href="/archive">לארכיון</a> · <a href="/find">לאיתור חברים</a></div>')
  term=request.args.get("q","")[:80]
- records=sql("SELECT id,name,nickname,service_start,service_end,company,role,about FROM members WHERE approved AND visible AND (name ILIKE %s OR nickname ILIKE %s) ORDER BY name LIMIT 100",('%'+term+'%','%'+term+'%'),True)
- cards=''.join('<div class="card"><h2>'+esc(r["name"])+'</h2><p>'+esc(r["nickname"])+' • '+esc(r["company"])+'</p><p class="muted">'+esc(r["service_start"])+'–'+esc(r["service_end"])+' | '+esc(r["role"])+'</p><p>'+esc(r["about"])+'</p><a href="/contact/'+str(r["id"])+'">שליחת בקשת קשר</a></div>' for r in records)
- return view("חברים",'<h1>מדריך חברי הפלוגה</h1><form method="get"><input name="q" value="'+esc(term)+'" placeholder="שם או כינוי"><button>חיפוש</button></form><div class="grid">'+(cards or '<p>אין חברים מתאימים שהסכימו להופיע.</p>')+'</div>')
+ records=sql("SELECT id,name,nickname,service_start,service_end,company,role,about,facebook_url,instagram_url,linkedin_url FROM members WHERE approved AND visible AND (name ILIKE %s OR nickname ILIKE %s) ORDER BY name LIMIT 100",('%'+term+'%','%'+term+'%'),True)
+ def card_for(r):
+  x='<div class="card"><h2>'+esc(r["name"])+'</h2><p>'+esc(r["nickname"])+' • '+esc(r["company"])+'</p><p class="muted">'+esc(r["service_start"])+'–'+esc(r["service_end"])+' | '+esc(r["role"])+'</p><p>'+esc(r["about"])+'</p><p><a href="/contact/'+str(r["id"])+'">שליחת בקשת קשר באתר</a></p>'
+  for key,label in [("facebook_url","פייסבוק"),("instagram_url","אינסטגרם"),("linkedin_url","לינקדאין")]:
+   if r[key]:x+='<a style="margin-left:12px" href="'+esc(r[key])+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>'
+  return x+'</div>'
+ cards=''.join(card_for(r) for r in records)
+ body='<h1>חברי הפלוגה</h1><p>חברים מאושרים שבחרו להופיע. קישור לרשת חברתית מוצג רק אם בעל הפרופיל הוסיף אותו מרצונו.</p><form method="get"><input name="q" value="'+esc(term)+'" placeholder="שם או כינוי מהשירות"><button>חיפוש</button></form><div class="grid">'+(cards or '<div class="card"><h2>אתם הראשונים!</h2><p>החברים עוד לא בחרו להופיע במדריך. בינתיים נסו חיפוש ברשתות או הזמינו חבר מהמחזור.</p><a href="/find">איתור ברשתות</a> · <a href="/invite">הזמנת חברים</a></div>')+'</div>'
+ return view("מדריך חברים",body)
+
+def social_link(value,site):
+ from urllib.parse import urlsplit
+ value=(value or "").strip()[:300]
+ if not value:return ""
+ try:
+  u=urlsplit(value)
+  host=(u.hostname or "").lower()
+  hosts={"facebook_url":{"facebook.com","www.facebook.com","m.facebook.com"},"instagram_url":{"instagram.com","www.instagram.com"},"linkedin_url":{"linkedin.com","www.linkedin.com"}}
+  if u.scheme!="https" or host not in hosts[site] or u.username or u.password:return ""
+  return value
+ except ValueError:return ""
+
 @app.route("/profile",methods=["GET","POST"])
 def profile():
  u=me()
  if not u:return redirect("/login")
  if request.method=="POST":
   guard()
-  sql("UPDATE members SET nickname=%s,about=%s,visible=%s WHERE id=%s",(request.form.get("nickname","")[:100],request.form.get("about","")[:1000],request.form.get("visible")=="on",u["id"]))
+  fb=social_link(request.form.get("facebook_url",""),"facebook_url")
+  ig=social_link(request.form.get("instagram_url",""),"instagram_url")
+  li=social_link(request.form.get("linkedin_url",""),"linkedin_url")
+  sql("UPDATE members SET nickname=%s,about=%s,visible=%s,facebook_url=%s,instagram_url=%s,linkedin_url=%s WHERE id=%s",(request.form.get("nickname","")[:100],request.form.get("about","")[:1000],request.form.get("visible")=="on",fb,ig,li,u["id"]))
   return redirect("/profile")
- return view("פרופיל",'<h1>הפרופיל שלי</h1><p>מצב החשבון: '+("מאושר" if u["approved"] else "ממתין לאישור")+'</p><form method="post" class="card">'+formwrap(field("nickname","כינוי",value=u["nickname"])+'<label>עליי<textarea name="about" maxlength="1000">'+esc(u["about"])+'</textarea></label><label><input style="display:inline;width:auto" type="checkbox" name="visible" '+("checked" if u["visible"] else "")+'> הצג אותי במדריך החברים</label><button>שמירת הפרופיל</button></form><form action="/delete-account" method="post" onsubmit="return confirm(\'למחוק את החשבון והמידע לצמיתות?\')">'+formwrap('<button style="background:#f9d0ca">מחיקת החשבון שלי</button>')+'</form>'))
+ body='<h1>הפרופיל שלי</h1><p>מצב החשבון: '+("מאושר" if u["approved"] else "ממתין לאישור")+'</p><p>אתה בוחר אם להופיע במדריך. קישורים לרשתות החברתיות שלך הם אופציונליים ויוצגו רק אם בחרת להופיע.</p>'
+ body+='<form method="post" class="card">'+formwrap(field("nickname","כינוי מהשירות",value=u["nickname"])+'<label>מה אתה זוכר מהפלוגה?<textarea name="about" maxlength="1000">'+esc(u["about"])+'</textarea></label>'+field("facebook_url","קישור לפרופיל פייסבוק שלי (אופציונלי)","url",value=u["facebook_url"])+field("instagram_url","קישור לפרופיל אינסטגרם שלי (אופציונלי)","url",value=u["instagram_url"])+field("linkedin_url","קישור לפרופיל לינקדאין שלי (אופציונלי)","url",value=u["linkedin_url"])+'<label><input style="display:inline;width:auto" type="checkbox" name="visible" '+("checked" if u["visible"] else "")+'> אני רוצה להופיע במדריך החברים</label><button>שמירת הפרופיל</button></form>')
+ body+='<form action="/delete-account" method="post" onsubmit="return confirm(\'למחוק את החשבון והמידע לצמיתות?\')">'+formwrap('<button style="background:#f9d0ca">מחיקת החשבון שלי</button>')+'</form>'
+ return view("פרופיל אישי",body)
+
 @app.route("/delete-account",methods=["POST"])
 def delete_account():
  u=me()
