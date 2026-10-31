@@ -121,23 +121,8 @@ def visual_plan(transcript,duration):
             pending=[]
             beats.append({**found,"spoken":spoken})
     if not beats:
-        # Audio-driven video is truthful about what it represents. There is
-        # no fictional story footage, no text, no actor: only the user's
-        # own vocal waveform, synced to the actual source voice.
-        return {
-            "source":"original_voice_reactive",
-            "transcript":transcript,
-            "total_clauses":len(clauses),
-            "unmatched_clauses":len(clauses),
-            "recognized_action_beats":0,
-            "visual_beats":1,
-            "visual_coverage":"voice_only",
-            "scenes":[{
-                "start":0.0,"end":duration,"action":"voice_reactive",
-                "query":"","basis":"original_voice_waveform",
-                "caption":"","spoken":transcript
-            }]
-        }
+        raise UnavailableVideo(
+            "לא נמצאה בהקלטה פעולה שאפשר להציג בווידאו מצולם שתואם לדיבור.")
     # The ASR may return dozens of separate phrases. Coalesce to a bounded
     # number of visual beats instead of rejecting everything after five.
     original_beats=len(beats)
