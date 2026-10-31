@@ -40,7 +40,14 @@ class ForegroundVoiceTests(unittest.TestCase):
             length=min(len(voice),len(processed))
             self.assertGreater(float(np.mean((processed[:length]-voice[:length])**2)),.0005)
             results.append(processed)
-        self.assertEqual(len({len(x) for x in results})>=3,True)
+        # FX output can share the same 3.15s safety cap. Compare audio
+        # textures, not lengths, because distinct pitch FX can be equal length.
+        for i in range(len(results)):
+            for j in range(i+1,len(results)):
+                n=min(len(results[i]),len(results[j]))
+                self.assertGreater(
+                    float(np.sqrt(np.mean((results[i][:n]-results[j][:n])**2))),
+                    .025)
 
     def test_dense_humor_more_fx_and_original_words_preserved(self):
         voice=self.voice(16)
