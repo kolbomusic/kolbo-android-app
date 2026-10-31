@@ -12,7 +12,6 @@ import numpy as np
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'backend'))
 from app import create_app
 from live_video import UnavailableVideo
-from voice_visual import write_original_source_wav, export_voice_visualizer
 from storyboard import align_storyboard_to_vocal
 
 
@@ -42,39 +41,12 @@ class ProductionStoryTests(unittest.TestCase):
                 if state.get('state') in ('done','error'):break
                 time.sleep(.25)
             self.assertEqual(state['state'],'done',state)
-            self.assertEqual(state['video_status'],'done',state)
-            self.assertEqual(state['storyboard_source'],'original_voice_reactive')
-            self.assertEqual(state['video_mode'],'voice_reactive')
-            self.assertEqual(state['visual_coverage'],'voice_only')
-            self.assertIn('video_url',state)
-            self.assertEqual(client.get(state['video_url']).status_code,200)
+            self.assertEqual(state['video_status'],'unavailable',state)
+            self.assertEqual(state['storyboard_source'],'original_asr_failed')
+            self.assertEqual(state['visual_coverage'],'none')
+            self.assertNotIn('video_url',state)
+            self.assertIn('לא ניתן לתמלל',state['video_error'])
             self.assertEqual(client.get(state['download_url']).status_code,200)
-
-    def test_fallback_visualizer_reads_original_pcm_and_last_mix_second(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=pathlib.Path(directory)
-            sr=32000
-            t=np.arange(2*sr)/sr
-            original=(.3*np.sin(2*np.pi*240*t)).astype(np.float32)
-            original_path=write_original_source_wav([original],root/'original.wav')
-            with wave.open(str(original_path),'rb') as wav:
-                decoded=np.frombuffer(wav.readframes(wav.getnframes()),
-                                      dtype='<i2').astype(np.float32)/32767
-                self.assertEqual(wav.getnframes(),len(original))
-            self.assertLess(float(np.max(np.abs(decoded-original))),0.0001)
-            soundtrack=root/'mix.mp3'
-            import subprocess,json
-            subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i',
-                            'sine=frequency=300:duration=4',
-                            '-c:a','libmp3lame',str(soundtrack)],check=True)
-            output=export_voice_visualizer(original_path,soundtrack,
-                                           root/'result.mp4')
-            info=json.loads(subprocess.check_output([
-                'ffprobe','-v','error','-show_format','-show_streams',
-                '-of','json',str(output)]))
-            self.assertEqual({stream['codec_type'] for stream in info['streams']},
-                             {'audio','video'})
-            self.assertAlmostEqual(float(info['format']['duration']),4,delta=.35)
 
     def test_original_source_fingerprint_detects_mismatched_upload(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -124,11 +96,31 @@ class ProductionStoryTests(unittest.TestCase):
                     if state.get('state') in ('done','error'):break
                     time.sleep(.25)
             self.assertEqual(state['state'],'done',state)
-            self.assertEqual(state['video_status'],'done',state)
-            self.assertEqual(state['storyboard_source'],'original_voice_reactive')
-            self.assertEqual(state['video_mode'],'voice_reactive')
-            self.assertEqual(state['visual_coverage'],'voice_only')
-            self.assertIn('video_url',state)
+            self.assertEqual(state['video_status'],'unavailable',state)
+            self.assertEqual(state['storyboard_source'],'no_grounded_story')
+            self.assertEqual(state['visual_coverage'],'none')
+            self.assertNotIn('video_url',state)
+            self.assertIn('אין צילומים',state['video_error'])
+            self.assertEqual(client.get(state['download_url']).status_code,200)
+
+    def test_partial_script_is_not_passed_off_as_full_semantic_movie(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test-only'})
+            client=app.test_client()
+            response=client.post('/api/jobs',data={
+                'audio':(self.wave(),'source.wav'),'make_video':'on',
+                'transcript':'אני נוסע באוטו. אחר כך קרה משהו שלא זוהה.',
+                'transcript_origin':'auto','seconds':'30'})
+            self.assertEqual(response.status_code,202,response.get_json())
+            state={}
+            for _ in range(140):
+                state=client.get(response.get_json()['status_url']).get_json()
+                if state.get('state') in ('done','error'):break
+                time.sleep(.25)
+            self.assertEqual(state['state'],'done',state)
+            self.assertEqual(state['video_status'],'unavailable',state)
+            self.assertNotIn('video_url',state)
+            self.assertIn('חלק מהמשפטים',state['video_error'])
             self.assertEqual(client.get(state['download_url']).status_code,200)
 
     def test_dense_speech_alignment_never_overflows_video_length(self):
