@@ -20,8 +20,9 @@ def prepare_voice(x,sr):
     frame=max(1,int(sr*.01));rms=np.array([np.sqrt(np.mean(x[i:i+frame]**2)) for i in range(0,len(x),frame)])
     active=np.flatnonzero(rms>max(.003,peak*.035))
     if not len(active):raise ValueError('לא נמצא קול בהקלטה')
-    start=max(0,int(active[0]*frame-.06*sr));end=min(len(x),int((active[-1]+1)*frame+.16*sr))
-    x=x[start:end].copy()
+    # Preserve the complete timeline, including very quiet speech at either end.
+    # RMS gating here is only a sanity check: trimming can erase whispered words.
+    x=x.copy()
     x=sosfilt(butter(2,[90,min(7000,sr*.43)],btype='bandpass',fs=sr,output='sos'),x).astype(np.float32)
     gain=min(4,.20/max(.001,float(np.sqrt(np.mean(x*x)))))
     x=np.tanh(x*gain*1.1)
