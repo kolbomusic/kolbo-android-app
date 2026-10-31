@@ -1,0 +1,35 @@
+name: Validate Wikimedia licensed live footage availability
+on:
+  workflow_dispatch:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - 'trance-studio/backend/live_video.py'
+      - '.github/workflows/kolbo-footage-smoke.yml'
+jobs:
+  real-media:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise no-key Wikimedia Commons video search
+        run: |
+          python - <<'PY'
+          import sys,json
+          sys.path.insert(0,'trance-studio/backend')
+          from live_video import commons_candidates
+          phrases=('car driving','donkey braying','people dancing','rain falling')
+          available={}
+          for q in phrases:
+            try:
+              found=commons_candidates(q)
+              available[q]=len(found)
+              print('MEDIA_QUERY',q,'candidates',len(found),
+                    'sample',[(x['title'],x['license']) for x in found[:2]])
+            except Exception as exc:
+              available[q]=repr(exc)
+              print('MEDIA_ERROR',q,repr(exc))
+          print('FOOTAGE_AVAILABILITY',json.dumps(available))
+          if not any(isinstance(v,int) and v>0 for v in available.values()):
+            raise SystemExit('No verifiable public motion footage found; cannot ship a live video promise')
+          PY
