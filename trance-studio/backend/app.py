@@ -1,11 +1,12 @@
 """Bounded, temporary audio jobs. Run one WSGI worker; threads share admission state."""
-import os, time, secrets, shutil, threading
+import os, time, secrets, shutil, threading, json, subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 from engine import load_audio, render_mix, export_mp3
+from storyboard import storyboard, export_animation
 
 ALLOWED={'.opus','.ogg','.oga','.mp3','.wav','.m4a','.aac','.mp4','.webm','.flac'}
 
@@ -53,7 +54,24 @@ def create_app(config=None):
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             export_mp3(audio,root/job_id/'mix.mp3')
             export_mp3(vocal,root/job_id/'voice.mp3')
-            update(job_id,state='done',percent=100,label='המיקס מוכן',engine='foreground_voice_v4',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0))
+            meta={'video_status':'disabled','storyboard_source':'not_requested'}
+            if options.get('make_video',True):
+                update(job_id,percent=90,label='בונה סטוריבורד והנפשה',video_status='processing')
+                board=storyboard(options.get('transcript',''),len(audio)/32000)
+                (root/job_id/'storyboard.json').write_text(
+                    json.dumps(board,ensure_ascii=False),encoding='utf-8')
+                meta={'video_status':'processing','storyboard_source':board['source']}
+                try:
+                    export_animation(root/job_id/'mix.mp3',root/job_id/'story.mp4',
+                                     board,audio,vocal,progress=lambda p,label:
+                                     update(job_id,percent=p,label=label))
+                    meta['video_status']='done'
+                except (OSError,RuntimeError,ValueError,subprocess.SubprocessError) as err:
+                    # Audio is still delivered; never make a successful MP3
+                    # disappear simply because the free video encoder failed.
+                    meta['video_status']='error'
+                    meta['video_error']='הווידאו לא הושלם. קובצי השמע והסטוריבורד מוכנים.'
+            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='storyboard_2d_v1',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
         finally:
@@ -92,7 +110,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.4.0',cloud_ready=bool(app.config['API_TOKEN']))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.5.0',cloud_ready=bool(app.config['API_TOKEN']))
 
     @app.post('/api/jobs')
     def create_job():
@@ -100,7 +118,7 @@ def create_app(config=None):
         files=request.files.getlist('audio')
         if not 1<=len(files)<=4:return jsonify(error='יש לבחור בין הקלטה אחת לארבע הקלטות'),400
         try:
-            bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0))
+            bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','on')=='on';transcript=request.form.get('transcript','')[:4000]
             if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5:raise ValueError()
         except (ValueError,TypeError):return jsonify(error='הגדרות המיקס אינן תקינות'),400
         if any(Path(f.filename or '').suffix.lower() not in ALLOWED for f in files):return jsonify(error='סוג הקובץ אינו נתמך'),400
@@ -115,7 +133,7 @@ def create_app(config=None):
             admission.release();shutil.rmtree(directory,ignore_errors=True)
             return jsonify(error='קובץ ריק או גדול מ־15MB'),400
         with lock:jobs[job_id]={'state':'queued','percent':0,'label':'ממתין לעיבוד','created':time.time(),'seconds':seconds,'bpm':bpm}
-        executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation})
+        executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'transcript':transcript})
         return jsonify(id=job_id,status_url='/api/jobs/'+job_id),202
 
     @app.get('/api/jobs/<job_id>')
@@ -127,6 +145,10 @@ def create_app(config=None):
         if job['state']=='done':
             job['download_url']='/api/jobs/'+job_id+'/audio'
             job['voice_url']='/api/jobs/'+job_id+'/voice'
+            if job.get('video_status')=='done':
+                job['video_url']='/api/jobs/'+job_id+'/video'
+            if (root/job_id/'storyboard.json').exists():
+                job['storyboard_url']='/api/jobs/'+job_id+'/storyboard'
         return jsonify(job)
 
     @app.get('/api/jobs/<job_id>/audio')
@@ -146,6 +168,23 @@ def create_app(config=None):
             return jsonify(error='הקול המעובד לא זמין'),404
         return send_file(path,mimetype='audio/mpeg',as_attachment=False,
                          download_name='Kolbo-Voice-Effects.mp3')
+
+    @app.get('/api/jobs/<job_id>/video')
+    def video(job_id):
+        cleanup()
+        with lock:ready=jobs.get(job_id,{}).get('video_status')=='done'
+        path=root/job_id/'story.mp4'
+        if not ready or not path.is_file():return jsonify(error='סרטון עדיין לא זמין'),404
+        return send_file(path,mimetype='video/mp4',as_attachment=True,
+                         download_name='Kolbo-Trance-Animated-Story.mp4')
+
+    @app.get('/api/jobs/<job_id>/storyboard')
+    def story_details(job_id):
+        cleanup()
+        with lock:exists=job_id in jobs
+        path=root/job_id/'storyboard.json'
+        if not exists or not path.is_file():return jsonify(error='סטוריבורד לא נמצא'),404
+        return send_file(path,mimetype='application/json',as_attachment=False)
 
     @app.get('/studio')
     def studio():
