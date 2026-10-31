@@ -61,23 +61,35 @@ self.onmessage=async event=>{
     if(rms(samples)<.0025){
       throw new Error('בהקלטה לא זוהה קול בעוצמה מספקת. בדוק שהיא אינה שקטה.');
     }
-    const recognize=await getRecognizer(id);
-    const chunks=[];
-    const step=CHUNK_SECONDS*SAMPLE_RATE;
-    for(let start=0;start<samples.length;start+=step){
-      let segment=samples.slice(start,Math.min(samples.length,start+step));
-      // Avoid excessively short final clips that trigger hallucinations.
-      if(segment.length<SAMPLE_RATE*.4 && chunks.length)break;
-      send(id,'stage',{label:'מזהה דיבור בעברית — קטע '+(1+Math.floor(start/step)),
-                        percent:Math.min(95,Math.round(start/samples.length*100))});
-      const recognized=await recognize(segment,{
-        language:'hebrew',
-        task:'transcribe',
-        max_new_tokens:160,
-        return_timestamps:false
-      });
-      const words=normalize(recognized?.text);
-      if(words)chunks.push({start:start/SAMPLE_RATE,end:Math.min(samples.length,start+step)/SAMPLE_RATE,text:words});
+    let recognize=await getRecognizer(id);
+    async function recognizeAll(model) {
+      const found=[];
+      const step=CHUNK_SECONDS*SAMPLE_RATE;
+      for(let start=0;start<samples.length;start+=step){
+        const segment=samples.slice(start,Math.min(samples.length,start+step));
+        if(segment.length<SAMPLE_RATE*.4 && found.length)break;
+        send(id,'stage',{label:'מזהה דיבור בעברית מתוך קובץ המקור — קטע '+
+           (1+Math.floor(start/step)),percent:Math.min(95,Math.round(start/samples.length*100))});
+        const result=await model(segment,{
+          language:'hebrew',task:'transcribe',
+          max_new_tokens:160,return_timestamps:false
+        });
+        const words=normalize(result?.text);
+        if(words)found.push({start:start/SAMPLE_RATE,
+          end:Math.min(samples.length,start+step)/SAMPLE_RATE,text:words});
+      }
+      return found;
+    }
+    let chunks;
+    try{
+      chunks=await recognizeAll(recognize);
+    }catch(primaryError){
+      if(loadedModel!==MODEL_IDS[0])throw primaryError;
+      send(id,'stage',{label:'מנוע התמלול הראשי נכשל במהלך העיבוד; מנסה מנוע חלופי'});
+      pipelinePromise=null;
+      recognize=await createRecognizer(id,1);
+      pipelinePromise=Promise.resolve(recognize);
+      chunks=await recognizeAll(recognize);
     }
     const transcript=normalize(chunks.map(x=>x.text).join(' '));
     const hebrewCount=(transcript.match(/[\u0590-\u05ff]/g)||[]).length;
