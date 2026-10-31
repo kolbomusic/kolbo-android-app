@@ -59,6 +59,6 @@ class ForegroundVoiceTests(unittest.TestCase):
         self.assertEqual(full.shape[0],len(stem))
         self.assertLessEqual(float(np.max(np.abs(full))),.95)
         self.assertTrue(np.isfinite(full).all())
-        self.assertGreater(float(np.sqrt(np.mean(stem[-5*self.sr:]**2))),.0)
+        self.assertGreater(float(np.sqrt(np.mean(stem[8*self.sr:15*self.sr]**2))),.01)
 
 if __name__=='__main__':unittest.main()
