@@ -236,15 +236,15 @@ def vintage_voice_fx(clip, mode, sr, bpm, rng):
         y[:k]*=ramp;y[-k:]*=ramp[::-1]
     return y
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',progress=lambda *args:None):
-    if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,progress=lambda *args:None):
+    if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     sr=sample_rate;beat=60/bpm
     voices=[prepare_voice(c,sr) for c in clips]
     total_speech=sum(len(v)/sr for v in voices)
     # Intro + complete narration + dedicated DJ turnaround slots + outro.
     # Never shorten a recording in order to satisfy a chosen output duration.
-    needed=beat*7+total_speech+len(voices)*beat*8
+    needed=beat*7+total_speech+len(voices)*beat*16
     seconds=max(30.,float(seconds),math.ceil(needed))
     if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
     n=int(round(seconds*sr))
@@ -322,10 +322,11 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     for v in voices:
         main_positions.append(cursor)
         add_narration(v,cursor)
-        cursor+=len(v)/sr+beat*8
+        cursor+=len(v)/sr+beat*16
     progress(70,'יוצר מתיחות קול, סקראצ׳ים ושבירות רול')
     if humor!='off':
         genres=('dj','stretch','pitch','tape','glitch','scratch','cartoon','vinyl','robot')
+        fx_palette=tuple(rng.permutation(genres))
         for index,v in enumerate(voices):
             intervals=speech_boundaries(v,sr)
             candidates=[(a,b) for a,b in intervals if b-a>=int(sr*.25)]
@@ -351,7 +352,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             if at<stop:
                 music[at:stop]*=np.linspace(1,.10,stop-at,dtype=np.float32)[:,None]
             # A mid-word sample before the break, deliberately sliced and pitched.
-            if len(v)>int(sr*.6):
+            if fx_intensity>=2 and len(v)>int(sr*.6):
                 middle=zero_crossing_cut(v,len(v)//2,sr)
                 w=int(sr*.32)
                 hook=v[max(0,middle-w):min(len(v),middle+w)]
@@ -359,13 +360,15 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                     fill=broken_roll(hook,sr,bpm,rng)
                     # Keep fill beneath primary narration; music cuts to foreground.
                     add_effect(fill,bstart+beat*.03,.24)
-            for j,hook in enumerate(hooks):
+            selected_indices=(1,) if fx_intensity==1 else (0,2) if fx_intensity==2 else (0,1,2)
+            for j in selected_indices:
+                hook=hooks[j]
                 if len(hook)<int(sr*.10):continue
-                chosen=genres[(index*3+j)%len(genres)] if humor=='auto' else humor
+                chosen=fx_palette[(index*3+j)%len(fx_palette)] if humor=='auto' else humor
                 effect=vintage_voice_fx(hook,chosen,sr,bpm,rng)
                 # DJ turnaround in reserved space after each complete narration;
                 # prevents the treatment from swallowing original words.
-                after=main_positions[index]+len(v)/sr+beat*(.20+j*2.45)
+                after=main_positions[index]+len(v)/sr+beat*(.20+j*4.0)
                 add_effect(effect,after,.40 if humor!='chaos' else .56)
                 if j==1 and humor in ('auto','chaos','dj','glitch'):
                     # Final stop/start punch after the stutter.
