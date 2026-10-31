@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from flask import Flask,request,redirect,session,render_template_string,abort,Response
 import psycopg
 from psycopg.rows import dict_row
+from accessibility_ui import integrate_html, accessibility_statement_body
 
 app=Flask(__name__)
 app.secret_key=os.environ['SECRET_KEY']
@@ -13,10 +14,13 @@ DB=os.environ["DATABASE_URL"]
 def security_hold():
  if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path not in ("/health","/favicon.svg","/favicon.ico"):
   import re
-  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status","/photos") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
+  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status","/photos","/accessibility") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
   if request.method in ("GET","HEAD") and can_read:
    from pathlib import Path
-   if request.path=="/photos":
+   if request.path=="/accessibility":
+    from public_pages import shell, NOTICE
+    document=shell(NOTICE+accessibility_statement_body(read_only=True),"הצהרת נגישות")
+   elif request.path=="/photos":
     from historical_photos import gallery_page
     document=gallery_page()
    elif request.path not in ("/","/about","/privacy","/safety"):
@@ -25,7 +29,7 @@ def security_hold():
     if document is None: abort(404)
    else:
     document=(Path(__file__).resolve().parent/"maintenance_public.html").read_text(encoding="utf-8")
-   response=Response(document,status=200,mimetype="text/html")
+   response=Response(integrate_html(document,scripts_allowed=False,toolbar_enabled=False),status=200,mimetype="text/html")
    response.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; img-src https://upload.wikimedia.org; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   else:
    response=Response("אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה.",status=503,mimetype="text/plain")
@@ -112,7 +116,7 @@ def view(title,body):
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/community/moderation">אישור פרסומים</a> '
   nav+='<a href="/password">סיסמה</a> <a href="/logout">יציאה</a>'
  else:nav+='<a class="nav-register" href="/register">הרשמה</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
- return render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
+ return integrate_html(render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
  :root{font-family:Arial,'Segoe UI',sans-serif;background:#f3f1e8;color:#172a25}*{box-sizing:border-box}body{margin:0;line-height:1.7}header{background:#172b25;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header a{color:white;text-decoration:none;margin-left:12px;font-size:14px}.logo{font-size:21px;font-weight:800;color:#dbeb9f}main{max-width:1050px;margin:auto;padding:36px 18px}h1{font-size:clamp(30px,5vw,54px);line-height:1.2;margin:0 0 18px}h2{margin-top:32px}.hero{background:linear-gradient(125deg,#142b23,#365441);padding:50px 32px;color:white;border-radius:22px}.hero p{color:#e2e9db;font-size:19px;max-width:700px}.btn,button{background:#cce38d;color:#152b24;border:0;padding:11px 20px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 0}a{color:#246448}.btn.secondary{background:#e5ebe3}.card{background:white;border:1px solid #dee2d8;border-radius:15px;padding:23px;margin:14px 0;box-shadow:0 4px 18px #13251c09}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}label{display:block;font-weight:600;margin:12px 0}input,textarea,select{width:100%;display:block;padding:12px;border:1px solid #b8c4b4;border-radius:8px;font:inherit;background:white}textarea{min-height:105px}form{max-width:560px}.muted{color:#60736a}.tag{display:inline-block;padding:3px 9px;background:#e6eedb;border-radius:14px;font-size:12px}.error{background:#fff0e8;padding:14px;border-radius:8px}footer{text-align:center;padding:28px;color:#66766b;font-size:13px}
 header{position:sticky;top:0;z-index:1000;min-height:76px;box-shadow:0 3px 12px #0002}
 header nav{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:40px}
@@ -127,7 +131,7 @@ header nav .nav-register{border:1px solid #b3c894}
 .account-hint{margin-top:16px;color:#e4edda;font-size:15px}
 .account-hint a{color:#efffad;font-weight:800;text-decoration:underline}
 @media(max-width:700px){header{padding:12px 14px;min-height:0;align-items:stretch}header nav{width:100%;display:flex;gap:7px}header nav a{font-size:14px;padding:9px 10px}header .logo{font-size:18px}.hero{padding:33px 21px}.hero-actions{flex-direction:column;align-items:stretch}.hero-actions .btn{width:100%}}
-</style></head><body><header><div class="logo">🦏 הקרנפים | ברקן</div><nav>{{nav|safe}}</nav></header><main>{{body|safe}}</main><footer>יוזמה קהילתית עצמאית של יוצאי הפלוגה • אין קשר רשמי לצה״ל • פרטים אישיים מוסתרים כברירת מחדל</footer></body></html>""",title=title,body=body,nav=nav)
+</style></head><body><header><div class="logo">🦏 הקרנפים | ברקן</div><nav>{{nav|safe}}</nav></header><main>{{body|safe}}</main><footer>יוזמה קהילתית עצמאית של יוצאי הפלוגה • אין קשר רשמי לצה״ל • פרטים אישיים מוסתרים כברירת מחדל</footer></body></html>""",title=title,body=body,nav=nav),scripts_allowed=True)
 def formwrap(x):return '<input type="hidden" name="csrf" value="'+token()+'">'+x
 @app.route("/")
 def home():
@@ -141,6 +145,10 @@ def health():return {"ok":True,"service":"karnafim","access":("read_only" if os.
 @app.route("/status")
 def public_status():
  return view("מצב הקהילה",'<h1>מצב קהילת הקרנפים</h1><div class="card"><h2>המערכת פעילה</h2><p>ניתן לפתוח חשבון, להתחבר ולבקש אישור חברות. פרופילים ופרסומים פרטיים מוצגים רק לחברים מאושרים ועל פי הגדרות השיתוף.</p><p>כניסה באמצעות חשבון Google אינה מוגדרת בשלב זה. משתמשים נכנסים באמצעות דוא״ל וסיסמה.</p><p><a class="btn" href="/login">🔑 התחברות</a> <a class="btn secondary" href="/register">הרשמה</a></p></div>')
+
+@app.route("/accessibility")
+def accessibility_page():
+ return view("הצהרת נגישות",accessibility_statement_body(read_only=False))
 
 @app.route("/about")
 def about_public():
