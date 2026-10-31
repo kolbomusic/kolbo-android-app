@@ -16,7 +16,8 @@ import urllib.error
 from pathlib import Path
 
 COMMONS_API="https://commons.wikimedia.org/w/api.php"
-MAX_SCENES=5
+# Resource budget for the free worker, not a cap on spoken sentences.
+MAX_VISUAL_BEATS=18
 MAX_BYTES=22*1024*1024
 USER_AGENT="KolboTranceStudio/1.9 (personal noncommercial story builder; contact https://kolbomusic.com)"
 # Explicit conjunctions of a subject and action, not substring matches.
@@ -83,36 +84,84 @@ def action_for_clause(sentence):
     return None
 
 def visual_plan(transcript,duration):
-    """Ground each clause in an explicit subject and visible action.
+    """Extract grounded visual beats from the FULL speech transcript.
 
-    No generic characters, captions, hearts or moving placeholders.
+    Long Hebrew recordings may have dozens of Whisper punctuation segments.
+    Sentence count is never a reason to reject the entire video.
+    Unsupported speech is retained in transcript/timing and counted honestly.
+    Nearby identical actions are merged to avoid repeatedly downloading clips.
+    A strictly bounded number of independent footage requests protects the
+    free worker, while the complete speech audio always remains intact.
     """
     transcript=str(transcript or "").strip()
     clauses=[x.strip() for x in CLAUSE_SPLIT.split(transcript) if x.strip()]
-    if not 1<=len(clauses)<=MAX_SCENES:
-        raise UnavailableVideo("אי אפשר ליצור סרטון מדויק: מספר האירועים אינו נתמך")
-    events=[]
+    if not clauses:
+        raise UnavailableVideo("לא זוהו משפטים בדיבור לצורך התאמת הסרטון")
+    duration=float(duration)
+    if not 0.5<=duration<=360:
+        raise UnavailableVideo("משך הווידאו אינו תקין")
+    # Retain the complete transcript. Every clause contributes time. Only
+    # actual named actions may determine a source video.
+    beats=[]
+    unmatched=0
+    pending=[]
     for clause in clauses:
         found=action_for_clause(clause)
         if not found:
-            raise UnavailableVideo("המערכת לא זיהתה פעולה שאפשר להמחיש בווידאו אמיתי. לא נוצר סרטון מצויר או לא קשור.")
-        events.append({"text":clause,**found})
-    units=[max(1,len(_words(c))) for c in clauses]
-    boundaries=[0.];total=sum(units);current=0.
-    for count in units[:-1]:
-        current+=float(duration)*count/total
-        boundaries.append(current)
-    boundaries.append(float(duration))
-    return {"source":"automatic_transcript_strict_semantic_footage",
-            "transcript":transcript,"scenes":[{
-                "start":round(boundaries[i],2),
-                "end":round(boundaries[i+1],2),
-                "action":e["action"],
-                "query":e["query"],
-                "basis":e["basis"],
-                "caption":"", # never burn subtitles on video
-                "spoken":e["text"]
-             } for i,e in enumerate(events)]}
+            unmatched+=1
+            if beats:
+                beats[-1]["spoken"].append(clause)
+            else:
+                pending.append(clause)
+            continue
+        if beats and beats[-1]["action"]==found["action"]:
+            beats[-1]["spoken"].append(clause)
+        else:
+            spoken=pending+[clause]
+            pending=[]
+            beats.append({**found,"spoken":spoken})
+    if not beats:
+        raise UnavailableVideo(
+            "לא זוהתה בהקלטה פעולה שניתן להמחיש בצילום מתאים; לא יוצג סרטון שאינו קשור לדיבור")
+    # The ASR may return dozens of separate phrases. Coalesce to a bounded
+    # number of visual beats instead of rejecting everything after five.
+    original_beats=len(beats)
+    if len(beats)>MAX_VISUAL_BEATS:
+        groups=[]
+        for idx,beat in enumerate(beats):
+            pos=min(MAX_VISUAL_BEATS-1,idx*MAX_VISUAL_BEATS//len(beats))
+            if pos==len(groups):
+                groups.append({**beat,"spoken":list(beat["spoken"])})
+            else:
+                # Keep representative matching footage but include all the
+                # skipped speech in the timeline and report partial coverage.
+                groups[pos]["spoken"].extend(beat["spoken"])
+        beats=groups
+    lengths=[max(1,sum(len(_words(t)) for t in beat["spoken"]))
+             for beat in beats]
+    total=sum(lengths)
+    cumulative=0.
+    scenes=[]
+    for i,(beat,length) in enumerate(zip(beats,lengths)):
+        start=cumulative
+        cumulative+=duration*length/total
+        scenes.append({"start":round(start,3),
+                       "end":round(duration if i==len(beats)-1 else cumulative,3),
+                       "action":beat["action"],
+                       "query":beat["query"],
+                       "basis":beat["basis"],
+                       "caption":"",
+                       "spoken":" ".join(beat["spoken"])})
+    return {
+        "source":"automatic_transcript_grounded_longform",
+        "transcript":transcript,
+        "total_clauses":len(clauses),
+        "unmatched_clauses":unmatched,
+        "recognized_action_beats":original_beats,
+        "visual_beats":len(scenes),
+        "visual_coverage":"partial" if unmatched or original_beats>len(scenes) else "matched",
+        "scenes":scenes
+    }
 
 def _json_api(params):
     url=COMMONS_API+"?"+urllib.parse.urlencode(params)
