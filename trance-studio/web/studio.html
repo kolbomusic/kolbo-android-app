@@ -243,7 +243,9 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent='קטעי וידאו אמיתיים ממקורות חופשיים, שנבחרו לפי הפעולות שזוהו בדיבור.';
+ $('storyboardInfo').textContent=j.visual_coverage==='partial'?
+   'הסרטון ממחיש רק את הפעולות שהמערכת הצליחה לזהות. לא כל משפט הומחש.':
+   'קטעי וידאו אמיתיים ממקורות חופשיים, שנבחרו לפי הפעולות שזוהו בדיבור.';
  if(j.storyboard_url){
   try{
    var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
