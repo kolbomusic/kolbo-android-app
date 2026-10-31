@@ -6,7 +6,8 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 from engine import load_audio, render_mix, export_mp3
-from storyboard import storyboard, align_storyboard_to_vocal, export_animation
+from storyboard import align_storyboard_to_vocal
+from live_video import visual_plan, export_live_story, UnavailableVideo
 
 ALLOWED={'.opus','.ogg','.oga','.mp3','.wav','.m4a','.aac','.mp4','.webm','.flac'}
 
@@ -56,26 +57,36 @@ def create_app(config=None):
             export_mp3(audio,root/job_id/'mix.mp3')
             export_mp3(vocal,root/job_id/'voice.mp3')
             meta={'video_status':'disabled','storyboard_source':'not_requested'}
-            if options.get('make_video',True):
-                update(job_id,percent=90,label='בונה סטוריבורד והנפשה',video_status='processing')
-                board=align_storyboard_to_vocal(
-                    storyboard(options.get('transcript',''),len(audio)/32000),
-                    vocal,sr=32000)
-                board['transcript_origin']=options.get('transcript_origin','manual')
-                (root/job_id/'storyboard.json').write_text(
-                    json.dumps(board,ensure_ascii=False),encoding='utf-8')
-                meta={'video_status':'processing','storyboard_source':board['source'],'transcript_origin':board['transcript_origin']}
+            if options.get('make_video',False):
+                update(job_id,percent=87,label='מאתר צילומי וידאו לפי פעולות שנאמרו',
+                       video_status='processing')
                 try:
-                    export_animation(root/job_id/'mix.mp3',root/job_id/'story.mp4',
-                                     board,audio,vocal,progress=lambda p,label:
-                                     update(job_id,percent=p,label=label))
-                    meta['video_status']='done'
+                    board=visual_plan(options.get('transcript',''),len(audio)/32000)
+                    board=align_storyboard_to_vocal(board,vocal,sr=32000)
+                    board['transcript_origin']=options.get('transcript_origin','auto')
+                    video_path=root/job_id/'story.mp4'
+                    sources=export_live_story(root/job_id/'mix.mp3',video_path,
+                              board,root/job_id/'footage',
+                              progress=lambda p,label:update(job_id,percent=p,label=label))
+                    board['sources']=[{'action':src['action'],'page':src['page'],
+                                      'license':src['license']} for src in sources]
+                    (root/job_id/'storyboard.json').write_text(
+                        json.dumps(board,ensure_ascii=False),encoding='utf-8')
+                    meta={'video_status':'done',
+                          'storyboard_source':board['source'],
+                          'transcript_origin':board['transcript_origin']}
+                except UnavailableVideo as err:
+                    # A missing action, inaccurate transcript or unavailable
+                    # licensed scene must NEVER yield unrelated cartoon video.
+                    meta={'video_status':'unavailable',
+                          'video_error':str(err)[:240],
+                          'storyboard_source':'no_unrelated_video'}
                 except (OSError,RuntimeError,ValueError,subprocess.SubprocessError) as err:
-                    # Audio is still delivered; never make a successful MP3
-                    # disappear simply because the free video encoder failed.
-                    meta['video_status']='error'
-                    meta['video_error']='הווידאו לא הושלם. קובצי השמע והסטוריבורד מוכנים.'
-            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='storyboard_2d_v1',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
+                    app.logger.exception('Real footage production failed')
+                    meta={'video_status':'error',
+                          'video_error':'לא ניתן להפיק כרגע סרטון מתאים. המיקס זמין.',
+                          'storyboard_source':'no_unrelated_video'}
+            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='real_footage_semantic_v1',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             app.logger.exception('Kolbo audio/video worker error')
             update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
@@ -115,7 +126,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.8.0',cloud_ready=bool(app.config['API_TOKEN']))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.9.0',cloud_ready=bool(app.config['API_TOKEN']))
 
     @app.post('/api/jobs')
     def create_job():
