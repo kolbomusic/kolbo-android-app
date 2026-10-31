@@ -1,17 +1,17 @@
 import os,secrets,hashlib,hmac,html
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask,request,redirect,session,render_template_string,abort,Response
 import psycopg
 from psycopg.rows import dict_row
 
 app=Flask(__name__)
 app.secret_key=os.environ['SECRET_KEY']
-app.config.update(SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",MAX_CONTENT_LENGTH=2*1024*1024)
+app.config.update(SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=timedelta(hours=6),MAX_CONTENT_LENGTH=2*1024*1024,MAX_FORM_MEMORY_SIZE=64*1024,MAX_FORM_PARTS=25,TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"])
 DB=os.environ["DATABASE_URL"]
 
 @app.before_request
 def security_hold():
- if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path!="/health":
+ if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path not in ("/health","/favicon.svg","/favicon.ico"):
   import re
   can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
   if request.method in ("GET","HEAD") and can_read:
@@ -134,7 +134,7 @@ def home():
 def favicon():
  return Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#19372c"/><path fill="#d8eaa2" d="M14 17h13v30h-7V24h-6zm17 0h13v30h-7V24h-6zm17 0h6v30h-6z"/><path d="M8 51h48" stroke="#d8eaa2" stroke-width="3" stroke-linecap="round"/></svg>',mimetype="image/svg+xml",headers={"Cache-Control":"public, max-age=604800","X-Content-Type-Options":"nosniff"})
 @app.route("/health")
-def health():return {"ok":True,"service":"karnafim"}
+def health():return {"ok":True,"service":"karnafim","access":("read_only" if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" else "community")}
 @app.route("/register",methods=["GET","POST"])
 def register():
  if request.method=="POST":
@@ -158,12 +158,16 @@ def login():
   rows=sql("SELECT * FROM members WHERE email=%s",(email,),True)
   if rows and verify(request.form.get("password",""),rows[0]["password"]):
    sql("DELETE FROM login_failures WHERE fingerprint=%s",(fingerprint,))
-   session.clear();session["uid"]=rows[0]["id"];return redirect("/")
+   session.clear();session.permanent=True;session["uid"]=rows[0]["id"];return redirect("/")
   sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
   return view("כניסה",'<p class="error">פרטי ההתחברות לא נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
  return view("כניסה",'<h1>כניסה לחשבון</h1><form method="post" class="card">'+formwrap(field("email","דוא״ל","email",True)+field("password","סיסמה","password",True)+'<button>כניסה לחשבון</button></form><p>עדיין אין לך חשבון? <a href="/register"><strong>להרשמה לקהילה</strong></a></p><p>התחברות באמצעות Google תתווסף לאחר הגדרת OAuth מאובטחת מול Google.</p>'))
-@app.route("/logout")
-def logout():session.clear();return redirect("/")
+@app.route("/logout",methods=["GET","POST"])
+def logout():
+ if request.method=="POST":
+  guard();session.clear();return redirect("/")
+ if not me():return redirect("/")
+ return view("התנתקות",'<h1>התנתקות מהחשבון</h1><form method="post">'+formwrap('<button>אישור התנתקות</button>')+'</form>')
 @app.route("/directory")
 def directory():
  u=me()
