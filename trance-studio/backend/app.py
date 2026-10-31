@@ -50,7 +50,8 @@ def create_app(config=None):
         try:
             update(job_id,state='processing',percent=4,label='קורא את ההקלטות')
             clips=[load_audio(p) for p in paths]
-            audio,vocal=render_mix(clips,**options,return_voice=True,
+            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript')}
+            audio,vocal=render_mix(clips,**audio_options,return_voice=True,
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             export_mp3(audio,root/job_id/'mix.mp3')
             export_mp3(vocal,root/job_id/'voice.mp3')
@@ -73,6 +74,7 @@ def create_app(config=None):
                     meta['video_error']='הווידאו לא הושלם. קובצי השמע והסטוריבורד מוכנים.'
             update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='storyboard_2d_v1',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
+            app.logger.exception('Kolbo audio/video worker error')
             update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
         finally:
             for p in paths:p.unlink(missing_ok=True)
