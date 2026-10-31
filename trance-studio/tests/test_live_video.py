@@ -188,7 +188,7 @@ class GroundedVideoTests(unittest.TestCase):
             queries=[]
             def find(query):
                 queries.append(query)
-                if query=='donkey braying':return []
+                if query in ('donkey braying','donkey'):return []
                 return [{'url':'https://upload.wikimedia.org/test.webm',
                          'page':'https://commons.wikimedia.org/wiki/File:Car_driving.webm',
                          'license':'CC0'}]
