@@ -110,7 +110,7 @@ def esc(v):return html.escape(str(v or ""),quote=True)
 def field(name,label,type="text",required=False,value=""):
  return f'<label>{esc(label)}<input name="{esc(name)}" type="{type}" value="{esc(value)}" maxlength="200" {"required" if required else ""}></label>'
 def view(title,body):
- u=me(); nav='<a href="/">🏠 בית</a> <a href="/memorials">🕯️ הנצחה</a> <a href="/archive">📜 ארכיון</a> <a href="/find">🔎 איתור</a> <a href="/photos">📷 תמונות</a> <a href="/feed">📸 סיפורים</a> '
+ u=me(); nav='<a href="/">🏠 בית</a> <a href="/memorials">🕯️ הנצחה</a> <a href="/archive">📜 ארכיון</a> <a href="/find">🔎 איתור</a> <a href="/photos">📷 תמונות</a> <a href="/feed">📸 סיפורים</a> <a href="/help">❔ עזרה</a> '
  if u:
   nav+='<a href="/new-post">📸 שתפו סיפור או אירוע</a> <a href="/my-posts">📝 הפרסומים שלי</a> <a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/admin/accessibility">דיווחי נגישות</a> <a href="/community/moderation">אישור פרסומים</a> '
@@ -202,6 +202,19 @@ def admin_accessibility():
 @app.route("/accessibility")
 def accessibility_page():
  return view("הצהרת נגישות",accessibility_statement_body(read_only=False))
+
+@app.route("/help")
+def help_center():
+ return view("מרכז עזרה",'''<section aria-labelledby="help-heading"><h1 id="help-heading">❔ עזרה ושאלות נפוצות</h1>
+<p>כל הפעולות באתר בעברית. אין צורך להשתמש ברשת חברתית כדי לשתף זיכרונות עם חברים שאושרו לקהילה.</p>
+<h2>איך מצטרפים?</h2><p>פותחים חשבון בדף <a href="/register">ההרשמה</a>. מנהל הקהילה מאשר את הקשר לפלוגה בנפרד מאימות הדוא״ל. אם האתר מציג אזהרת אבטחה, אין להזין פרטי התחברות.</p>
+<h2>איך מעלים תמונות, סיפור או אירוע?</h2><p>לאחר אישור החברות בוחרים <a href="/new-post">פרסום חדש</a>, סוג הפרסום, כותרת ותיאור. אפשר לצרף עד ארבעה קבצים. לתמונות מוגבלת העלאה עד 8MB לקובץ לפני הכיווץ; קובץ שמע עד 2MB וסרטון עד 8MB. החומרים נשמרים פרטיים עד אישור ביקורת התוכן.</p>
+<h2>מי רואה את הסיפור שלי?</h2><p>רק חברי קהילה מאושרים יכולים לצפות בציר הזמן המאושר. המנהל יכול לראות גם פרסומים שממתינים לבדיקה. <a href="/my-posts">הפרסומים שלי</a> מציג גם תכנים פרטיים שהעלית.</p>
+<h2>איך מוצאים חברים?</h2><p><a href="/directory">מדריך החברים</a> מציג רק חברים שאושרו ושבחרו להופיע בו. אפשר לשלוח בקשת קשר ולקיים שיחה פרטית רק לאחר שהמקבל אישר את הבקשה.</p>
+<h2>מה בודק מנגנון ה־AI?</h2><p>הוא מסנן פרטים רגישים ותוכן בעייתי. תכנים לא חד־משמעיים נשמרים פרטיים. אם שירות ה־AI אינו מחובר, אי אפשר להבטיח פרסום אוטומטי. הבדיקה אינה מאשרת מי המצולם בתמונה או שהתקבלה הסכמה מכל מי שמופיע בה.</p>
+<h2>פרטיות וזכויות</h2><p>לא מעלים מספר אישי צבאי, כתובות של חברים, מידע מסווג או תמונות של אחרים ללא רשות. ההצגה במדריך נתונה לבחירת המשתמש.</p>
+<h2>שימוש נגיש באתר</h2><p>אפשר להשתמש במקלדת, בדילוג לתוכן הראשי ובאפשרויות התצוגה בראש העמוד. <a href="/accessibility">מידע על נגישות</a> · <a href="/accessibility/report">דיווח על בעיה</a>.</p>
+</section>''')
 
 @app.route("/about")
 def about_public():
