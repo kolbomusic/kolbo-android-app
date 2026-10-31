@@ -54,6 +54,27 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(client.post('/api/jobs',headers={'Authorization':'Bearer test-access-key','Origin':'https://other.example'}).status_code,403)
             self.assertEqual(client.post('/api/jobs',headers={'Authorization':'Bearer test-access-key'}).status_code,400)
 
+    def test_mobile_studio_serves_pwa_without_exposing_backend_token(self):
+        from app import create_app
+        with tempfile.TemporaryDirectory() as folder:
+            app=create_app({'JOB_DIR':folder,'API_TOKEN':'private-key-123','ALLOWED_ORIGINS':'https://allowed.example'})
+            client=app.test_client()
+            r=client.get('/studio',base_url='https://studio.example')
+            self.assertEqual(r.status_code,200)
+            self.assertIn(b'Kolbo Trance',r.data)
+            self.assertNotIn(b'private-key-123',r.data)
+            self.assertIn('HttpOnly',r.headers.get('Set-Cookie',''))
+            self.assertIn('Secure',r.headers.get('Set-Cookie',''))
+            self.assertEqual(client.get('/studio.webmanifest').status_code,200)
+            self.assertEqual(client.get('/studio-sw.js').status_code,200)
+            self.assertEqual(client.get('/studio-icon.svg').status_code,200)
+            # A secure studio session can access the API, but other visitors need the server token.
+            accepted=client.post('/api/jobs',data={},base_url='https://studio.example',headers={'Origin':'https://studio.example'})
+            self.assertEqual(accepted.status_code,400,accepted.get_data(as_text=True))
+            anonymous=app.test_client()
+            refused=anonymous.post('/api/jobs',data={},base_url='https://studio.example',headers={'Origin':'https://studio.example'})
+            self.assertEqual(refused.status_code,401)
+
     def test_private_job_status_and_audio_require_server_key(self):
         from app import create_app
         with tempfile.TemporaryDirectory() as folder:
