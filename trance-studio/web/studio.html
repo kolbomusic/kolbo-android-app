@@ -81,11 +81,12 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 (function(){
 'use strict';
 var $=function(id){return document.getElementById(id)};
-var audio=$('audio'),files=[],resultUrl='',resultBlob=null,deferredInstall=null;
+var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null;
 var active=false;
 function message(txt){$('status').textContent=txt}
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות מהמכשיר או מתוך WhatsApp'}
 function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles()}
+window.kolboImportSharedAudio=function(items){setFiles(items);message('ההקלטה מ־WhatsApp התקבלה! בחר את סוג המיקס ולחץ על יצירה.');};
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
 $('voice').oninput=function(){$('voiceText').textContent=this.value+'%'};
@@ -115,7 +116,7 @@ if(j.state==='done'){
 var mp3=await fetch(j.download_url,{credentials:'same-origin'});
 if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד אותו.');
 if(resultUrl)URL.revokeObjectURL(resultUrl);
-resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);
+resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);resultServerUrl=j.download_url;
 $('player').src=resultUrl;$('result').classList.add('visible');
 $('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות · ההקלטות שולבו לפי הסדר · הומור: '+$('humor').selectedOptions[0].textContent;
 message('הצליח! המיקס מוכן להשמעה ולשיתוף.');$('result').scrollIntoView({behavior:'smooth'});
@@ -127,8 +128,8 @@ throw new Error('העיבוד לא הסתיים במסגרת הזמן, אפשר 
 finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
 }
 $('generate').onclick=run;
-$('download').onclick=function(){if(!resultBlob)return;var a=document.createElement('a');a.href=resultUrl;a.download='Kolbo-Trance-Funny-Mix.mp3';document.body.appendChild(a);a.click();a.remove()};
-$('share').onclick=async function(){if(!resultBlob)return;var f=new File([resultBlob],'Kolbo-Trance-Funny-Mix.mp3',{type:'audio/mpeg'});if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'Kolbo Trance Studio'});return}catch(e){if(e.name==='AbortError')return}}$('download').click();message('הקובץ נשמר לשיתוף מתוך WhatsApp.')};
+$('download').onclick=function(){if(!resultBlob)return;if(window.KolboAndroid&&resultServerUrl){window.KolboAndroid.downloadMix(resultServerUrl);message('שומר את המיקס לתיקיית ההורדות...');return}var a=document.createElement('a');a.href=resultUrl;a.download='Kolbo-Trance-Funny-Mix.mp3';document.body.appendChild(a);a.click();a.remove()};
+$('share').onclick=async function(){if(!resultBlob)return;if(window.KolboAndroid&&resultServerUrl){window.KolboAndroid.shareMix(resultServerUrl);message('מכין שיתוף של המיקס...');return}var f=new File([resultBlob],'Kolbo-Trance-Funny-Mix.mp3',{type:'audio/mpeg'});if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'Kolbo Trance Studio'});return}catch(e){if(e.name==='AbortError')return}}$('download').click();message('הקובץ נשמר לשיתוף מתוך WhatsApp.')};
 window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredInstall=e;$('install').hidden=false});
 $('install').onclick=async function(){if(deferredInstall){deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('install').hidden=true}else{message('בתפריט הדפדפן בחר התקנת אפליקציה.')}};
 if('serviceWorker' in navigator){
