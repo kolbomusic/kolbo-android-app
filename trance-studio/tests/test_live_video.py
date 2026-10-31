@@ -140,6 +140,43 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(urls[0].endswith('Maasai_people_singing_and_dancing.webm.360p.vp9.webm'))
         self.assertEqual(urls[-1],item['url'])
 
+    def test_named_subject_footage_after_exact_action_search_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            song=root/'mix.mp3'
+            subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi',
+                            '-i','sine=frequency=290:duration=5',
+                            '-c:a','libmp3lame',str(song)],check=True)
+            plan=visual_plan('החמור נוער.',5)
+            queries=[]
+            def search(query):
+                queries.append(query)
+                if query=='donkey braying':return []
+                if query=='donkey':
+                    return [{'url':'https://upload.wikimedia.org/donkey.webm',
+                             'page':'https://commons.wikimedia.org/wiki/File:Donkey.webm',
+                             'license':'CC0'}]
+                return []
+            def download(item,dest):
+                subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi',
+                                '-i','testsrc=size=320x180:rate=12:duration=2',
+                                '-c:v','libvpx-vp9',str(dest)],check=True,timeout=30)
+            video=root/'film.mp4'
+            sources=export_live_story(song,video,plan,root/'assets',
+                                      search=search,download=download)
+            self.assertEqual(queries,['donkey braying','donkey'])
+            self.assertEqual(plan['visual_coverage'],'partial')
+            self.assertEqual(plan['thematic_clips'],['donkey_bray'])
+            self.assertEqual(sources[0]['match_level'],'explicit_subject_only')
+            self.assertGreater(video.stat().st_size,12000)
+
+    def test_ambiguous_clause_never_blocks_later_clear_action(self):
+        plan=visual_plan('חמור נוער כלב נובח. אני נוסע באוטו.',16)
+        self.assertEqual(plan['visual_coverage'],'partial')
+        self.assertEqual(plan['scenes'][-1]['action'],'car_drive')
+        self.assertIn('חמור נוער',plan['transcript'])
+        self.assertGreaterEqual(plan['unmatched_clauses'],1)
+
     def test_prepare_every_scene_and_export_partial_video_with_full_audio(self):
         with tempfile.TemporaryDirectory() as temp:
             root=pathlib.Path(temp)
