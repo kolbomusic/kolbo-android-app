@@ -1,0 +1,233 @@
+"""Grounded action-to-live-footage engine.
+
+Unlike the legacy emoji/cartoon renderer, this exporter accepts only *actual*
+motion video from a licensed source. It never overlays subtitles and does
+not invent a scene when a spoken action can't be matched safely.
+"""
+from __future__ import annotations
+import json
+import os
+import re
+import subprocess
+import tempfile
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+COMMONS_API="https://commons.wikimedia.org/w/api.php"
+MAX_SCENES=5
+MAX_BYTES=22*1024*1024
+USER_AGENT="KolboTranceStudio/1.9 (personal noncommercial story builder; contact https://kolbomusic.com)"
+# Explicit conjunctions of a subject and action, not substring matches.
+# "לבוא" must NEVER be treated as "לב"/love. Unknown scenes fail closed.
+ACTIONS=(
+    ("donkey_bray",("חמור","חמורה"),("נוער","נעירה","צורח","צועק","צועקת"),"donkey braying"),
+    ("dog_bark",("כלב","כלבה"),("נובח","נביחות","נובחת"),"dog barking"),
+    ("cat_eat",("חתול","חתולה"),("אוכל","אוכלת","אכלה"),"cat eating"),
+    ("car_drive",("אוטו","מכונית","רכב"),("נסעתי","נוסע","נוסעת","נסיעה","נוסעים","נוהג","נהג"),"car driving"),
+    ("truck_drive",("משאית","מנוף"),("נוסע","נוסעת","נהג","נוהג","נסעתי"),"truck driving"),
+    ("horse_run",("סוס","סוסים"),("רץ","רצים","רצה","דהר","דוהר"),"horse running"),
+    ("farmer_feed",("חקלאי","חקלאית"),("מאכיל","מאכילה","מגיש","מגישה","נותן","נותנת"),"farmer feeding animals"),
+    ("person_run",("איש","אישה","בחור","ילד","אני"),("רצתי","רץ","רצה","רצים","רצה"),"person running"),
+    ("person_dance",("רוקד","רוקדת","רקדנו","ריקוד","רוקדים"),("מסיבה","רוקד","רוקדת","רקדנו","ריקוד","רוקדים"),"people dancing"),
+    ("swim",("שוחה","שוחים","שחיתי","שוחה"),("ים","בריכה","מים","שחיתי","שוחים"),"people swimming"),
+    ("rain",("גשם","גשמים"),("יורד","ירד","מטפטף","גשם"),"rain falling"),
+    ("pizza_eat",("פיצה",),("אכלתי","אוכל","אוכלת","לאכול","אכלה","אכלנו"),"person eating pizza"),
+    ("beach_walk",("ים","חוף"),("הלכתי","הולך","הולכים","טיילתי","מטייל"),"person walking beach"),
+    ("hug",("חיבוק","חיבק","חיבקתי","מחבק","מחבקת"),("חיבוק","חיבק","חיבקתי","מחבק","מחבקת"),"people hugging"),
+)
+# Explicit subject-only visuals: only if the utterance names an actual place
+# and no distinct unsupported action. Avoid interpreting "לבוא" as "love".
+VISUAL_LOCATIONS=(
+    ("sea",("ים","חוף"),"ocean waves"),
+    ("house",("בית","הביתה"),"house exterior"),
+    ("forest",("יער","עצים"),"forest trees moving"),
+)
+CLAUSE_SPLIT=re.compile(r"[.!?;]+|\\b(?:ואז|אחר כך|לאחר מכן|פתאום)\\b")
+HEBREW_TOKEN=re.compile(r"[א-ת]+")
+NEGATIONS={"לא","בלי","אינו","אינה","אינם","אין"}
+class UnavailableVideo(RuntimeError):pass
+
+def _words(sentence):
+    return HEBREW_TOKEN.findall(sentence)
+
+def _positive_clause(tokens):
+    # Doesn't visualize negated actions as if they occurred.
+    return not any(t in NEGATIONS for t in tokens)
+
+def action_for_clause(sentence):
+    words=_words(sentence)
+    if not words or not _positive_clause(words):return None
+    tokens=set(words)
+    for name,subjects,verbs,query in ACTIONS:
+        if tokens.intersection(subjects) and tokens.intersection(verbs):
+            return {"action":name,"query":query,"basis":"subject_and_action"}
+    for name,terms,query in VISUAL_LOCATIONS:
+        if tokens.intersection(terms) and len(tokens)<=6:
+            return {"action":name,"query":query,"basis":"explicit_location"}
+    return None
+
+def visual_plan(transcript,duration):
+    """Ground each clause in an explicit subject and visible action.
+
+    No generic characters, captions, hearts or moving placeholders.
+    """
+    transcript=str(transcript or "").strip()
+    clauses=[x.strip() for x in CLAUSE_SPLIT.split(transcript) if x.strip()]
+    if not 1<=len(clauses)<=MAX_SCENES:
+        raise UnavailableVideo("אי אפשר ליצור סרטון מדויק: מספר האירועים אינו נתמך")
+    events=[]
+    for clause in clauses:
+        found=action_for_clause(clause)
+        if not found:
+            raise UnavailableVideo("המערכת לא זיהתה פעולה שאפשר להמחיש בווידאו אמיתי. לא נוצר סרטון מצויר או לא קשור.")
+        events.append({"text":clause,**found})
+    units=[max(1,len(_words(c))) for c in clauses]
+    boundaries=[0.];total=sum(units);current=0.
+    for count in units[:-1]:
+        current+=float(duration)*count/total
+        boundaries.append(current)
+    boundaries.append(float(duration))
+    return {"source":"automatic_transcript_strict_semantic_footage",
+            "transcript":transcript,"scenes":[{
+                "start":round(boundaries[i],2),
+                "end":round(boundaries[i+1],2),
+                "action":e["action"],
+                "query":e["query"],
+                "basis":e["basis"],
+                "caption":"", # never burn subtitles on video
+                "spoken":e["text"]
+             } for i,e in enumerate(events)]}
+
+def _json_api(params):
+    url=COMMONS_API+"?"+urllib.parse.urlencode(params)
+    request=urllib.request.Request(url,headers={"User-Agent":USER_AGENT,
+                                                  "Accept":"application/json"})
+    with urllib.request.urlopen(request,timeout=16) as response:
+        raw=response.read(180000)
+    return json.loads(raw)
+
+def _valid_license(metadata):
+    values=metadata or {}
+    license_code=str(values.get("LicenseShortName",{}).get("value","")).lower()
+    # Only unambiguously reusable CC0 / public domain / CC-BY / CC-BY-SA.
+    return (license_code in {"cc0","public domain","pd","cc by 4.0",
+             "cc by-sa 4.0","cc by 3.0","cc by-sa 3.0",
+             "cc-by-4.0","cc-by-sa-4.0","cc-by-3.0","cc-by-sa-3.0"})
+
+def _matches_metadata(title,query):
+    title=title.lower().replace("_"," ").replace("-"," ")
+    keywords=query.lower().split()
+    # Require main physical actor in the file title, not just a search-snippet.
+    main=keywords[0]
+    return main in title and any(term in title for term in keywords[1:])
+
+def commons_candidates(query):
+    data=_json_api({"action":"query","generator":"search","gsrsearch":
+                    'filetype:video '+query,
+                    "gsrnamespace":6,"gsrlimit":15,
+                    "prop":"imageinfo","iiprop":"url|mime|size|extmetadata",
+                    "format":"json","formatversion":2})
+    pages=data.get("query",{}).get("pages",[])
+    matches=[]
+    for page in pages:
+        if not _matches_metadata(page.get("title",""),query):continue
+        info=(page.get("imageinfo") or [{}])[0]
+        mime=str(info.get("mime",""))
+        size=int(info.get("size",0))
+        url=str(info.get("url",""))
+        if mime not in ("video/webm","video/ogg","application/ogg"):continue
+        if size<10000 or size>MAX_BYTES:continue
+        if not _valid_license(info.get("extmetadata",{})):continue
+        parsed=urllib.parse.urlparse(url)
+        if parsed.scheme!="https" or parsed.netloc not in (
+            "upload.wikimedia.org","commons.wikimedia.org"):continue
+        matches.append({"url":url,"title":page["title"],"bytes":size,
+                        "page":"https://commons.wikimedia.org/wiki/"+
+                            urllib.parse.quote(page["title"].replace(" ","_")),
+                        "license":info["extmetadata"].get("LicenseShortName",{}).get("value","")})
+    return matches
+
+def download_video(item,dest):
+    request=urllib.request.Request(item["url"],headers={"User-Agent":USER_AGENT})
+    count=0
+    with urllib.request.urlopen(request,timeout=27) as response,open(dest,"wb") as file:
+        u=urllib.parse.urlparse(response.geturl())
+        if u.scheme!="https" or u.hostname not in (
+            "upload.wikimedia.org","commons.wikimedia.org"):
+            raise UnavailableVideo("מקור וידאו לא מורשה")
+        while True:
+            data=response.read(65536)
+            if not data:break
+            count+=len(data)
+            if count>MAX_BYTES:raise UnavailableVideo("סרטון המקור גדול מדי")
+            file.write(data)
+    if count<10000:raise UnavailableVideo("סרטון המקור חסר")
+
+def _duration(path):
+    proc=subprocess.run(["ffprobe","-v","quiet","-show_entries",
+                         "format=duration","-of","default=noprint_wrappers=1:nokey=1",
+                         str(path)],check=True,capture_output=True,text=True,timeout=20)
+    return float(proc.stdout.strip())
+
+def _make_segment(src,output,length):
+    if length<=0:raise UnavailableVideo("קטע וידאו ריק")
+    source_length=_duration(src)
+    if source_length<min(.7,length*.4):
+        raise UnavailableVideo("קטע המקור קצר מדי")
+    # Authentic moving video, NOT still photo with Ken-Burns or geometric shapes.
+    cmd=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
+         "-stream_loop","-1","-i",str(src),"-t",f"{length:.3f}",
+         "-an","-vf","scale=480:854:force_original_aspect_ratio=increase,"
+         "crop=480:854,fps=15,format=yuv420p",
+         "-c:v","libx264","-preset","ultrafast","-crf","27",
+         "-movflags","+faststart",str(output)]
+    subprocess.run(cmd,capture_output=True,check=True,timeout=100)
+
+def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
+                      search=commons_candidates,download=download_video):
+    scenes=plan["scenes"]
+    if not scenes:raise UnavailableVideo("אין פעולות ליצירה")
+    work=Path(work_dir)
+    work.mkdir(parents=True,exist_ok=True)
+    sources=[]
+    for i,scene in enumerate(scenes):
+        if progress:progress(89+int(6*i/len(scenes)),"מחפש סרטון אמיתי לפעולה "+str(i+1))
+        try:
+            candidates=search(scene["query"])
+        except Exception as error:
+            raise UnavailableVideo("לא ניתן לחפש וידאו מתאים כעת") from error
+        if not candidates:raise UnavailableVideo(
+            "לא נמצא סרטון מורשה שמתאים לפעולה שתוארה. לא נוציא סרטון לא קשור.")
+        selected=None
+        for item in candidates[:3]:
+            original=work/f"source-{i}.webm"
+            try:
+                download(item,original)
+                if _duration(original)>=.7:
+                    selected=item
+                    break
+            except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
+                continue
+        if not selected:raise UnavailableVideo("מקורות הווידאו אינם ניתנים לניגון")
+        segment=work/f"scene-{i}.mp4"
+        _make_segment(original,segment,max(.6,scene["end"]-scene["start"]))
+        sources.append({"action":scene["action"],"file":str(segment),
+                        "page":selected["page"],"license":selected["license"]})
+    concat=work/"manifest.txt"
+    concat.write_text("".join("file '"+Path(src["file"]).name+"'\\n"
+                              for src in sources),encoding="utf-8")
+    silent=work/"silent.mp4"
+    subprocess.run(["ffmpeg","-nostdin","-loglevel","error","-y",
+                    "-f","concat","-safe","0","-i",str(concat),
+                    "-c","copy",str(silent)],cwd=work,capture_output=True,
+                   check=True,timeout=55)
+    subprocess.run(["ffmpeg","-nostdin","-loglevel","error","-y",
+                    "-i",str(silent),"-i",str(audio_mp3),
+                    "-map","0:v:0","-map","1:a:0","-c:v","copy",
+                    "-c:a","aac","-b:a","160k","-shortest",
+                    "-movflags","+faststart",str(video_mp4)],
+                   capture_output=True,check=True,timeout=70)
+    if Path(video_mp4).stat().st_size<12000:
+        raise UnavailableVideo("סרטון MP4 ריק או פגום")
+    return sources
