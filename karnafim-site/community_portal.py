@@ -169,6 +169,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
 
     def inspect_file(f):
         if not f or not getattr(f,"filename",""):return None
+        f.stream.seek(0)
         data=f.read(9*1024*1024)
         mime=(f.mimetype or "").lower().split(";")[0]
         kind=None;maxsize=0
@@ -270,6 +271,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         u=approved()
         if request.method=="POST":
             guard()
+            if request.form.get("rights")!="on":abort(400)
             title=request.form.get("title","").strip()[:130]
             body=request.form.get("body","").strip()[:4000]
             y=request.form.get("year","").strip()
