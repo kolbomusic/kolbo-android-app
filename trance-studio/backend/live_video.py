@@ -212,19 +212,46 @@ def _duration(path):
                          str(path)],check=True,capture_output=True,text=True,timeout=20)
     return float(proc.stdout.strip())
 
+def _video_profile(path):
+    result=subprocess.run(["ffprobe","-v","error","-select_streams","v:0",
+        "-show_entries","stream=codec_name,width,height",
+        "-of","json",str(path)],capture_output=True,text=True,check=True,timeout=15)
+    tracks=json.loads(result.stdout).get("streams",[])
+    if not tracks:raise UnavailableVideo("המקור אינו כולל תמונה נעה")
+    stream=tracks[0]
+    return stream.get("codec_name"),stream.get("width"),stream.get("height")
+
 def _make_segment(src,output,length):
     if length<=0:raise UnavailableVideo("קטע וידאו ריק")
     source_length=_duration(src)
     if source_length<min(.7,length*.4):
         raise UnavailableVideo("קטע המקור קצר מדי")
-    # Authentic moving video, NOT still photo with Ken-Burns or geometric shapes.
-    cmd=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
-         "-stream_loop","-1","-i",str(src),"-t",f"{length:.3f}",
-         "-an","-vf","scale=480:854:force_original_aspect_ratio=increase,"
-         "crop=480:854,fps=15,format=yuv420p",
-         "-c:v","libx264","-preset","ultrafast","-crf","27",
-         "-movflags","+faststart",str(output)]
-    subprocess.run(cmd,capture_output=True,check=True,timeout=100)
+    codec,_,_=_video_profile(src)
+    # Zero-reencoding fast path. Wikimedia supplied VP9 clips can be remuxed
+    # into MP4 without scaling or H.264 CPU-intensive work. The low-power
+    # free Render instance previously timed out after 100 seconds on 30s
+    # of H.264 encoding, silently discarding the otherwise valid MP3.
+    if codec in ("vp9","h264","hevc","av1"):
+        command=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
+                 "-stream_loop","-1","-i",str(src),"-t",f"{length:.3f}",
+                 "-map","0:v:0","-an","-c:v","copy",
+                 "-movflags","+faststart",str(output)]
+        subprocess.run(command,capture_output=True,check=True,timeout=35)
+        return
+    # For VP8 / Theora transcode ONLY a brief source clip once, then repeat
+    # the completed H.264 segment by stream copy. Do not reencode every repeat.
+    short=Path(output).with_name("encoded-"+Path(output).name)
+    source_duration=min(source_length,6.0)
+    command=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
+             "-i",str(src),"-t",f"{source_duration:.3f}","-an",
+             "-vf","fps=10,scale=360:-2,format=yuv420p",
+             "-c:v","libx264","-preset","ultrafast","-crf","30",str(short)]
+    subprocess.run(command,capture_output=True,check=True,timeout=70)
+    command=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
+             "-stream_loop","-1","-i",str(short),"-t",f"{length:.3f}",
+             "-map","0:v:0","-an","-c:v","copy",
+             "-movflags","+faststart",str(output)]
+    subprocess.run(command,capture_output=True,check=True,timeout=30)
 
 def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
                       search=commons_candidates,download=download_video):
