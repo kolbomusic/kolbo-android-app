@@ -344,36 +344,56 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
     if not scenes:raise UnavailableVideo("אין פעולות ליצירה")
     work=Path(work_dir)
     work.mkdir(parents=True,exist_ok=True)
-    sources=[]
+    # Preparation must search every known event before deciding whether an
+    # actual motion picture can be assembled. Missing one archive clip may not
+    # discard every other verified scene or the whole 50-second soundtrack.
     cached={}
+    prepared=[]
+    missing=[]
     for i,scene in enumerate(scenes):
-        if progress:progress(89+int(6*i/len(scenes)),"מכין צילום מתאים לסצנה "+str(i+1))
+        if progress:progress(88+int(6*i/len(scenes)),
+            "בודק צילומים לאירוע "+str(i+1)+" מתוך "+str(len(scenes)))
         query=scene["query"]
-        if query in cached:
-            original,selected=cached[query]
-        else:
-            try:
-                candidates=search(query)
-            except Exception as error:
-                raise UnavailableVideo("לא ניתן לחפש וידאו מתאים כעת") from error
-            if not candidates:raise UnavailableVideo(
-                "לא נמצא סרטון מורשה שמתאים לפעולה שתוארה. לא יוצג וידאו לא קשור.")
+        if query not in cached:
             selected=None
-            original=work/f"source-{len(cached)}.webm"
-            for item in candidates[:3]:
+            source=work/f"source-{len(cached)}.webm"
+            try:
+                choices=search(query)
+            except Exception:
+                choices=[]
+            for item in choices[:4]:
                 try:
-                    download(item,original)
-                    if _duration(original)>=.7:
+                    download(item,source)
+                    if _duration(source)>=.7:
                         selected=item
                         break
                 except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
                     continue
-            if not selected:raise UnavailableVideo("מקורות הווידאו אינם ניתנים לניגון")
-            cached[query]=(original,selected)
+            cached[query]=(source,selected)
+        source,selected=cached[query]
+        if selected is None:
+            missing.append({"action":scene["action"],"spoken":scene.get("spoken","")[:180]})
+            continue
+        prepared.append((scene,source,selected))
+    if not prepared:
+        raise UnavailableVideo(
+            "חיפשתי צילומים לכל הפעולות שזוהו, אבל לא נמצא אף קטע וידאו מורשה שתואם להן.")
+    sources=[]
+    audio_duration=float(scenes[-1]["end"])
+    matched_seconds=sum(max(.1,scene["end"]-scene["start"]) for scene,_,_ in prepared)
+    for i,(scene,source,selected) in enumerate(prepared):
+        # Preserve the entire audio; extend only known matching footage for
+        # unsupported phrases. The API/UI explicitly disclose partial visual
+        # coverage, never claim every utterance was depicted.
+        length=audio_duration*max(.1,scene["end"]-scene["start"])/matched_seconds
         segment=work/f"scene-{i}.mp4"
-        _make_segment(original,segment,max(.6,scene["end"]-scene["start"]))
+        _make_segment(source,segment,max(.6,length))
         sources.append({"action":scene["action"],"file":str(segment),
                         "page":selected["page"],"license":selected["license"]})
+    plan["missing_footage"]=missing
+    if missing:
+        plan["visual_coverage"]="partial"
+        plan["unmatched_clauses"]=plan.get("unmatched_clauses",0)+len(missing)
     concat=work/"manifest.txt"
     concat.write_text("".join("file '"+Path(src["file"]).name+"'\n"
                               for src in sources),encoding="utf-8")
