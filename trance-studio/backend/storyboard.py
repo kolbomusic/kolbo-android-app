@@ -34,8 +34,8 @@ def storyboard(transcript, duration, max_scenes=10):
     """
     duration=float(duration)
     if not .5<=duration<=360:raise ValueError('video duration is invalid')
-    clean=re.sub(r'[\\x00-\\x1f]',' ',str(transcript or ''))[:4000].strip()
-    sentences=[v.strip() for v in re.split(r'[.!?;\\n]+',clean) if v.strip()]
+    clean=''.join(ch if ord(ch)>=32 else ' ' for ch in str(transcript or ''))[:4000].strip()
+    sentences=[v.strip() for v in re.split('[.!?;]+',clean) if v.strip()]
     if not sentences:
         count=min(max_scenes,max(2,int(math.ceil(duration/7))))
         scenes=[{'start':round(i*duration/count,2),'end':round((i+1)*duration/count,2),
