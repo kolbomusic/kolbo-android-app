@@ -91,10 +91,20 @@ self.onmessage=async event=>{
       pipelinePromise=Promise.resolve(recognize);
       chunks=await recognizeAll(recognize);
     }
-    const transcript=normalize(chunks.map(x=>x.text).join(' '));
-    const hebrewCount=(transcript.match(/[\u0590-\u05ff]/g)||[]).length;
+    let transcript=normalize(chunks.map(x=>x.text).join(' '));
+    let hebrewCount=(transcript.match(/[\u0590-\u05ff]/g)||[]).length;
+    if((hebrewCount<3 || transcript.split(/\s+/).filter(Boolean).length<2)
+       && loadedModel===MODEL_IDS[0]){
+      send(id,'stage',{label:'לא זוהו מילים בעברית באופן מספק; מנסה תמלול חלופי אוטומטי'});
+      pipelinePromise=null;
+      recognize=await createRecognizer(id,1);
+      pipelinePromise=Promise.resolve(recognize);
+      chunks=await recognizeAll(recognize);
+      transcript=normalize(chunks.map(x=>x.text).join(' '));
+      hebrewCount=(transcript.match(/[\u0590-\u05ff]/g)||[]).length;
+    }
     if(hebrewCount<3 || transcript.split(/\s+/).filter(Boolean).length<2){
-      throw new Error('הזיהוי הסתיים, אך לא הופק תמלול עברי אמין. נסה שוב או תקן ידנית.');
+      throw new Error('שני מנועי התמלול לא זיהו מספיק מילים בעברית מתוך ההקלטה המקורית.');
     }
     send(id,'done',{transcript,chunks,model:loadedModel,language:'hebrew'});
   }catch(error){
