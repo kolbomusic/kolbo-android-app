@@ -69,6 +69,9 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 </div>
 <label for="bpm">מהירות הקצב — <output id="bpmText">145</output> BPM</label>
 <input id="bpm" type="range" min="120" max="165" value="145" step="1">
+<label for="fx_intensity">עוצמת טריקים וחיתוכים — <output id="fxText">מאוזנת</output></label>
+<input id="fx_intensity" type="range" min="1" max="3" value="2" step="1">
+<small>1 — מעט הפתעות · 2 — מאוזן · 3 — DJ משוגע עם יותר מתיחות ורולים</small>
 <label for="voice">עוצמת הדיבור — <output id="voiceText">100%</output></label>
 <input id="voice" type="range" min="50" max="150" value="100" step="5">
 <p class="hint">הדיבור המלא נשמר לפי הסדר המקורי. דגימות קול עוברות חיתוכים גם באמצע מילה, מתיחות ושינויי טון; כל הדיבור המקורי נשמר בנפרד פעם אחת לפחות. כל המנגינות והאפקטים נוצרים באופן מקורי.</p>
@@ -96,6 +99,7 @@ window.kolboImportSharedAudio=function(items){setFiles(items);message('ההקל�
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
 $('voice').oninput=function(){$('voiceText').textContent=this.value+'%'};
+$('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'עדינה','2':'מאוזנת','3':'משוגעת'})[this.value]};
 function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
 async function run(){
 if(active)return;
@@ -108,7 +112,7 @@ var form=new FormData();
 files.forEach(function(f){form.append('audio',f,f.name)});
 form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
-form.set('bpm',$('bpm').value);form.set('voice_level',String(Number($('voice').value)/100));
+form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('voice_level',String(Number($('voice').value)/100));
 var r=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
 var data=await r.json();if(!r.ok)throw new Error(data.error||'לא ניתן לשלוח את ההקלטה');
 for(var attempt=0;attempt<600;attempt++){
