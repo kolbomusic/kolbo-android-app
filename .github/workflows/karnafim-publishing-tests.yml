@@ -22,3 +22,7 @@ jobs:
         run: python -m compileall -q karnafim-site
       - name: Test story, event and photo publishing without production database
         run: python karnafim-site/tests/test_publish.py
+      - name: Verify moderation engine safety boundaries
+        run: python karnafim-site/tests/test_moderation.py
+      - name: Verify page accessibility landmarks
+        run: python karnafim-site/tests/test_accessibility.py
