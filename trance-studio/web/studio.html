@@ -245,8 +245,17 @@ if(j.video_url){
   try{
    var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
    if((credits.sources||[]).length){
-    $('storyboardInfo').textContent+=' רישיונות: '+
-       credits.sources.map(function(c){return c.license}).join(' · ');
+    $('storyboardInfo').append(document.createTextNode(' מקורות הווידאו: '));
+    credits.sources.forEach(function(c,i){
+      try{
+        var u=new URL(c.page);
+        if(u.protocol!=='https:'||u.hostname!=='commons.wikimedia.org')return;
+        var link=document.createElement('a');
+        link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';
+        link.textContent='מקור '+(i+1)+' ('+(c.license||'רישיון חופשי')+')';
+        $('storyboardInfo').append(link,document.createTextNode(' · '));
+      }catch(e){}
+    });
    }
   }catch(e){}
  }
