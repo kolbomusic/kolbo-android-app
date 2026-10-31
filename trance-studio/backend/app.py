@@ -220,6 +220,11 @@ def create_app(config=None):
         response.headers['Service-Worker-Allowed']='/'
         response.headers['Cache-Control']='no-store'
         return response
+    @app.get('/studio-asr-worker.js')
+    def studio_asr_worker():
+        response=send_file(web/'studio-asr-worker.js',mimetype='application/javascript')
+        response.headers['Cache-Control']='no-store'
+        return response
     @app.get('/studio-icon.svg')
     def studio_icon():return send_file(web/'studio-icon.svg',mimetype='image/svg+xml')
 
