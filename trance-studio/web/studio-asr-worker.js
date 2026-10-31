@@ -2,12 +2,12 @@
  * Replaces a non-existent Hebrew-model ID. Work is performed on the SOURCE
  * WhatsApp voice, never the backing track. No fabricated transcripts.
  */
-const MODEL_ID = 'onnx-community/whisper-tiny';
+const MODEL_IDS = ['onnx-community/whisper-base','onnx-community/whisper-tiny'];
 const RUNTIME_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
 const CHUNK_SECONDS = 20;
 const SAMPLE_RATE = 16000;
 let pipelinePromise = null;
-
+let loadedModel = '';
 function send(id,type,extras={}) { self.postMessage({id,type,...extras}); }
 function normalize(s) { return String(s||'').replace(/\s+/g,' ').trim(); }
 function rms(x) {
@@ -18,26 +18,35 @@ function rms(x) {
   for(let i=0;i<x.length;i+=stride){total+=x[i]*x[i];count++;}
   return Math.sqrt(total/Math.max(1,count));
 }
+async function createRecognizer(id,modelIndex=0){
+  const modelID=MODEL_IDS[modelIndex];
+  send(id,'stage',{label:modelIndex===0?
+    'מאתחל זיהוי דיבור עברי מדויק יותר מתוך ההקלטה המקורית':
+    'מנוע הזיהוי הראשי אינו זמין; עובר למודל חינמי קל יותר'});
+  const {pipeline,env} = await import(RUNTIME_URL);
+  env.allowLocalModels=false;
+  if(env.backends?.onnx?.wasm)env.backends.onnx.wasm.numThreads=1;
+  const recognizer=await pipeline('automatic-speech-recognition',modelID,{
+    device:'wasm',dtype:'q8',
+    progress_callback:p=>{
+      if(p && p.status==='progress' && Number.isFinite(p.progress)){
+        send(id,'model_progress',{percent:Math.min(99,Math.round(p.progress))});
+      }
+    }
+  });
+  loadedModel=modelID;
+  send(id,'stage',{label:'מודל הזיהוי נטען. מפענח דיבור מהקובץ המקורי...'});
+  return recognizer;
+}
 async function getRecognizer(id) {
   if(!pipelinePromise){
     pipelinePromise=(async()=>{
-      send(id,'stage',{label:'מאתחל מנוע תמלול עברי רב־לשוני'});
-      const {pipeline,env} = await import(RUNTIME_URL);
-      env.allowLocalModels=false;
-      // A normal Android WebView is not cross-origin isolated; avoid WASM thread errors.
-      if(env.backends?.onnx?.wasm)env.backends.onnx.wasm.numThreads=1;
-      const recognizer = await pipeline('automatic-speech-recognition',MODEL_ID,{
-        device:'wasm',
-        dtype:'q8',
-        progress_callback:p=>{
-          if(p && p.status==='progress' && Number.isFinite(p.progress)){
-            send(id,'model_progress',{percent:Math.min(99,Math.round(p.progress))});
-          }
-        }
-      });
-      send(id,'stage',{label:'מודל הדיבור נטען. מזהה את המילים...'});
-      return recognizer;
-    })().catch(e=>{pipelinePromise=null;throw e;});
+      try{return await createRecognizer(id,0)}
+      catch(firstError){
+        send(id,'stage',{label:'עובר למנוע תמלול חלופי, ללא צורך באישור'});
+        return await createRecognizer(id,1);
+      }
+    })().catch(e=>{pipelinePromise=null;throw e});
   }
   return pipelinePromise;
 }
@@ -75,7 +84,7 @@ self.onmessage=async event=>{
     if(hebrewCount<3 || transcript.split(/\s+/).filter(Boolean).length<2){
       throw new Error('הזיהוי הסתיים, אך לא הופק תמלול עברי אמין. נסה שוב או תקן ידנית.');
     }
-    send(id,'done',{transcript,chunks,model:MODEL_ID,language:'hebrew'});
+    send(id,'done',{transcript,chunks,model:loadedModel,language:'hebrew'});
   }catch(error){
     const details=String(error?.message||error||'Unknown error').slice(0,360);
     const lower=details.toLowerCase();
