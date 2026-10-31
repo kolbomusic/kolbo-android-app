@@ -348,7 +348,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
         masks.append(np.zeros(len(raw),dtype=np.float32))
         original_spans.append((start,end,offset,offset+len(raw)))
         offset+=len(raw)
-        if i==len(chunks)-1:continue
+        # Even a two-second message gets one solo effect after its full words.
         # A short beat-synced transition is reserved for the effected phrase.
         width=min(len(raw),max(int(.27*sr),int(.70*sr)))
         candidates=range(0,max(1,len(raw)-width+1),max(1,int(.06*sr)))
@@ -388,10 +388,12 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         signature.update(len(v).to_bytes(8,'little'))
         signature.update(v[::max(1,len(v)//512)].tobytes())
     signature.update(mix_variation.to_bytes(4,'little'))
-    rng=np.random.default_rng(int.from_bytes(signature.digest(),'little'))
+    seed=int.from_bytes(signature.digest(),'little')
+    rng=np.random.default_rng(seed)
+    voice_rng=np.random.default_rng(seed^0x9E3779B97F4A7C15)
     # Voice is arranged FIRST. Its actual duration determines the score length.
     # This guarantees the last words and the final vocal trick cannot be cut.
-    arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,rng)
+    arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng)
               for v in voices]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
     needed=beat*10+total_vocal_duration+max(0,len(voices)-1)*beat*3
