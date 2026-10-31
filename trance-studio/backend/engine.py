@@ -302,7 +302,7 @@ def vocal_fx_timeline(voice, sr, bpm, humor, intensity, rng):
     return (x*.84+wet*amount).astype(np.float32)
 
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,progress=lambda *args:None):
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,return_voice=False,progress=lambda *args:None):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     sr=sample_rate;beat=60/bpm
@@ -319,7 +319,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         signature.update(len(v).to_bytes(8,'little'))
         signature.update(v[::max(1,len(v)//512)].tobytes())
     rng=np.random.default_rng(int.from_bytes(signature.digest(),'little'))
-    music=np.zeros((n,2),dtype=np.float32);vox=np.zeros(n,dtype=np.float32)
+    music=np.zeros((n,2),dtype=np.float32)
     def add(x,time,gain=1,pan=0):
         start=int(round(time*sr));count=min(len(x),n-start)
         if start<0 or count<=0:return
@@ -461,7 +461,6 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # The vocal waveform is the ONLY input to the processing chain; music
     # never receives pitch, tape, stutter or distortion effects.
     vocal=np.zeros(n,dtype=np.float32)
-    voice_orig=np.zeros(n,dtype=np.float32)
     cursor=beat*4
     for i,v in enumerate(voices):
         transformed=vocal_fx_timeline(v,sr,bpm,humor,fx_intensity,rng)
@@ -469,7 +468,6 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         end=min(n,start+len(v))
         if end>start:
             vocal[start:end]+=transformed[:end-start]*voice_level
-            voice_orig[start:end]+=v[:end-start]*voice_level
         cursor+=len(v)/sr+beat*16
     progress(80,'מבצע מיקס כשהקול המעובד בחזית')
     # The synth is independent. Duck only its volume during speech so the
@@ -490,7 +488,16 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     np.nan_to_num(music,copy=False)
     music*=.91/max(.91,float(np.max(np.abs(music))))
     progress(92,'מכין קובץ להורדה')
-    return music
+    return (music,vocal) if return_voice else music
 
 def export_mp3(audio,path,sr=32000):
-    subprocess.run(['ffmpeg','-v','error','-y','-f','f32le','-ar',str(sr),'-ac','2','-i','pipe:0','-af','alimiter=limit=0.92:level=false','-codec:a','libmp3lame','-b:a','192k',str(path)],input=audio.astype('<f4').tobytes(),check=True,capture_output=True,timeout=65)
+    audio=np.asarray(audio,dtype=np.float32)
+    if audio.ndim==1:channels=1
+    elif audio.ndim==2 and audio.shape[1]==2:channels=2
+    else:raise ValueError('expected mono or stereo audio')
+    subprocess.run(['ffmpeg','-v','error','-y','-f','f32le','-ar',str(sr),
+                    '-ac',str(channels),'-i','pipe:0',
+                    '-af','alimiter=limit=0.92:level=false',
+                    '-codec:a','libmp3lame','-b:a','192k',str(path)],
+                   input=audio.astype('<f4').tobytes(),check=True,
+                   capture_output=True,timeout=65)
