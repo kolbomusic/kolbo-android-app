@@ -208,7 +208,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
             "📜 יד לשריון": "https://www.google.com/search?q="+quote("site:yadlashiryon.com "+search),
             "🕯️ יזכור": "https://www.google.com/search?q="+quote("site:izkor.gov.il "+search),
         }
-        b='<h1>מאיפה מתחילים למצוא את החברים?</h1><p>כותבים שם, כינוי או אירוע. המערכת מכינה חיפוש ממוקד במאגרים ובקבוצות ציבוריות; היא אינה נכנסת לחשבונות פרטיים או שואבת פרטים אישיים ללא הסכמה.</p><form class="search" action="/find" method="get"><input name="q" placeholder="למשל: פלוגת הקרנפים 2006" value="'+e(q)+'"><button>חיפוש</button></form>'
+        b='<h1>מאיפה מתחילים למצוא את החברים?</h1><p>כותבים שם, כינוי או אירוע. המערכת מכינה חיפוש ממוקד במאגרים ובקבוצות ציבוריות; היא אינה נכנסת לחשבונות פרטיים או שואבת פרטים אישיים ללא הסכמה.</p><form class="search" action="/find" method="get"><label for="veteran-search">חיפוש מידע פומבי על חברים ופלוגה</label><input id="veteran-search" name="q" placeholder="למשל: פלוגת הקרנפים 2006" value="'+e(q)+'"><button>חיפוש</button></form>'
         b+='<div class="tiles">'+''.join('<div class="tile"><h3>'+e(k)+'</h3><p>פתיחת חיפוש ממוקד במקור החיצוני</p>'+link(v,"הצגת תוצאות ↗",True)+'</div>' for k,v in qs.items())+'</div>'
         b+='<div class="note">מכירים מישהו מהרשימה ההיסטורית? פנו אליו דרך ערוץ פומבי המקובל עליו או שלחו לו את קישור ההזמנה. אין לבצע התאמת זהות אוטומטית בין אדם שמוזכר במקור לבין פרופיל פרטי ברשת.</div>'
         return page("איתור חברים",b)
@@ -310,8 +310,8 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
     def media_html(mid,kind,chat=False):
         url="/community-media/"+str(mid)
         if kind=="image":return '<a href="'+url+'" target="_blank" rel="noopener"><img class="'+("preview" if not chat else "")+'" src="'+url+'" alt="תמונה שחבר שיתף"></a>'
-        if kind=="video":return '<video controls preload="metadata" playsinline src="'+url+'"></video>'
-        if kind=="audio":return '<audio controls preload="none" src="'+url+'"></audio>'
+        if kind=="video":return '<video controls preload="metadata" playsinline aria-label="סרטון שחבר שיתף" src="'+url+'">הדפדפן אינו תומך בהצגת הסרטון.</video>'
+        if kind=="audio":return '<audio controls preload="none" aria-label="הקלטה קולית שחבר שיתף" src="'+url+'">הדפדפן אינו תומך בהשמעת הקובץ.</audio>'
         return ""
 
     @app.route("/community-media/<int:media_id>")
@@ -612,7 +612,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             response=Response(markup,mimetype="text/html")
             response.headers["Cache-Control"]="no-store"
             return response
-        b='<h1>שיחה עם '+e(other[0]["name"])+'</h1><p><a href="/chats">חזרה לשיחות</a></p><div id="messages">'
+        b='<h1>שיחה עם '+e(other[0]["name"])+'</h1><p><a href="/chats">חזרה לשיחות</a></p><div id="messages" role="log" aria-label="הודעות השיחה" aria-live="polite" aria-relevant="additions">'
         if not msgs:b+='<div class="note" id="no-messages">עוד לא נשלחו הודעות בשיחה הזאת. אפשר לכתוב שלום או להקליט הודעה קצרה.</div>'
         for m in reversed(msgs):b+=message_fragment(m)
         b+='</div><form method="post" enctype="multipart/form-data" class="form-box">'+formwrap('<label>הודעה<textarea name="body" maxlength="2000" placeholder="כתוב הודעה לחבר…"></textarea></label>'+upload_form(False)+'<button>שליחת הודעה</button></form>')
