@@ -36,12 +36,8 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <section class="panel"><h2>01 / ההקלטות שלך</h2>
 <label for="audio">הוסף עד 4 הודעות קוליות</label><input id="audio" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div>
-<label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>צור גם סרטון אנימציה MP4</span></label>
-<details class="advanced" id="transcriptDetails"><summary>המילים שנאמרו בהקלטה — תמלול אוטומטי לאישור</summary>
-<p class="hint">לסרטון שמתאים לדיבור צריך לזהות מה נאמר בהודעת WhatsApp עצמה. המכשיר ינסה לתמלל את ההקלטה במודל Whisper רב־לשוני חינמי (בהפעלה הראשונה נדרשת הורדה של קובצי מודל). לפני יצירת הסרטון יוצג הטקסט לתיקון ואישור. אם הזיהוי נכשל, לא ניצור סרטון דמיוני.</p>
-<textarea id="transcript" dir="rtl" maxlength="4000" rows="4" placeholder="המילים שזוהו יופיעו כאן לבדיקה. אפשר גם לכתוב או לתקן ידנית."></textarea>
-<div id="transcriptNotice" class="hint" role="status" aria-live="polite">אפשר להשאיר ריק לתמלול אוטומטי.</div>
-</details></section>
+<label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>הפק גם סרטון וידאו אמיתי לפי הדיבור (MP4)</span></label>
+</section>
 <section class="panel"><h2>02 / האפקטים על הקול שלך</h2>
 <label for="humor">אפקטים על קול ההקלטה מ־WhatsApp (לא על המוזיקה)</label><select id="humor">
 <option value="auto" selected>אוטומטי — מעבד את הקול עצמו לאורך כל ההקלטה</option>
@@ -102,18 +98,14 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <p class="hint">כל הדיבור המקורי נשמר לפי הסדר. רול, מתיחה או סקראצ׳ של קול ה־WhatsApp מושמעים במעבר נפרד, ולא על גבי משפט אחר. המנגינה ממשיכה להתפתח ברקע.</p>
 </section>
 <section class="panel"><h2>03 / יוצרים ומנגנים</h2>
-<div class="actions"><button id="generate">✦ יצירת מיקס משולב חכם</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
+<div class="actions"><button id="generate">✦ יצירה — מיקס + וידאו</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
 <div id="status" role="status" aria-live="polite">מוכן להקלטה שלך.</div>
 <progress id="progress" max="100" value="0" hidden></progress>
-<div id="recognitionFallback" hidden>
- <p class="hint">זיהוי הדיבור נכשל. אפשר לנסות שוב או ליצור כעת את המיקס ללא סרטון. ההקלטה נשארת באפליקציה.</p>
- <div class="actions"><button type="button" class="secondary" id="retryRecognition">ניסיון תמלול נוסף</button>
- <button type="button" class="secondary" id="audioOnly">הפקת MP3 בלבד</button></div>
-</div>
+
 </section>
 <section class="panel" id="result"><h2>✓ ההפקה מוכנה!</h2>
 <div id="videoResult" hidden>
-<label for="videoPlayer">הסרטון המונפש עם המיקס</label>
+<label for="videoPlayer">וידאו אמיתי שמותאם לפעולות שנאמרו</label>
 <video id="videoPlayer" controls playsinline preload="metadata" style="width:100%;max-height:620px;border-radius:14px;background:#000"></video>
 <div class="actions"><button id="downloadVideo">הורדת MP4</button><button id="shareVideo" class="secondary">שיתוף סרטון ל־WhatsApp</button></div>
 <div id="storyboardInfo" class="hint"></div>
@@ -133,10 +125,10 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 'use strict';
 var $=function(id){return document.getElementById(id)};
 var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null,voiceUrl='',originalUrl='',videoUrl='',videoServerUrl='',videoBlob=null;
-var active=false, transcriptReviewed=false, transcriptOrigin='manual';
+var active=false;
 function message(txt){$('status').textContent=txt}
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות מהמכשיר או מתוך WhatsApp'}
-function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles();transcriptReviewed=false;transcriptOrigin='manual';$('transcript').value='';$('recognitionFallback').hidden=true;$('transcriptNotice').textContent='הקלטה חדשה — תמלול ייבדק לפני יצירת סצנות.'}
+function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles();}
 window.kolboImportSharedAudio=function(items){setFiles(items);message('ההקלטה מ־WhatsApp התקבלה! בחר את סוג המיקס ולחץ על יצירה.');};
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
@@ -185,54 +177,37 @@ async function transcribeOne(file,i){
  });
 }
 async function recognizeBeforeVideo(){
- $('transcriptDetails').open=true;
- $('transcriptNotice').textContent='מזהה את מה שנאמר בהקלטת המקור, ללא המוזיקה...';
  var sentences=[];
  for(var i=0;i<files.length;i++){
-  var result=await transcribeOne(files[i],i);
-  if(!verifyTranscript(result))throw new Error('בהקלטה '+(i+1)+' הזיהוי לא הפיק מספיק מילים בעברית.');
-  sentences.push(result);
+  var found=await transcribeOne(files[i],i);
+  if(!verifyTranscript(found))throw new Error('זיהוי הדיבור אינו מספיק אמין כדי לבנות סיפור.');
+  sentences.push(found);
  }
- var transcript=sentences.join('. ');
- $('transcript').value=transcript.slice(0,4000);
- transcriptReviewed=false;transcriptOrigin='auto';
- $('transcriptNotice').textContent='בדוק שהטקסט אכן תואם את ההקלטה ותקן מילים שגויות. לחץ שוב על יצירה לאישור. לא יופק סרטון עם תוכן לא מאומת.';
- message('התמלול מוכן לבדיקה. אשר בלחיצה נוספת על יצירה.');
- $('progress').hidden=true;
- $('generate').textContent='אישור המילים ויצירת MP4';
- $('transcriptDetails').scrollIntoView({behavior:'smooth',block:'center'});
+ return sentences.join('. ').slice(0,4000);
 }
-$('transcript').addEventListener('input',function(){transcriptReviewed=false;transcriptOrigin='manual'});
 
 async function run(){
 if(active)return;
 if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
 if(files.some(function(f){return f.size>15*1048576||!f.size})){message('כל קובץ חייב להיות קטן מ־15MB ולא ריק.');return}
-if($('make_video').checked){
- var current=$('transcript').value.trim();
- if(!verifyTranscript(current)){
-  if(current){message('התמלול קצר מדי או לא מספיק ברור. יש לתקן את המילים שנאמרו.');$('transcriptDetails').open=true;return}
-  active=true;$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
-  try{await recognizeBeforeVideo()}catch(e){
-   $('transcriptDetails').open=true;
-   $('transcriptNotice').textContent='התמלול האוטומטי לא הצליח: '+e.message+' אפשר לתקן בכתב או לנסות שוב.';
-   $('recognitionFallback').hidden=false;
-   message('התמלול נכשל: '+e.message+' — ניתן לנסות שוב או ליצור MP3.');
-  }finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
-  return;
- }
- if(!transcriptReviewed){transcriptReviewed=true;transcriptOrigin=transcriptOrigin==='auto'?'auto':'manual';}
-}
 active=true;$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
-$('result').classList.remove('visible');message('מעלה את ההקלטה לשרת...');
+$('result').classList.remove('visible');
+var wantsVideo=$('make_video').checked;
+var videoAllowed=wantsVideo, recognized='', videoReason='';
 try{
+if(wantsVideo){
+ message('מזהה אוטומטית את הדיבור — בלי להציג מילים או לבקש אישור...');
+ try{recognized=await recognizeBeforeVideo()}
+ catch(error){videoAllowed=false;videoReason='זיהוי הדיבור לא היה אמין: '+(error.message||'שגיאת תמלול');}
+}
+message('מכין את המיקס'+(videoAllowed?' ומאתר וידאו אמיתי לסצנות':'')+'...');
 var form=new FormData();
 files.forEach(function(f){form.append('audio',f,f.name)});
 form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
-form.set('make_video',$('make_video').checked?'on':'off');
-form.set('transcript',$('transcript').value.trim());
-form.set('transcript_origin',transcriptOrigin);
+form.set('make_video',videoAllowed?'on':'off');
+form.set('transcript',videoAllowed?recognized:'');
+form.set('transcript_origin','auto');
 var variation=$('variation').value;
 form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99999)):variation);
 form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('fx_gain',String(Number($('fx_gain').value)/100));form.set('voice_level',String(Number($('voice').value)/100));
@@ -265,24 +240,21 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- var isSemantic=j.storyboard_source==='provided_transcript_approximate_timing';
- $('storyboardInfo').textContent=isSemantic?'הסטוריבורד מבוסס על הטקסט שסופק; תזמון המשפטים משוער.':'הסצנות מגיבות לדיבור ולקצב. לא בוצע זיהוי משמעות המילים בהקלטה.';
+ $('storyboardInfo').textContent='קטעי וידאו מקוריים שנבחרו לפי הפעולות שזוהו בדיבור.';
  if(j.storyboard_url){
   try{
-   var storyResponse=await fetch(j.storyboard_url,{credentials:'same-origin'});
-   if(storyResponse.ok){
-    var board=await storyResponse.json();
-    var description=(board.scenes||[]).map(function(sc,i){
-      return (i+1)+'. '+(sc.caption||({'party':'טראנס וריקוד','car':'נסיעה','water':'ים ומים','animal':'חיות','food':'אוכל','home':'בית','sport':'ספורט'}[sc.kind]||'אנימציה'))}).join(' · ');
-    if(description)$('storyboardInfo').textContent+='\nסטוריבורד: '+description;
+   var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
+   if((credits.sources||[]).length){
+    $('storyboardInfo').textContent+=' רישיונות: '+
+       credits.sources.map(function(c){return c.license}).join(' · ');
    }
   }catch(e){}
  }
 }
-if(j.video_status==='error'){$('summary').textContent='סרטון הווידאו לא הושלם בשרת. המיקס מוכן להאזנה ולהורדה.';}
+if(j.video_status==='error'||j.video_status==='unavailable'){videoReason=j.video_error||'לא נמצאו קטעי וידאו מתאימים.';}
 $('player').src=resultUrl;$('result').classList.add('visible');
-$('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות · אפשר להשוות את הקול המקורי לקול המעובד ללא מוזיקה · הומור: '+$('humor').selectedOptions[0].textContent;
-message(j.video_url?'הסרטון הופק לפי התמלול שאישרת. בדוק את הסצנות מול ההקלטה.':'המיקס מוכן להשמעה ולשיתוף.');$('result').scrollIntoView({behavior:'smooth'});
+$('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות. '+(videoReason?'לא הופק סרטון לא קשור: '+videoReason:'אפשר להשוות בין הקול המקורי לקול המעובד.');
+message(j.video_url?'ה־MP4 והמיקס מוכנים.':(videoReason||'המיקס מוכן להשמעה ולשיתוף.'));$('result').scrollIntoView({behavior:'smooth'});
 return;
 }
 }
@@ -291,17 +263,6 @@ throw new Error('העיבוד לא הסתיים במסגרת הזמן, אפשר 
 finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
 }
 $('generate').onclick=run;
-$('retryRecognition').onclick=function(){
- $('recognitionFallback').hidden=true;
- $('transcriptNotice').textContent='מנסה שוב לתמלל את ההקלטה...';
- run();
-};
-$('audioOnly').onclick=function(){
- $('recognitionFallback').hidden=true;
- $('make_video').checked=false;
- $('transcriptNotice').textContent='נבחר מיקס MP3 בלבד — ללא סרטון.';
- run();
-};
 $('downloadVideo').onclick=function(){
  if(!videoServerUrl)return;
  if(window.KolboAndroid){window.KolboAndroid.downloadVideo(videoServerUrl);return}
