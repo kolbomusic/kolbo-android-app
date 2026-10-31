@@ -179,7 +179,7 @@ if(j.video_url){
  // Keep the MP4 as a streaming URL: no need to load a large file into RAM
  // just to display the playback controls on Android.
  videoServerUrl=j.video_url;
- videoUrl=j.video_url;
+ videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
  var isSemantic=j.storyboard_source==='provided_transcript_approximate_timing';
