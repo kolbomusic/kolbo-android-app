@@ -363,7 +363,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
         source_rms=float(np.sqrt(np.mean(sample*sample)))
         effect_rms=float(np.sqrt(np.mean(effect*effect)))
         if effect_rms<=.0001:continue
-        gain=min(5.,max(.55,(source_rms/max(.0001,effect_rms))*fx_gain))
+        gain=min(5.,max(.55,(source_rms/max(.0001,effect_rms))*fx_gain*{1:.82,2:1.0,3:1.23}[density]))
         effect=np.tanh(effect*gain*.95).astype(np.float32)
         k=min(int(.014*sr),len(effect)//6)
         if k>0:
