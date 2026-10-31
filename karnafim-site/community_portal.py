@@ -84,6 +84,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS post_type TEXT NOT NULL DEFAULT 'story'")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS event_date DATE")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS event_place TEXT NOT NULL DEFAULT ''")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_consent BOOLEAN NOT NULL DEFAULT FALSE")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_status TEXT NOT NULL DEFAULT 'held'")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_reason TEXT NOT NULL DEFAULT 'Legacy post requires review'")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_model TEXT NOT NULL DEFAULT ''")
@@ -398,7 +399,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
                     cur.execute("SELECT COALESCE(SUM(length),0) FROM community_media")
                     site=cur.fetchone()[0]
                     if mine+total_size>25*1024*1024 or site+total_size>150*1024*1024:abort(413,"אין מספיק מקום אחסון לפרסום")
-                    cur.execute("INSERT INTO community_posts(author_id,title,body,story_year,post_type,event_date,event_place,approved,ai_status,ai_reason,ai_model,ai_checked_at,ai_attempts) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s THEN NOW() ELSE NULL END,%s) RETURNING id",
+                    cur.execute("INSERT INTO community_posts(author_id,title,body,story_year,post_type,event_date,event_place,approved,ai_status,ai_reason,ai_model,ai_checked_at,ai_attempts,ai_consent) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s THEN NOW() ELSE NULL END,%s,TRUE) RETURNING id",
                                 (u["id"],title,body,int(y) if y else None,post_type,event_date,place,
                                  verdict.status=="approved",verdict.status,verdict.reason,verdict.model,
                                  verdict.attempted,1 if verdict.attempted else 0))
@@ -422,9 +423,37 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             +'<button type="submit">שליחת הפרסום לביקורת אוטומטית</button></form>')
         return page("הוספת סיפור, תמונות או אירוע",b+UPLOAD_JS+RECORD_JS)
 
+    def retry_ai_queue():
+        """Best-effort single-item retry for earlier provider outages.
+        Only consented submissions from currently approved accounts are eligible.
+        Never publish on provider errors or uncertain results.
+        """
+        if not configured():return
+        pending=sql("""SELECT p.id,p.author_id,p.title,p.body,p.post_type,p.story_year,
+                         p.event_date,p.event_place
+                         FROM community_posts p JOIN members m ON p.author_id=m.id
+                         WHERE p.ai_status='pending_ai' AND p.ai_consent=TRUE
+                         AND m.approved=TRUE AND p.approved=FALSE AND p.ai_attempts<5
+                         AND (p.ai_checked_at IS NULL OR p.ai_checked_at<NOW()-INTERVAL '10 minutes')
+                         ORDER BY p.created_at LIMIT 1""",fetch=True)
+        if not pending:return
+        p=pending[0]
+        media=sql("SELECT mime,kind,data FROM community_media WHERE post_id=%s ORDER BY id",(p["id"],),True)
+        files=[{"mime":m["mime"],"kind":m["kind"],"data":bytes(m["data"])} for m in media]
+        verdict=moderate({"post_type":p["post_type"],"title":p["title"],"body":p["body"],
+                          "year":p["story_year"],"date":p["event_date"],"place":p["event_place"]},files)
+        status="held" if verdict.status=="rejected" else verdict.status
+        allowed=status=="approved"
+        sql("""UPDATE community_posts
+                 SET approved=%s, ai_status=%s,ai_reason=%s,ai_model=%s,
+                     ai_checked_at=NOW(),ai_attempts=ai_attempts+1
+                 WHERE id=%s AND approved=FALSE AND ai_status='pending_ai' AND ai_consent=TRUE""",
+            (allowed,status,verdict.reason,verdict.model,p["id"]))
+
     @app.route("/my-posts")
     def my_posts():
         u=approved()
+        retry_ai_queue()
         rows=sql("SELECT id,title,body,post_type,story_year,event_date,event_place,approved,ai_status,ai_reason,created_at FROM community_posts WHERE author_id=%s ORDER BY created_at DESC LIMIT 100",(u["id"],),True)
         b='<h1>📝 הפרסומים שלי</h1><p>תמונות, אירועים וסיפורים ששלחת. עד שהמנהל מאשר אותם, רק אתה והמנהל יכולים לראות את התוכן.</p>'
         if request.args.get("submitted")=="1":b+='<div class="note" role="status">✓ הפרסום נשמר במצב פרטי. ביקורת ה־AI לא אישרה פרסום אוטומטי.</div>'
@@ -463,6 +492,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
     @app.route("/feed")
     def feed():
         u=me()
+        if u and u["approved"]:retry_ai_queue()
         if not u or not u["approved"]:return page("זיכרונות",'<h1>זיכרונות הפלוגה</h1><div class="note">הסיפורים והתמונות שחברים מעלים זמינים רק לחברים מאושרים. '+link("/register","הצטרפו לקהילה")+'</div>'+sources(4))
         rows=sql("SELECT p.id,p.title,p.body,p.story_year,p.post_type,p.event_date,p.event_place,p.created_at,m.name FROM community_posts p JOIN members m ON m.id=p.author_id WHERE p.approved=TRUE ORDER BY p.created_at DESC LIMIT 60",fetch=True)
         b='<h1>📸 סיפורים, תמונות ואירועים</h1><p>זיכרונות, אלבומים ומפגשי הפלוגה — תכנים שחברי הקהילה בחרו לשתף ואושרו לפרסום.</p><div class="actions"><a class="cta" href="/new-post">➕ מוסיפים סיפור, תמונות או אירוע</a><a class="cta" href="/my-posts">📝 הפרסומים שלי</a></div>'
