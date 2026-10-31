@@ -35,7 +35,7 @@ def live():
     active='"access":"community"' in health.replace(" ","")
     errors=[]
     if active:
-        for route in ("/","/archive","/memorials","/find","/status","/about","/privacy","/safety","/login","/register","/feed","/invite"):
+        for route in ("/","/photos","/archive","/memorials","/find","/status","/about","/privacy","/safety","/login","/register","/feed","/invite"):
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.startswith(URL) and "text/html" in headers.get("Content-Type","")
             if route in ("/login","/register"):
