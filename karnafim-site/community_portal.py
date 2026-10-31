@@ -62,7 +62,7 @@ CSS = """<style>
 @media(max-width:720px){.portal .chat-layout{display:block}.portal .metrics{gap:5px}.portal .metric{padding:10px}.portal .metric strong{font-size:23px}.portal .actions{flex-direction:column}.portal .actions a{width:100%}.portal .mast{padding:27px 20px}}
 </style>"""
 
-RECENT = [x for x in ARCHIVE if x["id"] in (1,2,3,4,5,6,7,8,9,10,13,14)]
+RECENT = ARCHIVE
 
 def install(app, sql, view, me, admin, guard, formwrap, esc):
     # Persistent metadata and compact binary storage for the free-tier pilot.
@@ -107,7 +107,26 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
         return bool(sql("SELECT 1 FROM requests WHERE accepted=TRUE AND ((sender_id=%s AND recipient_id=%s) OR (sender_id=%s AND recipient_id=%s)) LIMIT 1",(a,b,b,a),True))
 
     def search_card(x):
-        return '<article class="source"><div class="emoji">'+e(x["icon"])+'</div><span class="tag">'+e(x["tag"])+((' · '+e(x["year"])) if x["year"] else '')+'</span><h3>'+e(x["title"])+'</h3><p>'+e(x["summary"])+'</p><small>מקור: '+e(x["source"])+'</small>'+link(x["url"],"למקור המקורי ↗",True)+'</article>'
+        return '<article class="source"><div class="emoji">'+e(x["icon"])+'</div><span class="tag">'+e(x["tag"])+((' · '+e(x["year"])) if x["year"] else '')+'</span><h3>'+e(x["title"])+'</h3><p>'+e(x["summary"])+'</p><small>הוזכר במקור: '+e(x["source"])+'</small>'+link("/source/"+str(x["id"]),"לפרטי האזכור באתר ←")+'</article>'
+
+    @app.route("/source/<int:source_id>")
+    def source_detail(source_id):
+        item=next((x for x in ARCHIVE if x["id"]==source_id),None)
+        if not item:abort(404)
+        from urllib.parse import urlsplit
+        host=(urlsplit(item["url"]).hostname or "").removeprefix("www.")
+        query="site:"+host+" "+item["title"].replace("יזכור • ","").replace(" • "," ")
+        if source_id in (1,2,3):query="site:izkor.gov.il יהונתן שרעבי פלוגת הקרנפים גדוד 46"
+        if source_id==4:query="site:yadlashiryon.com גדוד 46 ערב מורשת עשור מלחמת לבנון השנייה 2016"
+        if source_id==5:query="site:yadlashiryon.com גדוד שלח מורשת 1967 2007"
+        if source_id in (7,12):query="site:yadlashiryon.com חטיבה 401 בתמונות וסרטונים גדוד 46"
+        if source_id in (9,10,13,14):query="site:izkor.gov.il "+item["title"].replace("יזכור • ","")
+        lookup="https://www.google.com/search?q="+quote(query)
+        page_html='<h1>'+e(item["title"])+'</h1><span class="tag">'+e(item["tag"])+' · '+e(item["year"] or "ארכיון")+'</span>'
+        page_html+='<article class="event"><h2>פרטי האזכור</h2><p>'+e(item["summary"])+'</p><p class="muted">תיעוד: '+e(item["source"])+'</p></article>'
+        page_html+='<div class="note"><strong>למה אין קישור ישיר לפרסום הישן?</strong><p>חלק מהכתובות המקוריות של פרסומי מורשת והנצחה אינן נפתחות עוד. כדי שלא תגיעו לעמודי 404, סיכום האזכור נשמר כאן, ואפשר לחפש את המקור מחדש באתר המפרסם. תוצאת חיפוש אינה מבטיחה שהכתבה הישנה עדיין נגישה.</p></div>'
+        page_html+='<div class="actions"><a class="cta" href="'+e(lookup)+'" target="_blank" rel="noopener noreferrer">🔎 חיפוש הפרסום במקור ↗</a><a class="cta" href="/archive">↩ חזרה לארכיון</a></div>'
+        return page(item["title"],page_html)
 
     def sources(count=0,filtertag=""):
         items=[x for x in RECENT if not filtertag or x["tag"]==filtertag]
@@ -125,18 +144,18 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
         b='<section class="mast"><span class="kicker">401 / 46 / פלוגה ב׳ • 2003–2006</span><h1>עשרים שנה עברו.<br>החברים עדיין כאן.</h1><p>הקרנפים, שלימים נקראו ברקן. בית לקולות, לסיפורים, לתמונות ולחברים ששירתו איתנו. כאן מתחברים מחדש — ושומרים יחד על המורשת.</p><div class="actions">'+actions+'</div></section>'
         b+=statistics()
         b+='<h2>לא צריך לזכור הכול — מתחילים מכאן</h2><div class="tiles">'
-        tiles=[("🧭","מאתרים חברים","חיפוש לפי שם, כינוי ומחזור + איתור מבוסס קישורים ברשתות.","/find"),("📸","תמונות וזיכרונות","משתפים סיפור, תמונה, הקלטה או סרטון קצר באישור מנהל.","/feed"),("💬","צ׳אט חברים","הודעות פרטיות, תמונות, קול וסרטונים אחרי אישור בקשת קשר.","/chats"),("📜","ארכיון מאומת","עדויות, סרטוני מורשת ומקורות על גדוד 46 ופלוגת הקרנפים.","/archive"),("🤝","מזמינים חברים","שליחת קישור לפלוגה בוואטסאפ, פייסבוק או בהעתקה.","/invite"),("🕯️","זוכרים יחד","תיעוד מכבד מתוך יזכור ויד לשריון, עם קישור למקור.","/archive?type=זיכרון")]
+        tiles=[("🧭","מאתרים חברים","חיפוש לפי שם, כינוי ומחזור + איתור מבוסס קישורים ברשתות.","/find"),("📸","תמונות וזיכרונות","משתפים סיפור, תמונה, הקלטה או סרטון קצר באישור מנהל.","/feed"),("💬","צ׳אט חברים","הודעות פרטיות, תמונות, קול וסרטונים אחרי אישור בקשת קשר.","/chats"),("📜","ארכיון מתועד","עדויות, סרטוני מורשת ומקורות על גדוד 46 ופלוגת הקרנפים.","/archive"),("🤝","מזמינים חברים","שליחת קישור לפלוגה בוואטסאפ, פייסבוק או בהעתקה.","/invite"),("🕯️","זוכרים יחד","תיעוד מכבד מתוך יזכור ויד לשריון, עם קישור למקור.","/archive?type=זיכרון")]
         b+=''.join('<article class="tile"><div class="emoji">'+t[0]+'</div><h3>'+t[1]+'</h3><p>'+t[2]+'</p>'+link(t[3],"לפתיחה ←")+'</article>' for t in tiles)+'</div>'
-        b+='<h2>רגעים בציר הזמן שלנו</h2><div class="tiles"><article class="tile"><span class="tag">2005</span><h3>יוני מצטרף לפלוגה</h3><p>לפי אתר יזכור, יוני התגייס ביולי 2005 ובהמשך שובץ בפלוגה ב׳ שכונתה ״הקרנפים״.</p>'+link("https://www.izkor.gov.il/יהונתן%20שרעבי/en_53e66dd727188835acbe02a1f641a882","למקור ↗",True)+'</article><article class="tile"><span class="tag">אוגוסט 2006</span><h3>מלחמת לבנון השנייה</h3><p>הגדוד איבד את יוני שרעבי ואת אנשי כוח בניה. נזכור את חברינו בכבוד.</p>'+link("https://yadlashiryon.com/news/5-ביוני-2016-ערב-מורשת-בסימן-עשור-למלחמת-לבנ/","לכתבת המורשת ↗",True)+'</article><article class="tile"><span class="tag">2007</span><h3>ספר מורשת גדוד שלח</h3><p>חוברת מורשת הגדוד יצאה לאור בשנת 2007 וחולקה באירוע מורשת בגבעת ברנר.</p>'+link("https://yadlashiryon.com/book_review/גדוד-שלח-מורשת-1967-2007/","לספר ↗",True)+'</article></div>'
-        b+='<div class="tile"><h2>🎞️ תצלומים וסרטוני מורשת — גדוד 46</h2><p>קישורים לאלבומים וסרטונים באתר יד לשריון. חלק מהסרטונים הישנים הוסרו משירותי וידאו, ולכן כדי למנוע נגן שבור מפנים לעמוד המקור המאומת.</p><div class="actions"><a class="cta" href="https://yadlashiryon.com/news/28-ביוני-2015-חטיבה-401-בתמונות-וסרטונים/" target="_blank" rel="noopener noreferrer">🎬 לפתיחת ארכיון התמונות והסרטונים ↗</a></div></div>'
-        b+='<h2>מתוך הארכיון של הפלוגה והגדוד</h2><p class="muted">פרסומים פומביים מאומתים, לא פרופילים פעילים של החברים.</p>'+sources(4)+link("/archive","צפייה בכל המקורות ←")
+        b+='<h2>רגעים בציר הזמן שלנו</h2><div class="tiles"><article class="tile"><span class="tag">2005</span><h3>יוני מצטרף לפלוגה</h3><p>לפי אתר יזכור, יוני התגייס ביולי 2005 ובהמשך שובץ בפלוגה ב׳ שכונתה ״הקרנפים״.</p>'+link("/source/1","לפרטי האזכור ←")+'</article><article class="tile"><span class="tag">אוגוסט 2006</span><h3>מלחמת לבנון השנייה</h3><p>הגדוד איבד את יוני שרעבי ואת אנשי כוח בניה. נזכור את חברינו בכבוד.</p>'+link("/source/4","לפרטי כתבת המורשת ←")+'</article><article class="tile"><span class="tag">2007</span><h3>ספר מורשת גדוד שלח</h3><p>חוברת מורשת הגדוד יצאה לאור בשנת 2007 וחולקה באירוע מורשת בגבעת ברנר.</p>'+link("/source/5","לפרטי ספר המורשת ←")+'</article></div>'
+        b+='<div class="tile"><h2>🎞️ תצלומים וסרטוני מורשת — גדוד 46</h2><p>קישורים לאלבומים וסרטונים באתר יד לשריון. חלק מהסרטונים הישנים הוסרו משירותי וידאו, ולכן כדי למנוע נגן שבור מפנים לעמוד המקור המאומת.</p><div class="actions"><a class="cta" href="/source/12">🎬 לפרטי ארכיון התמונות והסרטונים ←</a></div></div>'
+        b+='<h2>מתוך הארכיון של הפלוגה והגדוד</h2><p class="muted">אזכורים ממקורות מתועדים. קישורים לפרסומים ישנים עלולים להיות לא זמינים.</p>'+sources(4)+link("/archive","צפייה בכל המקורות ←")
         b+='<section class="note"><strong>הראשונים שפותחים את הדרך</strong><p>חברי הפלוגה שיבחרו להירשם ולהופיע במדריך יוכלו לאתר אחד את השני. שמות שמוזכרים במקורות אינם חשבונות רשומים, ולא מופיעים כאן פרטי קשר פרטיים.</p></section>'
         return page("בית הקרנפים",b)
 
     @app.route("/archive")
     def archive():
         tag=request.args.get("type","")[:30]
-        b='<h1>ארכיון הקרנפים וגדוד שלח</h1><p>קורות הפלוגה, זיכרונות החברים, פרסומים וסרטוני מורשת. כל כרטיס כולל מקור, ללא העתקת תמונות מוגנות.</p><div class="filters">'
+        b='<h1>ארכיון הקרנפים וגדוד שלח</h1><p>קורות הפלוגה, זיכרונות החברים, פרסומים וסרטוני מורשת. כל כרטיס נפתח כאן באתר, עם פרטי מקור ואפשרות לחפש אותו. אין הפניה לכתבות שהקישור הישיר שלהן אינו מאומת.</p><div class="filters">'
         for x in ["","זיכרון","אנשים","מורשת","וידאו"]:
             b+='<a class="'+("on" if x==tag else "")+'" href="/archive'+("?type="+quote(x) if x else "")+'">'+e(x or "הכול")+'</a>'
         b+='</div>'+sources(filtertag=tag)
