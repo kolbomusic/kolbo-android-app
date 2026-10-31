@@ -69,11 +69,14 @@ def _request_json(post: dict, files: list[dict]) -> dict[str, Any]:
       "children; unclear photo ownership or permission; sexual abuse; hate and slurs; threats; "
       "harassment; graphic violence; leaked military operational information; impersonation; "
       "spam and fraud. Historic mentions of battles or tanks alone are not disallowed. "
-      "A checkbox claiming rights is not independent proof of consent. "
-      "Do NOT identify any people in images, and do not infer their unit or personal attributes. "
-      "Return decision='allow' ONLY for unambiguously harmless material with no identifiable "
-      "people, no personal information, and no potentially copyrighted user-supplied media "
-      "requiring verification. Otherwise choose 'review' (uncertain) or 'reject' (clear abuse). "
+      "The uploader attests that they own or have permission to publish submitted media, "
+      "but this attestation is not independently verified. Flag copyright_unclear if you notice "
+      "third-party screenshots, watermarks, promotional assets, TV/video footage, or other "
+      "specific indicators of possible rights issues. Do NOT identify people in images, "
+      "and do not infer their unit or personal attributes. "
+      "Return decision='allow' ONLY for unambiguously harmless original-looking content with "
+      "no identifiable people, no personal information, and no visible permission concerns. "
+      "Otherwise choose 'review' (uncertain) or 'reject' (clear abuse). "
       "Be strict; never let confidence be inflated. "
       "Output ONLY JSON object with exactly: "
       "'decision' ('allow','review','reject'), "
@@ -132,11 +135,10 @@ def parse_verdict(result: dict[str, Any], has_media: bool, model: str) -> Verdic
             "sexual", "hate", "harassment", "graphic_violence", "pii",
             "security_sensitive", "impersonation", "external_contact"}:
         return Verdict("rejected", "התוכן כולל רכיב שאינו מתאים לפרסום בקהילה. יש להסירו ולנסות שוב.", model, True)
-    # Conservative: images/audio/video cannot prove ownership, identity or consent.
+    if choice == "allow" and conf >= 0.98 and not flags:
+        return Verdict("approved", "הפרסום אושר אוטומטית לאחר סריקה חכמה. הצהרת זכויות המעלה נשמרת כאחריותו.", model, True)
     if has_media:
-        return Verdict("held", "המדיה נקלטה אך לא פורסמה: לא ניתן לאמת אוטומטית זכויות, זהות והסכמת המצולמים.", model, True)
-    if choice == "allow" and conf >= 0.97 and not flags:
-        return Verdict("approved", "בדיקת AI אישרה פרסום טקסט ללא סימני סיכון.", model, True)
+        return Verdict("held", "המדיה נשמרה פרטית: בדיקת ה־AI לא ביססה אישור אוטומטי בביטחון גבוה.", model, True)
     return Verdict("held", "הבדיקה האוטומטית לא הצליחה לקבוע שהתוכן בטוח לפרסום ללא בדיקה נוספת.", model, True)
 
 def moderate(post: dict, files: list[dict]) -> Verdict:
