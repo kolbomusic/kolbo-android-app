@@ -72,7 +72,7 @@ def test():
     expect(200,client.get("/my-posts"),"הפרסומים שלי")
     records.clear()
     data=MultiDict([
-      ("post_type","photo"),("title","טנק מהשירות"),("body","שיתוף של התמונות"),("rights","on"),
+      ("post_type","photo"),("title","טנק מהשירות"),("body","שיתוף של התמונות"),("rights","on"),("ai_consent","on"),
       ("attachments",(make_image("JPEG"),"1.jpg","image/jpeg")),
       ("attachments",(make_image("PNG"),"2.png","image/png")),
     ])
@@ -89,20 +89,34 @@ def test():
         assert payload[:3]==b"\xff\xd8\xff"
         assert b"EXIF_SECRET_SHOULD_DISAPPEAR" not in payload
     records.clear()
-    form={"post_type":"event","title":"מפגש מחזור","body":"נפגשים לחידוש קשר","event_date":"2026-07-14","event_place":"רחובות","rights":"on"}
+    form={"post_type":"event","title":"מפגש מחזור","body":"נפגשים לחידוש קשר","event_date":"2026-07-14","event_place":"רחובות","rights":"on","ai_consent":"on"}
     with patch.object(community_portal.psycopg,"connect",lambda *a,**k:Connection()):
         expect(303,client.post("/new-post",data=form))
     insert=[x for x in records if x[0].startswith("INSERT INTO community_posts")]
     assert len(insert)==1
     assert insert[0][1][4]=="event" and insert[0][1][5].isoformat()=="2026-07-14" and insert[0][1][6]=="רחובות"
     before=len(records)
-    bad=MultiDict([("post_type","story"),("title","סיפור"),("body","כמה משפטים על השירות"),("rights","on"),("attachments",(io.BytesIO(b"GIF89a"+b"\x00"*40),"bad.gif","image/gif"))])
+    bad=MultiDict([("post_type","story"),("title","סיפור"),("body","כמה משפטים על השירות"),("rights","on"),("ai_consent","on"),("attachments",(io.BytesIO(b"GIF89a"+b"\x00"*40),"bad.gif","image/gif"))])
     expect(400,client.post("/new-post",data=bad,content_type="multipart/form-data"))
     assert len(records)==before,"An invalid file must not persist a post"
-    extra=[("post_type","photo"),("title","גלריה"),("body",""),("rights","on")]
+    extra=[("post_type","photo"),("title","גלריה"),("body",""),("rights","on"),("ai_consent","on")]
     extra.extend(("attachments",(make_image(),"pic%d.jpg"%n,"image/jpeg")) for n in range(5))
     expect(400,client.post("/new-post",data=MultiDict(extra),content_type="multipart/form-data"))
     assert len(records)==before,"Too many files should not write anything"
-    expect(200,client.get("/community/moderation"),"אישור סיפורים")
-    print("PASS 9 tests: access control, composer, private list, multi-image upload, EXIF stripping, atomic insertion, event metadata, invalid type, file-count limit and moderation page")
+    # No consent to external AI processing must stop even before persistence.
+    no_consent={"post_type":"story","title":"שלום","body":"סיפור שירות","rights":"on"}
+    expect(400,client.post("/new-post",data=no_consent))
+    assert len(records)==before,"Consent must precede storing anything"
+    # Mock an AI response; ensure low-risk content becomes visible automatically.
+    records.clear()
+    safe={"post_type":"story","title":"יום בבסיס","body":"יום מצחיק עם הטנק בשטח האימונים","rights":"on","ai_consent":"on"}
+    from moderation_engine import Verdict
+    with patch.object(community_portal,"moderate",return_value=Verdict("approved","סיווג בטוח","model-test",True)),patch.object(community_portal.psycopg,"connect",lambda *a,**k:Connection()):
+        approved_result=client.post("/new-post",data=safe)
+    assert approved_result.status_code==303
+    assert approved_result.headers["Location"].endswith("?auto=1")
+    saved=[x for x in records if x[0].startswith("INSERT INTO community_posts")]
+    assert saved[0][1][7] is True and saved[0][1][8]=="approved","Auto approved text must publish"
+        expect(200,client.get("/community/moderation"),"אישור סיפורים")
+    print("PASS: permissions, multi-image moderation, EXIF stripping, events, invalid files, consent, fail-closed pending, AI auto-approval, moderation")
 if __name__=="__main__":test()
