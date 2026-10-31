@@ -24,7 +24,7 @@ jobs:
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME}"
           ls "$ANDROID_HOME/cmdline-tools" || true
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-35' 'build-tools;35.0.0'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
