@@ -49,7 +49,21 @@ NEGATIONS={"לא","בלי","אינו","אינה","אינם","אין"}
 class UnavailableVideo(RuntimeError):pass
 
 def _words(sentence):
-    return HEBREW_TOKEN.findall(sentence)
+    raw=HEBREW_TOKEN.findall(sentence)
+    # Hebrew attached prepositions/articles: "בים" means "ים", but do not
+    # run fuzzy substring matching (e.g. "לבוא" != "לב"/love).
+    known=set()
+    for _,subjects,verbs,_ in ACTIONS:
+        known.update(subjects);known.update(verbs)
+    for _,items,_ in VISUAL_LOCATIONS:known.update(items)
+    normalized=[]
+    for token in raw:
+        normalized.append(token)
+        if len(token)>=3 and token[0] in "ובלהמכ" and token[1:] in known:
+            normalized.append(token[1:])
+        if len(token)>=4 and token[:2] in ("וב","וה","ול","מה","בה","לה"):
+            if token[2:] in known:normalized.append(token[2:])
+    return normalized
 
 def _positive_clause(tokens):
     # Doesn't visualize negated actions as if they occurred.
