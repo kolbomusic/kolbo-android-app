@@ -1,5 +1,7 @@
 """Karnafim community features: sourced archive, opt-in feed and private conversations."""
-import io, html, hashlib
+import io, html, hashlib, os
+from datetime import date
+import psycopg
 from PIL import Image, ImageOps, UnidentifiedImageError
 from urllib.parse import quote, urlsplit
 from flask import request, redirect, abort, send_file, session, Response
@@ -78,6 +80,9 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
       id BIGSERIAL PRIMARY KEY, author_id BIGINT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
       title TEXT NOT NULL, body TEXT NOT NULL, story_year INTEGER, approved BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS post_type TEXT NOT NULL DEFAULT 'story'")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS event_date DATE")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS event_place TEXT NOT NULL DEFAULT ''")
     sql("""CREATE TABLE IF NOT EXISTS community_media (
       id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
       post_id BIGINT REFERENCES community_posts(id) ON DELETE CASCADE,
@@ -89,7 +94,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
     sql("""CREATE INDEX IF NOT EXISTS community_media_post_idx ON community_media(post_id)""")
     sql("""CREATE INDEX IF NOT EXISTS community_media_recipient_idx ON community_media(recipient_id)""")
     sql("""CREATE INDEX IF NOT EXISTS community_posts_approved_idx ON community_posts(approved,created_at DESC)""")
-    app.config["MAX_CONTENT_LENGTH"]=10*1024*1024
+    app.config["MAX_CONTENT_LENGTH"]=36*1024*1024
     app.config["SEND_FILE_MAX_AGE_DEFAULT"]=0
 
     def e(v):
@@ -202,9 +207,9 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
         data=f.read(9*1024*1024)
         mime=(f.mimetype or "").lower().split(";")[0]
         kind=None;maxsize=0
-        if mime=="image/jpeg" and data[:3]==b"\xff\xd8\xff":kind,maxsize="image",3*1024*1024
-        elif mime=="image/png" and data[:8]==b"\x89PNG\r\n\x1a\n":kind,maxsize="image",3*1024*1024
-        elif mime=="image/webp" and data[:4]==b"RIFF" and data[8:12]==b"WEBP":kind,maxsize="image",3*1024*1024
+        if mime=="image/jpeg" and data[:3]==b"\xff\xd8\xff":kind,maxsize="image",8*1024*1024
+        elif mime=="image/png" and data[:8]==b"\x89PNG\r\n\x1a\n":kind,maxsize="image",8*1024*1024
+        elif mime=="image/webp" and data[:4]==b"RIFF" and data[8:12]==b"WEBP":kind,maxsize="image",8*1024*1024
         elif mime in ("video/mp4","video/quicktime") and data[4:8]==b"ftyp":kind,maxsize="video",8*1024*1024
         elif mime=="video/webm" and data[:4]==b"\x1a\x45\xdf\xa3":kind,maxsize="video",8*1024*1024
         elif mime=="audio/webm" and data[:4]==b"\x1a\x45\xdf\xa3":kind,maxsize="audio",2*1024*1024
@@ -212,7 +217,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
         elif mime in ("audio/mp4","audio/x-m4a") and data[4:8]==b"ftyp":kind,maxsize="audio",2*1024*1024
         elif mime=="audio/wav" and data[:4]==b"RIFF" and data[8:12]==b"WAVE":kind,maxsize="audio",2*1024*1024
         if not kind or not data or len(data)>maxsize:
-            abort(400,"קובץ לא נתמך או גדול מהמותר. תמונה 3MB, קול 2MB, וידאו 8MB.")
+            abort(400,"קובץ לא נתמך או גדול מהמותר. תמונה עד 8MB לפני כיווץ, קול 2MB, וידאו 8MB.")
         if kind=="image":
             try:
                 check=Image.open(io.BytesIO(data))
@@ -308,8 +313,39 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         return response
 
     def upload_form(is_post=True):
-        target="post-file" if is_post else "chat-file"
-        return '<label>📎 צירוף תמונה / סרטון קצר / קובץ שמע<input id="'+target+'" type="file" name="attachment" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg,audio/mp4,audio/wav"></label>'+recorder(target)+'<p class="muted">מגבלות אחסון חינמי: תמונה עד 3MB, הקלטה עד 2MB, סרטון עד 8MB. אין להעלות מדיה של אחרים ללא רשות.</p>'
+        if is_post:
+            target="post-files"
+            form='<label>📎 הוספת תמונות, סרטון או הקלטה (עד ארבעה קבצים)<input id="'+target+'" type="file" name="attachments" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg,audio/mp4,audio/wav"></label>'
+            form+='<div id="file-summary" aria-live="polite" class="muted">ניתן לצרף עד ארבעה קבצים. תמונות עד 8MB לקובץ לפני כיווץ אוטומטי; סרטון עד 8MB וקול עד 2MB.</div>'
+            form+='<div id="upload-previews" class="media-grid"></div>'
+            return form+recorder(target)+'<p class="muted">תמונות יעברו כיווץ והסרת פרטי מיקום. שמרו על הסכמת המצולמים. עד 25MB אחסון לכל חבר במסגרת הניסוי.</p>'
+        return '<label>📎 צירוף תמונה / סרטון / קול<input id="chat-file" type="file" name="attachment" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg,audio/mp4,audio/wav"></label>'+recorder("chat-file")+'<p class="muted">תמונה עד 8MB לפני כיווץ, קול עד 2MB, וידאו עד 8MB.</p>'
+
+    UPLOAD_JS = """<script>
+(()=>{
+  const input=document.getElementById('post-files');
+  if(!input)return;
+  const previews=document.getElementById('upload-previews');
+  const summary=document.getElementById('file-summary');
+  let urls=[];
+  input.addEventListener('change',()=>{
+    urls.forEach(url=>URL.revokeObjectURL(url));urls=[];previews.replaceChildren();
+    const files=Array.from(input.files||[]);
+    if(files.length>4){summary.textContent='ניתן להעלות עד ארבעה קבצים בפרסום אחד.';input.setCustomValidity('עד ארבעה קבצים');return;}
+    const bytes=files.reduce((sum,f)=>sum+f.size,0);
+    if(bytes>32*1024*1024){input.setCustomValidity('הקבצים גדולים מדי');summary.textContent='סך כל הקבצים גדול מ־32MB.';return;}
+    input.setCustomValidity('');
+    summary.textContent=files.length+' קבצים נבחרו, '+(bytes/1024/1024).toFixed(1)+'MB לפני כיווץ.';
+    files.filter(f=>f.type.startsWith('image/')).forEach(f=>{
+      const img=document.createElement('img');
+      const url=URL.createObjectURL(f);urls.push(url);
+      img.src=url;img.alt='תצוגה מקדימה: '+f.name;
+      img.loading='lazy';img.style='width:100%;max-height:170px;object-fit:contain;border-radius:9px';
+      previews.appendChild(img);
+    });
+  });
+})();
+</script>"""
 
     @app.route("/new-post",methods=["GET","POST"])
     def new_post():
@@ -317,18 +353,77 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         if request.method=="POST":
             guard()
             if request.form.get("rights")!="on":abort(400)
+            post_type=request.form.get("post_type","story")
+            if post_type not in ("story","event","photo"):abort(400)
             title=request.form.get("title","").strip()[:130]
             body=request.form.get("body","").strip()[:4000]
             y=request.form.get("year","").strip()
-            if not title or len(body)<5 or (y and (not y.isdigit() or int(y)<1960 or int(y)>2026)):abort(400)
-            f=request.files.get("attachment")
-            if f and f.filename: inspect_file(f)
-            p=sql("INSERT INTO community_posts(author_id,title,body,story_year) VALUES(%s,%s,%s,%s) RETURNING id",(u["id"],title,body,int(y) if y else None),True)[0]["id"]
-            if f and f.filename:store_attachment(u,f,post_id=p)
-            return page("הפרסום נשלח",'<div class="tile"><h1>תודה על השיתוף 💚</h1><p>הפרסום נשלח לאישור מנהל הקהילה לפני שיופיע לחברים.</p>'+link("/feed","לציר הזמן")+'</div>')
-        b='<h1>משתפים רגע מהשירות</h1><p>אפשר להוסיף אירוע, תמונה, הקלטה או סרטון מהמחזור. התוכן נבדק לפני פרסום לחברים המאושרים.</p>'
-        b+='<form method="post" enctype="multipart/form-data" class="form-box">'+formwrap('<label>כותרת<input name="title" maxlength="130" required placeholder="למשל: יום כיף בפלוגת הקרנפים"></label><label>השנה (לא חובה)<input name="year" type="number" min="1960" max="2026" placeholder="2005"></label><label>הסיפור<textarea name="body" maxlength="4000" minlength="5" required placeholder="מה היה, מי היה, ומה אתם זוכרים?"></textarea></label>'+upload_form()+'<label><input type="checkbox" name="rights" style="width:auto;display:inline" required> אני מאשר שיש לי רשות לשתף את התוכן ושאיני מפרסם פרטים אישיים של אחרים.</label><button>שליחת הסיפור לאישור</button></form>')
-        return page("פרסום בקהילה",b+RECORD_JS)
+            when=request.form.get("event_date","").strip()
+            place=request.form.get("event_place","").strip()[:120]
+            if y and (not y.isdigit() or not 1960<=int(y)<=2100):abort(400)
+            if post_type!="event":when="";place=""
+            event_date=None
+            if when:
+                try:
+                    event_date=date.fromisoformat(when)
+                    if not 1960<=event_date.year<=2100:abort(400)
+                except ValueError:abort(400)
+            files=[f for f in request.files.getlist("attachments") if f and f.filename]
+            if not files:
+                single=request.files.get("attachment")
+                if single and single.filename:files=[single]
+            if len(files)>4:abort(400,"עד ארבעה קבצים בכל פרסום")
+            if not title or (len(body)<5 and not files):abort(400,"נדרשים כותרת, וסיפור קצר או תמונה")
+            infos=[inspect_file(f) for f in files]
+            total_size=sum(info["size"] for info in infos)
+            if total_size>12*1024*1024:abort(413,"הקבצים חורגים ממכסת הפרסום")
+            # One database transaction: the story and all its media appear together or not at all.
+            with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id FROM members WHERE id=%s FOR UPDATE",(u["id"],))
+                    cur.execute("SELECT COALESCE(SUM(length),0) FROM community_media WHERE owner_id=%s",(u["id"],))
+                    mine=cur.fetchone()[0]
+                    cur.execute("SELECT COALESCE(SUM(length),0) FROM community_media")
+                    site=cur.fetchone()[0]
+                    if mine+total_size>25*1024*1024 or site+total_size>150*1024*1024:abort(413,"אין מספיק מקום אחסון לפרסום")
+                    cur.execute("INSERT INTO community_posts(author_id,title,body,story_year,post_type,event_date,event_place) VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                                (u["id"],title,body,int(y) if y else None,post_type,event_date,place))
+                    post_id=cur.fetchone()[0]
+                    for info in infos:
+                        cur.execute("INSERT INTO community_media(owner_id,post_id,recipient_id,mime,kind,filename,data,length) VALUES(%s,%s,NULL,%s,%s,%s,%s,%s)",
+                                    (u["id"],post_id,info["mime"],info["kind"],info["filename"],info["data"],info["size"]))
+            return redirect("/my-posts?submitted=1",code=303)
+        b='<h1>📸 מפרסמים זיכרון מהפלוגה</h1><p>חבר מאושר יכול לשתף סיפור, אירוע או תמונות. הפרסום יהיה גלוי לחברים המאושרים רק לאחר בדיקת מנהל.</p>'
+        b+='<form method="post" enctype="multipart/form-data" class="form-box">'+formwrap(
+            '<label>סוג פרסום<select name="post_type" required><option value="story">סיפור מהשירות</option><option value="event">אירוע, מפגש או זיכרון מאירוע</option><option value="photo">אלבום תמונות</option></select></label>'
+            '<label>כותרת הפרסום<input name="title" maxlength="130" required placeholder="למשל: צוות הטנק שלנו בבסיס"></label>'
+            '<label>שנה (אופציונלי)<input name="year" type="number" min="1960" max="2100" placeholder="2005"></label>'
+            '<label>תאריך האירוע (אופציונלי)<input name="event_date" type="date"></label>'
+            '<label>מקום כללי לאירוע (אופציונלי)<input name="event_place" maxlength="120" placeholder="למשל: מפגש מחזור — רחובות"></label>'
+            '<label>הסיפור או פרטי האירוע<textarea name="body" maxlength="4000" placeholder="מי היה, מה קרה, ומה אתם זוכרים? אפשר לשתף תמונות עם כותרת בלבד."></textarea></label>'
+            +upload_form(True)
+            +'<label><input type="checkbox" name="rights" style="width:auto;display:inline" required> אני מאשר שיש לי זכויות והרשאה לשתף את החומרים, ושלא כללתי פרטים אישיים של אחרים ללא הסכמתם.</label>'
+            '<button type="submit">שליחת הפרסום לאישור מנהל</button></form>')
+        return page("הוספת סיפור, תמונות או אירוע",b+UPLOAD_JS+RECORD_JS)
+
+    @app.route("/my-posts")
+    def my_posts():
+        u=approved()
+        rows=sql("SELECT id,title,body,post_type,story_year,event_date,event_place,approved,created_at FROM community_posts WHERE author_id=%s ORDER BY created_at DESC LIMIT 100",(u["id"],),True)
+        b='<h1>📝 הפרסומים שלי</h1><p>תמונות, אירועים וסיפורים ששלחת. עד שהמנהל מאשר אותם, רק אתה והמנהל יכולים לראות את התוכן.</p>'
+        if request.args.get("submitted")=="1":b+='<div class="note" role="status">✓ הפרסום נשלח בהצלחה וממתין לאישור מנהל הקהילה.</div>'
+        b+='<div class="actions"><a class="cta" href="/new-post">➕ פרסום חדש</a><a class="cta" href="/feed">לציר הזמן</a></div>'
+        if not rows:b+='<div class="note">אין לך עדיין פרסומים. אפשר להעלות עכשיו תמונה, סיפור או אירוע מהשירות.</div>'
+        labels={"story":"סיפור","event":"אירוע","photo":"אלבום תמונות"}
+        for p in rows:
+            state="פורסם לחברי הקהילה" if p["approved"] else "ממתין לאישור מנהל"
+            b+='<article class="event"><span class="tag">'+e(labels.get(p["post_type"],"סיפור"))+'</span> <span class="tag">'+e(state)+'</span><h2>'+e(p["title"])+'</h2>'
+            if p["event_date"]:b+='<p>📅 '+e(p["event_date"])+'</p>'
+            if p["event_place"]:b+='<p>📍 '+e(p["event_place"])+'</p>'
+            b+='<p>'+e(p["body"]).replace("\n","<br>")+'</p>'
+            attachments=sql("SELECT id,kind FROM community_media WHERE post_id=%s ORDER BY id",(p["id"],),True)
+            b+=''.join(media_html(a["id"],a["kind"]) for a in attachments)+'</article>'
+        return page("הפרסומים שלי",b)
 
     @app.route("/photos")
     def photos():
