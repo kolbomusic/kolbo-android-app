@@ -333,25 +333,31 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
     work=Path(work_dir)
     work.mkdir(parents=True,exist_ok=True)
     sources=[]
+    cached={}
     for i,scene in enumerate(scenes):
-        if progress:progress(89+int(6*i/len(scenes)),"מחפש סרטון אמיתי לפעולה "+str(i+1))
-        try:
-            candidates=search(scene["query"])
-        except Exception as error:
-            raise UnavailableVideo("לא ניתן לחפש וידאו מתאים כעת") from error
-        if not candidates:raise UnavailableVideo(
-            "לא נמצא סרטון מורשה שמתאים לפעולה שתוארה. לא נוציא סרטון לא קשור.")
-        selected=None
-        for item in candidates[:3]:
-            original=work/f"source-{i}.webm"
+        if progress:progress(89+int(6*i/len(scenes)),"מכין צילום מתאים לסצנה "+str(i+1))
+        query=scene["query"]
+        if query in cached:
+            original,selected=cached[query]
+        else:
             try:
-                download(item,original)
-                if _duration(original)>=.7:
-                    selected=item
-                    break
-            except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
-                continue
-        if not selected:raise UnavailableVideo("מקורות הווידאו אינם ניתנים לניגון")
+                candidates=search(query)
+            except Exception as error:
+                raise UnavailableVideo("לא ניתן לחפש וידאו מתאים כעת") from error
+            if not candidates:raise UnavailableVideo(
+                "לא נמצא סרטון מורשה שמתאים לפעולה שתוארה. לא יוצג וידאו לא קשור.")
+            selected=None
+            original=work/f"source-{len(cached)}.webm"
+            for item in candidates[:3]:
+                try:
+                    download(item,original)
+                    if _duration(original)>=.7:
+                        selected=item
+                        break
+                except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
+                    continue
+            if not selected:raise UnavailableVideo("מקורות הווידאו אינם ניתנים לניגון")
+            cached[query]=(original,selected)
         segment=work/f"scene-{i}.mp4"
         _make_segment(original,segment,max(.6,scene["end"]-scene["start"]))
         sources.append({"action":scene["action"],"file":str(segment),
