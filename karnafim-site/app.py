@@ -49,13 +49,12 @@ def esc(v):return html.escape(str(v or ""),quote=True)
 def field(name,label,type="text",required=False,value=""):
  return f'<label>{esc(label)}<input name="{esc(name)}" type="{type}" value="{esc(value)}" maxlength="200" {"required" if required else ""}></label>'
 def view(title,body):
- u=me(); nav='<a href="/">בית</a> '
+ u=me(); nav='<a href="/">🏠 בית</a> <a href="/archive">📜 ארכיון</a> <a href="/find">🔎 איתור</a> <a href="/feed">📸 סיפורים</a> '
  if u:
-  nav+='<a href="/directory">חברים</a> <a href="/inbox">הודעות</a> <a href="/profile">הפרופיל שלי</a> '
-  nav+='<a href="/memories">סיפורים</a> <a href="/discover">חיפוש ארכיון</a> '
-  if admin(u):nav+='<a href="/admin">ניהול</a> '
+  nav+='<a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
+  if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/community/moderation">אישור פרסומים</a> '
   nav+='<a href="/password">סיסמה</a> <a href="/logout">יציאה</a>'
- else:nav+='<a href="/memories">סיפורים</a> <a class="nav-register" href="/register">הרשמה</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
+ else:nav+='<a class="nav-register" href="/register">הרשמה</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
  return render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><style>
  :root{font-family:Arial,'Segoe UI',sans-serif;background:#f3f1e8;color:#172a25}*{box-sizing:border-box}body{margin:0;line-height:1.7}header{background:#172b25;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header a{color:white;text-decoration:none;margin-left:12px;font-size:14px}.logo{font-size:21px;font-weight:800;color:#dbeb9f}main{max-width:1050px;margin:auto;padding:36px 18px}h1{font-size:clamp(30px,5vw,54px);line-height:1.2;margin:0 0 18px}h2{margin-top:32px}.hero{background:linear-gradient(125deg,#142b23,#365441);padding:50px 32px;color:white;border-radius:22px}.hero p{color:#e2e9db;font-size:19px;max-width:700px}.btn,button{background:#cce38d;color:#152b24;border:0;padding:11px 20px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 0}a{color:#246448}.btn.secondary{background:#e5ebe3}.card{background:white;border:1px solid #dee2d8;border-radius:15px;padding:23px;margin:14px 0;box-shadow:0 4px 18px #13251c09}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}label{display:block;font-weight:600;margin:12px 0}input,textarea,select{width:100%;display:block;padding:12px;border:1px solid #b8c4b4;border-radius:8px;font:inherit;background:white}textarea{min-height:105px}form{max-width:560px}.muted{color:#60736a}.tag{display:inline-block;padding:3px 9px;background:#e6eedb;border-radius:14px;font-size:12px}.error{background:#fff0e8;padding:14px;border-radius:8px}footer{text-align:center;padding:28px;color:#66766b;font-size:13px}
 header{position:sticky;top:0;z-index:1000;min-height:76px;box-shadow:0 3px 12px #0002}
@@ -75,8 +74,7 @@ header nav .nav-register{border:1px solid #b3c894}
 def formwrap(x):return '<input type="hidden" name="csrf" value="'+token()+'">'+x
 @app.route("/")
 def home():
- u=me();count=sql("SELECT COUNT(*) n FROM members WHERE approved AND visible",fetch=True)[0]["n"]
- return view("בית",'<section class="hero"><span class="tag">חטיבה 401 • גדוד 46 ״שלח״ • פלוגה ב׳</span><h1>הזמן עבר.<br>החברות נשארה.</h1><p>מקום אחד לחיילי ״הקרנפים״, שבהמשך הפכו ל״ברקן״. למצוא חברים, להחליף זיכרונות ולחדש קשר אחרי שנים.</p><div class="hero-actions"><a class="btn" href="'+('/directory' if u else '/register')+'">'+('לחיפוש החברים' if u else 'הייתי שם — מצטרפים')+'</a>'+('' if u else '<a class="btn btn-login" href="/login">🔑 כבר חברים? כניסה לחשבון</a>')+'</div><p class="account-hint">חברי הפלוגה מוזמנים להתחבר או להצטרף לקהילה.</p></section><div class="grid"><div class="card"><h2>🔎 מוצאים אחד את השני</h2><p>מחפשים לפי שם או כינוי — רק חברים שאושרו ובחרו להופיע.</p></div><div class="card"><h2>🔐 הפרטיות לפני הכול</h2><p>לא מפרסמים מספרי טלפון, כתובות או דוא״ל. בקשת קשר נשלחת רק דרך המערכת.</p></div><div class="card"><h2>🕯️ זוכרים את חברינו</h2><p>זוכרים בכבוד את חללי היחידה. תוכן הנצחה יתפרסם לאחר בדיקה מתאימה.</p></div></div><p class="muted">נרשמים מרצון. הרשמה אינה הוכחה לשירות, וכל חשבון דורש אישור לפני הופעה במדריך.</p><p class="muted">חברים מאותה תקופה: 2003–2006 וגם מחזורים סמוכים.</p>')
+ return app.extensions["karnafim_portal"]["home"]()
 @app.route("/health")
 def health():return {"ok":True,"service":"karnafim"}
 @app.route("/register",methods=["GET","POST"])
@@ -139,23 +137,9 @@ def contact(uid):
   sql("INSERT INTO requests(sender_id,recipient_id,note) VALUES(%s,%s,%s) ON CONFLICT(sender_id,recipient_id) DO UPDATE SET note=EXCLUDED.note",(u["id"],uid,note))
   return view("נשלח",'<p>בקשת הקשר נקלטה ותופיע בתיבה של החבר כאשר ייכנס לאתר.</p><a href="/directory">חזרה למדריך</a>')
  return view("בקשת קשר",'<h1>שליחת בקשת קשר אל '+esc(r[0]["name"])+'</h1><form method="post" class="card">'+formwrap('<label>הודעה<textarea name="note" required maxlength="600" placeholder="היי, שירתנו יחד..."></textarea></label><button>שליחה</button></form>'))
-@app.route("/inbox",methods=["GET","POST"])
+@app.route("/inbox")
 def inbox():
- u=me()
- if not u or not u["approved"]:return redirect("/login")
- if request.method=="POST":
-  guard();uid=int(request.form.get("recipient",0));body=request.form.get("body","")[:2000].strip()
-  if not body:abort(400)
-  connection=sql("SELECT 1 FROM requests WHERE (sender_id=%s AND recipient_id=%s) OR (sender_id=%s AND recipient_id=%s)",(u["id"],uid,uid,u["id"]),True)
-  if not connection:abort(403)
-  sql("INSERT INTO messages(sender_id,recipient_id,body) VALUES (%s,%s,%s)",(u["id"],uid,body));return redirect("/inbox")
- reqs=sql("SELECT r.sender_id,r.note,m.name FROM requests r JOIN members m ON m.id=r.sender_id WHERE r.recipient_id=%s ORDER BY r.created_at DESC",(u["id"],),True)
- msgs=sql("SELECT x.sender_id,x.recipient_id,x.body,m.name FROM messages x JOIN members m ON m.id=x.sender_id WHERE x.sender_id=%s OR x.recipient_id=%s ORDER BY x.created_at DESC LIMIT 80",(u["id"],u["id"]),True)
- body='<h1>ההודעות שלי</h1><h2>בקשות קשר שהתקבלו</h2>'
- for x in reqs:body+='<div class="card"><strong>'+esc(x["name"])+'</strong><p>'+esc(x["note"])+'</p><form method="post">'+formwrap('<input type="hidden" name="recipient" value="'+str(x["sender_id"])+'"><textarea name="body" required placeholder="תשובה לחבר"></textarea><button>השב</button>')+'</form></div>'
- body+='<h2>הודעות</h2>'
- for x in msgs:body+='<div class="card"><strong>'+esc(x["name"])+'</strong><p>'+esc(x["body"])+'</p></div>'
- return view("הודעות",body)
+ return redirect("/chats")
 @app.route("/admin",methods=["GET","POST"])
 def manage():
  u=me()
@@ -183,39 +167,12 @@ sql("""CREATE TABLE IF NOT EXISTS memories(
  title TEXT NOT NULL, story TEXT NOT NULL, year INTEGER,
  source_url TEXT NOT NULL DEFAULT '', approved BOOLEAN DEFAULT FALSE,
  created_at TIMESTAMPTZ DEFAULT NOW())""")
-@app.route("/memories",methods=["GET","POST"])
+@app.route("/memories")
 def memories():
- u=me()
- if request.method=="POST":
-  if not u or not u["approved"]:return redirect("/login")
-  guard()
-  title=request.form.get("title","").strip()[:140]
-  story=request.form.get("story","").strip()[:5000]
-  year=request.form.get("year","").strip()
-  url=request.form.get("source_url","").strip()[:500]
-  if not title or len(story)<10 or (year and (not year.isdigit() or not 1960<=int(year)<=2026)) or (url and not url.startswith(("https://","http://"))):abort(400)
-  sql("INSERT INTO memories(author_id,title,story,year,source_url) VALUES(%s,%s,%s,%s,%s)",(u["id"],title,story,int(year) if year else None,url))
-  return view("נשלח",'<div class="card">הסיפור נשלח לאישור מנהל. <a href="/memories">חזרה</a></div>')
- rows=sql("SELECT x.*,m.name FROM memories x JOIN members m ON x.author_id=m.id WHERE x.approved ORDER BY x.year NULLS LAST, x.created_at DESC LIMIT 150",fetch=True)
- b='<h1>הסיפורים שלנו</h1><p>ציר הזמן של הקרנפים / ברקן: זיכרונות, אירועים ואזכורים מהשירות.</p>'
- if u and u["approved"]:
-  b+='<details class="card"><summary>➕ הוספת זיכרון או אירוע</summary><form method="post">'+formwrap(field("title","כותרת",required=True)+field("year","שנה","number")+'<label>מה קרה?<textarea name="story" required minlength="10" maxlength="5000"></textarea></label>'+field("source_url","קישור למקור פומבי (לא חובה)","url")+'<button>שליחה לאישור</button></form></details>')
- for r in rows:
-  b+='<article class="card"><span class="tag">'+esc(r["year"] or "ללא שנה")+'</span><h2>'+esc(r["title"])+'</h2><p>'+esc(r["story"])+'</p><small>'+esc(r["name"])+'</small>'
-  if r["source_url"]:b+='<p><a target="_blank" rel="noopener noreferrer nofollow" href="'+esc(r["source_url"])+'">מקור חיצוני</a></p>'
-  b+='</article>'
- return view("ציר זמן",b)
+ return redirect("/feed")
 @app.route("/discover")
 def discover():
- u=me()
- if not u or not u["approved"]:return redirect("/login")
- from urllib.parse import quote
- q=request.args.get("q","").strip()[:100]
- terms=[q+' "גדוד 46"' if q else '"הקרנפים" "גדוד 46"','"פלוגה ב" "גדוד 46"','"ברקן" "גדוד 46"','"גדוד 46" "2006"']
- b='<h1>מוצאים זיכרונות ברשת</h1><p>קישורי חיפוש במקורות פומביים בלבד. פרטים אישיים ותמונות של אחרים לא מועתקים ללא רשות.</p><form><input name="q" value="'+esc(q)+'" placeholder="שם, תאריך או אירוע"><button>חפש</button></form>'
- for term in terms:b+='<div class="card"><a target="_blank" rel="noopener noreferrer" href="https://www.google.com/search?q='+quote(term)+'">'+esc(term)+'</a></div>'
- b+='<p><a href="https://www.izkor.gov.il/">יזכור</a> · <a href="https://yadlashiryon.com/">יד לשריון</a></p>'
- return view("איתור ארכיון",b)
+ return redirect("/find")
 @app.route("/admin/memory",methods=["POST"])
 def memory_admin():
  u=me()
@@ -239,5 +196,8 @@ def change_password():
   session.clear()
   return view("הסיסמה הוחלפה",'<div class="card"><h1>הסיסמה עודכנה</h1><p>אפשר להיכנס מחדש עם הסיסמה החדשה.</p><a href="/login">כניסה</a></div>')
  return view("שינוי סיסמה",'<h1>שינוי סיסמה</h1><form method="post" class="card">'+formwrap(field("old","הסיסמה הנוכחית","password",True)+field("new","סיסמה חדשה (לפחות 12 תווים)","password",True)+'<button>עדכון סיסמה</button></form>'))
+
+from community_portal import install as install_portal
+install_portal(app,sql,view,me,admin,guard,formwrap,esc)
 
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)))
