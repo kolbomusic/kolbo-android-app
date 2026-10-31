@@ -54,7 +54,7 @@ def view(title,body):
   nav+='<a href="/directory">חברים</a> <a href="/inbox">הודעות</a> <a href="/profile">הפרופיל שלי</a> '
   nav+='<a href="/memories">סיפורים</a> <a href="/discover">חיפוש ארכיון</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> '
-  nav+='<a href="/logout">יציאה</a>'
+  nav+='<a href="/password">סיסמה</a> <a href="/logout">יציאה</a>'
  else:nav+='<a href="/memories">סיפורים</a> <a href="/register">הרשמה</a> <a href="/login">כניסה</a>'
  return render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><style>
  :root{font-family:Arial,'Segoe UI',sans-serif;background:#f3f1e8;color:#172a25}*{box-sizing:border-box}body{margin:0;line-height:1.7}header{background:#172b25;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header a{color:white;text-decoration:none;margin-left:12px;font-size:14px}.logo{font-size:21px;font-weight:800;color:#dbeb9f}main{max-width:1050px;margin:auto;padding:36px 18px}h1{font-size:clamp(30px,5vw,54px);line-height:1.2;margin:0 0 18px}h2{margin-top:32px}.hero{background:linear-gradient(125deg,#142b23,#365441);padding:50px 32px;color:white;border-radius:22px}.hero p{color:#e2e9db;font-size:19px;max-width:700px}.btn,button{background:#cce38d;color:#152b24;border:0;padding:11px 20px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 0}a{color:#246448}.btn.secondary{background:#e5ebe3}.card{background:white;border:1px solid #dee2d8;border-radius:15px;padding:23px;margin:14px 0;box-shadow:0 4px 18px #13251c09}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}label{display:block;font-weight:600;margin:12px 0}input,textarea,select{width:100%;display:block;padding:12px;border:1px solid #b8c4b4;border-radius:8px;font:inherit;background:white}textarea{min-height:105px}form{max-width:560px}.muted{color:#60736a}.tag{display:inline-block;padding:3px 9px;background:#e6eedb;border-radius:14px;font-size:12px}.error{background:#fff0e8;padding:14px;border-radius:8px}footer{text-align:center;padding:28px;color:#66766b;font-size:13px}</style></head><body><header><div class="logo">🦏 הקרנפים | ברקן</div><nav>{{nav|safe}}</nav></header><main>{{body|safe}}</main><footer>יוזמה קהילתית עצמאית של יוצאי הפלוגה • אין קשר רשמי לצה״ל • פרטים אישיים מוסתרים כברירת מחדל</footer></body></html>""",title=title,body=body,nav=nav)
@@ -68,7 +68,9 @@ def health():return {"ok":True,"service":"karnafim"}
 @app.route("/register",methods=["GET","POST"])
 def register():
  if request.method=="POST":
-  guard();name=request.form.get("name","").strip()[:100];email=request.form.get("email","").lower().strip()[:200];pw=request.form.get("password","")
+  guard();
+  if request.form.get("consent")!="on":abort(400)
+  name=request.form.get("name","").strip()[:100];email=request.form.get("email","").lower().strip()[:200];pw=request.form.get("password","")
   if len(name)<2 or "@" not in email or len(pw)<12:return view("הרשמה",'<div class="error">שם תקין, דוא״ל תקין וסיסמה של לפחות 12 תווים נדרשים.</div><a href="/register">חזרה</a>'),400
   try:
    sql("INSERT INTO members(name,email,password,nickname,service_start,service_end,company,role) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",(name,email,hashpw(pw),request.form.get("nickname","")[:100],request.form.get("start","")[:40],request.form.get("end","")[:40],request.form.get("company","")[:100],request.form.get("role","")[:100]))
@@ -208,5 +210,20 @@ def memory_admin():
  if request.form.get("action")=="approve":sql("UPDATE memories SET approved=TRUE WHERE id=%s",(mid,))
  elif request.form.get("action")=="delete":sql("DELETE FROM memories WHERE id=%s",(mid,))
  return redirect("/admin")
+
+@app.route("/password",methods=["GET","POST"])
+def change_password():
+ u=me()
+ if not u:return redirect("/login")
+ if request.method=="POST":
+  guard()
+  old=request.form.get("old","")
+  new=request.form.get("new","")
+  if not verify(old,u["password"]) or len(new)<12 or len(new)>200:
+   return view("שינוי סיסמה",'<p class="error">הסיסמה הנוכחית שגויה או שהחדשה קצרה מדי. נדרשים לפחות 12 תווים.</p><a href="/password">חזרה</a>'),400
+  sql("UPDATE members SET password=%s WHERE id=%s",(hashpw(new),u["id"]))
+  session.clear()
+  return view("הסיסמה הוחלפה",'<div class="card"><h1>הסיסמה עודכנה</h1><p>אפשר להיכנס מחדש עם הסיסמה החדשה.</p><a href="/login">כניסה</a></div>')
+ return view("שינוי סיסמה",'<h1>שינוי סיסמה</h1><form method="post" class="card">'+formwrap(field("old","הסיסמה הנוכחית","password",True)+field("new","סיסמה חדשה (לפחות 12 תווים)","password",True)+'<button>עדכון סיסמה</button></form>'))
 
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)))
