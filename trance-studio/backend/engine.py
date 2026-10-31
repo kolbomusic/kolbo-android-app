@@ -302,8 +302,8 @@ def vocal_fx_timeline(voice, sr, bpm, humor, intensity, rng):
     return (x*.84+wet*amount).astype(np.float32)
 
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,return_voice=False,progress=lambda *args:None):
-    if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,mix_variation=0,return_voice=False,progress=lambda *args:None):
+    if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     sr=sample_rate;beat=60/bpm
     voices=[prepare_voice(c,sr) for c in clips]
@@ -318,6 +318,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     for v in voices:
         signature.update(len(v).to_bytes(8,'little'))
         signature.update(v[::max(1,len(v)//512)].tobytes())
+    signature.update(mix_variation.to_bytes(4,'little'))
     rng=np.random.default_rng(int.from_bytes(signature.digest(),'little'))
     music=np.zeros((n,2),dtype=np.float32)
     def add(x,time,gain=1,pan=0):
