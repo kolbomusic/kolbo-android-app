@@ -18,7 +18,7 @@ def main():
     d,_,_=call('/health')
     meta=json.loads(d)
     assert meta.get('ok'),meta
-    assert meta.get('version')=='1.9.1',meta
+    assert meta.get('version')=='1.10.0',meta
     page,_,_=call('/studio')
     assert b'videoResult' in page and b'videoNotice' in page and b'transcriptDetails' not in page
     assert any(c.name=='kolbo_studio' for c in jar),'server studio session cookie missing'
@@ -37,8 +37,8 @@ def main():
         parts.append(h.encode()+b'\r\n'+content+b'\r\n')
     field('audio',wav.getvalue(),'smoke.wav','audio/wav')
     for k,v in {'make_video':'on','video_requested':'on',
-                'transcript':'כולם רוקדים במסיבה.','transcript_origin':'auto',
-                'seconds':'30','humor':'auto','fx_intensity':'2','fx_gain':'1.25'}.items():
+                'transcript':'. '.join(['כולם רוקדים במסיבה','אני נוסע באוטו']*4)+'.',
+                'transcript_origin':'auto','seconds':'60','humor':'auto','fx_intensity':'2','fx_gain':'1.25'}.items():
         field(k,v.encode())
     parts.append(('--'+boundary+'--\r\n').encode())
     try:
@@ -56,7 +56,7 @@ def main():
     else:raise TimeoutError('remote job did not complete in six minutes')
     assert result['state']=='done',result
     assert result['video_status']=='done',result
-    assert result['storyboard_source']=='automatic_transcript_strict_semantic_footage',result
+    assert result['storyboard_source']=='automatic_transcript_grounded_longform',result
     preview,headers,status_code=call(result['video_preview_url'],timeout=75)
     assert status_code==200
     assert 'attachment' not in headers.get('Content-Disposition',''),headers
@@ -68,14 +68,16 @@ def main():
     assert b'ftyp' in video[:24],video[:24]
     assert len(video)>25000
     scenes=json.loads(storyboard)['scenes']
-    assert [s['action'] for s in scenes]==['person_dance'],scenes
+    assert [s['action'] for s in scenes]==['person_dance','car_drive']*4,scenes
+    assert result.get('visual_beats')==8,result
+    assert result.get('unmatched_clauses')==0,result
     with open('/tmp/kolbo-story-smoke.mp4','wb') as f:f.write(video)
     probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams',
             '-show_format','-of','json','/tmp/kolbo-story-smoke.mp4']))
     tracks={stream['codec_type'] for stream in probe['streams']}
     assert tracks=={'audio','video'},tracks
     duration=float(probe['format']['duration'])
-    assert 29<=duration<=70,duration
+    assert 59<=duration<=85,duration
     print(json.dumps({'status':'passed','api_version':meta['version'],
         'mp4_bytes':len(video),'mp3_bytes':len(audio),'duration':duration,
         'scene_types':[s['action'] for s in scenes],
