@@ -56,6 +56,10 @@ def main():
     assert result['state']=='done',result
     assert result['video_status']=='done',result
     assert result['storyboard_source']=='provided_transcript_approximate_timing',result
+    preview,headers,status_code=call(result['video_preview_url'],timeout=75)
+    assert status_code==200
+    assert 'attachment' not in headers.get('Content-Disposition',''),headers
+    assert b'ftyp' in preview[:24]
     audio,_,_=call(result['download_url'],timeout=75)
     video,_,_=call(result['video_url'],timeout=75)
     storyboard,_,_=call(result['storyboard_url'])
