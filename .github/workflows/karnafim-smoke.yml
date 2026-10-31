@@ -1,4 +1,4 @@
-name: Karnafim site smoke tests
+name: Karnafim links and routes audit
 on:
   push:
     branches: [karnafim-veterans-portal-20261031]
@@ -6,22 +6,22 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Python syntax
-        run: python -m py_compile karnafim-site/app.py
-      - name: Probe public pages
+      - name: Compile every site module
+        run: python -m compileall -q karnafim-site
+      - name: Wait for latest public website deployment
         shell: bash
         run: |
-          for endpoint in / /health /register /login /memories; do
-            echo "Checking ${endpoint}"
-            curl --retry 3 --retry-delay 3 --retry-all-errors --fail --location --silent --show-error --max-time 35 -o /tmp/karnafim_page "https://karnafim-community-46.onrender.com${endpoint}"
-            if [ "${endpoint}" = "/health" ]; then
-              grep -q '"ok":true' /tmp/karnafim_page
-            else
-              grep -q 'הקרנפים' /tmp/karnafim_page
-            fi
+          for n in {1..25}; do
+            status="$(curl -L -s -o /dev/null -w '%{http_code}' --max-time 10 https://karnafim-community-46.onrender.com/favicon.svg || true)"
+            if [ "$status" = "200" ]; then echo "Site reachable with updated favicon"; exit 0; fi
+            echo "Waiting for new deployment (favicon HTTP $status)"
+            sleep 5
           done
-          echo "All public smoke checks passed"
+          echo "Timed out waiting for deployment" >&2
+          exit 1
+      - name: Audit public pages, guarded pages, and original source links
+        run: python karnafim-site/check_links.py
