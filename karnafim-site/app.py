@@ -13,17 +13,20 @@ DB=os.environ["DATABASE_URL"]
 def security_hold():
  if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path not in ("/health","/favicon.svg","/favicon.ico"):
   import re
-  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
+  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status","/photos") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
   if request.method in ("GET","HEAD") and can_read:
    from pathlib import Path
-   if request.path not in ("/","/about","/privacy","/safety"):
+   if request.path=="/photos":
+    from historical_photos import gallery_page
+    document=gallery_page()
+   elif request.path not in ("/","/about","/privacy","/safety"):
     from public_pages import render_page
     document=render_page(request.path)
     if document is None: abort(404)
    else:
     document=(Path(__file__).resolve().parent/"maintenance_public.html").read_text(encoding="utf-8")
    response=Response(document,status=200,mimetype="text/html")
-   response.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+   response.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; img-src https://upload.wikimedia.org; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   else:
    response=Response("אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה.",status=503,mimetype="text/plain")
    response.headers["Content-Security-Policy"]="default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
