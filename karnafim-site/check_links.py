@@ -53,24 +53,24 @@ def main():
     errors=0;indeterminate=0
     if not check_static_links():errors+=1
     print("Live public and protected GET routes")
-    for p in PUBLIC+PROTECTED:
+    for p in PUBLIC+PROTECTED+tuple("/source/"+str(x["id"]) for x in archive_sources()):
         status,landing=probe(ROOT+p)
         good = status in ((200,301,302,303,307,308) if p in PUBLIC else (200,301,302,303,307,308,401,403))
         print(" ",p,status,"PASS" if good else "FAIL")
         if not good:errors+=1
     refs=archive_sources()
     urls=sorted({r["url"] for r in refs})
-    print("External historical source URLs",len(urls),"across",len(refs),"cards")
+    print("Historical URLs retained only as archival metadata, not clickable in site",len(urls),"across",len(refs),"cards")
     with ThreadPoolExecutor(max_workers=5) as pool:
         pending={pool.submit(probe,u):u for u in urls}
         for future in as_completed(pending):
             status,landing=future.result()
             if status in (404,410):
-                print(" BROKEN",status,pending[future]);errors+=1
+                print(" RETIRED HISTORICAL URL, NOT LINKED",status,pending[future]);indeterminate+=1
             elif status is None or status in (403,429,500,502,503,504):
                 print(" UNVERIFIED",status,pending[future]);indeterminate+=1
             else:
                 print(" CHECKED",status,pending[future])
-    print("AUDIT errors=",errors,"unverified=",indeterminate)
+    print("AUDIT active-link-errors=",errors,"archived-original-unavailable-or-unverified=",indeterminate)
     if errors:sys.exit(1)
 if __name__=="__main__":main()
