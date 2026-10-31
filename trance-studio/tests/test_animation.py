@@ -8,6 +8,24 @@ from storyboard import storyboard, render_frame, export_animation
 from app import create_app
 
 class AnimatedStoryTests(unittest.TestCase):
+    def test_semantic_video_requires_real_speech_transcript(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app=create_app({'TESTING':True,'JOB_DIR':tmp,'API_TOKEN':'unit-only'})
+            c=app.test_client()
+            r=c.post('/api/jobs',data={'audio':(io.BytesIO(b'not a wave'),'hebrew.wav'),
+                'make_video':'on','transcript':'','seconds':'30'})
+            self.assertEqual(r.status_code,422)
+            self.assertEqual(r.get_json()['code'],'TRANSCRIPT_REQUIRED')
+            self.assertEqual(list(pathlib.Path(tmp).iterdir()),[])
+
+    def test_no_semantic_animation_from_only_one_word(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app=create_app({'TESTING':True,'JOB_DIR':tmp,'API_TOKEN':'unit-only'})
+            c=app.test_client()
+            r=c.post('/api/jobs',data={'audio':(io.BytesIO(b'bad'),'hebrew.wav'),
+                'make_video':'on','transcript':'חמור'})
+            self.assertEqual(r.status_code,422)
+
     def test_semantic_hebrew_scenes_only_with_transcription(self):
         story=storyboard('נסעתי באוטו. הגעתי לים. פגשתי חמור. אחר כך אכלתי פיצה!',30)
         self.assertEqual([x['kind'] for x in story['scenes']],['car','water','animal','food'])
