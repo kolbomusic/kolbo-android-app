@@ -110,24 +110,35 @@ class ProductionStoryTests(unittest.TestCase):
             self.assertIn('אין צילומים',state['video_error'])
             self.assertEqual(client.get(state['download_url']).status_code,200)
 
-    def test_partial_script_is_not_passed_off_as_full_semantic_movie(self):
+    def test_partial_story_is_prepared_not_rejected_upfront(self):
         with tempfile.TemporaryDirectory() as directory:
             app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test-only'})
             client=app.test_client()
-            response=client.post('/api/jobs',data={
-                'audio':(self.wave(),'source.wav'),'make_video':'on',
-                'transcript':'אני נוסע באוטו. אחר כך קרה משהו שלא זוהה.',
-                'transcript_origin':'auto','seconds':'30'})
-            self.assertEqual(response.status_code,202,response.get_json())
-            state={}
-            for _ in range(140):
-                state=client.get(response.get_json()['status_url']).get_json()
-                if state.get('state') in ('done','error'):break
-                time.sleep(.25)
+            def export_checked(music,movie,plan,work,progress):
+                self.assertEqual(plan['visual_coverage'],'partial')
+                self.assertEqual(plan['unmatched_clauses'],1)
+                self.assertEqual(plan['scenes'][0]['action'],'car_drive')
+                # A real FFmpeg acceptance is tested in test_live_video.py.
+                pathlib.Path(movie).write_bytes(b'0000ftypisom'+b'0'*400)
+                return [{'action':'car_drive',
+                    'page':'https://commons.wikimedia.org/wiki/File:Car_driving.webm',
+                    'license':'CC BY 4.0'}]
+            with patch('app.export_live_story',side_effect=export_checked):
+                response=client.post('/api/jobs',data={
+                    'audio':(self.wave(),'source.wav'),'make_video':'on',
+                    'transcript':'אני נוסע באוטו. אחר כך קרה משהו שלא זוהה.',
+                    'transcript_origin':'auto','seconds':'30'})
+                self.assertEqual(response.status_code,202,response.get_json())
+                state={}
+                for _ in range(140):
+                    state=client.get(response.get_json()['status_url']).get_json()
+                    if state.get('state') in ('done','error'):break
+                    time.sleep(.25)
             self.assertEqual(state['state'],'done',state)
-            self.assertEqual(state['video_status'],'unavailable',state)
-            self.assertNotIn('video_url',state)
-            self.assertIn('חלק מהמשפטים',state['video_error'])
+            self.assertEqual(state['video_status'],'done',state)
+            self.assertEqual(state['visual_coverage'],'partial',state)
+            self.assertIn('video_url',state)
+            self.assertIn('חלק מהמשפטים',state['video_note'])
             self.assertEqual(client.get(state['download_url']).status_code,200)
 
     def test_dense_speech_alignment_never_overflows_video_length(self):
