@@ -18,7 +18,7 @@ def main():
     d,_,_=call('/health')
     meta=json.loads(d)
     assert meta.get('ok'),meta
-    assert meta.get('version')=='1.12.0',meta
+    assert meta.get('version')=='1.13.0',meta
     page,_,_=call('/studio')
     assert b'videoResult' in page and b'videoNotice' in page and b'transcriptDetails' not in page
     assert any(c.name=='kolbo_studio' for c in jar),'server studio session cookie missing'
