@@ -97,7 +97,7 @@ def align_storyboard_to_vocal(story, voice, sr=32000):
         return story
     positions=idx*(frame/sr)
     duration=float(len(voice)/sr)
-    counts=np.array([max(1,len(sc['caption'].split())) for sc in scenes],
+    counts=np.array([max(1,len((sc.get('spoken') or sc.get('caption') or '').split())) for sc in scenes],
                     dtype=np.float64)
     fractions=np.cumsum(counts)[:-1]/counts.sum()
     cuts=[]
