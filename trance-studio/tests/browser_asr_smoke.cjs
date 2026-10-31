@@ -18,7 +18,7 @@ async function main(){
         worker.onmessage=e=>{
           const m=e.data||{};
           events.push({type:m.type,label:m.label,code:m.code,message:m.message,percent:m.percent});
-          if(m.label?.includes('מודל הדיבור נטען'))modelReady=true;
+          if(m.label?.includes('מודל הדיבור נטען')||m.label?.includes('מודל הזיהוי נטען'))modelReady=true;
           if(m.type==='done'||m.type==='error'){
             clearTimeout(timer);worker.terminate();
             resolve({modelReady,outcome:m.type,transcript:m.transcript||'',error:m.message||'',code:m.code||'',events:events.slice(-12)});
