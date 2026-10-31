@@ -45,6 +45,27 @@ VISUAL_LOCATIONS=(
     ("house",("בית","הביתה"),"house exterior"),
     ("forest",("יער","עצים"),"forest trees moving"),
 )
+# When no visible action is named, prepare a real moving shot of an
+# EXPLICITLY mentioned subject. This is thematic coverage, not an invented
+# action, and must be labeled partial in the finished movie.
+SUBJECT_VISUALS=(
+    ("donkey",("חמור","חמורה","חמורים"),"donkey"),
+    ("dog",("כלב","כלבה","כלבים"),"dog"),
+    ("cat",("חתול","חתולה","חתולים"),"cat"),
+    ("car",("רכב","מכונית","אוטו","מכוניות"),"car"),
+    ("truck",("משאית","מנוף","משאיות"),"truck"),
+    ("horse",("סוס","סוסים"),"horse"),
+    ("farmer",("חקלאי","חקלאית"),"farmer"),
+    ("cow",("פרה","פרות"),"cow"),
+    ("bird",("ציפור","ציפורים"),"bird"),
+    ("police",("שוטר","שוטרים","משטרה"),"police"),
+    ("fire",("אש","שריפה","להבות"),"fire"),
+    ("food",("פיצה","אוכל","ארוחה"),"food"),
+    ("water",("מים","נהר","נחל"),"river"),
+    ("city",("רחוב","עיר","כביש"),"street"),
+    ("house",("בית","דירה"),"house"),
+    ("beach",("ים","חוף"),"beach"),
+)
 CLAUSE_SPLIT=re.compile(
     r"[.!?;]+|\b(?:ואז|ואחר כך|אחר כך|לאחר מכן|אחרי זה|פתאום|ולפתע|בינתיים)\b"
     r"|\s+(?=ו(?:החקלאי|החמור|הכלב|החתול|המשאית|הסוס|האישה|האיש|האוטו|הילד)\b)"
@@ -61,6 +82,7 @@ def _words(sentence):
     for _,subjects,verbs,_ in ACTIONS:
         known.update(subjects);known.update(verbs)
     for _,items,_ in VISUAL_LOCATIONS:known.update(items)
+    for _,items,_ in SUBJECT_VISUALS:known.update(items)
     normalized=[]
     for token in raw:
         normalized.append(token)
@@ -93,6 +115,12 @@ def action_for_clause(sentence):
     for name,terms,query in VISUAL_LOCATIONS:
         if tokens.intersection(terms) and len(tokens)<=6:
             return {"action":name,"query":query,"basis":"explicit_location"}
+    # No hallucinated action: we may show a named animal/object as motion
+    # footage, but its presence alone does not prove what it was doing.
+    for name,terms,query in SUBJECT_VISUALS:
+        if tokens.intersection(terms):
+            return {"action":"subject_"+name,"query":query,
+                    "basis":"explicit_subject_only"}
     return None
 
 def visual_plan(transcript,duration):
@@ -171,7 +199,9 @@ def visual_plan(transcript,duration):
         "unmatched_clauses":unmatched,
         "recognized_action_beats":original_beats,
         "visual_beats":len(scenes),
-        "visual_coverage":"partial" if unmatched or original_beats>len(scenes) else "matched",
+        "visual_coverage":"partial" if (unmatched or original_beats>len(scenes)
+                         or any(sc["basis"]=="explicit_subject_only" for sc in scenes))
+                         else "matched",
         "scenes":scenes
     }
 
