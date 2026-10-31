@@ -42,7 +42,13 @@ jobs:
                 echo 'Unexpected active form in safe mode' >&2
                 exit 1
               fi
-              echo "Read-only home verified; login blocked."
+              for path in archive memorials find status; do
+            code=$(curl --max-time 20 -L -sS -o /tmp/karnafim-"$path" -w '%{http_code}' "https://karnafim-community-46.onrender.com/$path")
+            echo "$path HTTP $code"
+            test "$code" = "200" || exit 1
+            if grep -Eiq '<form|<input|type="password"' /tmp/karnafim-"$path"; then echo "Unexpected input in $path"; exit 1; fi
+          done
+          echo "Read-only home verified; login blocked."
               exit 0
             fi
             sleep 5
