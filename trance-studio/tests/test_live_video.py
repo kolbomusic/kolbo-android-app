@@ -200,7 +200,7 @@ class GroundedVideoTests(unittest.TestCase):
             video=root/'film.mp4'
             sources=export_live_story(song,video,plan,root/'work',
                                       search=find,download=download)
-            self.assertEqual(queries,['donkey braying','car driving'])
+            self.assertEqual(queries,['donkey braying','donkey','car driving'])
             self.assertEqual(len(sources),1)
             self.assertEqual(plan['visual_coverage'],'partial')
             self.assertEqual(len(plan['missing_footage']),1)
