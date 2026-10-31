@@ -117,6 +117,6 @@ def test():
     assert approved_result.headers["Location"].endswith("?auto=1")
     saved=[x for x in records if x[0].startswith("INSERT INTO community_posts")]
     assert saved[0][1][7] is True and saved[0][1][8]=="approved","Auto approved text must publish"
-        expect(200,client.get("/community/moderation"),"אישור סיפורים")
+    expect(200,client.get("/community/moderation"),"אישור סיפורים")
     print("PASS: permissions, multi-image moderation, EXIF stripping, events, invalid files, consent, fail-closed pending, AI auto-approval, moderation")
 if __name__=="__main__":test()
