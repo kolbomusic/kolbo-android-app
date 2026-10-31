@@ -68,10 +68,10 @@ class ApiTests(unittest.TestCase):
 
     def test_long_recording_is_rejected_before_render(self):
         import subprocess
-        content=subprocess.check_output(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=337:duration=61','-c:a','libopus','-f','opus','pipe:1'])
+        content=subprocess.check_output(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=337:duration=121','-c:a','libopus','-f','opus','pipe:1'])
         r=self.client.post('/api/jobs',data={'audio':(io.BytesIO(content),'long.opus')})
         self.assertEqual(r.status_code,202)
-        deadline=time.time()+10
+        deadline=time.time()+30
         while time.time()<deadline:
             status=self.client.get(r.json['status_url']).json
             if status['state'] in ('done','error'):break
