@@ -41,13 +41,13 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <option value="eurodance">יורודאנס שנות ה־90</option>
 <option value="hard">הארד טראנס</option><option value="rave">רייב של פעם</option></select></div>
 <div><label for="melody">בחירת מלודיה</label><select id="melody">
-<option value="auto" selected>מתחלפת אוטומטית</option>
+<option value="auto" selected>מתחלפת אוטומטית כל 4 תיבות + צלילי סינתיסייזר שונים</option>
 <option value="1">מלודיה 1 — קלאסית</option><option value="2">מלודיה 2 — מקפיצה</option>
 <option value="3">מלודיה 3 — מרחפת</option><option value="4">מלודיה 4 — רטרו</option>
 <option value="5">מלודיה 5 — עמוקה</option><option value="6">מלודיה 6 — אופורית</option>
 </select></div>
-<div><label for="humor">סגנון הומור ואפקטים</label><select id="humor">
-<option value="auto" selected>אוטומטי חכם — כל טריקי ה־DJ ביחד</option>
+<div><label for="humor">אפקטים על קול ההקלטה מ־WhatsApp (לא על המוזיקה)</label><select id="humor">
+<option value="auto" selected>אוטומטי — מעבד את הקול עצמו לאורך כל ההקלטה</option>
 <option value="dj">DJ רטרו — חיתוך באמצע מילה, רול ודרופ</option>
 <option value="glitch">רולים שבורים וסטאטרים בקצב</option>
 <option value="stretch">מתיחת הברות ומשיכת קול</option>
@@ -69,12 +69,12 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 </div>
 <label for="bpm">מהירות הקצב — <output id="bpmText">145</output> BPM</label>
 <input id="bpm" type="range" min="120" max="165" value="145" step="1">
-<label for="fx_intensity">עוצמת טריקים וחיתוכים — <output id="fxText">מאוזנת</output></label>
-<input id="fx_intensity" type="range" min="1" max="3" value="2" step="1">
+<label for="fx_intensity">עוצמת טריקים וחיתוכים — <output id="fxText">משוגעת</output></label>
+<input id="fx_intensity" type="range" min="1" max="3" value="3" step="1">
 <small>1 — מעט הפתעות · 2 — מאוזן · 3 — DJ משוגע עם יותר מתיחות ורולים</small>
 <label for="voice">עוצמת הדיבור — <output id="voiceText">100%</output></label>
 <input id="voice" type="range" min="50" max="150" value="100" step="5">
-<p class="hint">הדיבור המלא נשמר לפי הסדר המקורי. דגימות קול עוברות חיתוכים גם באמצע מילה, מתיחות ושינויי טון; כל הדיבור המקורי נשמר בנפרד פעם אחת לפחות. כל המנגינות והאפקטים נוצרים באופן מקורי.</p>
+<p class="hint">**קול ההקלטה עצמו** עובר מתיחות, שינויי גובה, רולים, סקראצ׳ים ועיוותים במהלך הדיבור — לא המוזיקה. כל המשפטים המקוריים נשארים בציר ההקלטה, והמלודיה והכלים משתנים במהלך המיקס.</p>
 </section>
 <section class="panel"><h2>03 / יוצרים ומנגנים</h2>
 <div class="actions"><button id="generate">✦ יצירת מיקס משולב חכם</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
