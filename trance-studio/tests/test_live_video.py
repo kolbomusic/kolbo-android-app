@@ -44,8 +44,11 @@ class GroundedVideoTests(unittest.TestCase):
     def test_strict_license_and_descriptive_title(self):
         self.assertFalse(_matches_metadata('File:Car driving.webm','donkey braying'))
         self.assertTrue(_matches_metadata('File:Donkey braying.webm','donkey braying'))
+        self.assertTrue(_matches_metadata('File:Braying donkey (Equus africanus asinus).webm','donkey braying'))
+        self.assertFalse(_matches_metadata('File:Donkey walking.webm','donkey braying'))
         self.assertFalse(_valid_license({'LicenseShortName':{'value':'CC BY-NC'}}))
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC0'}}))
+        self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC BY-SA 2.0'}}))
 
     def test_native_motion_video_and_original_audio_without_subtitles(self):
         with tempfile.TemporaryDirectory() as tmp:
