@@ -45,7 +45,10 @@ VISUAL_LOCATIONS=(
     ("house",("בית","הביתה"),"house exterior"),
     ("forest",("יער","עצים"),"forest trees moving"),
 )
-CLAUSE_SPLIT=re.compile(r"[.!?;]+|\b(?:ואז|אחר כך|לאחר מכן|פתאום)\b")
+CLAUSE_SPLIT=re.compile(
+    r"[.!?;]+|\\b(?:ואז|ואחר כך|אחר כך|לאחר מכן|אחרי זה|פתאום|ולפתע|בינתיים)\\b"
+    r"|\\s+(?=ו(?:החקלאי|החמור|הכלב|החתול|המשאית|הסוס|האישה|האיש|האוטו|הילד)\\b)"
+)
 HEBREW_TOKEN=re.compile(r"[א-ת]+")
 NEGATIONS={"לא","בלי","אינו","אינה","אינם","אין"}
 class UnavailableVideo(RuntimeError):pass
@@ -75,9 +78,18 @@ def action_for_clause(sentence):
     words=_words(sentence)
     if not words or not _positive_clause(words):return None
     tokens=set(words)
+    candidates=[]
     for name,subjects,verbs,query in ACTIONS:
         if tokens.intersection(subjects) and tokens.intersection(verbs):
-            return {"action":name,"query":query,"basis":"subject_and_action"}
+            candidates.append({"action":name,"query":query,"basis":"subject_and_action"})
+    if len(candidates)>1:
+        # The sentence contains multiple physical actions. Guessing just the
+        # first one creates a false story for everything else. Surface this
+        # as ambiguous until a real semantic planner can split it reliably.
+        raise UnavailableVideo(
+            "במשפט זוהו כמה פעולות שלא ניתן להפריד ביניהן באופן אמין. "
+            "לא ייווצר סרטון לא תואם.")
+    if candidates:return candidates[0]
     for name,terms,query in VISUAL_LOCATIONS:
         if tokens.intersection(terms) and len(tokens)<=6:
             return {"action":name,"query":query,"basis":"explicit_location"}
