@@ -260,8 +260,9 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent=
-   'צילום וידאו נע שנבחר רק לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול, כתוביות או דמויות מצוירות.';
+ $('storyboardInfo').textContent=j.visual_coverage==='partial'?
+   'נמצא צילום מתאים לחלק מהמשפטים בלבד. המיקס המקורי נשמר לכל אורכו. הסצנות האחרות עדיין לא הומחשו במדויק.':
+   'צילום וידאו נע שנבחר לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול או ציורים.';
  if(j.storyboard_url){
   try{
    var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
@@ -291,6 +292,10 @@ if(wantsVideo&&!j.video_url){
  $('videoNotice').hidden=false;
 }else{
  $('resultTitle').textContent=j.video_url?'✓ סרטון ומיקס מוכנים':'✓ המיקס מוכן';
+ if(j.video_url&&j.visual_coverage==='partial'){
+  $('videoNotice').textContent=j.video_note||'חלק מהסצנות אינן תואמות באופן מלא למילים שנאמרו. סרטון זה הוא המחשה חלקית בלבד.';
+  $('videoNotice').hidden=false;
+ }
 }
 $('player').src=resultUrl;$('result').classList.add('visible');
 $('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות. '+(videoReason?'לא הופק סרטון לא קשור: '+videoReason:'אפשר להשוות בין הקול המקורי לקול המעובד.');
