@@ -149,6 +149,7 @@ def create_app(config=None):
             job['voice_url']='/api/jobs/'+job_id+'/voice'
             if job.get('video_status')=='done':
                 job['video_url']='/api/jobs/'+job_id+'/video'
+                job['video_preview_url']='/api/jobs/'+job_id+'/video_preview'
             if (root/job_id/'storyboard.json').exists():
                 job['storyboard_url']='/api/jobs/'+job_id+'/storyboard'
         return jsonify(job)
@@ -179,6 +180,15 @@ def create_app(config=None):
         if not ready or not path.is_file():return jsonify(error='סרטון עדיין לא זמין'),404
         return send_file(path,mimetype='video/mp4',as_attachment=True,
                          download_name='Kolbo-Trance-Animated-Story.mp4')
+
+    @app.get('/api/jobs/<job_id>/video_preview')
+    def video_preview(job_id):
+        cleanup()
+        with lock:ready=jobs.get(job_id,{}).get('video_status')=='done'
+        path=root/job_id/'story.mp4'
+        if not ready or not path.is_file():return jsonify(error='סרטון לא זמין'),404
+        return send_file(path,mimetype='video/mp4',as_attachment=False,
+                         conditional=True,download_name='Kolbo-Trance-Story.mp4')
 
     @app.get('/api/jobs/<job_id>/storyboard')
     def story_details(job_id):
