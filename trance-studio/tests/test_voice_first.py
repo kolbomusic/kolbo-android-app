@@ -44,8 +44,8 @@ class VoiceAndMelodyTests(unittest.TestCase):
 
     def test_auto_music_has_distinct_sections(self):
         sr=8000;clip=self.voice(sr,2)
-        a=eng.render_mix([clip],sample_rate=sr,seconds=45,humor='off',melody='auto',style='mixed')
-        b=eng.render_mix([clip],sample_rate=sr,seconds=45,humor='off',melody='1',style='mixed')
+        a=eng.render_mix([clip],sample_rate=sr,seconds=60,humor='off',melody='auto',style='mixed')
+        b=eng.render_mix([clip],sample_rate=sr,seconds=60,humor='off',melody='1',style='mixed')
         self.assertEqual(a.shape,b.shape)
         # The distinctive four-bar sectional arrangement must not equal
         # keeping one motif fixed for the entire 45s piece.
