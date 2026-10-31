@@ -26,6 +26,15 @@ jobs:
       - name: Validate frontend JavaScript
         run: |
           node -e "const fs=require('fs');const s=fs.readFileSync('trance-studio/web/studio.html','utf8');const a=s.indexOf('<script>');const b=s.lastIndexOf('</script>');if(a<0||b<a)throw Error('No browser JS found');new Function(s.slice(a+8,b));"
+      - name: Check local Hebrew ASR worker syntax
+        run: |
+          node --check trance-studio/web/studio-asr-worker.js
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('trance-studio/web/studio.html').read_text(encoding='utf-8')
+          assert "recognizeBeforeVideo" in s and "transcript_origin" in s
+          assert "studio-asr-worker.js" in s
+          PY
       - name: Verify PWA manifest and share target
         run: |
           python -c "import json,pathlib;d=json.loads(pathlib.Path('trance-studio/web/studio.webmanifest').read_text());assert d['share_target']['method']=='POST';assert d['share_target']['params']['files'][0]['name']=='audio'"
