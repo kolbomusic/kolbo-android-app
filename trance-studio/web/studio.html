@@ -147,6 +147,12 @@ function verifyTranscript(txt){
  var hebrew=(txt.match(/[\u0590-\u05ff]/g)||[]).length;
  return words.length>=2&&hebrew>=3;
 }
+async function sourceSha256(file){
+ if(!window.crypto||!window.crypto.subtle)return null;
+ var raw=await file.arrayBuffer();
+ var digest=await crypto.subtle.digest('SHA-256',raw);
+ return Array.from(new Uint8Array(digest)).map(function(x){return x.toString(16).padStart(2,'0')}).join('');
+}
 async function decodeHebrewVoice(file){
  var Audio=window.AudioContext||window.webkitAudioContext;
  if(!Audio||!window.OfflineAudioContext)throw new Error('המכשיר אינו תומך בפענוח ההקלטה לתמלול.');
@@ -206,9 +212,15 @@ if(wantsVideo){
  try{recognized=await recognizeBeforeVideo()}
  catch(error){videoAllowed=false;videoReason='זיהוי הדיבור לא היה אמין: '+(error.message||'שגיאת תמלול');}
 }
-message('מכין את המיקס'+(videoAllowed?' ומאתר וידאו אמיתי לסצנות':'')+'...');
+message('מעבד את קובץ ההקלטה המקורי'+(videoAllowed?' ומזהה פעולות לסרטון':'')+'...');
 var form=new FormData();
 files.forEach(function(f){form.append('audio',f,f.name)});
+var hashes=[];
+for(var fileIndex=0;fileIndex<files.length;fileIndex++){
+ var digest=await sourceSha256(files[fileIndex]);
+ if(digest)hashes.push(digest);
+}
+if(hashes.length===files.length)form.set('source_hashes',hashes.join(','));
 form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
 form.set('make_video',videoAllowed?'on':'off');
@@ -248,9 +260,11 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent=j.visual_coverage==='partial'?
-   'הסרטון ממחיש רק את הפעולות שהמערכת הצליחה לזהות. לא כל משפט הומחש.':
-   'קטעי וידאו אמיתיים ממקורות חופשיים, שנבחרו לפי הפעולות שזוהו בדיבור.';
+ $('storyboardInfo').textContent=j.video_mode==='voice_reactive'?
+   'וידאו שמגיב לקול בלבד. זו אינה המחשה של האירועים שנאמרו בהקלטה.':
+   j.visual_coverage==='partial'?
+   'וידאו מצולם שממחיש רק חלק מהאירועים שזוהו בדיבור המקורי.':
+   'קטעי וידאו ממקורות חופשיים, שנבחרו לפי הפעולות שזוהו בדיבור המקורי.';
  if(j.storyboard_url){
   try{
    var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
@@ -279,11 +293,11 @@ if(wantsVideo&&!j.video_url){
  $('videoNotice').textContent='סרטון MP4 לא נוצר. '+(videoReason||'לא אותר מקור וידאו מתאים לדיבור. המיקס זמין.');
  $('videoNotice').hidden=false;
 }else{
- $('resultTitle').textContent=j.video_url?'✓ הסרטון והמיקס מוכנים':'✓ המיקס מוכן';
+ $('resultTitle').textContent=j.video_mode==='voice_reactive'?'✓ וידאו לקול + מיקס מוכנים':(j.video_url?'✓ סרטון ומיקס מוכנים':'✓ המיקס מוכן');
 }
 $('player').src=resultUrl;$('result').classList.add('visible');
 $('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות. '+(videoReason?'לא הופק סרטון לא קשור: '+videoReason:'אפשר להשוות בין הקול המקורי לקול המעובד.');
-message(j.video_url?'ה־MP4 והמיקס מוכנים.':(videoReason||'המיקס מוכן להשמעה ולשיתוף.'));$('result').scrollIntoView({behavior:'smooth'});
+message(j.video_url?(j.video_mode==='voice_reactive'?'נוצר MP4 שמגיב לקול בלבד — לא סרטון עלילתי.':'ה־MP4 והמיקס מוכנים.'): (videoReason||'המיקס מוכן להשמעה ולשיתוף.'));$('result').scrollIntoView({behavior:'smooth'});
 return;
 }
 }
