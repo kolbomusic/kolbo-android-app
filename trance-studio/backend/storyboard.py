@@ -102,17 +102,23 @@ def align_storyboard_to_vocal(story, voice, sr=32000):
     fractions=np.cumsum(counts)[:-1]/counts.sum()
     cuts=[]
     previous=0.
-    for q in fractions:
+    # Recording can have more than five visual beats. The old fixed 0.18s
+    # minimum would push the final boundary past the audio duration when
+    # many actions were spoken in a short message.
+    min_gap=min(.18,duration/(len(scenes)+1)*.4)
+    for i,q in enumerate(fractions):
         time=float(np.quantile(positions,q))
         # Fit to a nearby quiet valley to avoid scene changes mid-phoneme.
         target=int(round(time*sr/frame))
         lo=max(int(idx[0]),target-7)
         hi=min(int(idx[-1]),target+7)
         if hi>lo:
-            best=min(range(lo,hi+1),key=lambda i:float(rms[i]))
+            best=min(range(lo,hi+1),key=lambda j:float(rms[j]))
             time=best*frame/sr
-        time=max(previous+.18,min(duration-.18,time))
-        cuts.append(round(time,2))
+        remaining=len(fractions)-i
+        high=duration-min_gap*remaining
+        time=min(high,max(previous+min_gap,time))
+        cuts.append(round(time,3))
         previous=time
     boundaries=[0.]+cuts+[duration]
     for i,scene in enumerate(scenes):
