@@ -260,11 +260,8 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent=j.video_mode==='voice_reactive'?
-   'וידאו שמגיב לקול בלבד. זו אינה המחשה של האירועים שנאמרו בהקלטה.':
-   j.visual_coverage==='partial'?
-   'וידאו מצולם שממחיש רק חלק מהאירועים שזוהו בדיבור המקורי.':
-   'קטעי וידאו ממקורות חופשיים, שנבחרו לפי הפעולות שזוהו בדיבור המקורי.';
+ $('storyboardInfo').textContent=
+   'צילום וידאו נע שנבחר רק לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול, כתוביות או דמויות מצוירות.';
  if(j.storyboard_url){
   try{
    var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
@@ -293,11 +290,11 @@ if(wantsVideo&&!j.video_url){
  $('videoNotice').textContent='סרטון MP4 לא נוצר. '+(videoReason||'לא אותר מקור וידאו מתאים לדיבור. המיקס זמין.');
  $('videoNotice').hidden=false;
 }else{
- $('resultTitle').textContent=j.video_mode==='voice_reactive'?'✓ וידאו לקול + מיקס מוכנים':(j.video_url?'✓ סרטון ומיקס מוכנים':'✓ המיקס מוכן');
+ $('resultTitle').textContent=j.video_url?'✓ סרטון ומיקס מוכנים':'✓ המיקס מוכן';
 }
 $('player').src=resultUrl;$('result').classList.add('visible');
 $('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות. '+(videoReason?'לא הופק סרטון לא קשור: '+videoReason:'אפשר להשוות בין הקול המקורי לקול המעובד.');
-message(j.video_url?(j.video_mode==='voice_reactive'?'נוצר MP4 שמגיב לקול בלבד — לא סרטון עלילתי.':'ה־MP4 והמיקס מוכנים.'): (videoReason||'המיקס מוכן להשמעה ולשיתוף.'));$('result').scrollIntoView({behavior:'smooth'});
+message(j.video_url?'ה־MP4 והמיקס המצולם מוכנים.':(videoReason||'המיקס מוכן, אבל לא נמצא צילום התואם לכל הדיבור.'));$('result').scrollIntoView({behavior:'smooth'});
 return;
 }
 }
