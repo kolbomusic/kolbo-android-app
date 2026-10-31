@@ -186,16 +186,33 @@ def render_frame(time,story,energy,frame_index):
     _scene_props(d,kind,time,energy)
     _character(d,115,249,time,energy,kind,(88,162,245),scale=.92)
     _character(d,246,263,time+1.3,energy*.78,kind,(224,85,157),scale=.80)
-    if current['caption']:
-        caption=current['caption'][:42]
-    else:
-        caption=LABELS[kind]
-    d.rounded_rectangle((22,545,w-22,603),radius=17,fill=(33,26,73))
-    try:
-        d.text((w//2,571),caption,font=_font(22),anchor='mm',
-               fill=(255,250,254),direction='rtl',stroke_width=0)
-    except (ValueError,KeyError,TypeError):
-        d.text((w//2,571),caption,font=_font(20),anchor='mm',fill=(255,250,254))
+    caption=(current['caption'] or LABELS[kind])[:105]
+    font=_font(21)
+    words=caption.split()
+    lines=[]
+    for word in words:
+        candidate=(' '.join((lines[-1],word)) if lines else word)
+        try:
+            width=d.textbbox((0,0),candidate,font=font,direction='rtl')[2]
+        except (ValueError,KeyError,TypeError):
+            width=d.textbbox((0,0),candidate,font=font)[2]
+        if lines and width<=292:
+            lines[-1]=candidate
+        elif len(lines)<2:
+            lines.append(word)
+        else:
+            break
+    if not lines:lines=[LABELS[kind]]
+    if len(lines)==2 and len(words)>len(' '.join(lines).split()):
+        lines[-1]=lines[-1][:22].rstrip()+'…'
+    d.rounded_rectangle((22,527,w-22,609),radius=17,fill=(33,26,73))
+    for idx,line in enumerate(lines):
+        top=551+idx*31 if len(lines)>1 else 571
+        try:
+            d.text((w//2,top),line,font=font,anchor='mm',
+                   fill=(255,250,254),direction='rtl')
+        except (ValueError,KeyError,TypeError):
+            d.text((w//2,top),line,font=font,anchor='mm',fill=(255,250,254))
     # Simple moving progress meter and beat flash.
     progress=min(1,max(0,time/max(1,story['scenes'][-1]['end'])))
     d.rounded_rectangle((25,614,335,621),radius=3,fill=(67,59,113))
