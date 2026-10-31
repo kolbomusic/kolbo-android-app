@@ -21,7 +21,7 @@ jobs:
             echo "Attempt $attempt: home=$home login=$login"
             if [ "$home" = "200" ] && [ "$login" = "503" ] && grep -q 'האתר' /tmp/karnafim-home; then
               ok=1
-              for part in archive memorials find status; do
+              for part in archive memorials find status source/1 source/4 source/5 source/14 memorial/yehonatan-sharabi memorial/benaya-rein memorial/uri-grossman memorial/adam-goren memorial/alexander-bunimovich; do
                 code=$(curl -L -s -o /tmp/karnafim-"$part" -w '%{http_code}' --max-time 20 "https://karnafim-community-46.onrender.com/$part" || true)
                 echo "$part HTTP $code"
                 if [ "$code" != "200" ]; then ok=0; fi
