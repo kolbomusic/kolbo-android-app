@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 
 ROOT=Path(__file__).resolve().parent
 URL="https://karnafim-community-46.onrender.com"
-VALID=["/","/photos","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
+VALID=["/","/accessibility","/photos","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
 BLOCKED=["/login","/register","/profile","/password","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
 def fetch(path):
     try:
@@ -35,11 +35,13 @@ def live():
     active='"access":"community"' in health.replace(" ","")
     errors=[]
     if active:
-        for route in ("/","/photos","/archive","/memorials","/find","/status","/about","/privacy","/safety","/login","/register","/feed","/invite"):
+        for route in ("/","/photos","/archive","/memorials","/find","/status","/about","/privacy","/safety","/help","/accessibility","/accessibility/report","/login","/register","/feed","/invite"):
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.startswith(URL) and "text/html" in headers.get("Content-Type","")
-            if route in ("/login","/register"):
+            if route in ("/login","/register","/accessibility/report"):
                 ok=ok and '<form' in body and 'name="csrf"' in body
+            if route not in ("/favicon.svg",):
+                ok=ok and 'id="main-content"' in body and 'skip-to-content' in body
             print(("PASS" if ok else "FAIL"),route,"ACTIVE",status)
             if not ok:errors.append((route,status))
         for route in ("/profile","/directory","/password"):
@@ -57,6 +59,7 @@ def live():
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.startswith(URL) and "<form" not in body.lower() and "<script" not in body.lower()
             if route=="/":ok=ok and "החברות נשארה" in body
+            if route=="/accessibility":ok=ok and "הצהרת נגישות" in body and 'id="main-content"' in body
             if route.startswith("/memorial/"):ok=ok and "לזכר" in body
             if route.startswith("/source/"):ok=ok and "מה ידוע מהתיעוד" in body
             if "form-action 'none'" not in headers.get("Content-Security-Policy",""):ok=False
