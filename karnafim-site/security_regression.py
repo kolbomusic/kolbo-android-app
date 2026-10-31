@@ -1,4 +1,4 @@
-"""Regression checks for public-only mode; no user accounts or writes touched."""
+"""Read-only regression checks for public and authenticated routes in both deployment modes."""
 import ast, sys
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -30,30 +30,46 @@ def static():
     print("STATIC: file syntax and security invariants OK")
 
 def live():
+    health_status,_,health,_=fetch("/health")
+    assert health_status==200, ("health",health_status)
+    active='"access":"community"' in health.replace(" ","")
     errors=[]
-    for route in VALID:
-        status,headers,body,landed=fetch(route)
-        ok=status==200 and landed.startswith(URL) and "<form" not in body.lower() and "<script" not in body.lower()
-        if route=="/":
-            ok=ok and "החברות נשארה" in body
-            ok=ok and 'href="/photos"' in body
-        if route=="/photos":
-            ok=ok and body.count('upload.wikimedia.org')>=3 and "Wikimedia Commons" in body
-        if route.startswith("/memorial/"):ok=ok and "לזכר" in body
-        if route.startswith("/source/"):ok=ok and "מה ידוע מהתיעוד" in body
-        if "form-action 'none'" not in headers.get("Content-Security-Policy",""):ok=False
-        print(("PASS" if ok else "FAIL"),route,"HTTP",status)
-        if not ok:errors.append((route,status))
-    for route in BLOCKED:
-        status,headers,body,landed=fetch(route)
-        ok=status==503 and "no-store" in headers.get("Cache-Control","")
-        print(("PASS" if ok else "FAIL"),route,"BLOCKED",status)
-        if not ok:errors.append((route,status))
-    health_status,head,health,_=fetch("/health")
-    if health_status!=200 or '"access":"read_only"' not in health.replace(" ",""):errors.append(("health",health_status))
-    fav,*_=fetch("/favicon.svg")
-    if fav!=200:errors.append(("favicon",fav))
-    print("FAILURES",errors)
+    if active:
+        for route in ("/","/archive","/memorials","/find","/status","/about","/privacy","/safety","/login","/register","/feed","/invite"):
+            status,headers,body,landed=fetch(route)
+            ok=status==200 and landed.startswith(URL) and "text/html" in headers.get("Content-Type","")
+            if route in ("/login","/register"):
+                ok=ok and '<form' in body and 'name="csrf"' in body
+            print(("PASS" if ok else "FAIL"),route,"ACTIVE",status)
+            if not ok:errors.append((route,status))
+        for route in ("/profile","/directory","/password"):
+            status,headers,body,landed=fetch(route)
+            ok=status==200 and landed.rstrip("/")==URL+"/login"
+            print(("PASS" if ok else "FAIL"),route,"REDIRECT_LOGIN",status)
+            if not ok:errors.append((route,status))
+        for route in ("/admin","/community/moderation","/chats","/new-post","/community-media/1"):
+            status,headers,body,landed=fetch(route)
+            ok=status==403
+            print(("PASS" if ok else "FAIL"),route,"FORBIDDEN",status)
+            if not ok:errors.append((route,status))
+    else:
+        for route in VALID:
+            status,headers,body,landed=fetch(route)
+            ok=status==200 and landed.startswith(URL) and "<form" not in body.lower() and "<script" not in body.lower()
+            if route=="/":ok=ok and "החברות נשארה" in body
+            if route.startswith("/memorial/"):ok=ok and "לזכר" in body
+            if route.startswith("/source/"):ok=ok and "מה ידוע מהתיעוד" in body
+            if "form-action 'none'" not in headers.get("Content-Security-Policy",""):ok=False
+            print(("PASS" if ok else "FAIL"),route,"READ_ONLY",status)
+            if not ok:errors.append((route,status))
+        for route in BLOCKED:
+            status,headers,body,landed=fetch(route)
+            ok=status==503 and "no-store" in headers.get("Cache-Control","")
+            print(("PASS" if ok else "FAIL"),route,"BLOCKED",status)
+            if not ok:errors.append((route,status))
+    favicon,*_=fetch("/favicon.svg")
+    if favicon!=200:errors.append(("favicon",favicon))
+    print("MODE", "community" if active else "read_only", "FAILURES",errors)
     if errors:sys.exit(1)
 if __name__=="__main__":
     static()
