@@ -52,9 +52,10 @@ def view(title,body):
  u=me(); nav='<a href="/">בית</a> '
  if u:
   nav+='<a href="/directory">חברים</a> <a href="/inbox">הודעות</a> <a href="/profile">הפרופיל שלי</a> '
+  nav+='<a href="/memories">סיפורים</a> <a href="/discover">חיפוש ארכיון</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> '
   nav+='<a href="/logout">יציאה</a>'
- else:nav+='<a href="/register">הרשמה</a> <a href="/login">כניסה</a>'
+ else:nav+='<a href="/memories">סיפורים</a> <a href="/register">הרשמה</a> <a href="/login">כניסה</a>'
  return render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><style>
  :root{font-family:Arial,'Segoe UI',sans-serif;background:#f3f1e8;color:#172a25}*{box-sizing:border-box}body{margin:0;line-height:1.7}header{background:#172b25;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header a{color:white;text-decoration:none;margin-left:12px;font-size:14px}.logo{font-size:21px;font-weight:800;color:#dbeb9f}main{max-width:1050px;margin:auto;padding:36px 18px}h1{font-size:clamp(30px,5vw,54px);line-height:1.2;margin:0 0 18px}h2{margin-top:32px}.hero{background:linear-gradient(125deg,#142b23,#365441);padding:50px 32px;color:white;border-radius:22px}.hero p{color:#e2e9db;font-size:19px;max-width:700px}.btn,button{background:#cce38d;color:#152b24;border:0;padding:11px 20px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 0}a{color:#246448}.btn.secondary{background:#e5ebe3}.card{background:white;border:1px solid #dee2d8;border-radius:15px;padding:23px;margin:14px 0;box-shadow:0 4px 18px #13251c09}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}label{display:block;font-weight:600;margin:12px 0}input,textarea,select{width:100%;display:block;padding:12px;border:1px solid #b8c4b4;border-radius:8px;font:inherit;background:white}textarea{min-height:105px}form{max-width:560px}.muted{color:#60736a}.tag{display:inline-block;padding:3px 9px;background:#e6eedb;border-radius:14px;font-size:12px}.error{background:#fff0e8;padding:14px;border-radius:8px}footer{text-align:center;padding:28px;color:#66766b;font-size:13px}</style></head><body><header><div class="logo">🦏 הקרנפים | ברקן</div><nav>{{nav|safe}}</nav></header><main>{{body|safe}}</main><footer>יוזמה קהילתית עצמאית של יוצאי הפלוגה • אין קשר רשמי לצה״ל • פרטים אישיים מוסתרים כברירת מחדל</footer></body></html>""",title=title,body=body,nav=nav)
 def formwrap(x):return '<input type="hidden" name="csrf" value="'+token()+'">'+x
@@ -153,7 +154,59 @@ def manage():
  b='<h1>ניהול קהילה</h1><p>אימות השירות מתבצע על ידי מנהל הקהילה — לא על סמך פרטי ההרשמה בלבד.</p>'
  for r in rows:
   b+='<div class="card"><strong>'+esc(r["name"])+'</strong> • '+esc(r["email"])+'<p>'+esc(r["company"])+' '+esc(r["service_start"])+' | '+("מאושר" if r["approved"] else "ממתין")+'</p><form method="post">'+formwrap('<input type="hidden" name="uid" value="'+str(r["id"])+'"><button name="op" value="approve">אישור</button> <button name="op" value="hide">הסתרה</button>')+'</form></div>'
+ pending=sql("SELECT x.id,x.title,x.story,m.name FROM memories x JOIN members m ON m.id=x.author_id WHERE NOT x.approved ORDER BY x.created_at DESC LIMIT 100",fetch=True)
+ b+="<h2>אירועים הממתינים לאישור</h2>"
+ for x in pending:
+  b+='<div class="card"><strong>'+esc(x["title"])+'</strong><p>'+esc(x["story"])+'</p><small>'+esc(x["name"])+'</small><form method="post" action="/admin/memory">'+formwrap('<input name="mid" type="hidden" value="'+str(x["id"])+'"><button name="action" value="approve">פרסום</button><button name="action" value="delete">מחיקה</button>')+'</form></div>'
  return view("ניהול",b)
 @app.errorhandler(500)
 def error(e):return view("שגיאה","<p>אירעה תקלה זמנית. נסו שוב מאוחר יותר.</p>"),500
+
+sql("""CREATE TABLE IF NOT EXISTS memories(
+ id BIGSERIAL PRIMARY KEY, author_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
+ title TEXT NOT NULL, story TEXT NOT NULL, year INTEGER,
+ source_url TEXT NOT NULL DEFAULT '', approved BOOLEAN DEFAULT FALSE,
+ created_at TIMESTAMPTZ DEFAULT NOW())""")
+@app.route("/memories",methods=["GET","POST"])
+def memories():
+ u=me()
+ if request.method=="POST":
+  if not u or not u["approved"]:return redirect("/login")
+  guard()
+  title=request.form.get("title","").strip()[:140]
+  story=request.form.get("story","").strip()[:5000]
+  year=request.form.get("year","").strip()
+  url=request.form.get("source_url","").strip()[:500]
+  if not title or len(story)<10 or (year and (not year.isdigit() or not 1960<=int(year)<=2026)) or (url and not url.startswith(("https://","http://"))):abort(400)
+  sql("INSERT INTO memories(author_id,title,story,year,source_url) VALUES(%s,%s,%s,%s,%s)",(u["id"],title,story,int(year) if year else None,url))
+  return view("נשלח",'<div class="card">הסיפור נשלח לאישור מנהל. <a href="/memories">חזרה</a></div>')
+ rows=sql("SELECT x.*,m.name FROM memories x JOIN members m ON x.author_id=m.id WHERE x.approved ORDER BY x.year NULLS LAST, x.created_at DESC LIMIT 150",fetch=True)
+ b='<h1>הסיפורים שלנו</h1><p>ציר הזמן של הקרנפים / ברקן: זיכרונות, אירועים ואזכורים מהשירות.</p>'
+ if u and u["approved"]:
+  b+='<details class="card"><summary>➕ הוספת זיכרון או אירוע</summary><form method="post">'+formwrap(field("title","כותרת",required=True)+field("year","שנה","number")+'<label>מה קרה?<textarea name="story" required minlength="10" maxlength="5000"></textarea></label>'+field("source_url","קישור למקור פומבי (לא חובה)","url")+'<button>שליחה לאישור</button></form></details>'
+ for r in rows:
+  b+='<article class="card"><span class="tag">'+esc(r["year"] or "ללא שנה")+'</span><h2>'+esc(r["title"])+'</h2><p>'+esc(r["story"])+'</p><small>'+esc(r["name"])+'</small>'
+  if r["source_url"]:b+='<p><a target="_blank" rel="noopener noreferrer nofollow" href="'+esc(r["source_url"])+'">מקור חיצוני</a></p>'
+  b+='</article>'
+ return view("ציר זמן",b)
+@app.route("/discover")
+def discover():
+ u=me()
+ if not u or not u["approved"]:return redirect("/login")
+ from urllib.parse import quote
+ q=request.args.get("q","").strip()[:100]
+ terms=[q+' "גדוד 46"' if q else '"הקרנפים" "גדוד 46"','"פלוגה ב" "גדוד 46"','"ברקן" "גדוד 46"','"גדוד 46" "2006"']
+ b='<h1>מוצאים זיכרונות ברשת</h1><p>קישורי חיפוש במקורות פומביים בלבד. פרטים אישיים ותמונות של אחרים לא מועתקים ללא רשות.</p><form><input name="q" value="'+esc(q)+'" placeholder="שם, תאריך או אירוע"><button>חפש</button></form>'
+ for term in terms:b+='<div class="card"><a target="_blank" rel="noopener noreferrer" href="https://www.google.com/search?q='+quote(term)+'">'+esc(term)+'</a></div>'
+ b+='<p><a href="https://www.izkor.gov.il/">יזכור</a> · <a href="https://yadlashiryon.com/">יד לשריון</a></p>'
+ return view("איתור ארכיון",b)
+@app.route("/admin/memory",methods=["POST"])
+def memory_admin():
+ u=me()
+ if not admin(u):abort(403)
+ guard();mid=int(request.form.get("mid",0))
+ if request.form.get("action")=="approve":sql("UPDATE memories SET approved=TRUE WHERE id=%s",(mid,))
+ elif request.form.get("action")=="delete":sql("DELETE FROM memories WHERE id=%s",(mid,))
+ return redirect("/admin")
+
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)))
