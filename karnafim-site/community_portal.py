@@ -67,6 +67,9 @@ RECENT = [x for x in ARCHIVE if x["id"] in (1,2,3,4,5,6,7,8)]
 def install(app, sql, view, me, admin, guard, formwrap, esc):
     # Persistent metadata and compact binary storage for the free-tier pilot.
     sql("""ALTER TABLE requests ADD COLUMN IF NOT EXISTS accepted BOOLEAN NOT NULL DEFAULT FALSE""")
+    sql("""ALTER TABLE members ADD COLUMN IF NOT EXISTS facebook_url TEXT NOT NULL DEFAULT ''""")
+    sql("""ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_url TEXT NOT NULL DEFAULT ''""")
+    sql("""ALTER TABLE members ADD COLUMN IF NOT EXISTS linkedin_url TEXT NOT NULL DEFAULT ''""")
     sql("""CREATE TABLE IF NOT EXISTS community_posts (
       id BIGSERIAL PRIMARY KEY, author_id BIGINT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
       title TEXT NOT NULL, body TEXT NOT NULL, story_year INTEGER, approved BOOLEAN NOT NULL DEFAULT FALSE,
