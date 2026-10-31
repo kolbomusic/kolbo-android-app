@@ -138,6 +138,22 @@ def favicon():
  return Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#19372c"/><path fill="#d8eaa2" d="M14 17h13v30h-7V24h-6zm17 0h13v30h-7V24h-6zm17 0h6v30h-6z"/><path d="M8 51h48" stroke="#d8eaa2" stroke-width="3" stroke-linecap="round"/></svg>',mimetype="image/svg+xml",headers={"Cache-Control":"public, max-age=604800","X-Content-Type-Options":"nosniff"})
 @app.route("/health")
 def health():return {"ok":True,"service":"karnafim","access":("read_only" if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" else "community")}
+@app.route("/status")
+def public_status():
+ return view("מצב הקהילה",'<h1>מצב קהילת הקרנפים</h1><div class="card"><h2>המערכת פעילה</h2><p>ניתן לפתוח חשבון, להתחבר ולבקש אישור חברות. פרופילים ופרסומים פרטיים מוצגים רק לחברים מאושרים ועל פי הגדרות השיתוף.</p><p>כניסה באמצעות חשבון Google אינה מוגדרת בשלב זה. משתמשים נכנסים באמצעות דוא״ל וסיסמה.</p><p><a class="btn" href="/login">🔑 התחברות</a> <a class="btn secondary" href="/register">הרשמה</a></p></div>')
+
+@app.route("/about")
+def about_public():
+ return view("על הקהילה",'<h1>על הקרנפים | ברקן</h1><div class="card"><p>אתר מפגש עצמאי ליוצאי פלוגה ב׳, גדוד 46 ״שלח״, חטיבה 401, ובפרט מחזורי 2003–2006.</p><p>האתר אינו גורם רשמי של צה״ל ואינו מאמת אוטומטית זהות או שירות צבאי.</p></div>')
+
+@app.route("/privacy")
+def privacy_public():
+ return view("מדיניות פרטיות",'<h1>פרטיות בקהילה</h1><div class="card"><p>המערכת שומרת פרטי הרשמה, סיסמה במנגנון גיבוב, והודעות ותמונות שחברים בוחרים לשתף. האתר משתמש בעוגיית התחברות מאובטחת.</p><p>חברות מאושרת ידנית; פרטי קשר אינם מפורסמים במדריך כברירת מחדל. פרופיל מופיע רק כאשר החבר בחר להציגו. פרסומים אישיים זמינים לחברים מאושרים לאחר ביקורת מנהל.</p><p>אפשר לשנות את הגדרות החשיפה או למחוק את החשבון דרך <a href="/profile">הפרופיל שלי</a> לאחר כניסה. אין להעלות פרטים או תמונות של אחרים ללא אישור.</p></div>')
+
+@app.route("/safety")
+def safety_public():
+ return view("כללי בטיחות",'<h1>בטיחות ושיתוף אחראי</h1><div class="card"><p>יש להימנע ממספרים אישיים, פרטי קשר של אחרים ומידע רגיש על שירות צבאי.</p><p>תמונות וסיפורים עוברים אישור לפני פרסום. תמונה הנוגעת להנצחה נבדקת בנפרד לאישור מקור וזכויות שימוש. אישור תמונה אינו אימות אוטומטי של זהות המצולם.</p><p>אם הדפדפן מציג אזהרת אבטחה, אין לעקוף אותה או להזין פרטים עד בירור הבעיה.</p></div>')
+
 @app.route("/register",methods=["GET","POST"])
 def register():
  if request.method=="POST":
