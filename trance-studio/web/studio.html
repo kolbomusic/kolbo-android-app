@@ -18,6 +18,8 @@ input[type=range]{accent-color:#c77bea;cursor:pointer}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid>div{min-width:0}
 .pill{display:inline-block;background:#3f275d;padding:7px 11px;border-radius:20px;color:#dfb6ff;font-size:13px}
 button{border:0;border-radius:13px;min-height:52px;padding:10px 20px;color:#120620;font-weight:800;background:linear-gradient(110deg,#d68eff,#8da7ff);cursor:pointer}
+.advanced{margin-top:16px;border-top:1px solid #50406d;padding-top:13px}
+.advanced summary{cursor:pointer;color:#dcb7fd;font-weight:700;list-style:revert;margin-bottom:10px}
 button:disabled{opacity:.6;cursor:not-allowed}button.secondary{background:#37294e;color:#f3e8ff;border:1px solid #8a76ae}
 .actions{display:flex;gap:10px;flex-wrap:wrap}.actions>*{flex:1}
 #status{padding:14px 0;color:#e5d6fc;min-height:25px}progress{width:100%;height:16px;accent-color:#c47aff;border-radius:10px}
@@ -31,7 +33,28 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <section class="panel"><h2>01 / ההקלטות שלך</h2>
 <label for="audio">הוסף עד 4 הודעות קוליות</label><input id="audio" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div></section>
-<section class="panel"><h2>02 / עיצוב המיקס</h2>
+<section class="panel"><h2>02 / האפקטים על הקול שלך</h2>
+<label for="humor">אפקטים על קול ההקלטה מ־WhatsApp (לא על המוזיקה)</label><select id="humor">
+<option value="auto" selected>אוטומטי — מעבד את הקול עצמו לאורך כל ההקלטה</option>
+<option value="dj">DJ רטרו — חיתוך באמצע מילה, רול ודרופ</option>
+<option value="glitch">רולים שבורים וסטאטרים בקצב</option>
+<option value="stretch">מתיחת הברות ומשיכת קול</option>
+<option value="pitch">טונים עולים ויורדים, קול נמוך וגבוה</option>
+<option value="tape">Tape Stop — האטה ועצירת טייפ</option>
+<option value="scratch">סקראצ׳ וסיבוב אחורה</option>
+<option value="vinyl">Vinyl — עיוות וגרעיניות של שנות ה־90</option>
+<option value="classic">סטאטר קלאסי, חזרות והדגשות</option>
+<option value="cartoon">קולות מצוירים וגבוה/נמוך</option>
+<option value="robot">קול רובוטי ואפקט דיגיטלי</option>
+<option value="chaos">מסיבה פרועה — יותר חיתוכים ואפקטים</option>
+<option value="off">ללא הומור — מוזיקה וקול בלבד</option></select>
+<label for="fx_intensity">תדירות קטעי הקול המעובדים — <output id="fxText">גבוהה</output></label>
+<input id="fx_intensity" type="range" min="1" max="3" value="3" step="1">
+<small>1 — מדי פעם · 2 — רגיל · 3 — כמה שיותר במהלך הדיבור</small>
+<label for="fx_gain">עוצמת האפקטים ביחס לקול המקורי — <output id="fxGainText">115%</output></label>
+<input id="fx_gain" type="range" min="55" max="170" value="115" step="5">
+<small>האפקטים מושמעים בנפרד ובעוצמה מורגשת. אין קול כפול בזמן משפט.</small>
+<details class="advanced"><summary>הגדרות מוזיקה מתקדמות (לא חובה)</summary>
 <div class="grid">
 <div><label for="style">סוג הטראנס</label><select id="style">
 <option value="mixed" selected>מיקס חכם — שילוב כל הסגנונות</option>
@@ -53,20 +76,7 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <option value="5">וריאציה 5 — קבועה</option><option value="6">וריאציה 6 — קבועה</option>
 <option value="7">וריאציה 7 — קבועה</option><option value="8">וריאציה 8 — קבועה</option>
 </select><small>עם אותה הודעת WhatsApp ניתן להפיק כמה מיקסים עם לחנים וסינתיסייזרים שונים.</small></div>
-<div><label for="humor">אפקטים על קול ההקלטה מ־WhatsApp (לא על המוזיקה)</label><select id="humor">
-<option value="auto" selected>אוטומטי — מעבד את הקול עצמו לאורך כל ההקלטה</option>
-<option value="dj">DJ רטרו — חיתוך באמצע מילה, רול ודרופ</option>
-<option value="glitch">רולים שבורים וסטאטרים בקצב</option>
-<option value="stretch">מתיחת הברות ומשיכת קול</option>
-<option value="pitch">טונים עולים ויורדים, קול נמוך וגבוה</option>
-<option value="tape">Tape Stop — האטה ועצירת טייפ</option>
-<option value="scratch">סקראצ׳ וסיבוב אחורה</option>
-<option value="vinyl">Vinyl — עיוות וגרעיניות של שנות ה־90</option>
-<option value="classic">סטאטר קלאסי, חזרות והדגשות</option>
-<option value="cartoon">קולות מצוירים וגבוה/נמוך</option>
-<option value="robot">קול רובוטי ואפקט דיגיטלי</option>
-<option value="chaos">מסיבה פרועה — יותר חיתוכים ואפקטים</option>
-<option value="off">ללא הומור — מוזיקה וקול בלבד</option></select></div>
+
 <div><label for="length">משך המיקס</label><select id="length">
 <option value="0" selected>אוטומטי לפי אורך ההקלטות</option>
 <option value="30">לפחות 30 שניות</option><option value="60">לפחות דקה</option>
@@ -76,12 +86,11 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 </div>
 <label for="bpm">מהירות הקצב — <output id="bpmText">145</output> BPM</label>
 <input id="bpm" type="range" min="120" max="165" value="145" step="1">
-<label for="fx_intensity">עוצמת טריקים וחיתוכים — <output id="fxText">מאוזנת</output></label>
-<input id="fx_intensity" type="range" min="1" max="3" value="2" step="1">
-<small>1 — מעט הפתעות · 2 — מאוזן · 3 — DJ משוגע עם יותר מתיחות ורולים</small>
 <label for="voice">עוצמת הדיבור — <output id="voiceText">100%</output></label>
 <input id="voice" type="range" min="50" max="150" value="100" step="5">
-<p class="hint">**קול ההקלטה עצמו** עובר מתיחות, שינויי גובה, רולים, סקראצ׳ים ועיוותים במהלך הדיבור — לא המוזיקה. כל המשפטים המקוריים נשארים בציר ההקלטה, והמלודיה והכלים משתנים במהלך המיקס.</p>
+
+</details>
+<p class="hint">כל הדיבור המקורי נשמר לפי הסדר. רול, מתיחה או סקראצ׳ של קול ה־WhatsApp מושמעים במעבר נפרד, ולא על גבי משפט אחר. המנגינה ממשיכה להתפתח ברקע.</p>
 </section>
 <section class="panel"><h2>03 / יוצרים ומנגנים</h2>
 <div class="actions"><button id="generate">✦ יצירת מיקס משולב חכם</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
@@ -112,7 +121,8 @@ window.kolboImportSharedAudio=function(items){setFiles(items);message('ההקל�
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
 $('voice').oninput=function(){$('voiceText').textContent=this.value+'%'};
-$('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'עדינה','2':'מאוזנת','3':'משוגעת'})[this.value]};
+$('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'נמוכה','2':'רגילה','3':'גבוהה'})[this.value]};
+$('fx_gain').oninput=function(){$('fxGainText').textContent=this.value+'%'};
 function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
 async function run(){
 if(active)return;
@@ -127,7 +137,7 @@ form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
 var variation=$('variation').value;
 form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99999)):variation);
-form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('voice_level',String(Number($('voice').value)/100));
+form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('fx_gain',String(Number($('fx_gain').value)/100));form.set('voice_level',String(Number($('voice').value)/100));
 var r=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
 var data=await r.json();if(!r.ok)throw new Error(data.error||'לא ניתן לשלוח את ההקלטה');
 for(var attempt=0;attempt<600;attempt++){
