@@ -26,7 +26,7 @@ HEBREW={
 }
 LABELS={'car':'בדרך','home':'בבית','water':'מים ותנועה','animal':'חיות',
         'food':'זמן לאכול','love':'אהבה','music':'המסיבה מתחילה',
-        'money':'עסקים','sport':'אקשן','party':'טראנס וקול'}
+        'money':'עסקים','sport':'אקשן','party':'טראנס וקול','speech':'מספרים סיפור'}
 def storyboard(transcript, duration, max_scenes=10):
     """Split an actual Hebrew transcript into grounded scene directions.
 
@@ -53,7 +53,7 @@ def storyboard(transcript, duration, max_scenes=10):
         matches={}
         for kind,words in HEBREW.items():
             matches[kind]=sum(1 for word in words if word in sentence)
-        kind=max(matches,key=matches.get) if max(matches.values())>0 else 'party'
+        kind=max(matches,key=matches.get) if max(matches.values())>0 else 'speech'
         scenes.append({'start':round(time,2),'end':round(end,2),'kind':kind,
                        'caption':sentence[:100],'basis':'provided_transcript'})
         time=end
@@ -153,6 +153,13 @@ def _scene_props(d,kind,t,energy):
         cy=int(440-abs(math.sin(t*4))*115)
         _circle(d,(cx,cy),28,(243,244,255),outline=(43,58,93),width=4)
         _circle(d,(cx,cy),11,(38,56,98))
+    elif kind=='speech':
+        # Unclassified statements remain spoken dialogue, not an invented
+        # dance scene. The exact transcript is displayed in the caption.
+        d.rounded_rectangle((58,385,302,473),radius=24,fill=(72,56,135))
+        d.polygon(((124,468),(109,487),(145,468)),fill=(72,56,135))
+        for j in range(3):
+            _circle(d,(132+j*46,432+5*math.sin(t*2+j)),8,(237,220,255))
     else:
         for j in range(4):
             x=42+j*83
