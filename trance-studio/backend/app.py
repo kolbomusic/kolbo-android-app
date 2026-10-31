@@ -73,10 +73,9 @@ def create_app(config=None):
                         # A clip must depict every uttered event; do not hide
                         # unsupported sentences beneath footage from another
                         # sentence. Never swap to a waveform or cartoons.
-                        if board.get('visual_coverage')!='matched':
-                            raise UnavailableVideo(
-                                'חלק מהמשפטים אינם ניתנים להמחשה בצילום תואם. '
-                                'לא ייווצר סרטון שאינו מציג את מה שנאמר.')
+                        # Continue preparing source footage even if there are
+                        # unmatched phrases. Real video may still illustrate
+                        # recognized scenes; coverage must be openly partial.
                         board=align_storyboard_to_vocal(board,vocal,sr=32000)
                         video_path=root/job_id/'story.mp4'
                         sources=export_live_story(root/job_id/'mix.mp3',video_path,
@@ -90,9 +89,14 @@ def create_app(config=None):
                         meta={'video_status':'done','video_mode':'matched_footage',
                               'storyboard_source':board['source'],
                               'transcript_origin':board['transcript_origin'],
-                              'visual_coverage':'matched',
-                              'visual_beats':board.get('visual_beats',0),
-                              'unmatched_clauses':0}
+                              'visual_coverage':board.get('visual_coverage','partial'),
+                              'visual_beats':len(sources),
+                              'unmatched_clauses':board.get('unmatched_clauses',0),
+                              'video_note':(
+                                  'זהו סרטון מצולם של אירועים שזוהו בהקלטה. '
+                                  'בחלק מהמשפטים לא נמצאה המחשה מדויקת.'
+                                  if board.get('visual_coverage')=='partial'
+                                  else 'הצילומים נבחרו לפי האירועים שזוהו בדיבור המקורי.')}
                     except UnavailableVideo as err:
                         (root/job_id/'story.mp4').unlink(missing_ok=True)
                         meta={'video_status':'unavailable',
@@ -146,7 +150,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.12.0',cloud_ready=bool(app.config['API_TOKEN']))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.13.0',cloud_ready=bool(app.config['API_TOKEN']))
 
     @app.post('/api/jobs')
     def create_job():
