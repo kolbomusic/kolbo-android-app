@@ -89,7 +89,7 @@ JS = r"""<script id="karnafim-accessibility-js">
 })();
 </script>"""
 
-def integrate_html(markup: str, scripts_allowed: bool = True) -> str:
+def integrate_html(markup: str, scripts_allowed: bool = True, toolbar_enabled: bool = True) -> str:
     """Add controls to a complete HTML document; skip duplicate injection."""
     if 'id="karnafim-accessibility-css"' in markup:
         return markup
@@ -100,10 +100,40 @@ def integrate_html(markup: str, scripts_allowed: bool = True) -> str:
         markup=markup.replace("<main>","<main id=\"main-content\" tabindex=\"-1\">",1)
     elif "<main " in markup and 'id="main-content"' not in markup:
         markup=markup.replace("<main ","<main id=\"main-content\" tabindex=\"-1\" ",1)
-    if "<header>" in markup:
-        markup=markup.replace("</header>","</header>"+TOOLBAR,1)
-    elif "<main " in markup:
-        markup=markup.replace("<main ",TOOLBAR+"<main ",1)
+    if toolbar_enabled:
+        if "<header>" in markup:
+            markup=markup.replace("</header>","</header>"+TOOLBAR,1)
+        elif "<main " in markup:
+            markup=markup.replace("<main ",TOOLBAR+"<main ",1)
     if scripts_allowed:
         markup=markup.replace("</body>",JS+"</body>",1)
     return markup
+
+def accessibility_statement_body(read_only: bool = False) -> str:
+    mode = (
+        '<p><strong>מצב אבטחה מוגבל:</strong> האתר מציג כרגע מידע ציבורי בלבד. '
+        'כניסה לחשבונות, שליחת טפסים והעלאת קבצים עשויות להיות מושבתות עד לסיום בדיקת אבטחה.</p>'
+        if read_only else ''
+    )
+    return ('''<section class="access-statement" aria-labelledby="access-title">
+<h1 id="access-title">♿ נגישות אתר הקרנפים | ברקן</h1>
+<p>מטרת האתר לאפשר גם למשתמשים עם מוגבלויות להשתמש בו בצורה נוחה ועצמאית. האתר ממשיך לעבור שיפורי נגישות, ולא הושלם עבורו עדיין סקר נגישות חיצוני מקיף.</p>'''
+        +mode+'''<h2>התאמות שבוצעו בקוד</h2>
+<ul>
+<li>כיווניות ימין לשמאל ושפה עברית בעמודים הראשיים.</li>
+<li>קישור מקלדת לדילוג ישיר לתוכן; כותרות, קישורים וטפסים סמנטיים.</li>
+<li>סימון מיקוד ברור למשתמשי מקלדת.</li>
+<li>כלים להגדלת טקסט, להגברת ניגודיות, לריווח טקסט ולהפחתת תנועה באזורי הקהילה הפעילים.</li>
+<li>תמיכה בפריסת נייד ותיאורי תמונות במקומות שבהם התוכן ידוע.</li>
+<li>דרישה לבדיקת קבצים ופרסומים לפני חשיפה לקהילה.</li>
+</ul>
+<h2>דרכי שימוש נגישות</h2>
+<p>ניתן לעבור בין קישורים וכפתורים באמצעות Tab, להפעיל לחצנים באמצעות Enter או רווח, ולחזור לאחור באמצעות Shift+Tab. בתחילת כל עמוד ניתן להגיע באמצעות מקלדת לקישור "דילוג לתוכן הראשי".</p>
+<p>אפשר להיעזר גם בהגדלת הדפדפן עם Ctrl+Plus או בתכונות הנגישות המובנות בטלפון ובמערכת ההפעלה.</p>
+<h2>מה עדיין דורש בדיקה ושיפור</h2>
+<p>לא בוצעה עדיין בדיקת תאימות מקיפה מול כל דרישות ת״י 5568 ו־WCAG ברמה AA. כמו כן, כתוביות ותמלול לכל סרטוני או הקלטות החברים אינם זמינים אוטומטית, ותכני משתמשים עשויים להצריך תיאור חלופי או תיקון נגישות.</p>
+<h2>בקשות לסיוע ודיווח על תקלה</h2>
+<p>במהלך הפעלת הקהילה אפשר לפנות למנהל באמצעות מנגנוני הפנייה באתר. אם מתגלה מחסום נגישות בזמן שהאתר במצב תחזוקה, ניתן לשמור את פירוט התקלה ולהעביר אותו למנהל כאשר אפשרויות הקשר יחזרו לפעילות.</p>
+<p>אין למסור סיסמאות, מספרים אישיים או פרטי בריאות בתוך פנייה.</p>
+<p><a href="/">חזרה לדף הבית</a></p>
+</section>''')
