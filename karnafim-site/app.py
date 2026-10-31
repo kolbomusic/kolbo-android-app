@@ -261,7 +261,7 @@ def directory():
    if r[key]:x+='<a style="margin-left:12px" href="'+esc(r[key])+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>'
   return x+'</div>'
  cards=''.join(card_for(r) for r in records)
- body='<h1>חברי הפלוגה</h1><p>חברים מאושרים שבחרו להופיע. קישור לרשת חברתית מוצג רק אם בעל הפרופיל הוסיף אותו מרצונו.</p><form method="get"><input name="q" value="'+esc(term)+'" placeholder="שם או כינוי מהשירות"><button>חיפוש</button></form><div class="grid">'+(cards or '<div class="card"><h2>אתם הראשונים!</h2><p>החברים עוד לא בחרו להופיע במדריך. בינתיים נסו חיפוש ברשתות או הזמינו חבר מהמחזור.</p><a href="/find">איתור ברשתות</a> · <a href="/invite">הזמנת חברים</a></div>')+'</div>'
+ body='<h1>חברי הפלוגה</h1><p>חברים מאושרים שבחרו להופיע. קישור לרשת חברתית מוצג רק אם בעל הפרופיל הוסיף אותו מרצונו.</p><form method="get"><label for="directory-search">חיפוש חבר לפי שם או כינוי</label><input id="directory-search" name="q" value="'+esc(term)+'" placeholder="שם או כינוי מהשירות"><button>חיפוש</button></form><div class="grid">'+(cards or '<div class="card"><h2>אתם הראשונים!</h2><p>החברים עוד לא בחרו להופיע במדריך. בינתיים נסו חיפוש ברשתות או הזמינו חבר מהמחזור.</p><a href="/find">איתור ברשתות</a> · <a href="/invite">הזמנת חברים</a></div>')+'</div>'
  return view("מדריך חברים",body)
 
 def social_link(value,site):
