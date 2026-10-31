@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 
 ROOT=Path(__file__).resolve().parent
 URL="https://karnafim-community-46.onrender.com"
-VALID=["/","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
+VALID=["/","/photos","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
 BLOCKED=["/login","/register","/profile","/password","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
 def fetch(path):
     try:
@@ -36,6 +36,9 @@ def live():
         ok=status==200 and landed.startswith(URL) and "<form" not in body.lower() and "<script" not in body.lower()
         if route=="/":
             ok=ok and "החברות נשארה" in body
+            ok=ok and 'href="/photos"' in body
+        if route=="/photos":
+            ok=ok and body.count('upload.wikimedia.org')>=3 and "Wikimedia Commons" in body
         if route.startswith("/memorial/"):ok=ok and "לזכר" in body
         if route.startswith("/source/"):ok=ok and "מה ידוע מהתיעוד" in body
         if "form-action 'none'" not in headers.get("Content-Security-Policy",""):ok=False
