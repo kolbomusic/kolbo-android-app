@@ -35,11 +35,72 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(all(x['caption']=='' for x in plan['scenes']))
         self.assertEqual(plan['scenes'][-1]['end'],8.)
 
-    def test_unsupported_scene_rejected_not_replaced_with_dancing(self):
+    def test_unknown_transcript_cannot_invent_visual_story(self):
         with self.assertRaises(UnavailableVideo):
             visual_plan('אני לא יודע איך להסביר מה קרה.',20)
-        with self.assertRaises(UnavailableVideo):
-            visual_plan('אני נוסע באוטו. אחר כך משהו מסתורי קרה.',20)
+
+    def test_unknown_clauses_do_not_abort_known_action_video(self):
+        plan=visual_plan('אני נוסע באוטו. אחר כך משהו מסתורי קרה.',20)
+        self.assertEqual(len(plan['scenes']),1)
+        self.assertEqual(plan['scenes'][0]['action'],'car_drive')
+        self.assertEqual(plan['scenes'][0]['end'],20)
+        self.assertEqual(plan['unmatched_clauses'],1)
+        self.assertEqual(plan['visual_coverage'],'partial')
+        self.assertIn('משהו מסתורי',plan['scenes'][0]['spoken'])
+
+    def test_long_recording_more_than_five_events_is_supported(self):
+        transcript='.'.join([
+            'החמור נוער','אני נוסע באוטו','הלכתי לים',
+            'אכלתי פיצה','גשם יורד','כולם רוקדים במסיבה',
+            'החמור נוער','אני נוסע באוטו'])+'.'
+        plan=visual_plan(transcript,49)
+        self.assertEqual(plan['total_clauses'],8)
+        self.assertEqual(plan['recognized_action_beats'],8)
+        self.assertEqual(len(plan['scenes']),8)
+        self.assertEqual(plan['scenes'][0]['action'],'donkey_bray')
+        self.assertEqual(plan['scenes'][-1]['action'],'car_drive')
+        self.assertAlmostEqual(plan['scenes'][-1]['end'],49)
+        self.assertEqual(plan['transcript'],transcript)
+        self.assertTrue(all(s['end']>s['start'] for s in plan['scenes']))
+
+    def test_many_events_are_bounded_without_rejecting_entire_story(self):
+        transcript='.'.join(['החמור נוער' if i%2==0 else 'אני נוסע באוטו'
+                              for i in range(36)])
+        plan=visual_plan(transcript,120)
+        self.assertEqual(plan['total_clauses'],36)
+        self.assertEqual(plan['recognized_action_beats'],36)
+        self.assertEqual(plan['visual_beats'],18)
+        self.assertEqual(plan['visual_coverage'],'partial')
+        self.assertEqual(plan['transcript'],transcript)
+        self.assertAlmostEqual(plan['scenes'][-1]['end'],120)
+        self.assertTrue(all(s['end']>s['start'] for s in plan['scenes']))
+
+    def test_repeated_media_query_downloaded_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=pathlib.Path(tmp)
+            audio=root/'mix.mp3'
+            subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi',
+                            '-i','sine=frequency=240:duration=3.6',
+                            '-c:a','libmp3lame',str(audio)],check=True)
+            plan=visual_plan('החמור נוער. אני נוסע באוטו. החמור נוער.',3.6)
+            counts={'search':0,'download':0}
+            def find(query):
+                counts['search']+=1
+                return [{'url':'https://upload.wikimedia.org/example.webm',
+                         'title':'File:Example.webm','bytes':100000,'license':'CC0',
+                         'page':'https://commons.wikimedia.org/wiki/File:Example.webm'}]
+            def download(item,dest):
+                counts['download']+=1
+                subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi',
+                                '-i','testsrc=size=320x180:rate=15:duration=4',
+                                '-c:v','libvpx-vp9','-b:v','100k',str(dest)],
+                               check=True,timeout=25)
+            out=root/'story.mp4'
+            sources=export_live_story(audio,out,plan,root/'assets',search=find,download=download)
+            self.assertEqual(len(sources),3)
+            self.assertEqual(counts['search'],2)
+            self.assertEqual(counts['download'],2)
+            self.assertGreater(out.stat().st_size,10000)
 
     def test_strict_license_and_descriptive_title(self):
         self.assertFalse(_matches_metadata('File:Car driving.webm','donkey braying'))
