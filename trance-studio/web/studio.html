@@ -81,7 +81,13 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <div id="status" role="status" aria-live="polite">מוכן להקלטה שלך.</div>
 <progress id="progress" max="100" value="0" hidden></progress>
 </section>
-<section class="panel" id="result"><h2>✓ המיקס מוכן!</h2><audio controls id="player" preload="metadata"></audio>
+<section class="panel" id="result"><h2>✓ המיקס מוכן!</h2>
+<label for="player">1. הטראנס הסופי — קול + מוזיקה</label>
+<audio controls id="player" preload="metadata"></audio>
+<label for="voicePreview">2. הקול שלך בלבד, עם האפקטים (ללא מוזיקת רקע)</label>
+<audio controls id="voicePreview" preload="metadata"></audio>
+<label for="originalPreview">3. ההקלטה המקורית מ־WhatsApp (הקובץ הראשון)</label>
+<audio controls id="originalPreview" preload="metadata"></audio>
 <p id="summary" class="hint"></p>
 <div class="actions"><button id="download">הורדת MP3</button><button id="share" class="secondary">שיתוף ל־WhatsApp ולאפליקציות</button></div></section>
 <div class="foot">KOLBO TRANCE STUDIO · ללא מנוי · לשימוש אישי · עיבוד בענן · שמירת הקובץ עד שעה</div>
@@ -90,7 +96,7 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 (function(){
 'use strict';
 var $=function(id){return document.getElementById(id)};
-var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null;
+var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null,voiceUrl='',originalUrl='';
 var active=false;
 function message(txt){$('status').textContent=txt}
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות מהמכשיר או מתוך WhatsApp'}
@@ -126,9 +132,16 @@ if(j.state==='done'){
 var mp3=await fetch(j.download_url,{credentials:'same-origin'});
 if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד אותו.');
 if(resultUrl)URL.revokeObjectURL(resultUrl);
+if(voiceUrl)URL.revokeObjectURL(voiceUrl);
+if(originalUrl)URL.revokeObjectURL(originalUrl);
 resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);resultServerUrl=j.download_url;
+if(j.voice_url){
+  var voiceResponse=await fetch(j.voice_url,{credentials:'same-origin'});
+  if(voiceResponse.ok){voiceUrl=URL.createObjectURL(await voiceResponse.blob());$('voicePreview').src=voiceUrl;}
+}
+if(files.length){originalUrl=URL.createObjectURL(files[0]);$('originalPreview').src=originalUrl;}
 $('player').src=resultUrl;$('result').classList.add('visible');
-$('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות · ההקלטות שולבו לפי הסדר · הומור: '+$('humor').selectedOptions[0].textContent;
+$('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות · אפשר להשוות את הקול המקורי לקול המעובד ללא מוזיקה · הומור: '+$('humor').selectedOptions[0].textContent;
 message('הצליח! המיקס מוכן להשמעה ולשיתוף.');$('result').scrollIntoView({behavior:'smooth'});
 return;
 }
