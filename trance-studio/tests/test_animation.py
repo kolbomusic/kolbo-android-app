@@ -1,5 +1,6 @@
 """Production story tests: video must not be unrelated cartoons or captions."""
 import io
+import hashlib
 import pathlib
 import sys
 import tempfile
@@ -40,10 +41,35 @@ class ProductionStoryTests(unittest.TestCase):
                 if state.get('state') in ('done','error'):break
                 time.sleep(.25)
             self.assertEqual(state['state'],'done',state)
-            self.assertEqual(state['video_status'],'unavailable')
-            self.assertEqual(state['storyboard_source'],'automatic_transcription_failed')
-            self.assertNotIn('video_url',state)
+            self.assertEqual(state['video_status'],'done',state)
+            self.assertEqual(state['storyboard_source'],'original_voice_reactive')
+            self.assertEqual(state['video_mode'],'voice_reactive')
+            self.assertEqual(state['visual_coverage'],'voice_only')
+            self.assertIn('video_url',state)
+            self.assertEqual(client.get(state['video_url']).status_code,200)
             self.assertEqual(client.get(state['download_url']).status_code,200)
+
+    def test_original_source_fingerprint_detects_mismatched_upload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test-only'})
+            client=app.test_client()
+            response=client.post('/api/jobs',data={
+                'audio':(self.wave(),'source.wav'),'make_video':'off',
+                'source_hashes':'0'*64})
+            self.assertEqual(response.status_code,409,response.get_json())
+            self.assertIn('המקור',response.get_json()['error'])
+            self.assertFalse(any(pathlib.Path(directory).iterdir()))
+
+    def test_original_source_fingerprint_accepted_for_identical_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test-only'})
+            client=app.test_client()
+            source=self.wave(); data=source.read()
+            response=client.post('/api/jobs',data={
+                'audio':(io.BytesIO(data),'source.wav'),
+                'source_hashes':hashlib.sha256(data).hexdigest(),
+                'make_video':'off','seconds':'30'})
+            self.assertEqual(response.status_code,202,response.get_json())
 
     def test_no_video_without_original_speech_transcript(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -71,9 +97,11 @@ class ProductionStoryTests(unittest.TestCase):
                     if state.get('state') in ('done','error'):break
                     time.sleep(.25)
             self.assertEqual(state['state'],'done',state)
-            self.assertEqual(state['video_status'],'unavailable')
-            self.assertEqual(state['storyboard_source'],'no_unrelated_video')
-            self.assertNotIn('video_url',state)
+            self.assertEqual(state['video_status'],'done',state)
+            self.assertEqual(state['storyboard_source'],'original_voice_reactive')
+            self.assertEqual(state['video_mode'],'voice_reactive')
+            self.assertEqual(state['visual_coverage'],'voice_only')
+            self.assertIn('video_url',state)
             self.assertEqual(client.get(state['download_url']).status_code,200)
 
     def test_dense_speech_alignment_never_overflows_video_length(self):
