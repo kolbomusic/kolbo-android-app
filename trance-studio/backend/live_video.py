@@ -368,6 +368,23 @@ def _make_segment(src,output,length):
              "-movflags","+faststart",str(output)]
     subprocess.run(command,capture_output=True,check=True,timeout=30)
 
+# When an exact action clip cannot be found, an explicitly named
+# physical subject may still be shown as relevant footage. This is thematic
+# matching only, NEVER a claim that the subject visibly performed the verb.
+# The user interface must report this downgraded visual coverage.
+SUBJECT_FALLBACK_QUERIES={
+    "donkey_bray":"donkey",
+    "dog_bark":"dog",
+    "cat_eat":"cat",
+    "car_drive":"car",
+    "truck_drive":"truck",
+    "horse_run":"horse",
+    "farmer_feed":"farmer",
+    "pizza_eat":"pizza",
+    "rain":"rain",
+    "beach_walk":"beach",
+}
+
 def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
                       search=commons_candidates,download=download_video):
     scenes=plan["scenes"]
@@ -387,31 +404,43 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
         if query not in cached:
             selected=None
             source=work/f"source-{len(cached)}.webm"
-            try:
-                choices=search(query)
-            except Exception:
-                choices=[]
-            for item in choices[:4]:
+            match_level="exact_action"
+            queries=[query]
+            fallback=SUBJECT_FALLBACK_QUERIES.get(scene["action"])
+            if fallback and fallback!=query:
+                queries.append(fallback)
+            for candidate_query in queries:
                 try:
-                    download(item,source)
-                    if _duration(source)>=.7:
-                        selected=item
-                        break
-                except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
-                    continue
-            cached[query]=(source,selected)
-        source,selected=cached[query]
+                    choices=search(candidate_query)
+                except Exception:
+                    choices=[]
+                for item in choices[:4]:
+                    try:
+                        download(item,source)
+                        if _duration(source)>=.7:
+                            selected=item
+                            match_level=("exact_action" if candidate_query==query
+                                         else "explicit_subject_only")
+                            break
+                    except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
+                        continue
+                if selected is not None:break
+            cached[query]=(source,selected,match_level)
+        source,selected,match_level=cached[query]
         if selected is None:
             missing.append({"action":scene["action"],"spoken":scene.get("spoken","")[:180]})
             continue
-        prepared.append((scene,source,selected))
+        if match_level=="explicit_subject_only":
+            plan["visual_coverage"]="partial"
+            plan.setdefault("thematic_clips",[]).append(scene["action"])
+        prepared.append((scene,source,selected,match_level))
     if not prepared:
         raise UnavailableVideo(
             "חיפשתי צילומים לכל הפעולות שזוהו, אבל לא נמצא אף קטע וידאו מורשה שתואם להן.")
     sources=[]
     audio_duration=float(scenes[-1]["end"])
-    matched_seconds=sum(max(.1,scene["end"]-scene["start"]) for scene,_,_ in prepared)
-    for i,(scene,source,selected) in enumerate(prepared):
+    matched_seconds=sum(max(.1,scene["end"]-scene["start"]) for scene,_,_,_ in prepared)
+    for i,(scene,source,selected,match_level) in enumerate(prepared):
         # Preserve the entire audio; extend only known matching footage for
         # unsupported phrases. The API/UI explicitly disclose partial visual
         # coverage, never claim every utterance was depicted.
@@ -419,7 +448,8 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
         segment=work/f"scene-{i}.mp4"
         _make_segment(source,segment,max(.6,length))
         sources.append({"action":scene["action"],"file":str(segment),
-                        "page":selected["page"],"license":selected["license"]})
+                        "page":selected["page"],"license":selected["license"],
+                        "match_level":match_level})
     plan["missing_footage"]=missing
     if missing:
         plan["visual_coverage"]="partial"
