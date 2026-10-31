@@ -126,8 +126,9 @@ def _valid_license(metadata):
     license_code=str(values.get("LicenseShortName",{}).get("value","")).lower()
     # Only unambiguously reusable CC0 / public domain / CC-BY / CC-BY-SA.
     return (license_code in {"cc0","public domain","pd","cc by 4.0",
-             "cc by-sa 4.0","cc by 3.0","cc by-sa 3.0",
-             "cc-by-4.0","cc-by-sa-4.0","cc-by-3.0","cc-by-sa-3.0"})
+             "cc by-sa 4.0","cc by 3.0","cc by-sa 3.0","cc by 2.0",
+             "cc by-sa 2.0","cc-by-4.0","cc-by-sa-4.0",
+             "cc-by-3.0","cc-by-sa-3.0","cc-by-2.0","cc-by-sa-2.0"})
 
 def _matches_metadata(title,query):
     title=title.lower().replace("_"," ").replace("-"," ")
@@ -138,34 +139,55 @@ def _matches_metadata(title,query):
                "wrong side","wrong way")
     if any(x in title for x in forbidden):return False
     keywords=query.lower().split()
-    # Require main physical actor in the file title, not just a search-snippet.
-    main=keywords[0]
-    return main in title and any(term in title for term in keywords[1:])
+    # Preserve the actor and the action without depending on word order
+    # or inflection ("braying donkey" is valid for "donkey braying").
+    aliases={"braying":("braying","bray","brays","brayed"),
+             "driving":("driving","drives","drive"),
+             "dancing":("dancing","dance","dances"),
+             "falling":("falling","falls","fall"),
+             "eating":("eating","eats","eat"),
+             "walking":("walking","walks","walk"),
+             "barking":("barking","barks","bark"),
+             "feeding":("feeding","feeds","feed"),
+             "swimming":("swimming","swims","swim")}
+    return all(any(word in title for word in aliases.get(token,(token,)))
+               for token in keywords)
 
 def commons_candidates(query):
-    data=_json_api({"action":"query","generator":"search","gsrsearch":
-                    'filetype:video '+query,
-                    "gsrnamespace":6,"gsrlimit":15,
-                    "prop":"imageinfo","iiprop":"url|mime|size|extmetadata",
-                    "format":"json","formatversion":2})
-    pages=data.get("query",{}).get("pages",[])
+    # A narrow, title-validated search is deliberately preferred over generic
+    # relevant-looking footage that does not show the *spoken action*.
+    terms=query.lower().split()
+    searches=[query]
+    if len(terms)==2:
+        searches.append(" ".join(reversed(terms)))
+    if query=="donkey braying":
+        searches.append("braying donkey")
     matches=[]
-    for page in pages:
-        if not _matches_metadata(page.get("title",""),query):continue
-        info=(page.get("imageinfo") or [{}])[0]
-        mime=str(info.get("mime",""))
-        size=int(info.get("size",0))
-        url=str(info.get("url",""))
-        if mime not in ("video/webm","video/ogg","application/ogg"):continue
-        if size<10000 or size>MAX_BYTES:continue
-        if not _valid_license(info.get("extmetadata",{})):continue
-        parsed=urllib.parse.urlparse(url)
-        if parsed.scheme!="https" or parsed.netloc not in (
-            "upload.wikimedia.org","commons.wikimedia.org"):continue
-        matches.append({"url":url,"title":page["title"],"bytes":size,
-                        "page":"https://commons.wikimedia.org/wiki/"+
-                            urllib.parse.quote(page["title"].replace(" ","_")),
-                        "license":info["extmetadata"].get("LicenseShortName",{}).get("value","")})
+    seen=set()
+    for search_text in dict.fromkeys(searches):
+        data=_json_api({"action":"query","generator":"search",
+                        "gsrsearch":'filetype:video '+search_text,
+                        "gsrnamespace":6,"gsrlimit":30,
+                        "prop":"imageinfo","iiprop":"url|mime|size|extmetadata",
+                        "format":"json","formatversion":2})
+        for page in data.get("query",{}).get("pages",[]):
+            if not _matches_metadata(page.get("title",""),query):continue
+            info=(page.get("imageinfo") or [{}])[0]
+            mime=str(info.get("mime",""))
+            size=int(info.get("size",0))
+            url=str(info.get("url",""))
+            if mime not in ("video/webm","video/ogg","application/ogg"):continue
+            if size<10000 or size>MAX_BYTES:continue
+            if not _valid_license(info.get("extmetadata",{})):continue
+            parsed=urllib.parse.urlparse(url)
+            if parsed.scheme!="https" or parsed.netloc not in (
+                "upload.wikimedia.org","commons.wikimedia.org"):continue
+            if url in seen:continue
+            seen.add(url)
+            matches.append({"url":url,"title":page["title"],"bytes":size,
+                            "page":"https://commons.wikimedia.org/wiki/"+
+                                urllib.parse.quote(page["title"].replace(" ","_")),
+                            "license":info["extmetadata"].get("LicenseShortName",{}).get("value","")})
     return matches
 
 def download_video(item,dest):
