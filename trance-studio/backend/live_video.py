@@ -43,7 +43,7 @@ VISUAL_LOCATIONS=(
     ("house",("בית","הביתה"),"house exterior"),
     ("forest",("יער","עצים"),"forest trees moving"),
 )
-CLAUSE_SPLIT=re.compile(r"[.!?;]+|\\b(?:ואז|אחר כך|לאחר מכן|פתאום)\\b")
+CLAUSE_SPLIT=re.compile(r"[.!?;]+|\b(?:ואז|אחר כך|לאחר מכן|פתאום)\b")
 HEBREW_TOKEN=re.compile(r"[א-ת]+")
 NEGATIONS={"לא","בלי","אינו","אינה","אינם","אין"}
 class UnavailableVideo(RuntimeError):pass
@@ -215,7 +215,7 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
         sources.append({"action":scene["action"],"file":str(segment),
                         "page":selected["page"],"license":selected["license"]})
     concat=work/"manifest.txt"
-    concat.write_text("".join("file '"+Path(src["file"]).name+"'\\n"
+    concat.write_text("".join("file '"+Path(src["file"]).name+"'\n"
                               for src in sources),encoding="utf-8")
     silent=work/"silent.mp4"
     subprocess.run(["ffmpeg","-nostdin","-loglevel","error","-y",
