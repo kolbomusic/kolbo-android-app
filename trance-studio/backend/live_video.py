@@ -146,7 +146,12 @@ def visual_plan(transcript,duration):
     unmatched=0
     pending=[]
     for clause in clauses:
-        found=action_for_clause(clause)
+        try:
+            found=action_for_clause(clause)
+        except UnavailableVideo:
+            # An ambiguous phrase must not cancel clear events later in the
+            # same original recording. Retain its words and flag partial coverage.
+            found=None
         if not found:
             unmatched+=1
             if beats:
