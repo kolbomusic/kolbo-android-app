@@ -140,8 +140,8 @@ $('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'נמוכה',
 $('fx_gain').oninput=function(){$('fxGainText').textContent=this.value+'%'};
 function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
 function verifyTranscript(txt){
- var words=String(txt||'').trim().split(/\\s+/).filter(Boolean);
- var hebrew=(txt.match(/[\\u0590-\\u05ff]/g)||[]).length;
+ var words=String(txt||'').trim().split(/\s+/).filter(Boolean);
+ var hebrew=(txt.match(/[\u0590-\u05ff]/g)||[]).length;
  return words.length>=2&&hebrew>=3;
 }
 async function decodeHebrewVoice(file){
