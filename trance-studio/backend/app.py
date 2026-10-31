@@ -8,7 +8,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature
 from engine import load_audio, render_mix, export_mp3
 from storyboard import align_storyboard_to_vocal
 from live_video import visual_plan, export_live_story, UnavailableVideo
-from voice_visual import write_original_source_wav, export_voice_visualizer
+
 
 ALLOWED={'.opus','.ogg','.oga','.mp3','.wav','.m4a','.aac','.mp4','.webm','.flac'}
 
@@ -59,76 +59,54 @@ def create_app(config=None):
             export_mp3(vocal,root/job_id/'voice.mp3')
             meta={'video_status':'disabled','storyboard_source':'not_requested'}
             if options.get('video_requested'):
-                update(job_id,percent=87,label='מכין וידאו על בסיס קול ההקלטה',
+                update(job_id,percent=87,label='בודק התאמה בין המשפטים לצילומי וידאו',
                        video_status='processing')
-                board=None
-                story_problem=''
-                if options.get('make_video') and options.get('transcript'):
+                if not options.get('make_video') or not options.get('transcript'):
+                    meta={'video_status':'unavailable',
+                          'video_error':'לא ניתן לתמלל את ההקלטה המקורית בצורה אמינה. לא ייווצרו גלי קול או סצנות שאינן קשורות לדיבור.',
+                          'storyboard_source':'original_asr_failed',
+                          'visual_coverage':'none'}
+                else:
                     try:
                         board=visual_plan(options['transcript'],len(audio)/32000)
                         board['transcript_origin']='auto_from_original_upload'
-                        if board.get('visual_coverage')!='voice_only':
-                            board=align_storyboard_to_vocal(board,vocal,sr=32000)
-                            sources=export_live_story(
-                                root/job_id/'mix.mp3',root/job_id/'story.mp4',
-                                board,root/job_id/'footage',
-                                progress=lambda p,label:update(job_id,percent=p,label=label))
-                            board['sources']=[{'action':item['action'],
-                                               'page':item['page'],
-                                               'license':item['license']} for item in sources]
-                            (root/job_id/'storyboard.json').write_text(
-                                json.dumps(board,ensure_ascii=False),encoding='utf-8')
-                            meta={'video_status':'done',
-                                  'video_mode':'matched_footage',
-                                  'storyboard_source':board['source'],
-                                  'transcript_origin':board['transcript_origin'],
-                                  'visual_coverage':board.get('visual_coverage','partial'),
-                                  'visual_beats':board.get('visual_beats',0),
-                                  'unmatched_clauses':board.get('unmatched_clauses',0)}
-                        else:
-                            story_problem='לא זוהתה פעולה שאפשר להמחיש בצילום מתאים'
-                    except UnavailableVideo as err:
-                        story_problem=str(err)[:240]
-                    except (OSError,RuntimeError,ValueError,subprocess.SubprocessError) as err:
-                        app.logger.exception('Semantic footage generation failed')
-                        story_problem='לא ניתן להשלים את צילומי הסיפור'
-                else:
-                    story_problem='התמלול האוטומטי לא זיהה פעולה מדויקת בקובץ המקורי'
-                if meta['video_status']!='done':
-                    # Honest no-story fallback: a real MP4 visibly reacts to
-                    # recorded voice. It never claims to depict uttered events.
-                    try:
-                        update(job_id,percent=93,label='מפיק וידאו שמגיב לקול המקורי',
-                               video_status='processing')
-                        original_wave=write_original_source_wav(
-                            clips,root/job_id/'original_source.wav')
-                        export_voice_visualizer(original_wave,
-                            root/job_id/'mix.mp3',root/job_id/'story.mp4')
-                        fallback_board=board if board else {
-                            'source':'original_voice_reactive',
-                            'transcript_origin':'auto_from_original_upload',
-                            'visual_coverage':'voice_only','scenes':[]}
-                        fallback_board.update({
-                            'source':'original_voice_reactive',
-                            'visual_coverage':'voice_only',
-                            'story_problem':story_problem,
-                            'sources':[]})
+                        # A clip must depict every uttered event; do not hide
+                        # unsupported sentences beneath footage from another
+                        # sentence. Never swap to a waveform or cartoons.
+                        if board.get('visual_coverage')!='matched':
+                            raise UnavailableVideo(
+                                'חלק מהמשפטים אינם ניתנים להמחשה בצילום תואם. '
+                                'לא ייווצר סרטון שאינו מציג את מה שנאמר.')
+                        board=align_storyboard_to_vocal(board,vocal,sr=32000)
+                        video_path=root/job_id/'story.mp4'
+                        sources=export_live_story(root/job_id/'mix.mp3',video_path,
+                            board,root/job_id/'footage',
+                            progress=lambda p,label:update(job_id,percent=p,label=label))
+                        board['sources']=[{'action':item['action'],
+                                          'page':item['page'],
+                                          'license':item['license']} for item in sources]
                         (root/job_id/'storyboard.json').write_text(
-                            json.dumps(fallback_board,ensure_ascii=False),
-                            encoding='utf-8')
-                        meta={'video_status':'done',
-                              'video_mode':'voice_reactive',
-                              'storyboard_source':'original_voice_reactive',
-                              'visual_coverage':'voice_only',
-                              'video_note':'הפקת וידאו שמגיב לקול בלבד, לא המחשה של מה שנאמר. '+story_problem,
-                              'transcript_origin':'auto_from_original_upload'}
-                    except (OSError,RuntimeError,ValueError,subprocess.SubprocessError):
-                        app.logger.exception('Voice-reactive fallback MP4 failed')
+                            json.dumps(board,ensure_ascii=False),encoding='utf-8')
+                        meta={'video_status':'done','video_mode':'matched_footage',
+                              'storyboard_source':board['source'],
+                              'transcript_origin':board['transcript_origin'],
+                              'visual_coverage':'matched',
+                              'visual_beats':board.get('visual_beats',0),
+                              'unmatched_clauses':0}
+                    except UnavailableVideo as err:
+                        (root/job_id/'story.mp4').unlink(missing_ok=True)
                         meta={'video_status':'unavailable',
-                              'video_error':'לא ניתן להפיק MP4: המיקס מוכן, אך יצירת הווידאו נכשלה.',
-                              'storyboard_source':'no_video',
+                              'video_error':str(err)[:250],
+                              'storyboard_source':'no_grounded_story',
                               'visual_coverage':'none'}
-            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='original_source_and_voice_video_v3',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
+                    except (OSError,RuntimeError,ValueError,subprocess.SubprocessError):
+                        app.logger.exception('Grounded live footage export failed')
+                        (root/job_id/'story.mp4').unlink(missing_ok=True)
+                        meta={'video_status':'error',
+                              'video_error':'לא ניתן לייצר סרטון שממחיש את המילים במדויק. המיקס נשמר, ולא ייוצר סרטון גלי קול.',
+                              'storyboard_source':'no_grounded_story',
+                              'visual_coverage':'none'}
+            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_only_v4',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             app.logger.exception('Kolbo audio/video worker error')
             update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
@@ -168,7 +146,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.11.1',cloud_ready=bool(app.config['API_TOKEN']))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.12.0',cloud_ready=bool(app.config['API_TOKEN']))
 
     @app.post('/api/jobs')
     def create_job():
