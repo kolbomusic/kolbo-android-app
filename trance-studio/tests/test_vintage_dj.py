@@ -61,6 +61,23 @@ class VintageDJTests(unittest.TestCase):
                 self.assertLessEqual(float(np.max(np.abs(y))),1.01)
                 self.assertGreater(float(np.sqrt(np.mean(y*y))),.001)
 
+    def test_intensity_levels_change_arrangement_and_keep_duration(self):
+        clip=self.sample(2.1)
+        a=engine.render_mix([clip],sample_rate=self.SR,seconds=30,
+                            humor='auto',fx_intensity=1,style='mixed')
+        b=engine.render_mix([clip],sample_rate=self.SR,seconds=30,
+                            humor='auto',fx_intensity=3,style='mixed')
+        self.assertEqual(a.shape,b.shape)
+        self.assertGreater(float(np.sqrt(np.mean((a-b)**2))),.002)
+        for out in (a,b):
+            self.assertTrue(np.isfinite(out).all())
+            self.assertLessEqual(float(np.max(np.abs(out))),.98)
+
+    def test_invalid_density_is_rejected(self):
+        with self.assertRaises(ValueError):
+            engine.render_mix([self.sample()],sample_rate=self.SR,
+                              seconds=30,fx_intensity=5)
+
     def test_long_recording_tail_changes_mix_even_with_dj_effects(self):
         sr=self.SR;t=np.arange(sr)/sr
         recording=np.zeros(sr*14,np.float32)
