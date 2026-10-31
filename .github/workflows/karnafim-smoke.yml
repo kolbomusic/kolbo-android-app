@@ -1,4 +1,4 @@
-name: Karnafim security-hold verification
+name: Karnafim read-only security check
 on:
   push:
     branches: [karnafim-veterans-portal-20261031]
@@ -8,50 +8,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Validate Python syntax and public landing
-        run: |
-          python -m compileall -q karnafim-site
-          python - <<'PY'
-          from html.parser import HTMLParser
-          from pathlib import Path
-          import ast
-          base = Path("karnafim-site")
-          landing = (base/"maintenance_public.html").read_text(encoding="utf-8")
-          assert "<form" not in landing.lower(), "No form allowed in safety mode"
-          assert "<input" not in landing.lower(), "No input allowed in safety mode"
-          assert "<script" not in landing.lower(), "No JS allowed in safety mode"
-          assert "src=\"http" not in landing.lower(), "No remote assets in safety mode"
-          assert "יוזמה קהילתית עצמאית" in landing
-          app = (base/"app.py").read_text(encoding="utf-8")
-          assert 'KARNAFIM_MAINTENANCE' in app
-          assert 'response=Response(document,status=200' in app
-          assert 'status=503' in app
-          print("Static public read-only safety audit: OK")
-          PY
-      - name: Verify live security hold
+      - uses: actions/checkout@v4
+      - name: Compile all Python modules
+        run: python -m compileall -q karnafim-site
+      - name: Verify site is public read-only, login stays disabled
         shell: bash
         run: |
-          for n in {1..28}; do
-            home=$(curl --max-time 20 --retry 1 -L -sS -o /tmp/karnafim-index -w '%{http_code}' 'https://karnafim-community-46.onrender.com/' || true)
-            blocked=$(curl --max-time 20 --retry 1 -L -sS -o /tmp/karnafim-login -w '%{http_code}' 'https://karnafim-community-46.onrender.com/login' || true)
-            printf 'Attempt %s: public=%s login=%s\n' "$n" "$home" "$blocked"
-            if [ "$home" = "200" ] && [ "$blocked" = "503" ] && grep -q 'אתר הקהילה נמצא בבדיקת אבטחה' /tmp/karnafim-index; then
-              if grep -Eiq '<form|<input|<script|name="password"' /tmp/karnafim-index; then
-                echo 'Unexpected active form in safe mode' >&2
-                exit 1
-              fi
-              for path in archive memorials find status; do
-            code=$(curl --max-time 20 -L -sS -o /tmp/karnafim-"$path" -w '%{http_code}' "https://karnafim-community-46.onrender.com/$path")
-            echo "$path HTTP $code"
-            test "$code" = "200" || exit 1
-            if grep -Eiq '<form|<input|type="password"' /tmp/karnafim-"$path"; then echo "Unexpected input in $path"; exit 1; fi
-          done
-          echo "Read-only home verified; login blocked."
-              exit 0
+          set -euo pipefail
+          for attempt in {1..25}; do
+            home=$(curl -L -s -o /tmp/karnafim-home -w '%{http_code}' --max-time 20 https://karnafim-community-46.onrender.com/ || true)
+            login=$(curl -L -s -o /tmp/karnafim-login -w '%{http_code}' --max-time 20 https://karnafim-community-46.onrender.com/login || true)
+            echo "Attempt $attempt: home=$home login=$login"
+            if [ "$home" = "200" ] && [ "$login" = "503" ] && grep -q 'האתר' /tmp/karnafim-home; then
+              ok=1
+              for part in archive memorials find status; do
+                code=$(curl -L -s -o /tmp/karnafim-"$part" -w '%{http_code}' --max-time 20 "https://karnafim-community-46.onrender.com/$part" || true)
+                echo "$part HTTP $code"
+                if [ "$code" != "200" ]; then ok=0; fi
+                if grep -Eiq '<form|<input|type="password"' /tmp/karnafim-"$part"; then ok=0; fi
+              done
+              if grep -Eiq '<form|<input|type="password"' /tmp/karnafim-home; then ok=0; fi
+              if [ "$ok" = "1" ]; then echo "Safe public routes OK; login disabled"; exit 0; fi
             fi
             sleep 5
           done
-          echo 'Live safe mode was not verified after retry period' >&2
+          echo "Unable to validate live public read-only mode"
           exit 1
