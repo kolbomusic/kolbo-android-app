@@ -27,7 +27,7 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 </style>
 </head>
 <body><main>
-<header><div class="brand">≋ KOLBO / TRANCE STUDIO</div><h1>הקול שלך.<br><span>הדרופ והצחוקים שלנו.</span></h1><p>טראנס, מלודיות ואפקטים מצחיקים בסגנון שנות ה־90 וה־2000. שומרים על כל הדיבור ולא רק על ההתחלה.</p></header>
+<header><div class="brand">≋ KOLBO / TRANCE STUDIO</div><h1>הקול שלך.<br><span>רולים, סקראצ׳ים ודרופים של פעם.</span></h1><p>טראנס, מלודיות ואפקטים מצחיקים בסגנון שנות ה־90 וה־2000. שומרים על כל הדיבור ולא רק על ההתחלה.</p></header>
 <section class="panel"><h2>01 / ההקלטות שלך</h2>
 <label for="audio">הוסף עד 4 הודעות קוליות</label><input id="audio" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div></section>
@@ -47,12 +47,18 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <option value="5">מלודיה 5 — עמוקה</option><option value="6">מלודיה 6 — אופורית</option>
 </select></div>
 <div><label for="humor">סגנון הומור ואפקטים</label><select id="humor">
-<option value="auto" selected>הכול ביחד — בחירה אוטומטית חכמה</option>
+<option value="auto" selected>אוטומטי חכם — כל טריקי ה־DJ ביחד</option>
+<option value="dj">DJ רטרו — חיתוך באמצע מילה, רול ודרופ</option>
+<option value="glitch">רולים שבורים וסטאטרים בקצב</option>
+<option value="stretch">מתיחת הברות ומשיכת קול</option>
+<option value="pitch">טונים עולים ויורדים, קול נמוך וגבוה</option>
+<option value="tape">Tape Stop — האטה ועצירת טייפ</option>
+<option value="scratch">סקראצ׳ וסיבוב אחורה</option>
+<option value="vinyl">Vinyl — עיוות וגרעיניות של שנות ה־90</option>
 <option value="classic">סטאטר קלאסי, חזרות והדגשות</option>
 <option value="cartoon">קולות מצוירים וגבוה/נמוך</option>
-<option value="scratch">סקראצ׳ וסיבוב אחורה</option>
 <option value="robot">קול רובוטי ואפקט דיגיטלי</option>
-<option value="chaos">מסיבה פרועה — יותר אפקטים</option>
+<option value="chaos">מסיבה פרועה — יותר חיתוכים ואפקטים</option>
 <option value="off">ללא הומור — מוזיקה וקול בלבד</option></select></div>
 <div><label for="length">משך המיקס</label><select id="length">
 <option value="0" selected>אוטומטי לפי אורך ההקלטות</option>
@@ -65,7 +71,7 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <input id="bpm" type="range" min="120" max="165" value="145" step="1">
 <label for="voice">עוצמת הדיבור — <output id="voiceText">100%</output></label>
 <input id="voice" type="range" min="50" max="150" value="100" step="5">
-<p class="hint">הדיבור המלא נשמר לפי הסדר המקורי. החיתוכים הקומיים נבנים מתוך רגעים שבהם יש הפסקות בדיבור. כל המנגינות והאפקטים נוצרים באופן מקורי.</p>
+<p class="hint">הדיבור המלא נשמר לפי הסדר המקורי. דגימות קול עוברות חיתוכים גם באמצע מילה, מתיחות ושינויי טון; כל הדיבור המקורי נשמר בנפרד פעם אחת לפחות. כל המנגינות והאפקטים נוצרים באופן מקורי.</p>
 </section>
 <section class="panel"><h2>03 / יוצרים ומנגנים</h2>
 <div class="actions"><button id="generate">✦ יצירת מיקס משולב חכם</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
