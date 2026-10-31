@@ -84,7 +84,7 @@ def login():
   if rows and verify(request.form.get("password",""),rows[0]["password"]):
    session.clear();session["uid"]=rows[0]["id"];return redirect("/directory")
   return view("כניסה",'<p class="error">פרטי ההתחברות לא נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
- return view("כניסה",'<h1>כניסה לחשבון</h1><form method="post" class="card">'+formwrap(field("email","דוא״ל","email",True)+field("password","סיסמה","password",True)+'<button>כניסה</button></form><p>התחברות באמצעות Google תתווסף לאחר הגדרת OAuth מאובטחת מול Google.</p>')
+ return view("כניסה",'<h1>כניסה לחשבון</h1><form method="post" class="card">'+formwrap(field("email","דוא״ל","email",True)+field("password","סיסמה","password",True)+'<button>כניסה</button></form><p>התחברות באמצעות Google תתווסף לאחר הגדרת OAuth מאובטחת מול Google.</p>'))
 @app.route("/logout")
 def logout():session.clear();return redirect("/")
 @app.route("/directory")
@@ -104,7 +104,7 @@ def profile():
   guard()
   sql("UPDATE members SET nickname=%s,about=%s,visible=%s WHERE id=%s",(request.form.get("nickname","")[:100],request.form.get("about","")[:1000],request.form.get("visible")=="on",u["id"]))
   return redirect("/profile")
- return view("פרופיל",'<h1>הפרופיל שלי</h1><p>מצב החשבון: '+("מאושר" if u["approved"] else "ממתין לאישור")+'</p><form method="post" class="card">'+formwrap(field("nickname","כינוי",value=u["nickname"])+'<label>עליי<textarea name="about" maxlength="1000">'+esc(u["about"])+'</textarea></label><label><input style="display:inline;width:auto" type="checkbox" name="visible" '+("checked" if u["visible"] else "")+'> הצג אותי במדריך החברים</label><button>שמירת הפרופיל</button></form><form action="/delete-account" method="post" onsubmit="return confirm(\'למחוק את החשבון והמידע לצמיתות?\')">'+formwrap('<button style="background:#f9d0ca">מחיקת החשבון שלי</button>')+'</form>')
+ return view("פרופיל",'<h1>הפרופיל שלי</h1><p>מצב החשבון: '+("מאושר" if u["approved"] else "ממתין לאישור")+'</p><form method="post" class="card">'+formwrap(field("nickname","כינוי",value=u["nickname"])+'<label>עליי<textarea name="about" maxlength="1000">'+esc(u["about"])+'</textarea></label><label><input style="display:inline;width:auto" type="checkbox" name="visible" '+("checked" if u["visible"] else "")+'> הצג אותי במדריך החברים</label><button>שמירת הפרופיל</button></form><form action="/delete-account" method="post" onsubmit="return confirm(\'למחוק את החשבון והמידע לצמיתות?\')">'+formwrap('<button style="background:#f9d0ca">מחיקת החשבון שלי</button>')+'</form>'))
 @app.route("/delete-account",methods=["POST"])
 def delete_account():
  u=me()
@@ -183,7 +183,7 @@ def memories():
  rows=sql("SELECT x.*,m.name FROM memories x JOIN members m ON x.author_id=m.id WHERE x.approved ORDER BY x.year NULLS LAST, x.created_at DESC LIMIT 150",fetch=True)
  b='<h1>הסיפורים שלנו</h1><p>ציר הזמן של הקרנפים / ברקן: זיכרונות, אירועים ואזכורים מהשירות.</p>'
  if u and u["approved"]:
-  b+='<details class="card"><summary>➕ הוספת זיכרון או אירוע</summary><form method="post">'+formwrap(field("title","כותרת",required=True)+field("year","שנה","number")+'<label>מה קרה?<textarea name="story" required minlength="10" maxlength="5000"></textarea></label>'+field("source_url","קישור למקור פומבי (לא חובה)","url")+'<button>שליחה לאישור</button></form></details>'
+  b+='<details class="card"><summary>➕ הוספת זיכרון או אירוע</summary><form method="post">'+formwrap(field("title","כותרת",required=True)+field("year","שנה","number")+'<label>מה קרה?<textarea name="story" required minlength="10" maxlength="5000"></textarea></label>'+field("source_url","קישור למקור פומבי (לא חובה)","url")+'<button>שליחה לאישור</button></form></details>')
  for r in rows:
   b+='<article class="card"><span class="tag">'+esc(r["year"] or "ללא שנה")+'</span><h2>'+esc(r["title"])+'</h2><p>'+esc(r["story"])+'</p><small>'+esc(r["name"])+'</small>'
   if r["source_url"]:b+='<p><a target="_blank" rel="noopener noreferrer nofollow" href="'+esc(r["source_url"])+'">מקור חיצוני</a></p>'
