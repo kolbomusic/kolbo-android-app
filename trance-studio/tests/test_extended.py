@@ -17,7 +17,7 @@ class SpeechCoverageTests(unittest.TestCase):
         x[12*sr:13*sr]=.3*np.sin(2*np.pi*531*t)
         clean=engine.prepare_voice(x,sr)
         self.assertGreater(len(clean),sr*12)
-        self.assertGreater(float(np.sqrt(np.mean(clean[-sr:]**2))),.015)
+        self.assertGreater(float(np.sqrt(np.mean(clean[12*sr:13*sr]**2))),.015)
 
     def test_whispered_tail_never_disappears(self):
         sr=8000
