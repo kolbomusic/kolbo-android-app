@@ -23,11 +23,20 @@ def prepare_voice(x,sr):
     # Preserve the complete timeline, including very quiet speech at either end.
     # RMS gating here is only a sanity check: trimming can erase whispered words.
     x=x.copy()
-    x=sosfilt(butter(2,[90,min(7000,sr*.43)],btype='bandpass',fs=sr,output='sos'),x).astype(np.float32)
-    gain=min(4,.20/max(.001,float(np.sqrt(np.mean(x*x)))))
-    x=np.tanh(x*gain*1.1)
-    t=np.arange(len(x))/sr
-    x*=np.minimum(1,t/.008)*np.minimum(1,(len(x)/sr-t)/.015)
+    # WhatsApp codecs already compress speech. Use gentle cleanup and gain,
+    # not the previous hard saturation, which made consonants crunchy.
+    x=sosfilt(butter(2,[85,min(7100,sr*.43)],btype='bandpass',
+                        fs=sr,output='sos'),x).astype(np.float32)
+    rms=float(np.sqrt(np.mean(x*x)))
+    gain=min(3.0,.145/max(.001,rms))
+    x*=gain
+    # Soft-knee peak limiting affects only unusually loud samples.
+    amplitude=np.abs(x)
+    above=amplitude>.84
+    if np.any(above):
+        x[above]=np.sign(x[above])*(.84+.13*np.tanh((amplitude[above]-.84)*5))
+    t=np.arange(len(x),dtype=np.float32)/sr
+    x*=np.minimum(1.,t/.006)*np.minimum(1.,(len(x)/sr-t)/.012)
     return x.astype(np.float32)
 
 
@@ -484,4 +493,4 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     return music
 
 def export_mp3(audio,path,sr=32000):
-    subprocess.run(['ffmpeg','-v','error','-y','-f','f32le','-ar',str(sr),'-ac','2','-i','pipe:0','-af','alimiter=limit=0.95:level=false','-codec:a','libmp3lame','-b:a','192k',str(path)],input=audio.astype('<f4').tobytes(),check=True,capture_output=True,timeout=45)
+    subprocess.run(['ffmpeg','-v','error','-y','-f','f32le','-ar',str(sr),'-ac','2','-i','pipe:0','-af','alimiter=limit=0.92:level=false','-codec:a','libmp3lame','-b:a','192k',str(path)],input=audio.astype('<f4').tobytes(),check=True,capture_output=True,timeout=65)
