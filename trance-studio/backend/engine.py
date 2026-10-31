@@ -302,24 +302,102 @@ def vocal_fx_timeline(voice, sr, bpm, humor, intensity, rng):
     return (x*.84+wet*amount).astype(np.float32)
 
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,mix_variation=0,return_voice=False,progress=lambda *args:None):
-    if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
+
+def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
+    """Serial, clearly audible voice performance with no overlapping voices.
+
+    The original upload is emitted in order, uncut and unaltered once.
+    At intentional boundaries, a voiced syllable is sampled, manipulated,
+    and played as an independent foreground solo before narration resumes.
+    Returns (mono_track, fx_mask, original_spans). All FX are voice-derived.
+    """
+    x=np.asarray(voice,dtype=np.float32)
+    if humor=='off' or len(x)<int(sr*.5):
+        return x.copy(),np.zeros(len(x),dtype=np.float32),[(0,len(x),0,len(x))]
+    if density not in (1,2,3) or not .55<=fx_gain<=1.7:
+        raise ValueError('invalid vocal effect controls')
+    beat=60./bpm
+    # Cuts to the original narration occur at locally quiet points only.
+    # Cutting *inside* words is reserved for the sample effect itself.
+    chunks=[]
+    cursor=0
+    target_interval={1:5.0,2:3.45,3:2.30}[density]
+    step=max(int(.3*sr),int(target_interval*sr))
+    while cursor+step<len(x)-int(.34*sr):
+        target=min(len(x)-1,cursor+step)
+        radius=int(.44*sr)
+        lower=max(cursor+int(.45*sr),target-radius)
+        upper=min(len(x)-int(.20*sr),target+radius)
+        if upper<=lower:break
+        # Find local low-energy 20ms frames, reducing audible cuts.
+        width=max(8,int(.020*sr))
+        possibilities=range(lower,upper,max(1,int(.02*sr)))
+        cut=min(possibilities,key=lambda p:float(np.mean(x[p:p+width]**2)))
+        cut=zero_crossing_cut(x,cut,sr)
+        if cut<=cursor+int(.28*sr):break
+        chunks.append((cursor,cut))
+        cursor=cut
+    chunks.append((cursor,len(x)))
+    pieces=[];masks=[];original_spans=[]
+    offset=0
+    modes=('pitch','stretch','dj','glitch','tape','cartoon','scratch','vinyl','robot')
+    mode_order=list(rng.permutation(modes))
+    for i,(start,end) in enumerate(chunks):
+        raw=x[start:end].copy()
+        pieces.append(raw)
+        masks.append(np.zeros(len(raw),dtype=np.float32))
+        original_spans.append((start,end,offset,offset+len(raw)))
+        offset+=len(raw)
+        if i==len(chunks)-1:continue
+        # A short beat-synced transition is reserved for the effected phrase.
+        width=min(len(raw),max(int(.27*sr),int(.70*sr)))
+        candidates=range(0,max(1,len(raw)-width+1),max(1,int(.06*sr)))
+        position=max(candidates,key=lambda p:float(np.mean(raw[p:p+width:8]**2)))
+        sample=raw[position:position+width]
+        if len(sample)<int(.16*sr) or float(np.sqrt(np.mean(sample*sample)))<.009:
+            continue
+        mode=mode_order[i%len(mode_order)] if humor in ('auto','chaos') else humor
+        effect=vintage_voice_fx(sample,mode,sr,bpm,rng)
+        # Normalize the EFFECT TO THE SOURCE VOICE loudness. Previously it was
+        # quieter than speech and buried under the instruments.
+        source_rms=float(np.sqrt(np.mean(sample*sample)))
+        effect_rms=float(np.sqrt(np.mean(effect*effect)))
+        if effect_rms<=.0001:continue
+        gain=min(5.,max(.55,(source_rms/max(.0001,effect_rms))*fx_gain))
+        effect=np.tanh(effect*gain*.95).astype(np.float32)
+        k=min(int(.014*sr),len(effect)//6)
+        if k>0:
+            ramp=np.linspace(0,1,k,endpoint=False,dtype=np.float32)
+            effect[:k]*=ramp;effect[-k:]*=ramp[::-1]
+        pause=np.zeros(int(sr*min(.12,beat*.28)),dtype=np.float32)
+        pieces.extend([pause,effect,pause.copy()])
+        masks.extend([np.zeros(len(pause),np.float32),
+                      np.ones(len(effect),dtype=np.float32),
+                      np.zeros(len(pause),np.float32)])
+        offset+=len(pause)*2+len(effect)
+    return np.concatenate(pieces),np.concatenate(masks),original_spans
+
+
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None):
+    if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     sr=sample_rate;beat=60/bpm
     voices=[prepare_voice(c,sr) for c in clips]
-    total_speech=sum(len(v)/sr for v in voices)
-    # Intro + complete narration + dedicated DJ turnaround slots + outro.
-    # Never shorten a recording in order to satisfy a chosen output duration.
-    needed=beat*7+total_speech+len(voices)*beat*16
-    seconds=max(30.,float(seconds),math.ceil(needed))
-    if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
-    n=int(round(seconds*sr))
     signature=hashlib.blake2b(digest_size=8)
     for v in voices:
         signature.update(len(v).to_bytes(8,'little'))
         signature.update(v[::max(1,len(v)//512)].tobytes())
     signature.update(mix_variation.to_bytes(4,'little'))
     rng=np.random.default_rng(int.from_bytes(signature.digest(),'little'))
+    # Voice is arranged FIRST. Its actual duration determines the score length.
+    # This guarantees the last words and the final vocal trick cannot be cut.
+    arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,rng)
+              for v in voices]
+    total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
+    needed=beat*10+total_vocal_duration+max(0,len(voices)-1)*beat*3
+    seconds=max(30.,float(seconds),math.ceil(needed))
+    if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
+    n=int(round(seconds*sr))
     music=np.zeros((n,2),dtype=np.float32)
     def add(x,time,gain=1,pan=0):
         start=int(round(time*sr));count=min(len(x),n-start)
@@ -458,31 +536,27 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         # A build is actual snare acceleration; the breakdown removes drums.
         if b%16==0:
             progress(10+int(45*b/max(1,total)),'מפיק ליווי עשיר עם הרמוניה ומעברים')
-    progress(62,'מפעיל אפקטים על הקול שהגיע מ־WhatsApp')
-    # The vocal waveform is the ONLY input to the processing chain; music
-    # never receives pitch, tape, stutter or distortion effects.
+    progress(62,'משמיע רולים ועיוותי קול בעוצמה מלאה ללא חפיפות')
     vocal=np.zeros(n,dtype=np.float32)
+    fx_highlight=np.zeros(n,dtype=np.float32)
     cursor=beat*4
-    for i,v in enumerate(voices):
-        transformed=vocal_fx_timeline(v,sr,bpm,humor,fx_intensity,rng)
+    for track,mask,_ in arranged:
         start=int(round(cursor*sr))
-        end=min(n,start+len(v))
+        end=min(n,start+len(track))
         if end>start:
-            vocal[start:end]+=transformed[:end-start]*voice_level
-        cursor+=len(v)/sr+beat*16
+            vocal[start:end]+=track[:end-start]*voice_level
+            fx_highlight[start:end]=np.maximum(fx_highlight[start:end],mask[:end-start])
+        cursor+=len(track)/sr+beat*3
     progress(80,'מבצע מיקס כשהקול המעובד בחזית')
     # The synth is independent. Duck only its volume during speech so the
     # user's *treated* words remain in front, not drowned by the melody.
     from scipy.ndimage import maximum_filter1d
     env=maximum_filter1d(np.abs(vocal),size=max(1,int(sr*.025)))
     env=lfilter([.003],[1,-.997],env).astype(np.float32)
-    music*= (1-.78*np.clip(env/.18,0,1))[:,None]
+    music*= ((1-.79*np.clip(env/.18,0,1))*(1-.76*fx_highlight))[:,None]
     music+=vocal[:,None]*1.13
-    # Subtle vocal-only echo. No echo or pitch FX applied to instruments.
-    delay=int(beat*.75*sr)
-    if 0<delay<n:
-        music[delay:,0]+=vocal[:-delay]*.065
-        music[delay:,1]+=vocal[:-delay]*.085
+    # Keep the voice solo clean, including in the reserved FX slots.
+    # Echo and other delayed copies previously collided with the next line.
     # Conservative master gain / limiter: no global overdrive or loudness pumping.
     fade=np.clip(np.arange(n)/(sr*.025),0,1)*np.clip((n-1-np.arange(n))/(sr*.65),0,1)
     music*=fade[:,None]
