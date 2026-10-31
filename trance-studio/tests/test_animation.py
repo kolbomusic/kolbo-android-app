@@ -8,6 +8,11 @@ from storyboard import storyboard, render_frame, export_animation
 from app import create_app
 
 class AnimatedStoryTests(unittest.TestCase):
+    def test_unknown_words_never_imply_music_party(self):
+        story=storyboard('אני חושב על משהו ולא יודע מה יקרה',18)
+        self.assertEqual(story['scenes'][0]['kind'],'speech')
+        self.assertEqual(story['scenes'][0]['caption'],'אני חושב על משהו ולא יודע מה יקרה')
+
     def test_semantic_video_requires_real_speech_transcript(self):
         with tempfile.TemporaryDirectory() as tmp:
             app=create_app({'TESTING':True,'JOB_DIR':tmp,'API_TOKEN':'unit-only'})
