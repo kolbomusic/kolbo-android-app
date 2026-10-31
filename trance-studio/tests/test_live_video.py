@@ -72,7 +72,7 @@ class GroundedVideoTests(unittest.TestCase):
             def download(item,dest):
                 subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi',
                                '-i','testsrc=size=640x360:rate=15:duration=5',
-                               '-c:v','libvpx','-b:v','170k',str(dest)],check=True,
+                               '-c:v','libvpx-vp9','-b:v','170k',str(dest)],check=True,
                                timeout=35)
             out=root/'story.mp4'
             sources=export_live_story(sound,out,plan,root/'scenes',search=find,download=download)
