@@ -46,10 +46,10 @@ jobs:
           set -eux
           mkdir -p dist
           cp trance-studio/android/app/build/outputs/apk/debug/app-debug.apk dist/Kolbo-Trance-Story-v2.0.0-beta.apk
-          test -s dist/Kolbo-Trance-Studio-v1.1.0-beta.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Kolbo-Trance-Studio-v1.1.0-beta.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Studio-v1.1.0-beta.apk | head -n 8
-          sha256sum dist/Kolbo-Trance-Studio-v1.1.0-beta.apk | tee dist/SHA256SUMS.txt
+          test -s dist/Kolbo-Trance-Story-v2.0.0-beta.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Kolbo-Trance-Story-v2.0.0-beta.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.0.0-beta.apk | head -n 8
+          sha256sum dist/Kolbo-Trance-Story-v2.0.0-beta.apk | tee dist/SHA256SUMS.txt
       - name: Confirm independent Android package and media bridge
         run: |
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.0.0-beta.apk | grep -q "package: name='com.kolbomusic.trancestudio.story'"
@@ -67,7 +67,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="trance-story-v2.0.0-beta.1"
-          APK="dist/Kolbo-Trance-Studio-v1.1.0-beta.apk"
+          APK="dist/Kolbo-Trance-Story-v2.0.0-beta.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber
           else
