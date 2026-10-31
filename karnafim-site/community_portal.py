@@ -60,6 +60,9 @@ CSS = """<style>
 .portal .media-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:13px}
 .portal .media-grid img{height:190px;object-fit:cover;width:100%;border-radius:10px}
 .portal .compact{margin:0}
+.portal .photo-heritage{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(240px,1fr);gap:22px;margin:22px 0;padding:20px;background:white;border:1px solid #dce5da;border-radius:18px;align-items:center}
+.portal .photo-heritage figure{margin:0}.portal .photo-heritage img{display:block;width:100%;max-height:290px;object-fit:contain;border-radius:12px;background:#f4f5f1}.portal .photo-heritage figcaption{font-size:12px;color:#5c6b60;line-height:1.6;margin-top:8px}
+@media(max-width:720px){.portal .photo-heritage{grid-template-columns:1fr;padding:14px}}
 @media(max-width:720px){.portal .chat-layout{display:block}.portal .metrics{gap:5px}.portal .metric{padding:10px}.portal .metric strong{font-size:23px}.portal .actions{flex-direction:column}.portal .actions a{width:100%}.portal .mast{padding:27px 20px}}
 </style>"""
 
@@ -143,6 +146,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
         u=me()
         actions=('<a class="cta" href="/directory">🔎 איתור חברים</a><a class="cta alt" href="/new-post">✍️ שיתוף זיכרון</a><a class="cta alt" href="/chats">💬 הודעות</a>' if u and u["approved"] else '<a class="cta" href="/register">🦏 הייתי שם — מצטרפים</a><a class="cta alt" href="/login">🔑 כבר חברים? כניסה לחשבון</a>')
         b='<section class="mast"><span class="kicker">401 / 46 / פלוגה ב׳ • 2003–2006</span><h1>עשרים שנה עברו.<br>החברים עדיין כאן.</h1><p>הקרנפים, שלימים נקראו ברקן. בית לקולות, לסיפורים, לתמונות ולחברים ששירתו איתנו. כאן מתחברים מחדש — ושומרים יחד על המורשת.</p><div class="actions">'+actions+'</div></section>'
+        b+='<section class="photo-heritage"><figure><img loading="lazy" src="https://thumb.wikimedia.org/wikipedia/commons/thumb/6/69/Merkava-4-tank-6611a-white1.jpg/960px-Merkava-4-tank-6611a-white1.jpg" alt="טנק מרכבה סימן 4 — צילום המחשה מארכיון Wikimedia Commons"><figcaption>טנק מרכבה סימן 4, צילום המחשה משנת 2015 — <strong>לא תצלום של פלוגת הקרנפים</strong>. צילום: <a href="https://commons.wikimedia.org/wiki/File:Merkava-4-tank-6611a-white1.jpg" target="_blank" rel="noopener noreferrer">צחי אבנור / MathKnight, Wikimedia Commons</a>, רישיון <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>.</figcaption></figure><div><h2>התמונות שלנו מתחילות כאן</h2><p>תצלומים מקוריים מהפלוגה יופיעו לאחר שחברים יעלו אותם, יסכימו לשיתוף ויאושרו על ידי מנהלי הקהילה.</p><a class="cta" href="/feed">📸 לאלבום הזיכרונות</a></div></section>'
         b+=statistics()
         b+='<h2>לא צריך לזכור הכול — מתחילים מכאן</h2><div class="tiles">'
         tiles=[("🧭","מאתרים חברים","חיפוש לפי שם, כינוי ומחזור + איתור מבוסס קישורים ברשתות.","/find"),("📸","תמונות וזיכרונות","משתפים סיפור, תמונה, הקלטה או סרטון קצר באישור מנהל.","/feed"),("💬","צ׳אט חברים","הודעות פרטיות, תמונות, קול וסרטונים אחרי אישור בקשת קשר.","/chats"),("📜","ארכיון מתועד","עדויות, סרטוני מורשת ומקורות על גדוד 46 ופלוגת הקרנפים.","/archive"),("🤝","מזמינים חברים","שליחת קישור לפלוגה בוואטסאפ, פייסבוק או בהעתקה.","/invite"),("🕯️","זוכרים יחד","דפי הנצחה אישיים וחיפוש תמונות המאפשר להציע תמונות לגלריה המתאימה.","/memorials")]
