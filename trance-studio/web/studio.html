@@ -240,7 +240,7 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent='קטעי וידאו מקוריים שנבחרו לפי הפעולות שזוהו בדיבור.';
+ $('storyboardInfo').textContent='קטעי וידאו אמיתיים ממקורות חופשיים, שנבחרו לפי הפעולות שזוהו בדיבור.';
  if(j.storyboard_url){
   try{
    var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
