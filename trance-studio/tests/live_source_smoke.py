@@ -1,4 +1,4 @@
-"""Prove original upload bytes, authenticated job and fallback MP4 on live Render."""
+"""Prove original-upload fingerprint, honest semantic-only refusal, and MP3 on live Render."""
 import hashlib
 import io
 import json
@@ -24,7 +24,7 @@ def api(path,payload=None,headers=None,timeout=50):
 def main():
     data,status=api('/health')
     version=json.loads(data)['version']
-    assert version=='1.11.1',('Old live server',version)
+    assert version=='1.12.0',('Old live server',version)
     _,status=api('/studio')
     assert status==200
     wav=io.BytesIO()
@@ -68,20 +68,16 @@ def main():
         if result.get('state') in ('done','error'):break
     else:raise TimeoutError('No response from free Render in 340 seconds')
     assert result.get('state')=='done',result
-    assert result.get('video_status')=='done',result
-    assert result.get('video_mode')=='voice_reactive',result
-    assert result.get('visual_coverage')=='voice_only',result
-    movie,status=api(result['video_url'],timeout=90)
-    assert status==200 and b'ftyp' in movie[:28],(status,movie[:28])
-    output=pathlib.Path('/tmp/kolbo-voice-fallback-live.mp4')
-    output.write_bytes(movie)
-    meta=json.loads(subprocess.check_output(['ffprobe','-v','quiet',
-        '-show_format','-show_streams','-of','json',str(output)]))
-    duration=float(meta['format']['duration'])
-    assert 29<=duration<=32,duration
-    assert {s['codec_type'] for s in meta['streams']}=={'audio','video'}
-    print('SUCCESS_ORIGINAL_SOURCE_HEBREW_FALLBACK',json.dumps({
-        'server':version,'mp4_bytes':len(movie),'duration':duration,
-        'mode':result['video_mode'],'source_hash_bound':True,
-        'scope':'synthetic audio transport test, not Hebrew ASR quality'},ensure_ascii=False))
+    assert result.get('video_status')=='unavailable',result
+    assert result.get('storyboard_source')=='no_grounded_story',result
+    assert 'video_url' not in result,result
+    assert result.get('visual_coverage')=='none',result
+    assert 'וידאו' in result.get('video_error',''),result
+    audio,status=api(result['download_url'],timeout=60)
+    assert status==200 and len(audio)>12000,(status,len(audio))
+    print('PASS_NO_FALSE_STORY_VIDEO',json.dumps({
+        'server':version,'mp3_bytes':len(audio),'no_waveform':True,
+        'source_hash_bound':True,
+        'scope':'synthetic speech transport test; not ASR quality'},ensure_ascii=False))
+
 if __name__=='__main__':main()
