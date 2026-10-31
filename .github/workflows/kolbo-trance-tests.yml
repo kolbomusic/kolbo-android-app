@@ -34,6 +34,12 @@ jobs:
           s=Path('trance-studio/web/studio.html').read_text(encoding='utf-8')
           assert "recognizeBeforeVideo" in s and "transcript_origin" in s
           assert "studio-asr-worker.js" in s
+          assert "recognitionFallback" in s and "audioOnly" in s
+          worker=Path('trance-studio/web/studio-asr-worker.js').read_text(encoding='utf-8')
+          assert "onnx-community/whisper-tiny" in worker
+          assert "itayinbar/whisper-he-12x2" not in worker
+          assert "language:'hebrew'" in worker
+          assert "dtype:'q8'" in worker
           PY
       - name: Verify PWA manifest and share target
         run: |
