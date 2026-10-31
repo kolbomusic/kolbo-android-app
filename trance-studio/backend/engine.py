@@ -43,7 +43,8 @@ def prepare_voice(x,sr):
 STYLES = ('melodic', 'psy', 'progressive', 'goa', 'acid', 'uplifting',
           'eurodance', 'hard', 'rave', 'mixed', 'auto')
 HUMOR = ('auto', 'classic', 'cartoon', 'scratch', 'robot', 'chaos',
-         'stretch', 'tape', 'pitch', 'glitch', 'vinyl', 'dj', 'off')
+         'stretch', 'tape', 'pitch', 'glitch', 'vinyl', 'dj',
+         'helium','monster','yo_yo','comic_roll','rewind','off')
 MOTIFS = (
     (74,77,81,77,72,77,79,77,70,74,77,74,69,73,76,73),
     (69,72,76,79,76,72,74,71,67,71,74,78,74,71,69,71),
