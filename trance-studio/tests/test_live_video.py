@@ -118,6 +118,38 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(urls[0].endswith('Maasai_people_singing_and_dancing.webm.360p.vp9.webm'))
         self.assertEqual(urls[-1],item['url'])
 
+    def test_eight_speech_events_export_49_seconds_of_actual_mp4(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=pathlib.Path(tmp)
+            sound=root/'voice.mp3'
+            subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi',
+                            '-i','sine=frequency=235:duration=49',
+                            '-c:a','libmp3lame','-q:a','8',str(sound)],check=True)
+            clauses=['החמור נוער' if i%2==0 else 'אני נוסע באוטו'
+                     for i in range(8)]
+            plan=visual_plan('. '.join(clauses),49.)
+            calls=[]
+            def search(query):
+                calls.append(query)
+                return [{'url':'https://upload.wikimedia.org/example.webm',
+                         'title':'File:Verified action.webm','license':'CC0',
+                         'page':'https://commons.wikimedia.org/wiki/File:Verified_action.webm'}]
+            def download(item,dest):
+                subprocess.run(['ffmpeg','-loglevel','error','-y',
+                                '-f','lavfi','-i','testsrc=size=320x180:rate=15:duration=3',
+                                '-c:v','libvpx-vp9','-b:v','180k',str(dest)],
+                               check=True,timeout=30)
+            out=root/'eight-scenes.mp4'
+            sources=export_live_story(sound,out,plan,root/'media',search=search,download=download)
+            self.assertEqual(len(sources),8)
+            self.assertEqual(len(calls),2)
+            probe=json.loads(subprocess.check_output(['ffprobe','-v','quiet',
+                                '-show_format','-show_streams','-of','json',str(out)]))
+            self.assertGreater(float(probe['format']['duration']),45.)
+            self.assertLess(float(probe['format']['duration']),51.)
+            self.assertEqual({x['codec_type'] for x in probe['streams']},
+                             {'audio','video'})
+
     def test_native_motion_video_and_original_audio_without_subtitles(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
