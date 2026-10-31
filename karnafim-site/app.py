@@ -108,7 +108,7 @@ def field(name,label,type="text",required=False,value=""):
 def view(title,body):
  u=me(); nav='<a href="/">🏠 בית</a> <a href="/memorials">🕯️ הנצחה</a> <a href="/archive">📜 ארכיון</a> <a href="/find">🔎 איתור</a> <a href="/photos">📷 תמונות</a> <a href="/feed">📸 סיפורים</a> '
  if u:
-  nav+='<a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
+  nav+='<a href="/new-post">📸 שתפו סיפור או אירוע</a> <a href="/my-posts">📝 הפרסומים שלי</a> <a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/community/moderation">אישור פרסומים</a> '
   nav+='<a href="/password">סיסמה</a> <a href="/logout">יציאה</a>'
  else:nav+='<a class="nav-register" href="/register">הרשמה</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
