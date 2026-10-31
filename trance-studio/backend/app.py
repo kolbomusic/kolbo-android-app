@@ -6,7 +6,7 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 from engine import load_audio, render_mix, export_mp3
-from storyboard import storyboard, export_animation
+from storyboard import storyboard, align_storyboard_to_vocal, export_animation
 
 ALLOWED={'.opus','.ogg','.oga','.mp3','.wav','.m4a','.aac','.mp4','.webm','.flac'}
 
@@ -58,7 +58,9 @@ def create_app(config=None):
             meta={'video_status':'disabled','storyboard_source':'not_requested'}
             if options.get('make_video',True):
                 update(job_id,percent=90,label='בונה סטוריבורד והנפשה',video_status='processing')
-                board=storyboard(options.get('transcript',''),len(audio)/32000)
+                board=align_storyboard_to_vocal(
+                    storyboard(options.get('transcript',''),len(audio)/32000),
+                    vocal,sr=32000)
                 board['transcript_origin']=options.get('transcript_origin','manual')
                 (root/job_id/'storyboard.json').write_text(
                     json.dumps(board,ensure_ascii=False),encoding='utf-8')
@@ -113,7 +115,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.6.0',cloud_ready=bool(app.config['API_TOKEN']))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.7.0',cloud_ready=bool(app.config['API_TOKEN']))
 
     @app.post('/api/jobs')
     def create_job():
