@@ -1,6 +1,6 @@
 import os,secrets,hashlib,hmac,html
 from datetime import datetime
-from flask import Flask,request,redirect,session,render_template_string,abort
+from flask import Flask,request,redirect,session,render_template_string,abort,Response
 import psycopg
 from psycopg.rows import dict_row
 
@@ -55,7 +55,7 @@ def view(title,body):
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/community/moderation">אישור פרסומים</a> '
   nav+='<a href="/password">סיסמה</a> <a href="/logout">יציאה</a>'
  else:nav+='<a class="nav-register" href="/register">הרשמה</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
- return render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><style>
+ return render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
  :root{font-family:Arial,'Segoe UI',sans-serif;background:#f3f1e8;color:#172a25}*{box-sizing:border-box}body{margin:0;line-height:1.7}header{background:#172b25;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header a{color:white;text-decoration:none;margin-left:12px;font-size:14px}.logo{font-size:21px;font-weight:800;color:#dbeb9f}main{max-width:1050px;margin:auto;padding:36px 18px}h1{font-size:clamp(30px,5vw,54px);line-height:1.2;margin:0 0 18px}h2{margin-top:32px}.hero{background:linear-gradient(125deg,#142b23,#365441);padding:50px 32px;color:white;border-radius:22px}.hero p{color:#e2e9db;font-size:19px;max-width:700px}.btn,button{background:#cce38d;color:#152b24;border:0;padding:11px 20px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 0}a{color:#246448}.btn.secondary{background:#e5ebe3}.card{background:white;border:1px solid #dee2d8;border-radius:15px;padding:23px;margin:14px 0;box-shadow:0 4px 18px #13251c09}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}label{display:block;font-weight:600;margin:12px 0}input,textarea,select{width:100%;display:block;padding:12px;border:1px solid #b8c4b4;border-radius:8px;font:inherit;background:white}textarea{min-height:105px}form{max-width:560px}.muted{color:#60736a}.tag{display:inline-block;padding:3px 9px;background:#e6eedb;border-radius:14px;font-size:12px}.error{background:#fff0e8;padding:14px;border-radius:8px}footer{text-align:center;padding:28px;color:#66766b;font-size:13px}
 header{position:sticky;top:0;z-index:1000;min-height:76px;box-shadow:0 3px 12px #0002}
 header nav{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:40px}
@@ -75,6 +75,10 @@ def formwrap(x):return '<input type="hidden" name="csrf" value="'+token()+'">'+x
 @app.route("/")
 def home():
  return app.extensions["karnafim_portal"]["home"]()
+@app.route("/favicon.svg")
+@app.route("/favicon.ico")
+def favicon():
+ return Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#19372c"/><path fill="#d8eaa2" d="M14 17h13v30h-7V24h-6zm17 0h13v30h-7V24h-6zm17 0h6v30h-6z"/><path d="M8 51h48" stroke="#d8eaa2" stroke-width="3" stroke-linecap="round"/></svg>',mimetype="image/svg+xml",headers={"Cache-Control":"public, max-age=604800","X-Content-Type-Options":"nosniff"})
 @app.route("/health")
 def health():return {"ok":True,"service":"karnafim"}
 @app.route("/register",methods=["GET","POST"])
