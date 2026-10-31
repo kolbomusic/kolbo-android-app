@@ -231,9 +231,13 @@ public final class MainActivity extends Activity {
     private class AudioBridge{
         @JavascriptInterface public void downloadMix(String relative){saveMix(relative,false);}
         @JavascriptInterface public void shareMix(String relative){saveMix(relative,true);}
+        @JavascriptInterface public void downloadVideo(String relative){saveOutput(relative,false,true);}
+        @JavascriptInterface public void shareVideo(String relative){saveOutput(relative,true,true);}
     }
-    private void saveMix(String relative,boolean share){
-        if(relative==null||!relative.matches("/api/jobs/[0-9a-f]{48}/audio")){
+    private void saveMix(String relative,boolean share){saveOutput(relative,share,false);}
+    private void saveOutput(String relative,boolean share,boolean video){
+        String expected="/api/jobs/[0-9a-f]{48}/"+(video?"video":"audio");
+        if(relative==null||!relative.matches(expected)){
             toast("קישור להורדה אינו תקין");return;
         }
         io.execute(()->{
@@ -244,13 +248,13 @@ public final class MainActivity extends Activity {
                 c.setConnectTimeout(25000);
                 c.setReadTimeout(180000);
                 c.setInstanceFollowRedirects(false);
-                c.setRequestProperty("Accept","audio/mpeg");
+                c.setRequestProperty("Accept",video?"video/mp4":"audio/mpeg");
                 String cookie=CookieManager.getInstance().getCookie(SITE);
                 if(cookie!=null)c.setRequestProperty("Cookie",cookie);
                 if(c.getResponseCode()!=200)throw new Exception("ההורדה נכשלה ("+c.getResponseCode()+")");
                 ContentValues meta=new ContentValues();
-                meta.put(MediaStore.MediaColumns.DISPLAY_NAME,"Kolbo-Trance-"+System.currentTimeMillis()+".mp3");
-                meta.put(MediaStore.MediaColumns.MIME_TYPE,"audio/mpeg");
+                meta.put(MediaStore.MediaColumns.DISPLAY_NAME,"Kolbo-Trance-"+System.currentTimeMillis()+(video?".mp4":".mp3"));
+                meta.put(MediaStore.MediaColumns.MIME_TYPE,video?"video/mp4":"audio/mpeg");
                 meta.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/Kolbo Trance");
                 meta.put(MediaStore.MediaColumns.IS_PENDING,1);
                 output=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,meta);
@@ -261,7 +265,7 @@ public final class MainActivity extends Activity {
                     while((n=in.read(buffer))>=0){
                         if(n==0)continue;
                         total+=n;
-                        if(total>40L*1024L*1024L)throw new Exception("קובץ MP3 גדול מדי");
+                        if(total>(video?160L:40L)*1024L*1024L)throw new Exception("קובץ גדול מדי");
                         out.write(buffer,0,n);
                     }
                 }
@@ -272,12 +276,12 @@ public final class MainActivity extends Activity {
                 runOnUiThread(()->{
                     if(share){
                         Intent send=new Intent(Intent.ACTION_SEND);
-                        send.setType("audio/mpeg");
+                        send.setType(video?"video/mp4":"audio/mpeg");
                         send.putExtra(Intent.EXTRA_STREAM,ready);
                         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        try{startActivity(Intent.createChooser(send,"שיתוף המיקס"));}
+                        try{startActivity(Intent.createChooser(send,video?"שיתוף סרטון האנימציה":"שיתוף המיקס"));}
                         catch(Exception e){toast("השיתוף אינו זמין. המיקס נשמר בהורדות.");}
-                    }else toast("המיקס נשמר בתיקיית הורדות / Kolbo Trance");
+                    }else toast(video?"הסרטון נשמר בהורדות / Kolbo Trance":"המיקס נשמר בתיקיית הורדות / Kolbo Trance");
                 });
             }catch(Exception e){
                 if(output!=null)try{getContentResolver().delete(output,null,null);}catch(Exception ignored){}
