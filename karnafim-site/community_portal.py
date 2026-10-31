@@ -3,6 +3,7 @@ import io, html, hashlib, os
 from datetime import date
 import psycopg
 from PIL import Image, ImageOps, UnidentifiedImageError
+from moderation_engine import moderate, configured
 from urllib.parse import quote, urlsplit
 from flask import request, redirect, abort, send_file, session, Response
 from archive_data import ARCHIVE
@@ -83,6 +84,11 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS post_type TEXT NOT NULL DEFAULT 'story'")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS event_date DATE")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS event_place TEXT NOT NULL DEFAULT ''")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_status TEXT NOT NULL DEFAULT 'held'")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_reason TEXT NOT NULL DEFAULT 'Legacy post requires review'")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_model TEXT NOT NULL DEFAULT ''")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_checked_at TIMESTAMPTZ")
+    sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_attempts INTEGER NOT NULL DEFAULT 0")
     sql("""CREATE TABLE IF NOT EXISTS community_media (
       id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
       post_id BIGINT REFERENCES community_posts(id) ON DELETE CASCADE,
@@ -353,6 +359,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         if request.method=="POST":
             guard()
             if request.form.get("rights")!="on":abort(400)
+            if request.form.get("ai_consent")!="on":abort(400,"נדרש אישור לעיבוד על ידי שירות AI חיצוני, או הימנעות משליחת הפרסום.")
             post_type=request.form.get("post_type","story")
             if post_type not in ("story","event","photo"):abort(400)
             title=request.form.get("title","").strip()[:130]
@@ -375,6 +382,11 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             if len(files)>4:abort(400,"עד ארבעה קבצים בכל פרסום")
             if not title or (len(body)<5 and not files):abort(400,"נדרשים כותרת, וסיפור קצר או תמונה")
             infos=[inspect_file(f) for f in files]
+            # Moderation runs BEFORE the transaction that creates a post. Failure is private.
+            verdict=moderate({"post_type":post_type,"title":title,"body":body,
+                              "year":y,"date":when,"place":place},infos)
+            if verdict.status=="rejected":
+                return page("הפרסום לא התקבל",'<div class="note" role="alert"><h1>הפרסום לא עבר בדיקת בטיחות</h1><p>'+e(verdict.reason)+'</p><a href="/new-post">עריכת הפרסום וניסיון נוסף</a></div>'),422
             total_size=sum(info["size"] for info in infos)
             if total_size>12*1024*1024:abort(413,"הקבצים חורגים ממכסת הפרסום")
             # One database transaction: the story and all its media appear together or not at all.
@@ -386,13 +398,15 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
                     cur.execute("SELECT COALESCE(SUM(length),0) FROM community_media")
                     site=cur.fetchone()[0]
                     if mine+total_size>25*1024*1024 or site+total_size>150*1024*1024:abort(413,"אין מספיק מקום אחסון לפרסום")
-                    cur.execute("INSERT INTO community_posts(author_id,title,body,story_year,post_type,event_date,event_place) VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING id",
-                                (u["id"],title,body,int(y) if y else None,post_type,event_date,place))
+                    cur.execute("INSERT INTO community_posts(author_id,title,body,story_year,post_type,event_date,event_place,approved,ai_status,ai_reason,ai_model,ai_checked_at,ai_attempts) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s THEN NOW() ELSE NULL END,%s) RETURNING id",
+                                (u["id"],title,body,int(y) if y else None,post_type,event_date,place,
+                                 verdict.status=="approved",verdict.status,verdict.reason,verdict.model,
+                                 verdict.attempted,1 if verdict.attempted else 0))
                     post_id=cur.fetchone()[0]
                     for info in infos:
                         cur.execute("INSERT INTO community_media(owner_id,post_id,recipient_id,mime,kind,filename,data,length) VALUES(%s,%s,NULL,%s,%s,%s,%s,%s)",
                                     (u["id"],post_id,info["mime"],info["kind"],info["filename"],info["data"],info["size"]))
-            return redirect("/my-posts?submitted=1",code=303)
+            return redirect("/my-posts?auto=1" if verdict.status=="approved" else "/my-posts?submitted=1",code=303)
         b='<h1>📸 מפרסמים זיכרון מהפלוגה</h1><p>חבר מאושר יכול לשתף סיפור, אירוע או תמונות. הפרסום יהיה גלוי לחברים המאושרים רק לאחר בדיקת מנהל.</p>'
         b+='<form method="post" enctype="multipart/form-data" class="form-box">'+formwrap(
             '<label>סוג פרסום<select name="post_type" required><option value="story">סיפור מהשירות</option><option value="event">אירוע, מפגש או זיכרון מאירוע</option><option value="photo">אלבום תמונות</option></select></label>'
@@ -403,23 +417,27 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             '<label>הסיפור או פרטי האירוע<textarea name="body" maxlength="4000" placeholder="מי היה, מה קרה, ומה אתם זוכרים? אפשר לשתף תמונות עם כותרת בלבד."></textarea></label>'
             +upload_form(True)
             +'<label><input type="checkbox" name="rights" style="width:auto;display:inline" required> אני מאשר שיש לי זכויות והרשאה לשתף את החומרים, ושלא כללתי פרטים אישיים של אחרים ללא הסכמתם.</label>'
-            '<button type="submit">שליחת הפרסום לאישור מנהל</button></form>')
+            +'<label><input type="checkbox" name="ai_consent" style="width:auto;display:inline" required> אני מסכים להעברת התוכן והקבצים לשירות Google Gemini לצורך ביקורת AI אוטומטית, ככל שהשירות מחובר. בשכבת השימוש החינמית Google עשויה להשתמש בתוכן לשיפור שירותיה. תוכן שלא עובר בדיקה יישמר פרטי ולא יפורסם אוטומטית.</label>'
+            +'<p class="muted">בדיקה חכמה: '+("מחוברת — תוכן בסיכון נמוך עשוי להתפרסם מיד" if configured() else "טרם חובר מנוע AI; כל פרסום יישאר פרטי עד לבדיקה")+'</p>'
+            +'<button type="submit">שליחת הפרסום לביקורת אוטומטית</button></form>')
         return page("הוספת סיפור, תמונות או אירוע",b+UPLOAD_JS+RECORD_JS)
 
     @app.route("/my-posts")
     def my_posts():
         u=approved()
-        rows=sql("SELECT id,title,body,post_type,story_year,event_date,event_place,approved,created_at FROM community_posts WHERE author_id=%s ORDER BY created_at DESC LIMIT 100",(u["id"],),True)
+        rows=sql("SELECT id,title,body,post_type,story_year,event_date,event_place,approved,ai_status,ai_reason,created_at FROM community_posts WHERE author_id=%s ORDER BY created_at DESC LIMIT 100",(u["id"],),True)
         b='<h1>📝 הפרסומים שלי</h1><p>תמונות, אירועים וסיפורים ששלחת. עד שהמנהל מאשר אותם, רק אתה והמנהל יכולים לראות את התוכן.</p>'
-        if request.args.get("submitted")=="1":b+='<div class="note" role="status">✓ הפרסום נשלח בהצלחה וממתין לאישור מנהל הקהילה.</div>'
+        if request.args.get("submitted")=="1":b+='<div class="note" role="status">✓ הפרסום נשמר במצב פרטי. ביקורת ה־AI לא אישרה פרסום אוטומטי.</div>'
+        if request.args.get("auto")=="1":b+='<div class="note" role="status">✓ הפרסום אושר בביקורת אוטומטית והופיע בציר הזמן של החברים.</div>'
         b+='<div class="actions"><a class="cta" href="/new-post">➕ פרסום חדש</a><a class="cta" href="/feed">לציר הזמן</a></div>'
         if not rows:b+='<div class="note">אין לך עדיין פרסומים. אפשר להעלות עכשיו תמונה, סיפור או אירוע מהשירות.</div>'
         labels={"story":"סיפור","event":"אירוע","photo":"אלבום תמונות"}
         for p in rows:
-            state="פורסם לחברי הקהילה" if p["approved"] else "ממתין לאישור מנהל"
+            state="פורסם לחברי הקהילה" if p["approved"] else ("ממתין לחיבור או לחידוש בדיקת AI" if p["ai_status"]=="pending_ai" else "נשאר פרטי — בדיקה לא חד־משמעית")
             b+='<article class="event"><span class="tag">'+e(labels.get(p["post_type"],"סיפור"))+'</span> <span class="tag">'+e(state)+'</span><h2>'+e(p["title"])+'</h2>'
             if p["event_date"]:b+='<p>📅 '+e(p["event_date"])+'</p>'
             if p["event_place"]:b+='<p>📍 '+e(p["event_place"])+'</p>'
+            if not p["approved"]:b+='<p class="muted">🛡️ '+e(p["ai_reason"])+'</p>'
             b+='<p>'+e(p["body"]).replace("\n","<br>")+'</p>'
             attachments=sql("SELECT id,kind FROM community_media WHERE post_id=%s ORDER BY id",(p["id"],),True)
             b+=''.join(media_html(a["id"],a["kind"]) for a in attachments)+'</article>'
