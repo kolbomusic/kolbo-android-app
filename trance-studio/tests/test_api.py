@@ -40,6 +40,12 @@ class ApiTests(unittest.TestCase):
         self.assertIn('audio/mpeg',result.content_type)
         self.assertGreater(len(result.data),50000)
         result.close()
+        self.assertIn('voice_url',status)
+        vocal=self.client.get(status['voice_url'])
+        self.assertEqual(vocal.status_code,200)
+        self.assertIn('audio/mpeg',vocal.content_type)
+        self.assertGreater(len(vocal.data),12000)
+        vocal.close()
 
     def test_unsupported_media_fails_without_external_reads(self):
         r=self.client.post('/api/jobs',data={'audio':(io.BytesIO(b'#EXTM3U\nhttp://127.0.0.1/'),'a.m3u')})
@@ -79,7 +85,7 @@ class ApiTests(unittest.TestCase):
         from app import create_app
         with tempfile.TemporaryDirectory() as folder:
             client=create_app({'JOB_DIR':folder,'API_TOKEN':'test-access-key'}).test_client()
-            for path in ('/api/jobs/'+'a'*48,'/api/jobs/'+'a'*48+'/audio'):
+            for path in ('/api/jobs/'+'a'*48,'/api/jobs/'+'a'*48+'/audio','/api/jobs/'+'a'*48+'/voice'):
                 self.assertEqual(client.get(path).status_code,401)
                 self.assertEqual(client.get(path,headers={'Authorization':'Bearer test-access-key'}).status_code,404)
 
