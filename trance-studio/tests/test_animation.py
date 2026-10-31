@@ -76,6 +76,21 @@ class ProductionStoryTests(unittest.TestCase):
             self.assertNotIn('video_url',state)
             self.assertEqual(client.get(state['download_url']).status_code,200)
 
+    def test_dense_speech_alignment_never_overflows_video_length(self):
+        sr=8000
+        duration=2.4
+        from live_video import visual_plan
+        phrases=['החמור נוער','אני נוסע באוטו']*9
+        board=visual_plan('. '.join(phrases),duration)
+        t=np.arange(int(sr*duration))/sr
+        v=(.25*np.sin(2*np.pi*230*t)).astype(np.float32)
+        result=align_storyboard_to_vocal(board,v,sr)
+        cuts=result['scenes']
+        self.assertEqual(len(cuts),18)
+        self.assertTrue(all(sc['end']>sc['start'] for sc in cuts))
+        self.assertAlmostEqual(cuts[-1]['end'],duration,places=2)
+        self.assertTrue(all(0<=sc['start']<duration for sc in cuts))
+
     def test_aligned_segments_work_without_visible_subtitles(self):
         story={'transcript':'החמור נוער. החקלאי נותן לחמור אוכל.',
                'scenes':[{'start':0,'end':5,'spoken':'החמור נוער','caption':''},
