@@ -84,8 +84,8 @@ def test():
     media=[x for x in records if x[0].startswith("INSERT INTO community_media")]
     assert len(post)==1 and len(media)==2,(len(post),len(media))
     for statement,params in media:
-        assert params[3]=="image/jpeg" and params[4]=="image"
-        payload=params[6]
+        assert params[2]=="image/jpeg" and params[3]=="image"
+        payload=params[5]
         assert payload[:3]==b"\xff\xd8\xff"
         assert b"EXIF_SECRET_SHOULD_DISAPPEAR" not in payload
     records.clear()
