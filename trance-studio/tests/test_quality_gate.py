@@ -41,6 +41,28 @@ class QualityGate(unittest.TestCase):
             self.assertGreater(float(np.sqrt(np.mean(b*b))),.015)
             self.assertGreater(float(np.corrcoef(a,b)[0,1]),.36)
 
+    def test_music_variations_are_different_and_reproducible(self):
+        voice=self.speech_like(2.0)
+        a=engine.render_mix([voice],sample_rate=self.sr,seconds=30,
+                            humor='off',mix_variation=1)
+        b=engine.render_mix([voice],sample_rate=self.sr,seconds=30,
+                            humor='off',mix_variation=2)
+        c=engine.render_mix([voice],sample_rate=self.sr,seconds=30,
+                            humor='off',mix_variation=1)
+        self.assertEqual(a.shape,b.shape)
+        np.testing.assert_array_equal(a,c)
+        self.assertGreater(float(np.sqrt(np.mean((a-b)**2))),.004)
+
+    def test_voice_stem_is_mono_and_distinct_from_music(self):
+        voice=self.speech_like(3.)
+        full,vocal=engine.render_mix([voice],sample_rate=self.sr,seconds=30,
+                            humor='auto',return_voice=True,mix_variation=10)
+        self.assertEqual(full.ndim,2)
+        self.assertEqual(full.shape[1],2)
+        self.assertEqual(vocal.ndim,1)
+        self.assertEqual(len(vocal),len(full))
+        self.assertGreater(float(np.sqrt(np.mean(vocal*vocal))),.01)
+
     def test_dynamic_mix_has_safe_peaks(self):
         source=self.speech_like(12)
         a=engine.render_mix([source],sample_rate=self.sr,seconds=60,
