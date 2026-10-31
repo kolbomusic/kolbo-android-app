@@ -12,14 +12,19 @@ DB=os.environ["DATABASE_URL"]
 @app.before_request
 def security_hold():
  if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path!="/health":
-  page='''<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>הקרנפים — האתר בבדיקת אבטחה</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f5ef;color:#193c30;font-family:Arial,sans-serif}main{max-width:620px;margin:20px;padding:42px 28px;border-radius:20px;background:#fff;box-shadow:0 12px 40px #13281b18;text-align:center}h1{font-size:31px;line-height:1.3}p{line-height:1.9;font-size:18px}.status{display:inline-block;padding:8px 15px;background:#ffebd3;border-radius:40px;color:#6f4813;font-weight:700}</style></head><body><main><span class="status">בדיקת אבטחה מתבצעת</span><h1>אתר הקרנפים — גישה מושהית</h1><p>האתר הושהה זמנית בעקבות התראת אבטחה בדפדפן. הכניסה לחשבונות, ההרשמה, שיתוף המדיה וההודעות אינם זמינים כעת.</p><p>אנו בודקים את הסיבה ופועלים להסרת האזהרה בדרך הרשמית. אין צורך למסור סיסמה או פרטים אישיים.</p></main></body></html>'''
-  resp=Response(page,status=503,mimetype="text/html")
-  resp.headers["Cache-Control"]="no-store, max-age=0"
-  resp.headers["X-Content-Type-Options"]="nosniff"
-  resp.headers["Referrer-Policy"]="no-referrer"
-  resp.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-  resp.headers["X-Robots-Tag"]="noindex, nofollow"
-  return resp
+  if request.method=="GET" and request.path in ("/","/about","/privacy","/safety"):
+   from pathlib import Path
+   document=(Path(__file__).resolve().parent/"maintenance_public.html").read_text(encoding="utf-8")
+   response=Response(document,status=200,mimetype="text/html")
+   response.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  else:
+   response=Response("אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה.",status=503,mimetype="text/plain")
+   response.headers["Content-Security-Policy"]="default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  response.headers["Cache-Control"]="no-store, max-age=0"
+  response.headers["X-Robots-Tag"]="noindex, nofollow"
+  response.headers["X-Content-Type-Options"]="nosniff"
+  response.headers["Referrer-Policy"]="no-referrer"
+  return response
 
 @app.after_request
 def harden_responses(resp):
