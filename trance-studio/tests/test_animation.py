@@ -4,10 +4,25 @@ import numpy as np
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
-from storyboard import storyboard, render_frame, export_animation
+from storyboard import storyboard, align_storyboard_to_vocal, render_frame, export_animation
 from app import create_app
 
 class AnimatedStoryTests(unittest.TestCase):
+    def test_storyboard_timing_tracks_speech_not_silent_music(self):
+        sr=8000
+        voice=np.zeros(sr*12,dtype=np.float32)
+        t=np.arange(sr*4)/sr
+        voice[2*sr:6*sr]=.25*np.sin(2*np.pi*233*t)
+        board=align_storyboard_to_vocal(
+            storyboard('נסעתי באוטו. הגעתי לים.',12),voice,sr)
+        self.assertEqual(board['alignment'],'vocal_activity_estimated')
+        self.assertEqual([x['kind'] for x in board['scenes']],['car','water'])
+        # Uniform allocation would split at 6 seconds, close to silence.
+        # Voice-aware boundary falls inside the 2-6 second speaking window.
+        self.assertGreater(board['scenes'][0]['end'],2.2)
+        self.assertLess(board['scenes'][0]['end'],5.7)
+        self.assertAlmostEqual(board['scenes'][-1]['end'],12.,places=1)
+
     def test_unknown_words_never_imply_music_party(self):
         story=storyboard('אני חושב על משהו ולא יודע מה יקרה',18)
         self.assertEqual(story['scenes'][0]['kind'],'speech')
