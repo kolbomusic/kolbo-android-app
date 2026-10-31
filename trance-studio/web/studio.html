@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#110a20"><meta name="description" content="Kolbo Trance Studio — הופכים הודעות קוליות למיקס טראנס מצחיק בלי לאבד מילים.">
+<link rel="manifest" href="/studio.webmanifest"><title>Kolbo Trance Studio · רמיקס חכם</title>
+<style>
+:root{font-family:Arial,'Noto Sans Hebrew',sans-serif;color:#f5efff;color-scheme:dark;--accent:#d27cfd;--soft:#a89cbf}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 15% 5%,#3b1e62 0,transparent 50%),radial-gradient(ellipse at 90% 65%,#132a59 0,transparent 46%),#0c0815}
+main{max-width:880px;margin:auto;padding:28px 15px 90px}header{text-align:center;margin:16px auto 30px}.brand{letter-spacing:4px;color:#c89cf6;font-weight:bold;font-size:13px}
+h1{font-size:clamp(32px,7vw,58px);margin:10px 0 8px;line-height:1.14}h1 span{color:#e7a4fe}header p{color:#c9bbdf;line-height:1.7;margin:0}
+.panel{background:rgba(30,23,51,.87);border:1px solid #50406d;border-radius:21px;padding:20px;margin:14px 0;box-shadow:0 6px 25px #04020a33}
+h2{font-size:19px;margin:0 0 13px}label{font-weight:bold;display:block;margin:14px 0 7px}
+small,.hint{color:#bdb2d1;font-size:13px;line-height:1.6}input,select,button{font:inherit}select,input[type=range]{width:100%}
+select{min-height:46px;border-radius:11px;background:#231a39;color:white;border:1px solid #71618b;padding:9px}
+input[type=file]{width:100%;background:#251b3b;padding:24px 12px;border:1px dashed #bd8efb;border-radius:12px}
+input[type=range]{accent-color:#c77bea;cursor:pointer}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid>div{min-width:0}
+.pill{display:inline-block;background:#3f275d;padding:7px 11px;border-radius:20px;color:#dfb6ff;font-size:13px}
+button{border:0;border-radius:13px;min-height:52px;padding:10px 20px;color:#120620;font-weight:800;background:linear-gradient(110deg,#d68eff,#8da7ff);cursor:pointer}
+button:disabled{opacity:.6;cursor:not-allowed}button.secondary{background:#37294e;color:#f3e8ff;border:1px solid #8a76ae}
+.actions{display:flex;gap:10px;flex-wrap:wrap}.actions>*{flex:1}
+#status{padding:14px 0;color:#e5d6fc;min-height:25px}progress{width:100%;height:16px;accent-color:#c47aff;border-radius:10px}
+audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:block}
+#files{margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.foot{text-align:center;color:#9286ab;font-size:12px;padding-top:22px}
+@media(max-width:560px){.grid{grid-template-columns:1fr}main{padding:16px 10px 75px}.panel{padding:16px}}
+</style>
+</head>
+<body><main>
+<header><div class="brand">≋ KOLBO / TRANCE STUDIO</div><h1>הקול שלך.<br><span>הדרופ והצחוקים שלנו.</span></h1><p>טראנס, מלודיות ואפקטים מצחיקים בסגנון שנות ה־90 וה־2000. שומרים על כל הדיבור ולא רק על ההתחלה.</p></header>
+<section class="panel"><h2>01 / ההקלטות שלך</h2>
+<label for="audio">הוסף עד 4 הודעות קוליות</label><input id="audio" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac" multiple>
+<div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div></section>
+<section class="panel"><h2>02 / עיצוב המיקס</h2>
+<div class="grid">
+<div><label for="style">סוג הטראנס</label><select id="style">
+<option value="mixed" selected>מיקס חכם — שילוב כל הסגנונות</option>
+<option value="melodic">טראנס מלודי</option><option value="psy">פסיי טראנס</option>
+<option value="progressive">פרוגרסיב</option><option value="goa">גואה טראנס</option>
+<option value="acid">אסיד טראנס</option><option value="uplifting">אפליפטינג</option>
+<option value="eurodance">יורודאנס שנות ה־90</option>
+<option value="hard">הארד טראנס</option><option value="rave">רייב של פעם</option></select></div>
+<div><label for="melody">בחירת מלודיה</label><select id="melody">
+<option value="auto" selected>מתחלפת אוטומטית</option>
+<option value="1">מלודיה 1 — קלאסית</option><option value="2">מלודיה 2 — מקפיצה</option>
+<option value="3">מלודיה 3 — מרחפת</option><option value="4">מלודיה 4 — רטרו</option>
+<option value="5">מלודיה 5 — עמוקה</option><option value="6">מלודיה 6 — אופורית</option>
+</select></div>
+<div><label for="humor">סגנון הומור ואפקטים</label><select id="humor">
+<option value="auto" selected>הכול ביחד — בחירה אוטומטית חכמה</option>
+<option value="classic">סטאטר קלאסי, חזרות והדגשות</option>
+<option value="cartoon">קולות מצוירים וגבוה/נמוך</option>
+<option value="scratch">סקראצ׳ וסיבוב אחורה</option>
+<option value="robot">קול רובוטי ואפקט דיגיטלי</option>
+<option value="chaos">מסיבה פרועה — יותר אפקטים</option>
+<option value="off">ללא הומור — מוזיקה וקול בלבד</option></select></div>
+<div><label for="length">משך המיקס</label><select id="length">
+<option value="0" selected>אוטומטי לפי אורך ההקלטות</option>
+<option value="30">לפחות 30 שניות</option><option value="60">לפחות דקה</option>
+<option value="90">לפחות דקה וחצי</option><option value="120">לפחות 2 דקות</option>
+<option value="180">לפחות 3 דקות</option></select>
+<small>המערכת מאריכה אוטומטית כשצריך כדי שלא ייעלמו משפטים.</small></div>
+</div>
+<label for="bpm">מהירות הקצב — <output id="bpmText">145</output> BPM</label>
+<input id="bpm" type="range" min="120" max="165" value="145" step="1">
+<label for="voice">עוצמת הדיבור — <output id="voiceText">100%</output></label>
+<input id="voice" type="range" min="50" max="150" value="100" step="5">
+<p class="hint">הדיבור המלא נשמר לפי הסדר המקורי. החיתוכים הקומיים נבנים מתוך רגעים שבהם יש הפסקות בדיבור. כל המנגינות והאפקטים נוצרים באופן מקורי.</p>
+</section>
+<section class="panel"><h2>03 / יוצרים ומנגנים</h2>
+<div class="actions"><button id="generate">✦ יצירת מיקס משולב חכם</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
+<div id="status" role="status" aria-live="polite">מוכן להקלטה שלך.</div>
+<progress id="progress" max="100" value="0" hidden></progress>
+</section>
+<section class="panel" id="result"><h2>✓ המיקס מוכן!</h2><audio controls id="player" preload="metadata"></audio>
+<p id="summary" class="hint"></p>
+<div class="actions"><button id="download">הורדת MP3</button><button id="share" class="secondary">שיתוף ל־WhatsApp ולאפליקציות</button></div></section>
+<div class="foot">KOLBO TRANCE STUDIO · ללא מנוי · לשימוש אישי · עיבוד בענן · שמירת הקובץ עד שעה</div>
+</main>
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id)};
+var audio=$('audio'),files=[],resultUrl='',resultBlob=null,deferredInstall=null;
+var active=false;
+function message(txt){$('status').textContent=txt}
+function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות מהמכשיר או מתוך WhatsApp'}
+function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles()}
+audio.addEventListener('change',function(){setFiles(audio.files)});
+$('bpm').oninput=function(){$('bpmText').textContent=this.value};
+$('voice').oninput=function(){$('voiceText').textContent=this.value+'%'};
+function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
+async function run(){
+if(active)return;
+if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
+if(files.some(function(f){return f.size>15*1048576||!f.size})){message('כל קובץ חייב להיות קטן מ־15MB ולא ריק.');return}
+active=true;$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
+$('result').classList.remove('visible');message('מעלה את ההקלטה לשרת...');
+try{
+var form=new FormData();
+files.forEach(function(f){form.append('audio',f,f.name)});
+form.set('style',$('style').value);form.set('melody',$('melody').value);
+form.set('humor',$('humor').value);form.set('seconds',$('length').value);
+form.set('bpm',$('bpm').value);form.set('voice_level',String(Number($('voice').value)/100));
+var r=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
+var data=await r.json();if(!r.ok)throw new Error(data.error||'לא ניתן לשלוח את ההקלטה');
+for(var attempt=0;attempt<600;attempt++){
+await pause(1000);
+var statusResponse=await fetch(data.status_url,{credentials:'same-origin'});
+var j=await statusResponse.json();
+if(!statusResponse.ok)throw new Error(j.error||'השירות אינו זמין');
+$('progress').value=Number(j.percent||0);message(j.label||'מכין את המיקס');
+if(j.state==='error')throw new Error(j.message||'אירעה תקלה בעיבוד');
+if(j.state==='done'){
+var mp3=await fetch(j.download_url,{credentials:'same-origin'});
+if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד אותו.');
+if(resultUrl)URL.revokeObjectURL(resultUrl);
+resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);
+$('player').src=resultUrl;$('result').classList.add('visible');
+$('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות · ההקלטות שולבו לפי הסדר · הומור: '+$('humor').selectedOptions[0].textContent;
+message('הצליח! המיקס מוכן להשמעה ולשיתוף.');$('result').scrollIntoView({behavior:'smooth'});
+return;
+}
+}
+throw new Error('העיבוד לא הסתיים במסגרת הזמן, אפשר לנסות שנית.');
+}catch(error){message('שגיאה: '+(error.message||String(error)))}
+finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
+}
+$('generate').onclick=run;
+$('download').onclick=function(){if(!resultBlob)return;var a=document.createElement('a');a.href=resultUrl;a.download='Kolbo-Trance-Funny-Mix.mp3';document.body.appendChild(a);a.click();a.remove()};
+$('share').onclick=async function(){if(!resultBlob)return;var f=new File([resultBlob],'Kolbo-Trance-Funny-Mix.mp3',{type:'audio/mpeg'});if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'Kolbo Trance Studio'});return}catch(e){if(e.name==='AbortError')return}}$('download').click();message('הקובץ נשמר לשיתוף מתוך WhatsApp.')};
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredInstall=e;$('install').hidden=false});
+$('install').onclick=async function(){if(deferredInstall){deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('install').hidden=true}else{message('בתפריט הדפדפן בחר התקנת אפליקציה.')}};
+if('serviceWorker' in navigator){
+navigator.serviceWorker.register('/studio-sw.js',{scope:'/'}).catch(function(){});
+if(new URLSearchParams(location.search).get('shared')==='1'&&'caches' in window){
+(async function(){try{
+var cache=await caches.open('kolbo-studio-share-v1');
+var r=await cache.match('/studio/shared-audio');if(!r)return;
+var blob=await r.blob();var fn=decodeURIComponent(r.headers.get('x-filename')||'WhatsApp-voice.opus');
+setFiles([new File([blob],fn,{type:blob.type||'audio/ogg'})]);await cache.delete('/studio/shared-audio');
+message('התקבלה הקלטה מ־WhatsApp. בחר סגנון ולחץ יצירת מיקס.');
+}catch(e){message('לא הצלחנו לפתוח את ההקלטה המשותפת. אפשר להעלות ידנית.')}}
+)();
+}}
+})();
+</script>
+</body></html>
