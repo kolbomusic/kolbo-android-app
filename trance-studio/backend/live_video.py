@@ -131,6 +131,12 @@ def _valid_license(metadata):
 
 def _matches_metadata(title,query):
     title=title.lower().replace("_"," ").replace("-"," ")
+    # A motion clip must depict an actual event. Reject animated mockups,
+    # stock intros, gameplay, incorrect scene specifics and diagrams.
+    forbidden=("animation","cartoon","simulator","simulation","gameplay",
+               "computer generated","cgi","3d model","slideshow",
+               "wrong side","wrong way")
+    if any(x in title for x in forbidden):return False
     keywords=query.lower().split()
     # Require main physical actor in the file title, not just a search-snippet.
     main=keywords[0]
@@ -236,10 +242,12 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
                     "-f","concat","-safe","0","-i",str(concat),
                     "-c","copy",str(silent)],cwd=work,capture_output=True,
                    check=True,timeout=55)
+    attribution=" | ".join(src['page']+" ("+src["license"]+")" for src in sources)
     subprocess.run(["ffmpeg","-nostdin","-loglevel","error","-y",
                     "-i",str(silent),"-i",str(audio_mp3),
                     "-map","0:v:0","-map","1:a:0","-c:v","copy",
                     "-c:a","aac","-b:a","160k","-shortest",
+                    "-metadata","comment=Video sources: "+attribution[:2700],
                     "-movflags","+faststart",str(video_mp4)],
                    capture_output=True,check=True,timeout=70)
     if Path(video_mp4).stat().st_size<12000:
