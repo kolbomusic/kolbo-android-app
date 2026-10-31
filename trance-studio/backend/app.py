@@ -8,7 +8,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature
 from engine import load_audio, render_mix, export_mp3
 from storyboard import align_storyboard_to_vocal
 from live_video import visual_plan, export_live_story, UnavailableVideo
-from voice_visual import export_voice_visualizer
+from voice_visual import write_original_source_wav, export_voice_visualizer
 
 ALLOWED={'.opus','.ogg','.oga','.mp3','.wav','.m4a','.aac','.mp4','.webm','.flac'}
 
@@ -100,7 +100,9 @@ def create_app(config=None):
                     try:
                         update(job_id,percent=93,label='מפיק וידאו שמגיב לקול המקורי',
                                video_status='processing')
-                        export_voice_visualizer(root/job_id/'voice.mp3',
+                        original_wave=write_original_source_wav(
+                            clips,root/job_id/'original_source.wav')
+                        export_voice_visualizer(original_wave,
                             root/job_id/'mix.mp3',root/job_id/'story.mp4')
                         fallback_board=board if board else {
                             'source':'original_voice_reactive',
@@ -166,7 +168,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.11.0',cloud_ready=bool(app.config['API_TOKEN']))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.11.1',cloud_ready=bool(app.config['API_TOKEN']))
 
     @app.post('/api/jobs')
     def create_job():
