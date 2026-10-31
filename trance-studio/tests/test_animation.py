@@ -25,6 +25,26 @@ class ProductionStoryTests(unittest.TestCase):
         buf.seek(0)
         return buf
 
+    def test_failed_auto_transcription_reports_no_mp4_truthfully(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test-only'})
+            client=app.test_client()
+            response=client.post('/api/jobs',data={
+                'audio':(self.wave(),'source.wav'),
+                'make_video':'off','video_requested':'on',
+                'transcription_failed':'on','transcript':'','seconds':'30'})
+            self.assertEqual(response.status_code,202,response.get_json())
+            state=None
+            for _ in range(140):
+                state=client.get(response.get_json()['status_url']).get_json()
+                if state.get('state') in ('done','error'):break
+                time.sleep(.25)
+            self.assertEqual(state['state'],'done',state)
+            self.assertEqual(state['video_status'],'unavailable')
+            self.assertEqual(state['storyboard_source'],'automatic_transcription_failed')
+            self.assertNotIn('video_url',state)
+            self.assertEqual(client.get(state['download_url']).status_code,200)
+
     def test_no_video_without_original_speech_transcript(self):
         with tempfile.TemporaryDirectory() as directory:
             app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test-only'})
