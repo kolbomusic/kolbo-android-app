@@ -168,7 +168,6 @@ if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד א
 if(resultUrl)URL.revokeObjectURL(resultUrl);
 if(voiceUrl)URL.revokeObjectURL(voiceUrl);
 if(originalUrl)URL.revokeObjectURL(originalUrl);
-if(videoUrl)URL.revokeObjectURL(videoUrl);
 videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;
 resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);resultServerUrl=j.download_url;
 if(j.voice_url){
@@ -177,15 +176,24 @@ if(j.voice_url){
 }
 if(files.length){originalUrl=URL.createObjectURL(files[0]);$('originalPreview').src=originalUrl;}
 if(j.video_url){
- var vr=await fetch(j.video_url,{credentials:'same-origin'});
- if(vr.ok){
-  videoBlob=await vr.blob();
-  videoUrl=URL.createObjectURL(videoBlob);
-  videoServerUrl=j.video_url;
-  $('videoPlayer').src=videoUrl;
-  $('videoResult').hidden=false;
-  var isSemantic=j.storyboard_source==='provided_transcript_approximate_timing';
-  $('storyboardInfo').textContent=isSemantic?'הסטוריבורד מבוסס על הטקסט שסופק; תזמון המשפטים משוער.':'הסצנות מגיבות לדיבור ולקצב. לא בוצע זיהוי משמעות המילים בהקלטה.';
+ // Keep the MP4 as a streaming URL: no need to load a large file into RAM
+ // just to display the playback controls on Android.
+ videoServerUrl=j.video_url;
+ videoUrl=j.video_url;
+ $('videoPlayer').src=videoUrl;
+ $('videoResult').hidden=false;
+ var isSemantic=j.storyboard_source==='provided_transcript_approximate_timing';
+ $('storyboardInfo').textContent=isSemantic?'הסטוריבורד מבוסס על הטקסט שסופק; תזמון המשפטים משוער.':'הסצנות מגיבות לדיבור ולקצב. לא בוצע זיהוי משמעות המילים בהקלטה.';
+ if(j.storyboard_url){
+  try{
+   var storyResponse=await fetch(j.storyboard_url,{credentials:'same-origin'});
+   if(storyResponse.ok){
+    var board=await storyResponse.json();
+    var description=(board.scenes||[]).map(function(sc,i){
+      return (i+1)+'. '+(sc.caption||({'party':'טראנס וריקוד','car':'נסיעה','water':'ים ומים','animal':'חיות','food':'אוכל','home':'בית','sport':'ספורט'}[sc.kind]||'אנימציה'))}).join(' · ');
+    if(description)$('storyboardInfo').textContent+='\nסטוריבורד: '+description;
+   }
+  }catch(e){}
  }
 }
 if(j.video_status==='error'){$('summary').textContent='סרטון הווידאו לא הושלם בשרת. המיקס מוכן להאזנה ולהורדה.';}
@@ -201,18 +209,22 @@ finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
 }
 $('generate').onclick=run;
 $('downloadVideo').onclick=function(){
- if(!videoBlob)return;
- if(window.KolboAndroid&&videoServerUrl){window.KolboAndroid.downloadVideo(videoServerUrl);return}
- var a=document.createElement('a');a.href=videoUrl;a.download='Kolbo-Trance-Animated-Story.mp4';document.body.appendChild(a);a.click();a.remove();
+ if(!videoServerUrl)return;
+ if(window.KolboAndroid){window.KolboAndroid.downloadVideo(videoServerUrl);return}
+ var a=document.createElement('a');a.href=videoServerUrl;a.download='Kolbo-Trance-Animated-Story.mp4';document.body.appendChild(a);a.click();a.remove();
 };
 $('shareVideo').onclick=async function(){
- if(!videoBlob)return;
- if(window.KolboAndroid&&videoServerUrl){window.KolboAndroid.shareVideo(videoServerUrl);return}
- var f=new File([videoBlob],'Kolbo-Trance-Animated-Story.mp4',{type:'video/mp4'});
- if(navigator.canShare&&navigator.canShare({files:[f]})){
-  try{await navigator.share({files:[f],title:'Kolbo Trance Story'});return}
-  catch(e){if(e.name==='AbortError')return}
- }
+ if(!videoServerUrl)return;
+ if(window.KolboAndroid){window.KolboAndroid.shareVideo(videoServerUrl);return}
+ try{
+  var r=await fetch(videoServerUrl,{credentials:'same-origin'});
+  if(!r.ok)throw new Error('לא ניתן לקרוא את הסרטון');
+  var blob=await r.blob();
+  var f=new File([blob],'Kolbo-Trance-Animated-Story.mp4',{type:'video/mp4'});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){
+   await navigator.share({files:[f],title:'Kolbo Trance Story'});return;
+  }
+ }catch(e){if(e.name==='AbortError')return}
  $('downloadVideo').click();message('סרטון MP4 נשמר לשיתוף מתוך WhatsApp.');
 };
 $('download').onclick=function(){if(!resultBlob)return;if(window.KolboAndroid&&resultServerUrl){window.KolboAndroid.downloadMix(resultServerUrl);message('שומר את המיקס לתיקיית ההורדות...');return}var a=document.createElement('a');a.href=resultUrl;a.download='Kolbo-Trance-Funny-Mix.mp3';document.body.appendChild(a);a.click();a.remove()};
