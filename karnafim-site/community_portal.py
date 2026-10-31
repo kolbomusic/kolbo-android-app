@@ -149,7 +149,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
 
     def home():
         u=me()
-        actions=('<a class="cta" href="/directory">🔎 איתור חברים</a><a class="cta alt" href="/new-post">✍️ שיתוף זיכרון</a><a class="cta alt" href="/chats">💬 הודעות</a>' if u and u["approved"] else '<a class="cta" href="/register">🦏 הייתי שם — מצטרפים</a><a class="cta alt" href="/login">🔑 כבר חברים? כניסה לחשבון</a>')
+        actions=('<a class="cta" href="/directory">🔎 איתור חברים</a><a class="cta alt" href="/new-post">📸 שתפו סיפור, אירוע או תמונות</a><a class="cta alt" href="/my-posts">📝 הפרסומים שלי</a><a class="cta alt" href="/chats">💬 הודעות</a>' if u and u["approved"] else '<a class="cta" href="/register">🦏 הייתי שם — מצטרפים</a><a class="cta alt" href="/login">🔑 כבר חברים? כניסה לחשבון</a>')
         b='<section class="mast"><span class="kicker">401 / 46 / פלוגה ב׳ • 2003–2006</span><h1>עשרים שנה עברו.<br>החברים עדיין כאן.</h1><p>הקרנפים, שלימים נקראו ברקן. בית לקולות, לסיפורים, לתמונות ולחברים ששירתו איתנו. כאן מתחברים מחדש — ושומרים יחד על המורשת.</p><div class="actions">'+actions+'</div></section>'
         b+='<section class="photo-heritage"><figure><img loading="lazy" src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Merkava-4-tank-6611a-white1.jpg/1280px-Merkava-4-tank-6611a-white1.jpg" alt="טנק מרכבה סימן 4 — צילום המחשה מארכיון Wikimedia Commons"><figcaption>טנק מרכבה סימן 4, צילום המחשה משנת 2015 — <strong>לא תצלום של פלוגת הקרנפים</strong>. צילום: <a href="https://commons.wikimedia.org/wiki/File:Merkava-4-tank-6611a-white1.jpg" target="_blank" rel="noopener noreferrer">צחי אבנור / MathKnight, Wikimedia Commons</a>, רישיון <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>.</figcaption></figure><div><h2>התמונות שלנו מתחילות כאן</h2><p>תצלומים מקוריים מהפלוגה יופיעו לאחר שחברים יעלו אותם, יסכימו לשיתוף ויאושרו על ידי מנהלי הקהילה.</p><a class="cta" href="/photos">📸 לאלבום התמונות</a></div></section>'
         b+=statistics()
@@ -446,11 +446,15 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
     def feed():
         u=me()
         if not u or not u["approved"]:return page("זיכרונות",'<h1>זיכרונות הפלוגה</h1><div class="note">הסיפורים והתמונות שחברים מעלים זמינים רק לחברים מאושרים. '+link("/register","הצטרפו לקהילה")+'</div>'+sources(4))
-        rows=sql("SELECT p.id,p.title,p.body,p.story_year,p.created_at,m.name FROM community_posts p JOIN members m ON m.id=p.author_id WHERE p.approved=TRUE ORDER BY p.created_at DESC LIMIT 60",fetch=True)
-        b='<h1>סיפורים ותמונות</h1><p>מה שהיה בשמירות, בצוותים ובפלוגה נשמר כאן — בשיתוף החברים.</p><div class="actions"><a class="cta" href="/new-post">➕ מוסיפים סיפור / תמונה / הקלטה</a></div>'
+        rows=sql("SELECT p.id,p.title,p.body,p.story_year,p.post_type,p.event_date,p.event_place,p.created_at,m.name FROM community_posts p JOIN members m ON m.id=p.author_id WHERE p.approved=TRUE ORDER BY p.created_at DESC LIMIT 60",fetch=True)
+        b='<h1>📸 סיפורים, תמונות ואירועים</h1><p>זיכרונות, אלבומים ומפגשי הפלוגה — תכנים שחברי הקהילה בחרו לשתף ואושרו לפרסום.</p><div class="actions"><a class="cta" href="/new-post">➕ מוסיפים סיפור, תמונות או אירוע</a><a class="cta" href="/my-posts">📝 הפרסומים שלי</a></div>'
         if not rows:b+='<div class="note">עדיין לא פורסמו סיפורי חברים מאושרים. אפשר להיות הראשונים ולשתף זיכרון או תמונה.</div>'
         for p in rows:
-            b+='<article class="event"><span class="tag">'+e(p["story_year"] or "זיכרון מהפלוגה")+'</span><h2>'+e(p["title"])+'</h2><p>'+e(p["body"]).replace("\n","<br>")+'</p><div class="byline">שותף על ידי '+e(p["name"])+'</div>'
+            kind={"story":"סיפור","event":"אירוע","photo":"אלבום תמונות"}.get(p["post_type"],"סיפור")
+            b+='<article class="event"><span class="tag">'+e(kind)+'</span> <span class="tag">'+e(p["story_year"] or "מהפלוגה")+'</span><h2>'+e(p["title"])+'</h2>'
+            if p["event_date"]:b+='<p>📅 '+e(p["event_date"])+'</p>'
+            if p["event_place"]:b+='<p>📍 '+e(p["event_place"])+'</p>'
+            b+='<p>'+e(p["body"]).replace("\n","<br>")+'</p><div class="byline">שותף על ידי '+e(p["name"])+'</div>'
             attachments=sql("SELECT id,kind FROM community_media WHERE post_id=%s ORDER BY id",(p["id"],),True)
             b+=''.join(media_html(a["id"],a["kind"]) for a in attachments)+'</article>'
         return page("ציר הזמן",b)
@@ -556,10 +560,13 @@ setInterval(check,12000);
             else:abort(400)
             return redirect("/community/moderation")
         pending=sql("SELECT p.*,m.name FROM community_posts p JOIN members m ON p.author_id=m.id WHERE NOT p.approved ORDER BY p.created_at DESC LIMIT 100",fetch=True)
-        b='<h1>אישור סיפורים ומדיה</h1><p>בדוק זכויות שימוש, פרטיות, דיוק היסטורי והסכמת המצולמים לפני פרסום.</p>'
+        b='<h1>אישור סיפורים, אירועים ותמונות</h1><p>בדוק זכויות שימוש, פרטיות, דיוק היסטורי והסכמת המצולמים לפני פרסום. גם אירועים עתידיים נבדקים לפני הופעתם בקהילה.</p>'
         if not pending:b+='<div class="note">אין כרגע פרסומים הממתינים לאישור.</div>'
         for p in pending:
-            b+='<article class="event"><h3>'+e(p["title"])+'</h3><p>'+e(p["body"])+'</p><small>מאת '+e(p["name"])+'</small>'
+            b+='<article class="event"><span class="tag">'+e({"story":"סיפור","photo":"אלבום","event":"אירוע"}.get(p["post_type"],"סיפור"))+'</span><h3>'+e(p["title"])+'</h3>'
+            if p["event_date"]:b+='<p>📅 '+e(p["event_date"])+'</p>'
+            if p["event_place"]:b+='<p>📍 '+e(p["event_place"])+'</p>'
+            b+='<p>'+e(p["body"])+'</p><small>מאת '+e(p["name"])+'</small>'
             for m in sql("SELECT id,kind FROM community_media WHERE post_id=%s",(p["id"],),True):
                 b+=media_html(m["id"],m["kind"])
             b+='<form method="post">'+formwrap('<input type="hidden" name="id" value="'+str(p["id"])+'"><button name="op" value="publish">אישור לפרסום</button><button name="op" value="reject">מחיקת הפרסום</button>')+'</form></article>'
