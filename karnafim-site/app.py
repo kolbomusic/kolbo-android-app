@@ -62,7 +62,7 @@ def esc(v):return html.escape(str(v or ""),quote=True)
 def field(name,label,type="text",required=False,value=""):
  return f'<label>{esc(label)}<input name="{esc(name)}" type="{type}" value="{esc(value)}" maxlength="200" {"required" if required else ""}></label>'
 def view(title,body):
- u=me(); nav='<a href="/">🏠 בית</a> <a href="/archive">📜 ארכיון</a> <a href="/find">🔎 איתור</a> <a href="/feed">📸 סיפורים</a> '
+ u=me(); nav='<a href="/">🏠 בית</a> <a href="/memorials">🕯️ הנצחה</a> <a href="/archive">📜 ארכיון</a> <a href="/find">🔎 איתור</a> <a href="/feed">📸 סיפורים</a> '
  if u:
   nav+='<a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/community/moderation">אישור פרסומים</a> '
@@ -242,5 +242,7 @@ def change_password():
 
 from community_portal import install as install_portal
 install_portal(app,sql,view,me,admin,guard,formwrap,esc)
+from memorial_photos import setup as setup_memorial
+setup_memorial(app,sql,app.extensions["karnafim_portal"]["page"],me,admin,guard,formwrap)
 
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)))
