@@ -35,9 +35,13 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(all(x['caption']=='' for x in plan['scenes']))
         self.assertEqual(plan['scenes'][-1]['end'],8.)
 
-    def test_unknown_transcript_cannot_invent_visual_story(self):
-        with self.assertRaises(UnavailableVideo):
-            visual_plan('אני לא יודע איך להסביר מה קרה.',20)
+    def test_unknown_transcript_never_invents_an_unrelated_story(self):
+        result=visual_plan('אני לא יודע איך להסביר מה קרה.',20)
+        self.assertEqual(result['source'],'original_voice_reactive')
+        self.assertEqual(result['visual_coverage'],'voice_only')
+        self.assertEqual(result['recognized_action_beats'],0)
+        self.assertEqual(result['scenes'][0]['action'],'voice_reactive')
+        self.assertEqual(result['scenes'][0]['caption'],'')
 
     def test_unknown_clauses_do_not_abort_known_action_video(self):
         plan=visual_plan('אני נוסע באוטו. אחר כך משהו מסתורי קרה.',20)
