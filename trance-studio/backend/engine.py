@@ -235,6 +235,8 @@ def vintage_voice_fx(clip, mode, sr, bpm, rng):
         roll=broken_roll(x[max(0,cut-int(sr*.38)):],sr,bpm,rng)
         slowed=tape_stop(x[cut:],sr,.42)
         y=np.concatenate([first,roll,np.zeros(int(sr*.11),np.float32),slowed])
+    elif mode in ('helium','monster','yo_yo','comic_roll','rewind'):
+        y=comedy_voice_transform(x,mode,sr,bpm,rng)
     else:
         y=comic_variant(x,mode,sr,rng)
     limit=int(sr*3.15)
@@ -244,6 +246,40 @@ def vintage_voice_fx(clip, mode, sr, bpm, rng):
         ramp=np.linspace(0,1,k,endpoint=False,dtype=np.float32)
         y[:k]*=ramp;y[-k:]*=ramp[::-1]
     return y
+
+
+def comedy_voice_transform(clip, mode, sr, bpm, rng):
+    """Pronounced vocal-only turntable/comedy stingers.
+
+    These are placed BETWEEN original spoken phrases, never over the
+    next words. Distinct pitch, rhythmic rolls and exaggerated delivery
+    preserve the entire clean source recording elsewhere.
+    """
+    x=np.asarray(clip,dtype=np.float32)
+    if len(x)<int(sr*.12):return x.copy()
+    if mode=='helium':
+        # Chipmunk: exaggerated tape-pitch rise with a little syllable roll.
+        high=pitch_speed(x,9,sr)
+        return np.concatenate((high[:min(len(high),int(.15*sr))],
+                               high[:min(len(high),int(.15*sr))],high))
+    if mode=='monster':
+        deep=pitch_speed(x,-10,sr)
+        wobble=np.sin(2*np.pi*13*np.arange(len(deep))/sr).astype(np.float32)
+        return np.tanh(deep*(1.16+.24*wobble)).astype(np.float32)
+    if mode=='yo_yo':
+        mid=max(1,zero_crossing_cut(x,len(x)//2,sr))
+        return np.concatenate((pitch_speed(x[:mid],8,sr),
+                               pitch_speed(x[mid:],-9,sr),
+                               pitch_speed(x[:mid],5,sr)))
+    if mode=='comic_roll':
+        grain=x[max(0,len(x)//3-int(sr*.12)):max(1,len(x)//3)]
+        if len(grain)<int(sr*.035):grain=x[:max(1,int(sr*.10))]
+        bits=[pitch_speed(grain,p,sr) for p in (0,4,8,12,-7,0)]
+        return np.concatenate(bits+[x])
+    if mode=='rewind':
+        left=x[:max(1,len(x)//2)]
+        return np.concatenate((left,left[::-1],pitch_speed(x,-5,sr),x[-int(sr*.12):]))
+    return x.copy()
 
 
 def vocal_fx_timeline(voice, sr, bpm, humor, intensity, rng):
@@ -321,7 +357,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
     # Cutting *inside* words is reserved for the sample effect itself.
     chunks=[]
     cursor=0
-    target_interval={1:5.0,2:3.45,3:2.30}[density]
+    target_interval={1:4.7,2:2.65,3:1.85}[density]
     step=max(int(.3*sr),int(target_interval*sr))
     while cursor+step<len(x)-int(.34*sr):
         target=min(len(x)-1,cursor+step)
@@ -340,7 +376,8 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
     chunks.append((cursor,len(x)))
     pieces=[];masks=[];original_spans=[]
     offset=0
-    modes=('pitch','stretch','dj','glitch','tape','cartoon','scratch','vinyl','robot')
+    modes=('helium','monster','yo_yo','comic_roll','dj','glitch','tape',
+           'rewind','stretch','scratch','cartoon','robot','pitch')
     mode_order=list(rng.permutation(modes))
     for i,(start,end) in enumerate(chunks):
         raw=x[start:end].copy()
@@ -356,7 +393,9 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
         sample=raw[position:position+width]
         if len(sample)<int(.16*sr) or float(np.sqrt(np.mean(sample*sample)))<.009:
             continue
-        mode=mode_order[i%len(mode_order)] if humor in ('auto','chaos') else humor
+        mode=mode_order[i%len(mode_order)] if humor=='auto' else (
+            ('helium','comic_roll','monster','yo_yo','rewind')[i%5]
+            if humor=='chaos' else humor)
         effect=vintage_voice_fx(sample,mode,sr,bpm,rng)
         # Normalize the EFFECT TO THE SOURCE VOICE loudness. Previously it was
         # quieter than speech and buried under the instruments.
