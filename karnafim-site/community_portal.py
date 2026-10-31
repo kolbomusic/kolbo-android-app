@@ -1,5 +1,6 @@
 """Karnafim community features: sourced archive, opt-in feed and private conversations."""
 import io, html, hashlib
+from PIL import Image, ImageOps, UnidentifiedImageError
 from urllib.parse import quote, urlsplit
 from flask import request, redirect, abort, send_file, session, Response
 from archive_data import ARCHIVE
@@ -208,11 +209,27 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
         elif mime=="audio/wav" and data[:4]==b"RIFF" and data[8:12]==b"WAVE":kind,maxsize="audio",2*1024*1024
         if not kind or not data or len(data)>maxsize:
             abort(400,"קובץ לא נתמך או גדול מהמותר. תמונה 3MB, קול 2MB, וידאו 8MB.")
+        if kind=="image":
+            try:
+                check=Image.open(io.BytesIO(data))
+                check.verify()
+                check=Image.open(io.BytesIO(data))
+                if check.format not in ("JPEG","PNG","WEBP") or check.width*check.height>12_000_000:
+                    abort(400,"ממדי תמונה לא תקינים")
+                image=ImageOps.exif_transpose(check).convert("RGB")
+                image.thumbnail((1800,1800))
+                sanitized=io.BytesIO()
+                image.save(sanitized,format="JPEG",quality=82,optimize=True)
+                data=sanitized.getvalue()
+                mime="image/jpeg"
+                if len(data)>3*1024*1024:abort(413,"תמונה גדולה מדי")
+            except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+                abort(400,"קובץ תמונה פגום או לא תקין")
         total=sql("SELECT COALESCE(SUM(length),0) n FROM community_media",fetch=True)[0]["n"]
         user=me()
         mine=sql("SELECT COALESCE(SUM(length),0) n FROM community_media WHERE owner_id=%s",(user["id"],),True)[0]["n"]
         if total+len(data)>150*1024*1024 or mine+len(data)>25*1024*1024:abort(413,"מכסת האחסון התמלאה.")
-        return {"data":data,"mime":mime,"kind":kind,"size":len(data),"filename":f.filename[:120]}
+        return {"data":data,"mime":mime,"kind":kind,"size":len(data),"filename":("photo.jpg" if kind=="image" else "member-upload")}
 
     def store_attachment(owner, f, post_id=None, recipient_id=None):
         info=inspect_file(f)
