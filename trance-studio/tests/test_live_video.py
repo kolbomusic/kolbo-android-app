@@ -36,6 +36,14 @@ class GroundedVideoTests(unittest.TestCase):
         with self.assertRaises(UnavailableVideo):
             visual_plan('החמור נוער החקלאי מגיש לו קש',12)
 
+    def test_story_preparation_uses_explicit_named_subject_when_no_verb(self):
+        plan=visual_plan('פתאום ראיתי חמור ליד הכביש.',12)
+        self.assertEqual(plan['visual_coverage'],'partial')
+        self.assertEqual(plan['scenes'][0]['query'],'donkey')
+        self.assertEqual(plan['scenes'][0]['basis'],'explicit_subject_only')
+        self.assertEqual(plan['scenes'][0]['caption'],'')
+        self.assertNotEqual(plan['scenes'][0]['action'],'donkey_bray')
+
     def test_negated_action_not_shown_as_happening(self):
         self.assertIsNone(action_for_clause('לא נסעתי באוטו'))
         self.assertIsNone(action_for_clause('בלי לראות את הים'))
