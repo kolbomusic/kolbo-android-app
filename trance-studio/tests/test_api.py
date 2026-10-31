@@ -54,6 +54,14 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(client.post('/api/jobs',headers={'Authorization':'Bearer test-access-key','Origin':'https://other.example'}).status_code,403)
             self.assertEqual(client.post('/api/jobs',headers={'Authorization':'Bearer test-access-key'}).status_code,400)
 
+    def test_private_job_status_and_audio_require_server_key(self):
+        from app import create_app
+        with tempfile.TemporaryDirectory() as folder:
+            client=create_app({'JOB_DIR':folder,'API_TOKEN':'test-access-key'}).test_client()
+            for path in ('/api/jobs/'+'a'*48,'/api/jobs/'+'a'*48+'/audio'):
+                self.assertEqual(client.get(path).status_code,401)
+                self.assertEqual(client.get(path,headers={'Authorization':'Bearer test-access-key'}).status_code,404)
+
     def test_oversized_file_is_rejected_before_scheduling(self):
         r=self.client.post('/api/jobs',data={'audio':(io.BytesIO(b'x'*(15*1024*1024+1)),'large.opus')})
         self.assertEqual(r.status_code,400)

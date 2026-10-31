@@ -56,6 +56,10 @@ def create_app(config=None):
             allowed.add(request.host_url.rstrip('/'))
             if origin and origin.rstrip('/') not in allowed:return jsonify(error='מקור הבקשה אינו מורשה'),403
             if request.method=='OPTIONS':return '',204
+            if request.path.startswith('/api/jobs') and not app.config.get('TESTING'):
+                token=app.config['API_TOKEN']
+                if not token:return jsonify(error='העיבוד בענן טרם הוגדר. ניתן לעבד במכשיר.'),503
+                if not secrets.compare_digest(request.headers.get('Authorization',''),'Bearer '+token):return jsonify(error='קוד הגישה אינו תקין'),401
 
     @app.after_request
     def headers(response):
@@ -79,11 +83,6 @@ def create_app(config=None):
     @app.post('/api/jobs')
     def create_job():
         cleanup()
-        token=app.config['API_TOKEN']
-        if not app.config.get('TESTING'):
-            if not token:return jsonify(error='העיבוד בענן טרם הוגדר. ניתן לעבד במכשיר.'),503
-            supplied=request.headers.get('Authorization','')
-            if not secrets.compare_digest(supplied,'Bearer '+token):return jsonify(error='קוד הגישה אינו תקין'),401
         files=request.files.getlist('audio')
         if not 1<=len(files)<=4:return jsonify(error='יש לבחור בין הקלטה אחת לארבע הקלטות'),400
         try:
