@@ -4,6 +4,7 @@ on:
     branches: [kolbo-trance-studio-20261031]
     paths:
       - '.github/workflows/kolbo-trance-live-smoke.yml'
+      - 'trance-studio/tests/live_smoke.py'
   workflow_dispatch:
 jobs:
   public-server-test:
