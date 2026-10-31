@@ -349,15 +349,46 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             sql("INSERT INTO messages(sender_id,recipient_id,body,media_id) VALUES(%s,%s,%s,%s)",(u["id"],other_id,body,mid))
             return redirect("/chat/"+str(other_id))
         msgs=sql("SELECT x.id,x.sender_id,x.body,x.created_at,md.id media_id,md.kind FROM messages x LEFT JOIN community_media md ON md.id=x.media_id WHERE (x.sender_id=%s AND x.recipient_id=%s) OR (x.sender_id=%s AND x.recipient_id=%s) ORDER BY x.created_at DESC LIMIT 100",(u["id"],other_id,other_id,u["id"]),True)
+        last_id=msgs[0]["id"] if msgs else 0
+        after=request.args.get("after","0")
+        if not after.isdigit():after="0"
+        def message_fragment(m):
+            h='<div data-message-id="'+str(m["id"])+'" class="bubble '+("mine" if m["sender_id"]==u["id"] else "")+'">'
+            if m["body"]:h+='<p>'+e(m["body"]).replace("\n","<br>")+'</p>'
+            if m["media_id"]:h+=media_html(m["media_id"],m["kind"],True)
+            h+='<small>'+("אתה" if m["sender_id"]==u["id"] else e(other[0]["name"]))+' · '+e(str(m["created_at"])[:16])+'</small></div>'
+            return h
+        if request.args.get("partial")=="1":
+            markup=''.join(message_fragment(m) for m in reversed(msgs) if m["id"]>int(after))
+            response=Response(markup,mimetype="text/html")
+            response.headers["Cache-Control"]="no-store"
+            return response
         b='<h1>שיחה עם '+e(other[0]["name"])+'</h1><p><a href="/chats">חזרה לשיחות</a></p><div id="messages">'
-        if not msgs:b+='<div class="note">עוד לא נשלחו הודעות בשיחה הזאת. אפשר לכתוב שלום או להקליט הודעה קצרה.</div>'
-        for m in reversed(msgs):
-            b+='<div class="bubble '+("mine" if m["sender_id"]==u["id"] else "")+'">'
-            if m["body"]:b+='<p>'+e(m["body"]).replace("\n","<br>")+'</p>'
-            if m["media_id"]:b+=media_html(m["media_id"],m["kind"],True)
-            b+='<small>'+("אתה" if m["sender_id"]==u["id"] else e(other[0]["name"]))+' · '+e(str(m["created_at"])[:16])+'</small></div>'
+        if not msgs:b+='<div class="note" id="no-messages">עוד לא נשלחו הודעות בשיחה הזאת. אפשר לכתוב שלום או להקליט הודעה קצרה.</div>'
+        for m in reversed(msgs):b+=message_fragment(m)
         b+='</div><form method="post" enctype="multipart/form-data" class="form-box">'+formwrap('<label>הודעה<textarea name="body" maxlength="2000" placeholder="כתוב הודעה לחבר…"></textarea></label>'+upload_form(False)+'<button>שליחת הודעה</button></form>')
-        return page("שיחה פרטית",b+RECORD_JS)
+        js="""<script>
+(()=>{let last="""+str(last_id)+""";
+const panel=document.getElementById('messages');
+async function check(){
+ if(document.hidden)return;
+ try{
+  const res=await fetch(location.pathname+'?partial=1&after='+last,{cache:'no-store'});
+  if(!res.ok)return;
+  const h=await res.text();
+  if(!h.trim())return;
+  const holder=document.createElement('div');
+  holder.innerHTML=h;
+  const newItems=holder.querySelectorAll('[data-message-id]');
+  if(!newItems.length)return;
+  const empty=document.getElementById('no-messages');
+  if(empty)empty.remove();
+  newItems.forEach(el=>{last=Math.max(last,Number(el.dataset.messageId));panel.appendChild(el)});
+ }catch(_){}
+}
+setInterval(check,12000);
+})();</script>"""
+        return page("שיחה פרטית",b+RECORD_JS+js)
 
     @app.route("/community/moderation",methods=["GET","POST"])
     def moderation():
