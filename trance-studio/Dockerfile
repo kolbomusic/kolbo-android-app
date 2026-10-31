@@ -4,6 +4,7 @@ WORKDIR /app
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend /app/backend
+COPY web /app/web
 RUN useradd --system --uid 10001 kolbo
 USER kolbo
 ENV PYTHONUNBUFFERED=1 PORT=10000 API_ONLY=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
