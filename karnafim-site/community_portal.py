@@ -90,6 +90,20 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_model TEXT NOT NULL DEFAULT ''")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_checked_at TIMESTAMPTZ")
     sql("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS ai_attempts INTEGER NOT NULL DEFAULT 0")
+    sql("""CREATE TABLE IF NOT EXISTS community_comments (
+      id BIGSERIAL PRIMARY KEY,
+      post_id BIGINT NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+      author_id BIGINT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      approved BOOLEAN NOT NULL DEFAULT FALSE,
+      ai_consent BOOLEAN NOT NULL DEFAULT FALSE,
+      ai_status TEXT NOT NULL DEFAULT 'pending_ai',
+      ai_reason TEXT NOT NULL DEFAULT '',
+      ai_model TEXT NOT NULL DEFAULT '',
+      ai_checked_at TIMESTAMPTZ,
+      ai_attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+    sql("""CREATE INDEX IF NOT EXISTS community_comments_visible ON community_comments(post_id,approved,created_at DESC)""")
     sql("""CREATE TABLE IF NOT EXISTS community_media (
       id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
       post_id BIGINT REFERENCES community_posts(id) ON DELETE CASCADE,
@@ -469,7 +483,15 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             if not p["approved"]:b+='<p class="muted">🛡️ '+e(p["ai_reason"])+'</p>'
             b+='<p>'+e(p["body"]).replace("\n","<br>")+'</p>'
             attachments=sql("SELECT id,kind FROM community_media WHERE post_id=%s ORDER BY id",(p["id"],),True)
-            b+=''.join(media_html(a["id"],a["kind"]) for a in attachments)+'</article>'
+            b+=''.join(media_html(a["id"],a["kind"]) for a in attachments)
+            comments=sql("SELECT c.body,m.name FROM community_comments c JOIN members m ON m.id=c.author_id WHERE c.post_id=%s AND c.approved=TRUE ORDER BY c.created_at DESC LIMIT 40",(p["id"],),True)
+            b+='<div id="post-'+str(p["id"])+'"><h3>תגובות החברים</h3>'
+            for comment_row in reversed(comments):
+                b+='<div class="note"><strong>'+e(comment_row["name"])+'</strong><p>'+e(comment_row["body"])+'</p></div>'
+            b+='<form method="post" action="/post/'+str(p["id"])+'/comment" class="form-box">'+formwrap(
+                '<label>הוספת תגובה<textarea name="body" required minlength="3" maxlength="1200" placeholder="איזה זיכרון טוב..."></textarea></label>'
+                '<label><input style="width:auto;display:inline" type="checkbox" name="ai_consent" required> אני מסכים לבדיקת התגובה באמצעות שירות AI חיצוני; במסלול החינמי ספק השירות עשוי להשתמש בתוכן לשיפור מוצריו.</label>'
+                '<button>בדיקה ופרסום תגובה</button>')+'</form></div></article>'
         return page("הפרסומים שלי",b)
 
     @app.route("/photos")
@@ -489,6 +511,27 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         b+='<p class="muted">לא בוצע זיהוי פנים אוטומטי ואין כאן טענה שהמצולמים שירתו ביחידה. תצלומי קהילה יוצגו רק לאחר אישור ובדיקת זכויות.</p>'
         return page("גלריית תמונות",b)
 
+    @app.route("/post/<int:post_id>/comment",methods=["POST"])
+    def comment(post_id):
+        u=approved()
+        guard()
+        visible=sql("SELECT id,title FROM community_posts WHERE id=%s AND approved=TRUE",(post_id,),True)
+        if not visible:abort(404)
+        if request.form.get("ai_consent")!="on":abort(400)
+        message=request.form.get("body","").strip()[:1200]
+        if len(message)<3:abort(400)
+        verdict=moderate({"post_type":"comment","title":"תגובה לפרסום קיים",
+                          "body":message,"year":"","date":"","place":""},[])
+        if verdict.status=="rejected":
+            return page("התגובה לא נשלחה",'<div class="note" role="alert">'+e(verdict.reason)+'</div><a href="/feed">חזרה לפרסומים</a>'),422
+        sql("""INSERT INTO community_comments(post_id,author_id,body,approved,ai_consent,ai_status,
+                 ai_reason,ai_model,ai_checked_at,ai_attempts)
+                 VALUES(%s,%s,%s,%s,TRUE,%s,%s,%s,
+                 CASE WHEN %s THEN NOW() ELSE NULL END,%s)""",
+            (post_id,u["id"],message,verdict.status=="approved",verdict.status,
+             verdict.reason,verdict.model,verdict.attempted,1 if verdict.attempted else 0))
+        return redirect("/feed?comment="+("approved" if verdict.status=="approved" else "pending")+"#post-"+str(post_id),code=303)
+
     @app.route("/feed")
     def feed():
         u=me()
@@ -496,6 +539,8 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         if not u or not u["approved"]:return page("זיכרונות",'<h1>זיכרונות הפלוגה</h1><div class="note">הסיפורים והתמונות שחברים מעלים זמינים רק לחברים מאושרים. '+link("/register","הצטרפו לקהילה")+'</div>'+sources(4))
         rows=sql("SELECT p.id,p.title,p.body,p.story_year,p.post_type,p.event_date,p.event_place,p.created_at,m.name FROM community_posts p JOIN members m ON m.id=p.author_id WHERE p.approved=TRUE ORDER BY p.created_at DESC LIMIT 60",fetch=True)
         b='<h1>📸 סיפורים, תמונות ואירועים</h1><p>זיכרונות, אלבומים ומפגשי הפלוגה — תכנים שחברי הקהילה בחרו לשתף ואושרו לפרסום.</p><div class="actions"><a class="cta" href="/new-post">➕ מוסיפים סיפור, תמונות או אירוע</a><a class="cta" href="/my-posts">📝 הפרסומים שלי</a></div>'
+        if request.args.get("comment")=="approved":b+='<div class="note">התגובה עברה ביקורת אוטומטית ופורסמה.</div>'
+        elif request.args.get("comment")=="pending":b+='<div class="note">התגובה נקלטה אך נשארה פרטית עד להשלמת הבדיקה האוטומטית.</div>'
         if not rows:b+='<div class="note">עדיין לא פורסמו סיפורי חברים מאושרים. אפשר להיות הראשונים ולשתף זיכרון או תמונה.</div>'
         for p in rows:
             kind={"story":"סיפור","event":"אירוע","photo":"אלבום תמונות"}.get(p["post_type"],"סיפור")
