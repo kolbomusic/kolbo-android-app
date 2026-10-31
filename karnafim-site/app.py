@@ -113,7 +113,7 @@ def view(title,body):
  u=me(); nav='<a href="/">🏠 בית</a> <a href="/memorials">🕯️ הנצחה</a> <a href="/archive">📜 ארכיון</a> <a href="/find">🔎 איתור</a> <a href="/photos">📷 תמונות</a> <a href="/feed">📸 סיפורים</a> '
  if u:
   nav+='<a href="/new-post">📸 שתפו סיפור או אירוע</a> <a href="/my-posts">📝 הפרסומים שלי</a> <a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
-  if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/community/moderation">אישור פרסומים</a> '
+  if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/admin/accessibility">דיווחי נגישות</a> <a href="/community/moderation">אישור פרסומים</a> '
   nav+='<a href="/password">סיסמה</a> <a href="/logout">יציאה</a>'
  else:nav+='<a class="nav-register" href="/register">הרשמה</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
  return integrate_html(render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
@@ -131,7 +131,7 @@ header nav .nav-register{border:1px solid #b3c894}
 .account-hint{margin-top:16px;color:#e4edda;font-size:15px}
 .account-hint a{color:#efffad;font-weight:800;text-decoration:underline}
 @media(max-width:700px){header{padding:12px 14px;min-height:0;align-items:stretch}header nav{width:100%;display:flex;gap:7px}header nav a{font-size:14px;padding:9px 10px}header .logo{font-size:18px}.hero{padding:33px 21px}.hero-actions{flex-direction:column;align-items:stretch}.hero-actions .btn{width:100%}}
-</style></head><body><header><div class="logo">🦏 הקרנפים | ברקן</div><nav>{{nav|safe}}</nav></header><main>{{body|safe}}</main><footer>יוזמה קהילתית עצמאית של יוצאי הפלוגה • אין קשר רשמי לצה״ל • פרטים אישיים מוסתרים כברירת מחדל</footer></body></html>""",title=title,body=body,nav=nav),scripts_allowed=True)
+</style></head><body><header><div class="logo">🦏 הקרנפים | ברקן</div><nav aria-label="ניווט ראשי">{{nav|safe}}</nav></header><main>{{body|safe}}</main><footer>יוזמה קהילתית עצמאית של יוצאי הפלוגה • אין קשר רשמי לצה״ל • פרטים אישיים מוסתרים כברירת מחדל · <a href="/accessibility">♿ נגישות</a> · <a href="/accessibility/report">דיווח על בעיית נגישות</a></footer></body></html>""",title=title,body=body,nav=nav),scripts_allowed=True)
 def formwrap(x):return '<input type="hidden" name="csrf" value="'+token()+'">'+x
 @app.route("/")
 def home():
@@ -145,6 +145,59 @@ def health():return {"ok":True,"service":"karnafim","access":("read_only" if os.
 @app.route("/status")
 def public_status():
  return view("מצב הקהילה",'<h1>מצב קהילת הקרנפים</h1><div class="card"><h2>המערכת פעילה</h2><p>ניתן לפתוח חשבון, להתחבר ולבקש אישור חברות. פרופילים ופרסומים פרטיים מוצגים רק לחברים מאושרים ועל פי הגדרות השיתוף.</p><p>כניסה באמצעות חשבון Google אינה מוגדרת בשלב זה. משתמשים נכנסים באמצעות דוא״ל וסיסמה.</p><p><a class="btn" href="/login">🔑 התחברות</a> <a class="btn secondary" href="/register">הרשמה</a></p></div>')
+
+# Minimal privacy-preserving accessibility feedback: no public user directory, no messages to email.
+sql("""CREATE TABLE IF NOT EXISTS accessibility_reports(
+ id BIGSERIAL PRIMARY KEY,
+ fingerprint TEXT NOT NULL,
+ description TEXT NOT NULL,
+ reply_email TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'open',
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+sql("CREATE INDEX IF NOT EXISTS accessibility_reports_recent ON accessibility_reports(fingerprint,created_at DESC)")
+
+@app.route("/accessibility/report",methods=["GET","POST"])
+def accessibility_report():
+ if request.method=="POST":
+  guard()
+  if request.form.get("homepage","").strip():
+   return view("תודה",'<p role="status">הפנייה נקלטה.</p>')  # Honeypot.
+  description=request.form.get("description","").strip()[:1800]
+  reply=(request.form.get("email","").strip().lower())[:160]
+  if len(description)<12 or len(description)>1800 or (reply and ("@" not in reply or any(c in reply for c in "\r\n "))):
+   return view("טופס לא תקין",'<p role="alert">יש להזין תיאור ברור של לפחות 12 תווים וכתובת דוא״ל תקינה אם בחרת למסור אותה.</p><a href="/accessibility/report">חזרה לטופס</a>'),400
+  fingerprint=hmac.new(app.secret_key.encode("utf-8"),(request.remote_addr or "unknown").encode("utf-8"),hashlib.sha256).hexdigest()
+  n=sql("SELECT COUNT(*) AS n FROM accessibility_reports WHERE fingerprint=%s AND created_at>NOW()-INTERVAL '1 hour'",(fingerprint,),True)[0]["n"]
+  if n>=3:
+   return view("מגבלת פניות",'<p role="alert">התקבלו מספר פניות בפרק זמן קצר. ניתן לנסות שוב במועד אחר.</p>'),429
+  sql("INSERT INTO accessibility_reports(fingerprint,description,reply_email) VALUES(%s,%s,%s)",(fingerprint,description,reply))
+  return view("תודה",'<div class="card" role="status"><h1>הפנייה נקלטה</h1><p>תיאור בעיית הנגישות נשמר למנהל האתר. פרטי הקשר אינם מוצגים לציבור.</p><p><a href="/">חזרה לדף הבית</a></p></div>')
+ return view("דיווח על בעיית נגישות",
+ '<h1>♿ דיווח על בעיית נגישות</h1><p>נתקלתם בתוכן לא קריא, בעיה בניווט במקלדת, בחסימה בהעלאת קבצים או בטופס שקשה להשתמש בו? ספרו לנו.</p>'
+ '<form method="post" class="card">'+formwrap(
+ '<label>תיאור הבעיה והעמוד שבו נתקלתם בה<textarea name="description" rows="6" required minlength="12" maxlength="1800" aria-describedby="help-description"></textarea></label>'
+ '<p id="help-description">אפשר לציין סוג מכשיר וקורא מסך. אין לכתוב כאן סיסמה, מספר אישי או מידע רגיש.</p>'
+ '<label>כתובת דוא״ל למענה (לא חובה)<input type="email" name="email" maxlength="160" autocomplete="email"></label>'
+ '<div aria-hidden="true" style="position:absolute;left:-9999px"><label>השאירו שדה זה ריק<input name="homepage" tabindex="-1" autocomplete="off"></label></div>'
+ '<button>שליחת דיווח למנהל</button>')+'</form>')
+
+@app.route("/admin/accessibility",methods=["GET","POST"])
+def admin_accessibility():
+ u=me()
+ if not admin(u):abort(403)
+ if request.method=="POST":
+  guard()
+  report_id=request.form.get("id","")
+  if not report_id.isdigit():abort(400)
+  sql("UPDATE accessibility_reports SET status='resolved' WHERE id=%s",(int(report_id),))
+  return redirect("/admin/accessibility")
+ reports=sql("SELECT id,description,reply_email,created_at FROM accessibility_reports WHERE status='open' ORDER BY created_at DESC LIMIT 100",fetch=True)
+ body='<h1>דיווחי נגישות שטרם טופלו</h1>'
+ if not reports:body+='<p role="status">לא התקבלו דיווחים פתוחים.</p>'
+ for r in reports:
+  body+='<article class="card"><p>'+esc(r["description"])+'</p><p>דוא״ל למענה: '+esc(r["reply_email"] or "לא נמסר")+'</p>'
+  body+='<form method="post">'+formwrap('<input type="hidden" name="id" value="'+str(r["id"])+'"><button>סימון כטופל</button>')+'</form></article>'
+ return view("דיווחי נגישות",body)
 
 @app.route("/accessibility")
 def accessibility_page():
