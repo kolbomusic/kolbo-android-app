@@ -11,7 +11,7 @@ DB=os.environ["DATABASE_URL"]
 
 @app.before_request
 def security_hold():
- if os.environ.get("KARNAFIM_MAINTENANCE","0")=="1" and request.path!="/health":
+ if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path!="/health":
   page='''<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>הקרנפים — האתר בבדיקת אבטחה</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f5ef;color:#193c30;font-family:Arial,sans-serif}main{max-width:620px;margin:20px;padding:42px 28px;border-radius:20px;background:#fff;box-shadow:0 12px 40px #13281b18;text-align:center}h1{font-size:31px;line-height:1.3}p{line-height:1.9;font-size:18px}.status{display:inline-block;padding:8px 15px;background:#ffebd3;border-radius:40px;color:#6f4813;font-weight:700}</style></head><body><main><span class="status">בדיקת אבטחה מתבצעת</span><h1>אתר הקרנפים — גישה מושהית</h1><p>האתר הושהה זמנית בעקבות התראת אבטחה בדפדפן. הכניסה לחשבונות, ההרשמה, שיתוף המדיה וההודעות אינם זמינים כעת.</p><p>אנו בודקים את הסיבה ופועלים להסרת האזהרה בדרך הרשמית. אין צורך למסור סיסמה או פרטים אישיים.</p></main></body></html>'''
   resp=Response(page,status=503,mimetype="text/html")
   resp.headers["Cache-Control"]="no-store, max-age=0"
@@ -20,6 +20,19 @@ def security_hold():
   resp.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   resp.headers["X-Robots-Tag"]="noindex, nofollow"
   return resp
+
+@app.after_request
+def harden_responses(resp):
+ resp.headers.setdefault("X-Content-Type-Options","nosniff")
+ resp.headers.setdefault("X-Frame-Options","DENY")
+ resp.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
+ resp.headers.setdefault("Cross-Origin-Resource-Policy","same-origin")
+ resp.headers.setdefault("Permissions-Policy","camera=(), geolocation=(), microphone=(self)")
+ resp.headers.setdefault("Content-Security-Policy","frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'")
+ resp.headers.setdefault("Strict-Transport-Security","max-age=31536000")
+ if resp.mimetype=="text/html":
+  resp.headers.setdefault("Cache-Control","private, no-store, max-age=0")
+ return resp
 
 def sql(q,params=(),fetch=False):
  with psycopg.connect(DB,row_factory=dict_row) as c:
@@ -44,6 +57,20 @@ def init():
  recipient_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
  body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());""")
 init()
+sql("""CREATE TABLE IF NOT EXISTS login_failures (
+ fingerprint TEXT NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+sql("CREATE INDEX IF NOT EXISTS login_failures_lookup ON login_failures(fingerprint,created_at DESC)")
+
+def auth_fingerprint(email):
+ raw=(email+"|"+(request.remote_addr or "")).encode("utf-8")
+ return hmac.new(app.secret_key.encode("utf-8"),raw,hashlib.sha256).hexdigest()
+
+def is_rate_limited(fingerprint):
+ count=sql("SELECT COUNT(*) AS n FROM login_failures WHERE fingerprint=%s AND created_at>NOW()-INTERVAL '15 minutes'",(fingerprint,),True)[0]["n"]
+ return count>=8
+
 def hashpw(p,s=None):
  s=s or secrets.token_hex(16)
  return s+":"+hashlib.pbkdf2_hmac("sha256",p.encode(),bytes.fromhex(s),250000).hex()
@@ -57,7 +84,9 @@ def me():
 def admin(u):return bool(u and u["email"].lower()==os.getenv("ADMIN_EMAIL","").lower() and u["approved"])
 def token():return session.setdefault("csrf",secrets.token_urlsafe(24))
 def guard():
- if not hmac.compare_digest(request.form.get("csrf",""),session.get("csrf","")):abort(403)
+ saved=session.get("csrf")
+ submitted=request.form.get("csrf","")
+ if not saved or not submitted or not hmac.compare_digest(submitted,saved):abort(403)
 def esc(v):return html.escape(str(v or ""),quote=True)
 def field(name,label,type="text",required=False,value=""):
  return f'<label>{esc(label)}<input name="{esc(name)}" type="{type}" value="{esc(value)}" maxlength="200" {"required" if required else ""}></label>'
@@ -111,9 +140,14 @@ def register():
 def login():
  if request.method=="POST":
   guard();email=request.form.get("email","").strip().lower()
+  fingerprint=auth_fingerprint(email)
+  if is_rate_limited(fingerprint):
+   return view("כניסה",'<p class="error">בוצעו יותר מדי ניסיונות כניסה. ניתן לנסות שוב בעוד 15 דקות.</p><a href="/login">חזרה</a>'),429
   rows=sql("SELECT * FROM members WHERE email=%s",(email,),True)
   if rows and verify(request.form.get("password",""),rows[0]["password"]):
+   sql("DELETE FROM login_failures WHERE fingerprint=%s",(fingerprint,))
    session.clear();session["uid"]=rows[0]["id"];return redirect("/")
+  sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
   return view("כניסה",'<p class="error">פרטי ההתחברות לא נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
  return view("כניסה",'<h1>כניסה לחשבון</h1><form method="post" class="card">'+formwrap(field("email","דוא״ל","email",True)+field("password","סיסמה","password",True)+'<button>כניסה לחשבון</button></form><p>עדיין אין לך חשבון? <a href="/register"><strong>להרשמה לקהילה</strong></a></p><p>התחברות באמצעות Google תתווסף לאחר הגדרת OAuth מאובטחת מול Google.</p>'))
 @app.route("/logout")
