@@ -24,7 +24,7 @@ def api(path,payload=None,headers=None,timeout=50):
 def main():
     data,status=api('/health')
     version=json.loads(data)['version']
-    assert version=='1.12.0',('Old live server',version)
+    assert version=='1.13.0',('Old live server',version)
     _,status=api('/studio')
     assert status==200
     wav=io.BytesIO()
