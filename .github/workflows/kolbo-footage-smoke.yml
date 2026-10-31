@@ -12,6 +12,31 @@ jobs:
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+      - name: FFmpeg real public video and music smoke
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python - <<'PY'
+          import sys,tempfile,pathlib,json,subprocess
+          sys.path.insert(0,'trance-studio/backend')
+          from live_video import visual_plan,export_live_story,commons_candidates
+          plan=visual_plan('כולם רוקדים במסיבה.',3.)
+          with tempfile.TemporaryDirectory() as tmp:
+            root=pathlib.Path(tmp)
+            audio=root/'music.mp3';output=root/'motion.mp4'
+            subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi','-i',
+                            'sine=frequency=350:duration=3','-codec:a','libmp3lame',
+                            str(audio)],check=True)
+            matches=commons_candidates('people dancing')
+            if matches:
+              print('REAL_VIDEO_MATCHES',[(m['title'],m['license']) for m in matches[:3]])
+              sources=export_live_story(audio,output,plan,root/'assets')
+              streams=json.loads(subprocess.check_output([
+                'ffprobe','-loglevel','error','-show_streams','-of','json',str(output)]))
+              assert set(s['codec_type'] for s in streams['streams'])=={'audio','video'}
+              print('AUTHENTIC_MP4_PASSED',output.stat().st_size,sources)
+            else:
+              raise SystemExit('No licensed footage found for real end-to-end case')
+          PY
       - name: Exercise no-key Wikimedia Commons video search
         run: |
           python - <<'PY'
