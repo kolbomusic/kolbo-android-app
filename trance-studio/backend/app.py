@@ -49,9 +49,11 @@ def create_app(config=None):
         try:
             update(job_id,state='processing',percent=4,label='קורא את ההקלטות')
             clips=[load_audio(p) for p in paths]
-            audio=render_mix(clips,**options,progress=lambda p,label:update(job_id,percent=p,label=label))
+            audio,vocal=render_mix(clips,**options,return_voice=True,
+                                   progress=lambda p,label:update(job_id,percent=p,label=label))
             export_mp3(audio,root/job_id/'mix.mp3')
-            update(job_id,state='done',percent=100,label='המיקס מוכן',engine='vintage_dj_v2',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'))
+            export_mp3(vocal,root/job_id/'voice.mp3')
+            update(job_id,state='done',percent=100,label='המיקס מוכן',engine='harmonic_quality_v3',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'))
         except Exception:
             update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
         finally:
@@ -122,7 +124,9 @@ def create_app(config=None):
         with lock:job=dict(jobs[job_id]) if job_id in jobs else None
         if not job:return jsonify(error='המיקס לא נמצא או שתוקפו פג'),404
         job.pop('created',None)
-        if job['state']=='done':job['download_url']='/api/jobs/'+job_id+'/audio'
+        if job['state']=='done':
+            job['download_url']='/api/jobs/'+job_id+'/audio'
+            job['voice_url']='/api/jobs/'+job_id+'/voice'
         return jsonify(job)
 
     @app.get('/api/jobs/<job_id>/audio')
@@ -132,6 +136,16 @@ def create_app(config=None):
         path=root/job_id/'mix.mp3'
         if not ready or not path.is_file():return jsonify(error='המיקס לא זמין'),404
         return send_file(path,mimetype='audio/mpeg',as_attachment=True,download_name='Kolbo-Trance-Mix.mp3')
+
+    @app.get('/api/jobs/<job_id>/voice')
+    def vocal_preview(job_id):
+        cleanup()
+        with lock:ready=jobs.get(job_id,{}).get('state')=='done'
+        path=root/job_id/'voice.mp3'
+        if not ready or not path.is_file():
+            return jsonify(error='הקול המעובד לא זמין'),404
+        return send_file(path,mimetype='audio/mpeg',as_attachment=False,
+                         download_name='Kolbo-Voice-Effects.mp3')
 
     @app.get('/studio')
     def studio():
