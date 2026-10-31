@@ -27,6 +27,35 @@ class ForegroundVoiceTests(unittest.TestCase):
         self.assertGreater(float(np.sqrt(np.mean(y[fx>.5]**2))),.02)
         self.assertTrue(np.isfinite(y).all())
 
+    def test_new_distinct_comedy_voice_modes_change_original_sound(self):
+        voice=self.voice(3)
+        names=('helium','monster','yo_yo','comic_roll','rewind')
+        results=[]
+        for mode in names:
+            processed=e.vintage_voice_fx(voice,mode,self.sr,145,np.random.default_rng(4))
+            self.assertGreater(len(processed),self.sr//4)
+            self.assertTrue(np.isfinite(processed).all())
+            self.assertGreater(np.sqrt(np.mean(processed**2)),.01)
+            # Each full effect must be materially different from the input.
+            length=min(len(voice),len(processed))
+            self.assertGreater(float(np.mean((processed[:length]-voice[:length])**2)),.0005)
+            results.append(processed)
+        self.assertEqual(len({len(x) for x in results})>=3,True)
+
+    def test_dense_humor_more_fx_and_original_words_preserved(self):
+        voice=self.voice(16)
+        quiet,mask1,spans1=e.arranged_vocal_track(
+            voice,self.sr,145,'chaos',1,1.2,np.random.default_rng(17))
+        loud,mask3,spans3=e.arranged_vocal_track(
+            voice,self.sr,145,'chaos',3,1.2,np.random.default_rng(17))
+        self.assertGreater(int(mask3.sum()),int(mask1.sum()))
+        np.testing.assert_array_equal(
+            np.concatenate([loud[a:b] for _,_,a,b in spans3]),voice)
+        np.testing.assert_array_equal(
+            np.concatenate([quiet[a:b] for _,_,a,b in spans1]),voice)
+        for _,_,start,end in spans3:
+            self.assertTrue(np.all(mask3[start:end]==0))
+
     def test_short_message_also_gets_a_solo(self):
         x=self.voice(2)
         y,mask,spans=e.arranged_vocal_track(x,self.sr,145,'pitch',3,1.2,np.random.default_rng(5))
