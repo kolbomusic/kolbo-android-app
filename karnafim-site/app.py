@@ -12,9 +12,13 @@ DB=os.environ["DATABASE_URL"]
 @app.before_request
 def security_hold():
  if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path!="/health":
-  if request.method=="GET" and request.path in ("/","/about","/privacy","/safety"):
+  if request.method=="GET" and request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status"):
    from pathlib import Path
-   document=(Path(__file__).resolve().parent/"maintenance_public.html").read_text(encoding="utf-8")
+   if request.path in ("/archive","/memorials","/find","/status"):
+    from public_pages import render_page
+    document=render_page(request.path)
+   else:
+    document=(Path(__file__).resolve().parent/"maintenance_public.html").read_text(encoding="utf-8")
    response=Response(document,status=200,mimetype="text/html")
    response.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   else:
