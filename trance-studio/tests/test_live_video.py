@@ -25,6 +25,17 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertEqual(action_for_clause('הלכתי לים').get('action'),'beach_walk')
         self.assertEqual(action_for_clause('אכלתי פיצה').get('action'),'pizza_eat')
 
+    def test_two_actions_in_same_original_sentence_are_separate(self):
+        plan=visual_plan('החמור נוער והחקלאי מגיש לו קש.',12)
+        self.assertEqual([scene['action'] for scene in plan['scenes']],
+                         ['donkey_bray','farmer_feed'])
+        self.assertEqual(plan['total_clauses'],2)
+        self.assertEqual(plan['visual_coverage'],'matched')
+
+    def test_ambiguous_multi_action_without_clear_boundary_is_not_fabricated(self):
+        with self.assertRaises(UnavailableVideo):
+            visual_plan('החמור נוער החקלאי מגיש לו קש',12)
+
     def test_negated_action_not_shown_as_happening(self):
         self.assertIsNone(action_for_clause('לא נסעתי באוטו'))
         self.assertIsNone(action_for_clause('בלי לראות את הים'))
