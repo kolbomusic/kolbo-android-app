@@ -1,0 +1,17 @@
+name: Kolbo Trance live MP4 smoke test
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - '.github/workflows/kolbo-trance-live-smoke.yml'
+  workflow_dispatch:
+jobs:
+  public-server-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg for playable media verification
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Test live MP4 and MP3 with actual audio request
+        run: python trance-studio/tests/live_smoke.py
