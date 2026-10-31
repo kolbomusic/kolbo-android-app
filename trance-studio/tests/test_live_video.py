@@ -130,6 +130,39 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(urls[0].endswith('Maasai_people_singing_and_dancing.webm.360p.vp9.webm'))
         self.assertEqual(urls[-1],item['url'])
 
+    def test_prepare_every_scene_and_export_partial_video_with_full_audio(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            song=root/'mix.mp3'
+            subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi',
+                            '-i','sine=frequency=290:duration=8',
+                            '-c:a','libmp3lame',str(song)],check=True)
+            plan=visual_plan('החמור נוער. אחר כך אני נוסע באוטו.',8)
+            queries=[]
+            def find(query):
+                queries.append(query)
+                if query=='donkey braying':return []
+                return [{'url':'https://upload.wikimedia.org/test.webm',
+                         'page':'https://commons.wikimedia.org/wiki/File:Car_driving.webm',
+                         'license':'CC0'}]
+            def download(item,dest):
+                subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi',
+                                '-i','testsrc=size=320x180:rate=12:duration=2',
+                                '-c:v','libvpx-vp9',str(dest)],
+                               check=True,timeout=30)
+            video=root/'film.mp4'
+            sources=export_live_story(song,video,plan,root/'work',
+                                      search=find,download=download)
+            self.assertEqual(queries,['donkey braying','car driving'])
+            self.assertEqual(len(sources),1)
+            self.assertEqual(plan['visual_coverage'],'partial')
+            self.assertEqual(len(plan['missing_footage']),1)
+            data=json.loads(subprocess.check_output(['ffprobe','-v','error',
+                 '-show_format','-show_streams','-of','json',str(video)]))
+            self.assertGreater(float(data['format']['duration']),7.2)
+            self.assertEqual({x['codec_type'] for x in data['streams']},
+                             {'audio','video'})
+
     def test_eight_speech_events_export_49_seconds_of_actual_mp4(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
