@@ -78,7 +78,10 @@ def create_app(config=None):
                         json.dumps(board,ensure_ascii=False),encoding='utf-8')
                     meta={'video_status':'done',
                           'storyboard_source':board['source'],
-                          'transcript_origin':board['transcript_origin']}
+                          'transcript_origin':board['transcript_origin'],
+                          'visual_coverage':board['visual_coverage'],
+                          'visual_beats':board['visual_beats'],
+                          'unmatched_clauses':board['unmatched_clauses']}
                 except UnavailableVideo as err:
                     # A missing action, inaccurate transcript or unavailable
                     # licensed scene must NEVER yield unrelated cartoon video.
@@ -130,7 +133,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.9.1',cloud_ready=bool(app.config['API_TOKEN']))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.10.0',cloud_ready=bool(app.config['API_TOKEN']))
 
     @app.post('/api/jobs')
     def create_job():
