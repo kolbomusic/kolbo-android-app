@@ -62,7 +62,7 @@ CSS = """<style>
 @media(max-width:720px){.portal .chat-layout{display:block}.portal .metrics{gap:5px}.portal .metric{padding:10px}.portal .metric strong{font-size:23px}.portal .actions{flex-direction:column}.portal .actions a{width:100%}.portal .mast{padding:27px 20px}}
 </style>"""
 
-RECENT = [x for x in ARCHIVE if x["id"] in (1,2,3,4,5,6,7,8)]
+RECENT = [x for x in ARCHIVE if x["id"] in (1,2,3,4,5,6,7,8,9,10,13,14)]
 
 def install(app, sql, view, me, admin, guard, formwrap, esc):
     # Persistent metadata and compact binary storage for the free-tier pilot.
