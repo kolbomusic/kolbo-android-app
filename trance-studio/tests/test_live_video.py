@@ -32,9 +32,11 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertEqual(plan['total_clauses'],2)
         self.assertEqual(plan['visual_coverage'],'matched')
 
-    def test_ambiguous_multi_action_without_clear_boundary_is_not_fabricated(self):
-        with self.assertRaises(UnavailableVideo):
-            visual_plan('החמור נוער החקלאי מגיש לו קש',12)
+    def test_two_explicit_actors_without_conjunction_prepared_as_two_scenes(self):
+        plan=visual_plan('החמור נוער החקלאי מגיש לו קש',12)
+        self.assertEqual(plan['total_clauses'],2)
+        self.assertEqual([x['action'] for x in plan['scenes']],
+                         ['donkey_bray','farmer_feed'])
 
     def test_story_preparation_uses_explicit_named_subject_when_no_verb(self):
         plan=visual_plan('פתאום ראיתי חמור ליד הכביש.',12)
