@@ -1,64 +1,85 @@
-/*
- * Kolbo Hebrew ASR (experimental, on-device/browser): reads the ORIGINAL
- * WhatsApp recording. Never transcribes the music remix and never invents
- * scenes when transcription is unavailable. No paid service is required.
- *
- * The Hebrew model is itayinbar/whisper-he-12x2 (Apache 2.0, Hugging Face).
- * First use downloads around 131 MB of weights to the browser cache.
- * Phone/WebView CPU inference may be slow or unsupported: report errors.
+/* Kolbo Hebrew recognition — quantized multilingual Whisper.
+ * Replaces a non-existent Hebrew-model ID. Work is performed on the SOURCE
+ * WhatsApp voice, never the backing track. No fabricated transcripts.
  */
-let transcriberPromise=null;
-async function transcriber() {
-  if(!transcriberPromise) {
-    transcriberPromise=(async()=>{
-      const {pipeline}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0');
-      return await pipeline('automatic-speech-recognition','itayinbar/whisper-he-12x2',{
+const MODEL_ID = 'onnx-community/whisper-tiny';
+const RUNTIME_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
+const CHUNK_SECONDS = 20;
+const SAMPLE_RATE = 16000;
+let pipelinePromise = null;
+
+function send(id,type,extras={}) { self.postMessage({id,type,...extras}); }
+function normalize(s) { return String(s||'').replace(/\s+/g,' ').trim(); }
+function rms(x) {
+  if (!x.length) return 0;
+  let total=0;
+  const stride=Math.max(1,Math.floor(x.length/48000));
+  let count=0;
+  for(let i=0;i<x.length;i+=stride){total+=x[i]*x[i];count++;}
+  return Math.sqrt(total/Math.max(1,count));
+}
+async function getRecognizer(id) {
+  if(!pipelinePromise){
+    pipelinePromise=(async()=>{
+      send(id,'stage',{label:'מאתחל מנוע תמלול עברי רב־לשוני'});
+      const {pipeline,env} = await import(RUNTIME_URL);
+      env.allowLocalModels=false;
+      const recognizer = await pipeline('automatic-speech-recognition',MODEL_ID,{
         device:'wasm',
-        dtype:{encoder_model:'fp16',decoder_model_merged:'fp32'},
-        progress_callback:(p)=>{
-          if(p&&p.status==='progress'&&typeof p.progress==='number') {
-            self.postMessage({type:'model_progress',percent:Math.min(99,Math.round(p.progress))});
+        dtype:'q8',
+        progress_callback:p=>{
+          if(p && p.status==='progress' && Number.isFinite(p.progress)){
+            send(id,'model_progress',{percent:Math.min(99,Math.round(p.progress))});
           }
         }
       });
-    })().catch(e=>{transcriberPromise=null;throw e});
+      send(id,'stage',{label:'מודל הדיבור נטען. מזהה את המילים...'});
+      return recognizer;
+    })().catch(e=>{pipelinePromise=null;throw e;});
   }
-  return transcriberPromise;
-}
-function normalize(text) {
-  return String(text||'').replace(/\s+/g,' ').trim();
+  return pipelinePromise;
 }
 self.onmessage=async event=>{
   const {id,data}=event.data||{};
-  if(!data||!id||!(data.samples instanceof Float32Array))return;
-  try {
+  if(!id || !(data?.samples instanceof Float32Array))return;
+  try{
     const samples=data.samples;
-    const sampleRate=data.sampleRate;
-    if(sampleRate!==16000||!samples.length||samples.length>16000*125) {
-      throw new Error('פורמט ההקלטה אינו נתמך לצורך תמלול');
+    if(data.sampleRate!==SAMPLE_RATE || samples.length<4000 || samples.length>125*SAMPLE_RATE){
+      throw new Error('משך או פורמט ההקלטה אינם נתמכים לתמלול.');
     }
-    self.postMessage({id,type:'stage',label:'מוריד/טוען מודל זיהוי דיבור בעברית'});
-    const asr=await transcriber();
+    if(rms(samples)<.0025){
+      throw new Error('בהקלטה לא זוהה קול בעוצמה מספקת. בדוק שהיא אינה שקטה.');
+    }
+    const recognize=await getRecognizer(id);
     const chunks=[];
-    const segmentSamples=24*16000;
-    for(let start=0;start<samples.length;start+=segmentSamples) {
-      const end=Math.min(samples.length,start+segmentSamples);
-      const segment=samples.slice(start,end);
-      const position=Math.round(start/samples.length*100);
-      self.postMessage({id,type:'stage',label:'מזהה מילים בהקלטה המקורית',percent:position});
-      // The distilled Hebrew model is monolingual; never pass language/task
-      // flags or fabricate timestamp confidence that it does not provide.
-      const answer=await asr(segment,{max_new_tokens:220,return_timestamps:false});
-      const spoken=normalize(answer?.text);
-      if(spoken)chunks.push({start:start/16000,end:end/16000,text:spoken});
+    const step=CHUNK_SECONDS*SAMPLE_RATE;
+    for(let start=0;start<samples.length;start+=step){
+      let segment=samples.slice(start,Math.min(samples.length,start+step));
+      // Avoid excessively short final clips that trigger hallucinations.
+      if(segment.length<SAMPLE_RATE*.4 && chunks.length)break;
+      send(id,'stage',{label:'מזהה דיבור בעברית — קטע '+(1+Math.floor(start/step)),
+                        percent:Math.min(95,Math.round(start/samples.length*100))});
+      const recognized=await recognize(segment,{
+        language:'hebrew',
+        task:'transcribe',
+        max_new_tokens:160,
+        return_timestamps:false
+      });
+      const words=normalize(recognized?.text);
+      if(words)chunks.push({start:start/SAMPLE_RATE,end:Math.min(samples.length,start+step)/SAMPLE_RATE,text:words});
     }
-    const transcript=normalize(chunks.map(s=>s.text).join('. '));
-    const he=(transcript.match(/[\u0590-\u05ff]/g)||[]).length;
-    if(transcript.split(/\s+/).length<2||he<3) {
-      throw new Error('לא זוהה דיבור עברי מספיק ברור. יש לתקן את התמלול ידנית.');
+    const transcript=normalize(chunks.map(x=>x.text).join(' '));
+    const hebrewCount=(transcript.match(/[\u0590-\u05ff]/g)||[]).length;
+    if(hebrewCount<3 || transcript.split(/\s+/).filter(Boolean).length<2){
+      throw new Error('הזיהוי הסתיים, אך לא הופק תמלול עברי אמין. נסה שוב או תקן ידנית.');
     }
-    self.postMessage({id,type:'done',transcript,chunks});
-  }catch(err){
-    self.postMessage({id,type:'error',message:String(err?.message||err).slice(0,500)});
+    send(id,'done',{transcript,chunks,model:MODEL_ID,language:'hebrew'});
+  }catch(error){
+    const details=String(error?.message||error||'Unknown error').slice(0,360);
+    const lower=details.toLowerCase();
+    const category=/fetch|network|cors|404|403|failed to load|download|cdn/i.test(lower)?'NETWORK_OR_MODEL':
+      /memory|alloc|oom|out of memory/i.test(lower)?'MEMORY':
+      /wasm|webassembly|unsupported|operator/i.test(lower)?'RUNTIME':'TRANSCRIPTION';
+    send(id,'error',{code:category,message:'לא ניתן לתמלל את ההקלטה: '+details});
   }
 };
