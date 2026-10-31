@@ -376,9 +376,13 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
     chunks.append((cursor,len(x)))
     pieces=[];masks=[];original_spans=[]
     offset=0
-    modes=('helium','monster','yo_yo','comic_roll','dj','glitch','tape',
-           'rewind','stretch','scratch','cartoon','robot','pitch')
-    mode_order=list(rng.permutation(modes))
+    # Start every mix with clearly comic vocal transformations, then move
+    # into 90s turntable tricks. A random offset still changes each mix.
+    featured=('helium','comic_roll','monster','yo_yo')
+    extra=('dj','rewind','glitch','tape','stretch','scratch',
+           'cartoon','robot','pitch')
+    rotation=int(rng.integers(0,len(featured)))
+    mode_order=list(featured[rotation:]+featured[:rotation]+tuple(rng.permutation(extra)))
     for i,(start,end) in enumerate(chunks):
         raw=x[start:end].copy()
         pieces.append(raw)
