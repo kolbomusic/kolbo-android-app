@@ -3,7 +3,7 @@ import math
 import hashlib
 import subprocess
 import numpy as np
-from scipy.signal import butter, sosfilt, lfilter
+from scipy.signal import butter, sosfilt, lfilter, stft, istft
 
 def load_audio(path, sample_rate=32000):
     command=['ffmpeg','-v','error','-nostdin','-protocol_whitelist','file,pipe','-i',str(path),'-t','120.02','-ac','1','-ar',str(sample_rate),'-f','f32le','-']
@@ -33,7 +33,8 @@ def prepare_voice(x,sr):
 
 STYLES = ('melodic', 'psy', 'progressive', 'goa', 'acid', 'uplifting',
           'eurodance', 'hard', 'rave', 'mixed', 'auto')
-HUMOR = ('auto', 'classic', 'cartoon', 'scratch', 'robot', 'chaos', 'off')
+HUMOR = ('auto', 'classic', 'cartoon', 'scratch', 'robot', 'chaos',
+         'stretch', 'tape', 'pitch', 'glitch', 'vinyl', 'dj', 'off')
 MOTIFS = (
     (74,77,81,77,72,77,79,77,70,74,77,74,69,73,76,73),
     (69,72,76,79,76,72,74,71,67,71,74,78,74,71,69,71),
@@ -94,14 +95,157 @@ def comic_variant(clip, mode, sr, rng):
         x[:k]*=fade;x[-k:]*=fade[::-1]
     return np.asarray(x,dtype=np.float32)
 
+
+def zero_crossing_cut(x, target, sr):
+    """Select a low-click cut near an intentional mid-syllable target."""
+    x=np.asarray(x)
+    if len(x)<4:return max(0,min(int(target),len(x)))
+    t=max(1,min(len(x)-2,int(target)))
+    radius=max(1,int(.012*sr))
+    lo=max(1,t-radius);hi=min(len(x)-1,t+radius)
+    crossings=np.flatnonzero(np.signbit(x[lo-1:hi-1])!=np.signbit(x[lo:hi]))+lo
+    if crossings.size:
+        return int(crossings[np.argmin(np.abs(crossings-t))])
+    return int(lo+np.argmin(np.abs(x[lo:hi])))
+
+
+def stretch_voice(clip, factor, sr):
+    """Small phase-vocoder time stretch: elongates a syllable without
+    simple sample-rate slowdown; intentionally retains a vintage granular edge.
+    Only use on short FX copies, never on the full source narration."""
+    x=np.asarray(clip,dtype=np.float32)
+    if len(x)<512:return x.copy()
+    if not .55<=factor<=2.8:raise ValueError("unsupported stretch factor")
+    fft_size=512;hop=128
+    _,_,z=stft(x,fs=sr,nperseg=fft_size,noverlap=fft_size-hop,
+               boundary='zeros',padded=True)
+    if z.shape[1]<3:return x.copy()
+    rate=1.0/factor
+    steps=np.arange(0,z.shape[1]-1,rate)
+    advance=2*np.pi*hop*np.arange(z.shape[0])/fft_size
+    phase=np.angle(z[:,0])
+    output=np.empty((z.shape[0],len(steps)),dtype=np.complex64)
+    for column,step in enumerate(steps):
+        n=int(step);part=step-n
+        amp=(1-part)*np.abs(z[:,n])+part*np.abs(z[:,n+1])
+        output[:,column]=amp*np.exp(1j*phase)
+        delta=np.angle(z[:,n+1])-np.angle(z[:,n])-advance
+        phase+=advance+((delta+np.pi)%(2*np.pi)-np.pi)
+    _,y=istft(output,fs=sr,nperseg=fft_size,noverlap=fft_size-hop,
+              input_onesided=True,boundary=True)
+    needed=max(1,int(round(len(x)*factor)))
+    if len(y)<needed:y=np.pad(y,(0,needed-len(y)))
+    return np.clip(y[:needed],-1,1).astype(np.float32)
+
+
+def pitch_speed(clip, semitones, sr):
+    """Old-school tape-pitch: rising/falling pitch also changes duration."""
+    x=np.asarray(clip,dtype=np.float32)
+    rate=2**(float(semitones)/12)
+    target=max(1,int(round(len(x)/rate)))
+    return np.interp(np.arange(target)*rate,np.arange(len(x)),x,
+                     left=0,right=0).astype(np.float32)
+
+
+def tape_stop(clip, sr, duration=.70):
+    """Decelerating tape-deck playback that drops in pitch and slows to a stop."""
+    x=np.asarray(clip,dtype=np.float32)
+    length=max(1,int(min(duration,1.4)*sr))
+    t=np.linspace(0,1,length,dtype=np.float32)
+    speed=1.55*(1-t)**2+.07
+    index=np.cumsum(speed).astype(np.float64)
+    index-=index[0]
+    if len(x)>1:index*=min(1.,(len(x)-1)/max(1.,index[-1]))
+    y=np.interp(index,np.arange(len(x)),x,left=0,right=0)
+    y*=np.maximum(0,1-t**2)**.7
+    return y.astype(np.float32)
+
+
+def pitch_bend(clip, sr):
+    """Record-player pitch sweep; deliberate voice distortion."""
+    x=np.asarray(clip,dtype=np.float32)
+    if len(x)<5:return x.copy()
+    n=max(1,int(len(x)*1.15))
+    t=np.linspace(0,1,n,dtype=np.float32)
+    rates=.56+1.25*t**1.5
+    idx=np.cumsum(rates,dtype=np.float64)
+    idx-=idx[0]
+    idx*=min(1.,(len(x)-1)/max(1.,idx[-1]))
+    return np.interp(idx,np.arange(len(x)),x).astype(np.float32)
+
+
+def broken_roll(clip, sr, bpm, rng):
+    """Slice WITHIN a word, roll in triplets, interrupt, then resume with
+    scratch/granular chops. Copies only; the clean narration remains uncut."""
+    x=np.asarray(clip,dtype=np.float32)
+    if len(x)<int(.14*sr):return x.copy()
+    middle=zero_crossing_cut(x,len(x)//2,sr)
+    width=max(1,min(int(sr*60/bpm/3),int(sr*.20)))
+    middle=max(width,min(len(x)-width,middle))
+    grain=x[max(0,middle-width):middle]
+    if len(grain)<int(.03*sr):grain=x[:width]
+    chunks=[]
+    for j in range(6):
+        piece=grain.copy()
+        if j in (2,4):piece=piece[::-1].copy()
+        if j>=3:piece=pitch_speed(piece,3 if j%2 else -3,sr)
+        chunks.append(piece)
+        if j==3:chunks.append(np.zeros(int(.12*sr),np.float32)) # the intentional break
+    out=np.concatenate(chunks+[x[middle:min(len(x),middle+width*2)]])
+    return out.astype(np.float32)
+
+
+def vintage_voice_fx(clip, mode, sr, bpm, rng):
+    """A library of early-90s/2000s DJ tricks, synthesized from the user audio."""
+    x=np.asarray(clip,dtype=np.float32)
+    if len(x)<int(sr*.10):return x.copy()
+    if mode=='auto':
+        mode=('dj','stretch','pitch','tape','glitch','scratch','cartoon','vinyl','robot')[
+            int(rng.integers(0,9))]
+    if mode=='chaos':
+        mode=('dj','glitch','stretch','tape','pitch')[int(rng.integers(0,5))]
+    if mode=='stretch':
+        cut=zero_crossing_cut(x,len(x)//2,sr)
+        grain=x[max(0,cut-int(.24*sr)):min(len(x),cut+int(.24*sr))]
+        y=np.concatenate([x[:cut],stretch_voice(grain,2.3,sr),x[cut:]])
+    elif mode=='tape':
+        y=np.concatenate([x[:len(x)//2],tape_stop(x[len(x)//2:],sr,.65)])
+    elif mode=='pitch':
+        cut=zero_crossing_cut(x,len(x)//2,sr)
+        y=np.concatenate([pitch_speed(x[:cut],-6,sr),pitch_bend(x[cut:],sr)])
+    elif mode=='glitch':
+        y=broken_roll(x,sr,bpm,rng)
+    elif mode=='vinyl':
+        lo=sosfilt(butter(2,[230,min(4300,sr*.43)],btype='bandpass',
+                            fs=sr,output='sos'),x).astype(np.float32)
+        y=np.round(np.tanh(lo*2.1)*30)/30
+        y=y.astype(np.float32)
+    elif mode=='dj':
+        cut=zero_crossing_cut(x,len(x)//2,sr)
+        first=x[:cut]
+        roll=broken_roll(x[max(0,cut-int(sr*.38)):],sr,bpm,rng)
+        slowed=tape_stop(x[cut:],sr,.42)
+        y=np.concatenate([first,roll,np.zeros(int(sr*.11),np.float32),slowed])
+    else:
+        y=comic_variant(x,mode,sr,rng)
+    limit=int(sr*3.15)
+    y=np.clip(np.asarray(y[:limit],dtype=np.float32),-1,1)
+    k=min(int(sr*.009),len(y)//4)
+    if k>0:
+        ramp=np.linspace(0,1,k,endpoint=False,dtype=np.float32)
+        y[:k]*=ramp;y[-k:]*=ramp[::-1]
+    return y
+
 def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',progress=lambda *args:None):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     sr=sample_rate;beat=60/bpm
     voices=[prepare_voice(c,sr) for c in clips]
     total_speech=sum(len(v)/sr for v in voices)
-    needed=beat*9+total_speech+max(0,len(voices)-1)*beat*4
-    seconds=max(float(seconds),math.ceil(needed))
+    # Intro + complete narration + dedicated DJ turnaround slots + outro.
+    # Never shorten a recording in order to satisfy a chosen output duration.
+    needed=beat*7+total_speech+len(voices)*beat*8
+    seconds=max(30.,float(seconds),math.ceil(needed))
     if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
     n=int(round(seconds*sr))
     signature=hashlib.blake2b(digest_size=8)
@@ -161,52 +305,87 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                 pan=(-1 if s==0 else 1)*.35;a=note(m,beat*.82,'lead')
                 add(a,time+s*beat/2,g,pan);add(a,time+s*beat/2+beat*.75,g*.25,-pan)
         if b%16==0:progress(10+int(45*b/total),'בונה בס ומלודיה')
-    progress(62,'משלב את הקולות המקוריים')
-    # Every original recording is included ONCE in order, in full, then creative
-    # copies are used only for the jokes. No 8-second truncation or word dropping.
-    def add_voice(x,time,gain=1):
-        start=int(round(time*sr));count=min(len(x),n-start)
-        if start<0 or count<=0:return
-        vox[start:start+count]+=x[:count]*gain*voice_level
+    progress(62,'משלב את כל ההקלטה, כולל סופה')
+    # A primary narration lane is preserved clean and fully in order.
+    # The scratch, halfway word cuts and pitch FX live on a separate lane.
+    narration=np.zeros(n,dtype=np.float32)
+    fx=np.zeros(n,dtype=np.float32)
+    def add_narration(x,time):
+        start=int(round(time*sr))
+        count=min(len(x),n-start)
+        if start>=0 and count>0:narration[start:start+count]+=x[:count]*voice_level
+    def add_effect(x,time,gain=.45):
+        start=int(round(time*sr))
+        count=min(len(x),n-start)
+        if start>=0 and count>0:fx[start:start+count]+=x[:count]*gain*voice_level
     main_positions=[];cursor=beat*4
     for v in voices:
         main_positions.append(cursor)
-        add_voice(v,cursor,1)
-        cursor+=len(v)/sr+beat*4
-    progress(70,'מזהה הפסקות טבעיות ובונה רגעים מצחיקים')
-    for index,v in enumerate(voices):
-        intervals=speech_boundaries(v,sr)
-        # Choose phrase endings near real pauses, not arbitrary mid-word windows.
-        candidates=[(a,b) for a,b in intervals if (b-a)>=int(sr*.35)]
-        if not candidates:candidates=[(0,len(v))]
-        selected=[candidates[j] for j in sorted(set([0,len(candidates)//2,len(candidates)-1]))]
-        for j,(a,b) in enumerate(selected):
-            hook=v[max(a,b-int(sr*.88)):b].copy()
-            if len(hook)<sr*.12:continue
-            mode=humor
-            if mode=='auto':mode=('classic','cartoon','scratch','robot')[(index+j)%4]
-            effect=comic_variant(hook,mode,sr,rng)
-            # A comic answer follows the *end* of the complete phrase.
-            after=main_positions[index]+b/sr+max(.12,beat*.22)
-            # Prefer actual pauses; if speech resumes immediately, save for
-            # a break after the full recording rather than masking words.
-            next_a=candidates[candidates.index((a,b))+1][0] if (a,b) in candidates and candidates.index((a,b))+1<len(candidates) else len(v)
-            if next_a-b < len(effect)+int(sr*.15):
-                after=main_positions[index]+len(v)/sr+beat*(1+j*1.2)
-            if humor!='off':
-                add_voice(effect,after,.32 if humor!='chaos' else .47)
-                if j==0:
-                    stutter=effect[:max(1,min(len(effect),int(sr*beat*.25)))]
-                    add_voice(stutter,after+len(effect)/sr+beat*.22,.24)
-    # Main narration has precedence; chorus jokes never erase or overwrite it.
+        add_narration(v,cursor)
+        cursor+=len(v)/sr+beat*8
+    progress(70,'יוצר מתיחות קול, סקראצ׳ים ושבירות רול')
+    if humor!='off':
+        genres=('dj','stretch','pitch','tape','glitch','scratch','cartoon','vinyl','robot')
+        for index,v in enumerate(voices):
+            intervals=speech_boundaries(v,sr)
+            candidates=[(a,b) for a,b in intervals if b-a>=int(sr*.25)]
+            if not candidates:candidates=[(0,len(v))]
+            # Phrase from early, middle and ending thirds; no bias toward first words.
+            targets=(len(v)//6,len(v)//2,5*len(v)//6)
+            hooks=[]
+            for target in targets:
+                a,b=min(candidates,key=lambda pair:abs((pair[0]+pair[1])//2-target))
+                # 0.6-1.0s slices, with a real cut INSIDE the sampled phrase.
+                center=zero_crossing_cut(v,max(a,min(b,(a+b)//2)),sr)
+                start=max(a,center-int(sr*.34))
+                end=min(b,start+int(sr*.92))
+                if end-start<int(sr*.15):
+                    start=max(0,center-int(sr*.26))
+                    end=min(len(v),center+int(sr*.34))
+                hooks.append(v[start:end].copy())
+            # A rolling music break occurs mid-recording; original words remain
+            # audible, with a scratch/pitch overlay appearing as a DJ fill.
+            bstart=round((main_positions[index]+len(v)/sr*.5)/beat)*beat
+            at=max(0,int(bstart*sr))
+            stop=min(n,at+int(beat*.65*sr))
+            if at<stop:
+                music[at:stop]*=np.linspace(1,.10,stop-at,dtype=np.float32)[:,None]
+            # A mid-word sample before the break, deliberately sliced and pitched.
+            if len(v)>int(sr*.6):
+                middle=zero_crossing_cut(v,len(v)//2,sr)
+                w=int(sr*.32)
+                hook=v[max(0,middle-w):min(len(v),middle+w)]
+                if len(hook)>=int(sr*.12):
+                    fill=broken_roll(hook,sr,bpm,rng)
+                    # Keep fill beneath primary narration; music cuts to foreground.
+                    add_effect(fill,bstart+beat*.03,.24)
+            for j,hook in enumerate(hooks):
+                if len(hook)<int(sr*.10):continue
+                chosen=genres[(index*3+j)%len(genres)] if humor=='auto' else humor
+                effect=vintage_voice_fx(hook,chosen,sr,bpm,rng)
+                # DJ turnaround in reserved space after each complete narration;
+                # prevents the treatment from swallowing original words.
+                after=main_positions[index]+len(v)/sr+beat*(.20+j*2.45)
+                add_effect(effect,after,.40 if humor!='chaos' else .56)
+                if j==1 and humor in ('auto','chaos','dj','glitch'):
+                    # Final stop/start punch after the stutter.
+                    at2=int(round((after+min(len(effect)/sr,beat*1.6)+beat*.1)*sr))
+                    if at2<n:
+                        end2=min(n,at2+int(beat*.22*sr))
+                        music[at2:end2]*=.07
+    # The output listener can still hear the entire clean source recording.
+    vox=narration+fx
     # Fast peak-envelope ducking, center voice and a stereo dotted-eighth echo.
     from scipy.ndimage import maximum_filter1d
-    env=maximum_filter1d(np.abs(vox),size=max(1,int(sr*.025)))
+    env=maximum_filter1d(np.abs(narration),size=max(1,int(sr*.025)))
     env=lfilter([.003],[1,-.997],env).astype(np.float32)
-    music*= (1-.66*np.clip(env/.19,0,1))[:,None]
-    music+=vox[:,None]*.87
+    music*= (1-.72*np.clip(env/.19,0,1))[:,None]
+    # FX are pushed back under original speech; original dialogue remains primary.
+    fx_level=1-.73*np.clip(env/.17,0,1)
+    music+=narration[:,None]*.85
+    music+= (fx*fx_level)[:,None]*.67
     delay=int(beat*.75*sr)
-    music[delay:,0]+=vox[:-delay]*.104;music[delay:,1]+=vox[:-delay]*.16
+    music[delay:,0]+=vox[:-delay]*.075;music[delay:,1]+=vox[:-delay]*.115
     np.tanh(music*1.08,out=music)
     fade=np.clip(np.arange(n)/(sr*.04),0,1)*np.clip((n-1-np.arange(n))/(sr*1.2),0,1)
     music*=fade[:,None]
