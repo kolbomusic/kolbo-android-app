@@ -26,6 +26,13 @@ class ProductionStoryTests(unittest.TestCase):
         buf.seek(0)
         return buf
 
+    def test_waveform_generator_has_been_removed_from_product(self):
+        backend=pathlib.Path(__file__).resolve().parents[1]/'backend'
+        self.assertFalse((backend/'voice_visual.py').exists())
+        app_source=(backend/'app.py').read_text(encoding='utf-8')
+        self.assertNotIn('export_voice_visualizer',app_source)
+        self.assertNotIn('showwaves=',app_source)
+
     def test_failed_auto_transcription_reports_no_mp4_truthfully(self):
         with tempfile.TemporaryDirectory() as directory:
             app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test-only'})
