@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'backend'))
 from live_video import (
     action_for_clause,visual_plan,UnavailableVideo,export_live_story,
-    _matches_metadata, _valid_license
+    _matches_metadata, _valid_license, _candidate_urls
 )
 
 class GroundedVideoTests(unittest.TestCase):
@@ -50,6 +50,13 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC0'}}))
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC BY-SA 2.0'}}))
 
+    def test_preferred_small_official_video_source(self):
+        item={'url':'https://upload.wikimedia.org/wikipedia/commons/b/b9/Maasai_people_singing_and_dancing.webm'}
+        urls=list(_candidate_urls(item))
+        self.assertEqual(len(urls),2)
+        self.assertTrue(urls[0].endswith('Maasai_people_singing_and_dancing.webm.360p.vp9.webm'))
+        self.assertEqual(urls[-1],item['url'])
+
     def test_native_motion_video_and_original_audio_without_subtitles(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
@@ -76,8 +83,8 @@ class GroundedVideoTests(unittest.TestCase):
             types={x['codec_type'] for x in streams['streams']}
             self.assertEqual(types,{'audio','video'})
             codec=[x for x in streams['streams'] if x['codec_type']=='video'][0]
-            self.assertEqual(codec['width'],480)
-            self.assertEqual(codec['height'],854)
+            self.assertEqual(codec['width'],640)
+            self.assertEqual(codec['height'],360)
             # No subtitle stream or text filter in produced video.
             self.assertNotIn('subtitle',types)
 
