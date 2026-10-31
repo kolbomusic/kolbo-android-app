@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import urllib.parse
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 COMMONS_API="https://commons.wikimedia.org/w/api.php"
@@ -190,21 +191,44 @@ def commons_candidates(query):
                             "license":info["extmetadata"].get("LicenseShortName",{}).get("value","")})
     return matches
 
+def _candidate_urls(item):
+    original=item["url"]
+    parsed=urllib.parse.urlparse(original)
+    if (parsed.scheme=="https" and parsed.netloc=="upload.wikimedia.org"
+        and "/wikipedia/commons/" in parsed.path and
+        parsed.path.lower().endswith(".webm")):
+        # Wikimedia already publishes low-bitrate VP9 360p transcodes for
+        # many files. Using one avoids exhausting Render's tiny CPU by
+        # decoding an original 1080p upload, and limits outgoing MP4 size.
+        fragment=parsed.path.split("/wikipedia/commons/",1)[1]
+        name=fragment.rsplit("/",1)[-1]
+        base="https://upload.wikimedia.org/wikipedia/commons/transcoded/"
+        yield base+fragment+"/"+name+".360p.vp9.webm"
+    yield original
+
 def download_video(item,dest):
-    request=urllib.request.Request(item["url"],headers={"User-Agent":USER_AGENT})
-    count=0
-    with urllib.request.urlopen(request,timeout=27) as response,open(dest,"wb") as file:
-        u=urllib.parse.urlparse(response.geturl())
-        if u.scheme!="https" or u.hostname not in (
-            "upload.wikimedia.org","commons.wikimedia.org"):
-            raise UnavailableVideo("מקור וידאו לא מורשה")
-        while True:
-            data=response.read(65536)
-            if not data:break
-            count+=len(data)
-            if count>MAX_BYTES:raise UnavailableVideo("סרטון המקור גדול מדי")
-            file.write(data)
-    if count<10000:raise UnavailableVideo("סרטון המקור חסר")
+    errors=[]
+    for source_url in _candidate_urls(item):
+        request=urllib.request.Request(source_url,headers={"User-Agent":USER_AGENT})
+        try:
+            count=0
+            with urllib.request.urlopen(request,timeout=22) as response,open(dest,"wb") as file:
+                url=urllib.parse.urlparse(response.geturl())
+                if url.scheme!="https" or url.hostname not in (
+                    "upload.wikimedia.org","commons.wikimedia.org"):
+                    raise UnavailableVideo("מקור וידאו לא מורשה")
+                while True:
+                    data=response.read(65536)
+                    if not data:break
+                    count+=len(data)
+                    if count>MAX_BYTES:raise UnavailableVideo("סרטון המקור גדול מדי")
+                    file.write(data)
+            if count<10000:raise UnavailableVideo("סרטון המקור חסר")
+            return
+        except (OSError,urllib.error.URLError,UnavailableVideo) as err:
+            Path(dest).unlink(missing_ok=True)
+            errors.append(type(err).__name__)
+    raise UnavailableVideo("לא ניתן להוריד וידאו מתאים ממקור חופשי: "+";".join(errors[:2]))
 
 def _duration(path):
     proc=subprocess.run(["ffprobe","-v","quiet","-show_entries",
