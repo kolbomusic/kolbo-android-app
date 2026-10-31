@@ -1,0 +1,27 @@
+name: Kolbo Trance Studio audio regression
+on:
+  push:
+    branches:
+      - kolbo-trance-studio-20261031
+    paths:
+      - 'trance-studio/**'
+      - '.github/workflows/kolbo-trance-tests.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg and Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install -r trance-studio/backend/requirements.txt
+      - name: Compile
+        run: python -m compileall -q trance-studio/backend trance-studio/tests
+      - name: Run audio and API tests
+        run: python -m unittest discover -s trance-studio/tests -v
