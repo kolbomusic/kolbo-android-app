@@ -1,0 +1,27 @@
+name: Karnafim site smoke tests
+on:
+  push:
+    branches: [karnafim-veterans-portal-20261031]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python syntax
+        run: python -m py_compile karnafim-site/app.py
+      - name: Probe public pages
+        shell: bash
+        run: |
+          for endpoint in / /health /register /login /memories; do
+            echo "Checking ${endpoint}"
+            curl --retry 3 --retry-delay 3 --retry-all-errors --fail --location --silent --show-error --max-time 35 -o /tmp/karnafim_page "https://karnafim-community-46.onrender.com${endpoint}"
+            if [ "${endpoint}" = "/health" ]; then
+              grep -q '"ok":true' /tmp/karnafim_page
+            else
+              grep -q 'הקרנפים' /tmp/karnafim_page
+            fi
+          done
+          echo "All public smoke checks passed"
