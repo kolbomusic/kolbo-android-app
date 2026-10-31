@@ -236,6 +236,60 @@ def vintage_voice_fx(clip, mode, sr, bpm, rng):
         y[:k]*=ramp;y[-k:]*=ramp[::-1]
     return y
 
+
+def vocal_fx_timeline(voice, sr, bpm, humor, intensity, rng):
+    """Vocal-only inserts ON the original WhatsApp audio timeline.
+
+    The original utterance never disappears: a quieter dry lane stays present
+    throughout the treated regions; transformed voice is the prominent lane.
+    No music waveforms enter this processor.
+    """
+    x=np.asarray(voice,dtype=np.float32)
+    foreground=x.copy()
+    assert intensity in (1,2,3)
+    if humor=='off':return foreground
+    window=int(sr*(2.5 if intensity==1 else 1.65 if intensity==2 else 1.10))
+    duration=max(int(.35*sr),min(int(.76*sr),int(sr*60/bpm*1.55)))
+    # Auto cycles through clearly different voice effects across the WHOLE file.
+    order=('pitch','stretch','glitch','cartoon','dj','tape','robot','vinyl','scratch')
+    passcount=0
+    # Skip the first quarter-second, select across all successive windows.
+    for wstart in range(int(.26*sr),max(0,len(x)-int(.25*sr)),window):
+        region=x[wstart:min(len(x),wstart+window)]
+        if len(region)<duration:return foreground
+        # Work only on an energetic part of the uploaded VOICE.
+        hop=max(1,int(sr*.06));width=min(duration,len(region))
+        candidates=range(0,len(region)-width+1,hop)
+        best=max(candidates,key=lambda i:float(np.mean(region[i:i+width:16]**2)))
+        start=wstart+best;end=min(len(x),start+width)
+        src=x[start:end]
+        if len(src)<int(sr*.16) or float(np.sqrt(np.mean(src*src)))<.009:
+            continue
+        mode=order[passcount%len(order)] if humor in ('auto','chaos') else humor
+        passcount+=1
+        effected=vintage_voice_fx(src,mode,sr,bpm,rng)
+        if len(effected)<32:continue
+        # No pitch-compensating resize: doing so would undo the selected
+        # vocal pitch/slowdown. Place the earliest full-length portion at the
+        # *same* point in the source; insert effects into that voice span.
+        effect=effected[:len(src)]
+        if len(effect)<len(src):
+            effect=np.pad(effect,(0,len(src)-len(effect)))
+        # Two fast fades prevent clip-edge clicks and keep consonants audible.
+        ramp_n=min(int(sr*.020),len(src)//5)
+        envelope=np.ones(len(src),dtype=np.float32)
+        if ramp_n:
+            edge=np.linspace(0,1,ramp_n,endpoint=False,dtype=np.float32)
+            envelope[:ramp_n]=edge
+            envelope[-ramp_n:]=edge[::-1]
+        # Wet voice is intentionally dominant; dry voice is retained as a
+        # safety net so changing pitch never drops the original words.
+        wet=.71 if intensity==1 else .90 if intensity==2 else 1.03
+        dry=.28 if intensity==1 else .18 if intensity==2 else .14
+        mix=(src*(1-envelope)+envelope*(dry*src+wet*effect))
+        foreground[start:end]=np.tanh(mix*1.17).astype(np.float32)
+    return foreground
+
 def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,progress=lambda *args:None):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
@@ -265,130 +319,119 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     snare=sample(.22,lambda t:(rng.uniform(-1,1,len(t))*.14*np.exp(-t*24)+.11*np.sin(2*np.pi*185*t)*np.exp(-t*32))*(1-np.exp(-t*400)))
     cache={}
     def note(m,dur,kind):
-        key=(m,dur,kind)
+        key=(m,round(dur,4),kind)
         if key in cache:return cache[key]
-        f=440*2**((m-69)/12);t=np.arange(int(sr*dur))/sr;v=np.zeros(len(t))
-        for h in range(1,7 if kind=='bass' else 8):v+=np.sin(2*np.pi*(f*h+(0 if kind=='bass' else .7*(-1)**h))*t)*np.exp(-h*(.34 if kind=='bass' else .23))/h
-        if kind=='bass':v=np.tanh(v*1.5)*.28*np.exp(-t*22)*np.minimum(1,t/.004)
-        else:v*=.11*np.exp(-t*8)*np.minimum(1,t/.012)*np.clip((dur-t)/.03,0,1)
-        cache[key]=v.astype(np.float32);return cache[key]
-    genre_order=('melodic','psy','goa','acid','progressive','eurodance','uplifting','rave')
-    melody_index=int(rng.integers(0,len(MOTIFS))) if melody=='auto' else int(melody)-1
-    motif=MOTIFS[melody_index];roots=ROOTS[melody_index]
+        f=440*2**((m-69)/12)
+        t=np.arange(max(1,int(sr*dur)),dtype=np.float64)/sr
+        if kind=='bass':
+            wave=np.sin(2*np.pi*f*t)+.38*np.sin(4*np.pi*f*t)
+            out=.26*np.tanh(wave*1.7)*np.exp(-t*19)
+        elif kind=='pad':
+            wave=.65*np.sin(2*np.pi*f*t)+.3*np.sin(4*np.pi*f*t)+.14*np.sin(6*np.pi*f*t)
+            out=.072*wave*np.minimum(1,t/.08)*np.clip((dur-t)/.16,0,1)
+        elif kind=='bell':
+            wave=np.sin(2*np.pi*f*t)+.42*np.sin(2*np.pi*2.01*f*t)+.28*np.sin(2*np.pi*3.98*f*t)
+            out=.18*wave*np.exp(-t*6)
+        elif kind=='acid':
+            phase=2*np.pi*f*t
+            saw=2*(f*t%1)-1
+            out=.19*np.tanh((saw+.3*np.sin(phase*2))*3)*np.exp(-t*13)
+        elif kind=='pluck':
+            wave=np.sin(2*np.pi*f*t)+.5*np.sin(4*np.pi*f*t)+.16*np.sin(6*np.pi*f*t)
+            out=.18*wave*np.exp(-t*12)
+        elif kind=='organ':
+            wave=np.sin(2*np.pi*f*t)+.46*np.sin(4*np.pi*f*t)+.35*np.sin(6*np.pi*f*t)
+            out=.115*wave*np.clip((dur-t)/.11,0,1)
+        elif kind=='saw':
+            wave=np.zeros(len(t),np.float64)
+            for h in range(1,8):wave+=np.sin(2*np.pi*f*h*t)/h
+            out=.13*np.tanh(wave*1.7)*np.exp(-t*4)
+        else: # airy trance lead
+            wave=np.sin(2*np.pi*f*t)+.25*np.sin(2*np.pi*2.015*f*t)
+            out=.17*wave*np.exp(-t*7)
+        out*=np.minimum(1,t/.006)*np.clip((dur-t)/.012,0,1)
+        cache[key]=np.asarray(out,dtype=np.float32)
+        return cache[key]
+    genre_order=('melodic','psy','goa','acid','progressive','eurodance',
+                 'uplifting','rave','hard')
+    colors=('lead','acid','pluck','bell','organ','saw')
+    seed_motif=int(rng.integers(0,len(MOTIFS))) if melody=='auto' else int(melody)-1
+    # Four-bar changes are intentionally audible (about every 6-8 s).
     total=math.ceil(seconds/beat)
-    progress(10,'בונה קצב טראנס')
+    progress(10,'מלחין מנגינות שונות לאורך המיקס')
     for b in range(total):
         time=b*beat;p=time/seconds;bar=b//4
-        genre=genre_order[(bar//8)%len(genre_order)] if style in ('auto','mixed') else style
-        if melody=='auto' and bar%8==0:
-            melody_index=(melody_index+1)%len(MOTIFS)
-            motif=MOTIFS[melody_index];roots=ROOTS[melody_index]
-        drop=.26<=p<.50 or .72<=p<.94;build=.16<=p<.26 or .62<=p<.72;groove=.08<=p<.98 and not .50<=p<.62
-        if groove:add(kick,time,1 if drop else .82 if build else .72)
+        section=bar//4
+        current=(seed_motif+section)%len(MOTIFS) if melody=='auto' else seed_motif
+        motif=MOTIFS[current]
+        roots=ROOTS[current]
+        synth=colors[section%len(colors)]
+        genre=genre_order[section%len(genre_order)] if style in ('auto','mixed') else style
+        drop=.26<=p<.50 or .72<=p<.94
+        build=.16<=p<.26 or .62<=p<.72
+        groove=.06<=p<.985 and not .50<=p<.58
+        if groove:add(kick,time,1.0 if drop else .84)
         if .08<p<.98:
-            add(hat,time+beat*.5,1.6 if drop else .9,-.35)
-            if drop:add(hat,time+beat*.75,.7,.4)
-        if b%4 in (1,3) and (drop or build):add(snare,time,.65)
+            add(hat,time+beat*.5,1.6 if drop else 1.05,-.35)
+            if drop or genre in ('psy','acid','rave'):
+                add(hat,time+beat*.75,.60,.4)
+        if b%4 in (1,3) and (drop or build):add(snare,time,.60)
         if build:
-            density=2 if p<.23 or .62<p<.69 else 4
-            for j in range(density):add(snare,time+j*beat/density,.3+(p%.1)*2)
+            for j in range(2 if p<.22 else 4):
+                add(snare,time+j*beat/4,.29+j*.10)
         if groove:
-            for s in (1,2,3):
-                note_shift=12 if genre in ('acid','hard') else -2 if genre=='goa' else 0
-                add(note(roots[(bar//4)%4]+note_shift,beat*.24,'bass'),time+s*beat/4,1 if drop else .75)
-        if drop or .50<=p<.62 or p<.08:
-            for s in range(2):
-                m=motif[(b*(3 if genre in ('psy','goa','acid') else 2)+s)%16]
-                if genre in ('psy','acid','rave','hard'):m+=12
+            root=roots[(bar//4)%4]
+            for k in (1,2,3):
+                bass_shift=12 if genre in ('hard','acid') else 0
+                add(note(root+bass_shift,beat*.26,'bass'),
+                    time+k*beat/4,1.05 if drop else .75)
+        # Chord/pad reveals the harmonic change, not just a different drum loop.
+        if b%4==0 and .09<p<.93:
+            root=roots[(bar//4)%4]+24
+            for interval in (0,3,7):
+                add(note(root+interval,beat*3.15,'pad'),time,.8,(interval-3)*.05)
+        if p<.97 and (drop or .50<=p<.62 or p<.13 or b%2==0):
+            local_beat=b%16
+            density=3 if genre in ('goa','psy','rave') else 2
+            for j in range(density):
+                idx=(local_beat*density+j+section*3)%len(motif)
+                m=motif[idx]+(12 if genre in ('psy','acid','rave','hard') else 0)
                 if genre=='progressive':m-=12
-                g=(.90 if drop else .45) * (.8 if genre in ('hard','acid') else 1)
-                pan=(-1 if s==0 else 1)*.35;a=note(m,beat*.82,'lead')
-                add(a,time+s*beat/2,g,pan);add(a,time+s*beat/2+beat*.75,g*.25,-pan)
-        if b%16==0:progress(10+int(45*b/total),'בונה בס ומלודיה')
-    progress(62,'משלב את כל ההקלטה, כולל סופה')
-    # A primary narration lane is preserved clean and fully in order.
-    # The scratch, halfway word cuts and pitch FX live on a separate lane.
-    narration=np.zeros(n,dtype=np.float32)
-    fx=np.zeros(n,dtype=np.float32)
-    def add_narration(x,time):
-        start=int(round(time*sr))
-        count=min(len(x),n-start)
-        if start>=0 and count>0:narration[start:start+count]+=x[:count]*voice_level
-    def add_effect(x,time,gain=.45):
-        start=int(round(time*sr))
-        count=min(len(x),n-start)
-        if start>=0 and count>0:fx[start:start+count]+=x[:count]*gain*voice_level
-    main_positions=[];cursor=beat*4
-    for v in voices:
-        main_positions.append(cursor)
-        add_narration(v,cursor)
+                note_kind='acid' if genre=='acid' else synth
+                duration=beat*.72 if j==0 else beat*.34
+                gain=(.95 if drop else .70)*(0.80 if j>0 else 1)
+                pan=(-.36 if j%2==0 else .36)
+                a=note(m,duration,note_kind)
+                add(a,time+j*beat/density,gain,pan)
+                if drop:add(a,time+j*beat/density+beat*.65,gain*.18,-pan)
+        if b%16==0:
+            progress(10+int(45*b/max(1,total)),'משלב מקצבים, כלי סינתזה ומלודיות מתחלפות')
+    progress(62,'מפעיל אפקטים על הקול שהגיע מ־WhatsApp')
+    # The vocal waveform is the ONLY input to the processing chain; music
+    # never receives pitch, tape, stutter or distortion effects.
+    vocal=np.zeros(n,dtype=np.float32)
+    voice_orig=np.zeros(n,dtype=np.float32)
+    cursor=beat*4
+    for i,v in enumerate(voices):
+        transformed=vocal_fx_timeline(v,sr,bpm,humor,fx_intensity,rng)
+        start=int(round(cursor*sr))
+        end=min(n,start+len(v))
+        if end>start:
+            vocal[start:end]+=transformed[:end-start]*voice_level
+            voice_orig[start:end]+=v[:end-start]*voice_level
         cursor+=len(v)/sr+beat*16
-    progress(70,'יוצר מתיחות קול, סקראצ׳ים ושבירות רול')
-    if humor!='off':
-        genres=('dj','stretch','pitch','tape','glitch','scratch','cartoon','vinyl','robot')
-        fx_palette=tuple(rng.permutation(genres))
-        for index,v in enumerate(voices):
-            intervals=speech_boundaries(v,sr)
-            candidates=[(a,b) for a,b in intervals if b-a>=int(sr*.25)]
-            if not candidates:candidates=[(0,len(v))]
-            # Phrase from early, middle and ending thirds; no bias toward first words.
-            targets=(len(v)//6,len(v)//2,5*len(v)//6)
-            hooks=[]
-            for target in targets:
-                a,b=min(candidates,key=lambda pair:abs((pair[0]+pair[1])//2-target))
-                # 0.6-1.0s slices, with a real cut INSIDE the sampled phrase.
-                center=zero_crossing_cut(v,max(a,min(b,(a+b)//2)),sr)
-                start=max(a,center-int(sr*.34))
-                end=min(b,start+int(sr*.92))
-                if end-start<int(sr*.15):
-                    start=max(0,center-int(sr*.26))
-                    end=min(len(v),center+int(sr*.34))
-                hooks.append(v[start:end].copy())
-            # A rolling music break occurs mid-recording; original words remain
-            # audible, with a scratch/pitch overlay appearing as a DJ fill.
-            bstart=round((main_positions[index]+len(v)/sr*.5)/beat)*beat
-            at=max(0,int(bstart*sr))
-            stop=min(n,at+int(beat*.65*sr))
-            if at<stop:
-                music[at:stop]*=np.linspace(1,.10,stop-at,dtype=np.float32)[:,None]
-            # A mid-word sample before the break, deliberately sliced and pitched.
-            if fx_intensity>=2 and len(v)>int(sr*.6):
-                middle=zero_crossing_cut(v,len(v)//2,sr)
-                w=int(sr*.32)
-                hook=v[max(0,middle-w):min(len(v),middle+w)]
-                if len(hook)>=int(sr*.12):
-                    fill=broken_roll(hook,sr,bpm,rng)
-                    # Keep fill beneath primary narration; music cuts to foreground.
-                    add_effect(fill,bstart+beat*.03,.24)
-            selected_indices=(1,) if fx_intensity==1 else (0,2) if fx_intensity==2 else (0,1,2)
-            for j in selected_indices:
-                hook=hooks[j]
-                if len(hook)<int(sr*.10):continue
-                chosen=fx_palette[(index*3+j)%len(fx_palette)] if humor=='auto' else humor
-                effect=vintage_voice_fx(hook,chosen,sr,bpm,rng)
-                # DJ turnaround in reserved space after each complete narration;
-                # prevents the treatment from swallowing original words.
-                after=main_positions[index]+len(v)/sr+beat*(.20+j*4.0)
-                add_effect(effect,after,.40 if humor!='chaos' else .56)
-                if j==1 and humor in ('auto','chaos','dj','glitch'):
-                    # Final stop/start punch after the stutter.
-                    at2=int(round((after+min(len(effect)/sr,beat*1.6)+beat*.1)*sr))
-                    if at2<n:
-                        end2=min(n,at2+int(beat*.22*sr))
-                        music[at2:end2]*=.07
-    # The output listener can still hear the entire clean source recording.
-    vox=narration+fx
-    # Fast peak-envelope ducking, center voice and a stereo dotted-eighth echo.
+    progress(80,'מבצע מיקס כשהקול המעובד בחזית')
+    # The synth is independent. Duck only its volume during speech so the
+    # user's *treated* words remain in front, not drowned by the melody.
     from scipy.ndimage import maximum_filter1d
-    env=maximum_filter1d(np.abs(narration),size=max(1,int(sr*.025)))
+    env=maximum_filter1d(np.abs(vocal),size=max(1,int(sr*.025)))
     env=lfilter([.003],[1,-.997],env).astype(np.float32)
-    music*= (1-.72*np.clip(env/.19,0,1))[:,None]
-    # FX are pushed back under original speech; original dialogue remains primary.
-    fx_level=1-.73*np.clip(env/.17,0,1)
-    music+=narration[:,None]*.85
-    music+= (fx*fx_level)[:,None]*.67
+    music*= (1-.78*np.clip(env/.18,0,1))[:,None]
+    music+=vocal[:,None]*1.13
+    # Audible echo belongs to the VOICE only, not the background melody.
     delay=int(beat*.75*sr)
-    music[delay:,0]+=vox[:-delay]*.075;music[delay:,1]+=vox[:-delay]*.115
+    music[delay:,0]+=vocal[:-delay]*.085
+    music[delay:,1]+=vocal[:-delay]*.13
     np.tanh(music*1.08,out=music)
     fade=np.clip(np.arange(n)/(sr*.04),0,1)*np.clip((n-1-np.arange(n))/(sr*1.2),0,1)
     music*=fade[:,None]
