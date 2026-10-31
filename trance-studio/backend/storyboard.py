@@ -60,6 +60,70 @@ def storyboard(transcript, duration, max_scenes=10):
     return {'source':'provided_transcript_approximate_timing',
             'transcript':clean,'scenes':scenes}
 
+
+def align_storyboard_to_vocal(story, voice, sr=32000):
+    """Align sentence scene changes with actual voice activity in the mix.
+
+    This is an honest approximation, not word-level forced alignment: no
+    sample-accurate transcript timestamps are available from the lightweight
+    Hebrew recognizer. The music itself never enters the alignment.
+    """
+    scenes=story.get('scenes') or []
+    if len(scenes)<2 or not story.get('transcript'):
+        story['alignment']='not_applicable'
+        return story
+    voice=np.asarray(voice,dtype=np.float32)
+    frame=max(80,int(sr*.04))
+    if not len(voice) or sr<1000:
+        story['alignment']='unavailable'
+        return story
+    rms=np.array([np.sqrt(np.mean(voice[i:i+frame]**2))
+                  for i in range(0,len(voice),frame)],dtype=np.float32)
+    if not len(rms):
+        story['alignment']='unavailable'
+        return story
+    reference=float(np.quantile(rms,.87))
+    threshold=max(.012,reference*.16)
+    active=rms>threshold
+    if not np.any(active):
+        story['alignment']='unavailable'
+        return story
+    # Bridge breaths/short pauses but do not include empty musical intro/outro.
+    active=np.convolve(active.astype(np.float32),np.ones(5,dtype=np.float32)/5,
+                       mode='same')>.22
+    idx=np.flatnonzero(active)
+    if len(idx)<5:
+        story['alignment']='unavailable'
+        return story
+    positions=idx*(frame/sr)
+    duration=float(len(voice)/sr)
+    counts=np.array([max(1,len(sc['caption'].split())) for sc in scenes],
+                    dtype=np.float64)
+    fractions=np.cumsum(counts)[:-1]/counts.sum()
+    cuts=[]
+    previous=0.
+    for q in fractions:
+        time=float(np.quantile(positions,q))
+        # Fit to a nearby quiet valley to avoid scene changes mid-phoneme.
+        target=int(round(time*sr/frame))
+        lo=max(int(idx[0]),target-7)
+        hi=min(int(idx[-1]),target+7)
+        if hi>lo:
+            best=min(range(lo,hi+1),key=lambda i:float(rms[i]))
+            time=best*frame/sr
+        time=max(previous+.18,min(duration-.18,time))
+        cuts.append(round(time,2))
+        previous=time
+    boundaries=[0.]+cuts+[duration]
+    for i,scene in enumerate(scenes):
+        scene['start']=round(boundaries[i],2)
+        scene['end']=round(boundaries[i+1],2)
+        scene['alignment']='vocal_activity_estimated'
+    story['alignment']='vocal_activity_estimated'
+    story['speech_window']={'start':round(float(positions[0]),2),
+                            'end':round(float(positions[-1]),2)}
+    return story
+
 def _color(rgb,amount):
     return tuple(max(0,min(255,int(c*amount))) for c in rgb)
 def _circle(d,xy,r,fill,outline=None,width=2):
