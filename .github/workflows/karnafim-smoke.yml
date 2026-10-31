@@ -1,4 +1,4 @@
-name: Karnafim read-only security check
+name: Karnafim security and route regression
 on:
   push:
     branches: [karnafim-veterans-portal-20261031]
@@ -6,31 +6,22 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Compile all Python modules
-        run: python -m compileall -q karnafim-site
-      - name: Verify site is public read-only, login stays disabled
+      - name: Python compilation and static audit
+        run: |
+          python -m compileall -q karnafim-site
+          python karnafim-site/security_regression.py
+      - name: Live check after deploy
         shell: bash
         run: |
-          set -euo pipefail
-          for attempt in {1..25}; do
-            home=$(curl -L -s -o /tmp/karnafim-home -w '%{http_code}' --max-time 20 https://karnafim-community-46.onrender.com/ || true)
-            login=$(curl -L -s -o /tmp/karnafim-login -w '%{http_code}' --max-time 20 https://karnafim-community-46.onrender.com/login || true)
-            echo "Attempt $attempt: home=$home login=$login"
-            if [ "$home" = "200" ] && [ "$login" = "503" ] && grep -q 'האתר' /tmp/karnafim-home; then
-              ok=1
-              for part in archive memorials find status source/1 source/4 source/5 source/14 memorial/yehonatan-sharabi memorial/benaya-rein memorial/uri-grossman memorial/adam-goren memorial/alexander-bunimovich; do
-                code=$(curl -L -s -o /tmp/karnafim-"$part" -w '%{http_code}' --max-time 20 "https://karnafim-community-46.onrender.com/$part" || true)
-                echo "$part HTTP $code"
-                if [ "$code" != "200" ]; then ok=0; fi
-                if grep -Eiq '<form|<input|type="password"' /tmp/karnafim-"$part"; then ok=0; fi
-              done
-              if grep -Eiq '<form|<input|type="password"' /tmp/karnafim-home; then ok=0; fi
-              if [ "$ok" = "1" ]; then echo "Safe public routes OK; login disabled"; exit 0; fi
+          for attempt in {1..32}; do
+            echo "Checking deployment attempt $attempt"
+            if python karnafim-site/security_regression.py --live; then
+              echo "Public routes, security headers, and sensitive-route lockdown verified."
+              exit 0
             fi
-            sleep 5
+            sleep 6
           done
-          echo "Unable to validate live public read-only mode"
           exit 1
