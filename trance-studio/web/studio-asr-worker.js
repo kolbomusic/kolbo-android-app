@@ -24,6 +24,8 @@ async function getRecognizer(id) {
       send(id,'stage',{label:'מאתחל מנוע תמלול עברי רב־לשוני'});
       const {pipeline,env} = await import(RUNTIME_URL);
       env.allowLocalModels=false;
+      // A normal Android WebView is not cross-origin isolated; avoid WASM thread errors.
+      if(env.backends?.onnx?.wasm)env.backends.onnx.wasm.numThreads=1;
       const recognizer = await pipeline('automatic-speech-recognition',MODEL_ID,{
         device:'wasm',
         dtype:'q8',
