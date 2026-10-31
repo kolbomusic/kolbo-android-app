@@ -38,7 +38,7 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div>
 <label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>צור גם סרטון אנימציה MP4</span></label>
 <details class="advanced" id="transcriptDetails"><summary>המילים שנאמרו בהקלטה — תמלול אוטומטי לאישור</summary>
-<p class="hint">לסרטון שמתאים לדיבור צריך לזהות מה נאמר בהודעת WhatsApp עצמה. המכשיר ינסה לתמלל את ההקלטה במודל עברי חינמי (הורדה ראשונית של כ־131MB). לפני יצירת הסרטון יוצג הטקסט לתיקון ואישור. אם הזיהוי נכשל, לא ניצור סרטון דמיוני.</p>
+<p class="hint">לסרטון שמתאים לדיבור צריך לזהות מה נאמר בהודעת WhatsApp עצמה. המכשיר ינסה לתמלל את ההקלטה במודל Whisper רב־לשוני חינמי (בהפעלה הראשונה נדרשת הורדה של קובצי מודל). לפני יצירת הסרטון יוצג הטקסט לתיקון ואישור. אם הזיהוי נכשל, לא ניצור סרטון דמיוני.</p>
 <textarea id="transcript" dir="rtl" maxlength="4000" rows="4" placeholder="המילים שזוהו יופיעו כאן לבדיקה. אפשר גם לכתוב או לתקן ידנית."></textarea>
 <div id="transcriptNotice" class="hint" role="status" aria-live="polite">אפשר להשאיר ריק לתמלול אוטומטי.</div>
 </details></section>
@@ -105,6 +105,11 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <div class="actions"><button id="generate">✦ יצירת מיקס משולב חכם</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
 <div id="status" role="status" aria-live="polite">מוכן להקלטה שלך.</div>
 <progress id="progress" max="100" value="0" hidden></progress>
+<div id="recognitionFallback" hidden>
+ <p class="hint">זיהוי הדיבור נכשל. אפשר לנסות שוב או ליצור כעת את המיקס ללא סרטון. ההקלטה נשארת באפליקציה.</p>
+ <div class="actions"><button type="button" class="secondary" id="retryRecognition">ניסיון תמלול נוסף</button>
+ <button type="button" class="secondary" id="audioOnly">הפקת MP3 בלבד</button></div>
+</div>
 </section>
 <section class="panel" id="result"><h2>✓ ההפקה מוכנה!</h2>
 <div id="videoResult" hidden>
@@ -131,7 +136,7 @@ var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',de
 var active=false, transcriptReviewed=false, transcriptOrigin='manual';
 function message(txt){$('status').textContent=txt}
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות מהמכשיר או מתוך WhatsApp'}
-function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles();transcriptReviewed=false;transcriptOrigin='manual';$('transcript').value='';$('transcriptNotice').textContent='הקלטה חדשה — תמלול ייבדק לפני יצירת סצנות.'}
+function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles();transcriptReviewed=false;transcriptOrigin='manual';$('transcript').value='';$('recognitionFallback').hidden=true;$('transcriptNotice').textContent='הקלטה חדשה — תמלול ייבדק לפני יצירת סצנות.'}
 window.kolboImportSharedAudio=function(items){setFiles(items);message('ההקלטה מ־WhatsApp התקבלה! בחר את סוג המיקס ולחץ על יצירה.');};
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
@@ -185,7 +190,7 @@ async function recognizeBeforeVideo(){
  var sentences=[];
  for(var i=0;i<files.length;i++){
   var result=await transcribeOne(files[i],i);
-  if(!verifyTranscript(result))throw new Error('לא זוהה מספיק דיבור עברי בהקלטה '+(i+1));
+  if(!verifyTranscript(result))throw new Error('בהקלטה '+(i+1)+' הזיהוי לא הפיק מספיק מילים בעברית.');
   sentences.push(result);
  }
  var transcript=sentences.join('. ');
@@ -210,8 +215,9 @@ if($('make_video').checked){
   active=true;$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
   try{await recognizeBeforeVideo()}catch(e){
    $('transcriptDetails').open=true;
-   $('transcriptNotice').textContent='התמלול האוטומטי לא הצליח: '+e.message+' אפשר לתקן בכתב או לבטל את יצירת הווידאו.';
-   message('אין תמלול אמין. לא ניצור סרטון שאינו קשור לדיבור.');
+   $('transcriptNotice').textContent='התמלול האוטומטי לא הצליח: '+e.message+' אפשר לתקן בכתב או לנסות שוב.';
+   $('recognitionFallback').hidden=false;
+   message('התמלול נכשל: '+e.message+' — ניתן לנסות שוב או ליצור MP3.');
   }finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
   return;
  }
@@ -285,6 +291,17 @@ throw new Error('העיבוד לא הסתיים במסגרת הזמן, אפשר 
 finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
 }
 $('generate').onclick=run;
+$('retryRecognition').onclick=function(){
+ $('recognitionFallback').hidden=true;
+ $('transcriptNotice').textContent='מנסה שוב לתמלל את ההקלטה...';
+ run();
+};
+$('audioOnly').onclick=function(){
+ $('recognitionFallback').hidden=true;
+ $('make_video').checked=false;
+ $('transcriptNotice').textContent='נבחר מיקס MP3 בלבד — ללא סרטון.';
+ run();
+};
 $('downloadVideo').onclick=function(){
  if(!videoServerUrl)return;
  if(window.KolboAndroid){window.KolboAndroid.downloadVideo(videoServerUrl);return}
