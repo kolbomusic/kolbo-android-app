@@ -1,4 +1,4 @@
-"""Live remote HTTP contract test: real uploaded audio -> MP3 and animated MP4.
+"""Live remote HTTP contract test: real uploaded audio -> MP3 and authentic licensed live video MP4.
 No login secrets. A short synthetic voice-like waveform is used instead of
 claiming that an actual Hebrew WhatsApp recording was provided.
 """
@@ -18,9 +18,9 @@ def main():
     d,_,_=call('/health')
     meta=json.loads(d)
     assert meta.get('ok'),meta
-    assert meta.get('version')=='1.5.0',meta
+    assert meta.get('version')=='1.9.1',meta
     page,_,_=call('/studio')
-    assert b'transcript' in page and b'videoResult' in page
+    assert b'videoResult' in page and b'videoNotice' in page and b'transcriptDetails' not in page
     assert any(c.name=='kolbo_studio' for c in jar),'server studio session cookie missing'
     wav=io.BytesIO()
     with wave.open(wav,'wb') as w:
@@ -36,7 +36,8 @@ def main():
         if ctype:h+='Content-Type: '+ctype+'\r\n'
         parts.append(h.encode()+b'\r\n'+content+b'\r\n')
     field('audio',wav.getvalue(),'smoke.wav','audio/wav')
-    for k,v in {'make_video':'on','transcript':'אני נוסע באוטו. אחר כך אני בים.',
+    for k,v in {'make_video':'on','video_requested':'on',
+                'transcript':'כולם רוקדים במסיבה.','transcript_origin':'auto',
                 'seconds':'30','humor':'auto','fx_intensity':'2','fx_gain':'1.25'}.items():
         field(k,v.encode())
     parts.append(('--'+boundary+'--\r\n').encode())
@@ -55,7 +56,7 @@ def main():
     else:raise TimeoutError('remote job did not complete in six minutes')
     assert result['state']=='done',result
     assert result['video_status']=='done',result
-    assert result['storyboard_source']=='provided_transcript_approximate_timing',result
+    assert result['storyboard_source']=='automatic_transcript_strict_semantic_footage',result
     preview,headers,status_code=call(result['video_preview_url'],timeout=75)
     assert status_code==200
     assert 'attachment' not in headers.get('Content-Disposition',''),headers
@@ -67,7 +68,7 @@ def main():
     assert b'ftyp' in video[:24],video[:24]
     assert len(video)>25000
     scenes=json.loads(storyboard)['scenes']
-    assert [s['kind'] for s in scenes]==['car','water'],scenes
+    assert [s['action'] for s in scenes]==['person_dance'],scenes
     with open('/tmp/kolbo-story-smoke.mp4','wb') as f:f.write(video)
     probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams',
             '-show_format','-of','json','/tmp/kolbo-story-smoke.mp4']))
@@ -77,6 +78,6 @@ def main():
     assert 29<=duration<=70,duration
     print(json.dumps({'status':'passed','api_version':meta['version'],
         'mp4_bytes':len(video),'mp3_bytes':len(audio),'duration':duration,
-        'scene_types':[s['kind'] for s in scenes],
+        'scene_types':[s['action'] for s in scenes],
         'tracks':sorted(tracks)},ensure_ascii=False))
 if __name__=='__main__':main()
