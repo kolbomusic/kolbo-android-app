@@ -4,6 +4,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
+from itsdangerous import URLSafeTimedSerializer, BadSignature
 from engine import load_audio, render_mix, export_mp3
 
 ALLOWED={'.opus','.ogg','.oga','.mp3','.wav','.m4a','.aac','.mp4','.webm','.flac'}
@@ -15,6 +16,15 @@ def create_app(config=None):
     root=Path(app.config['JOB_DIR']);root.mkdir(parents=True,exist_ok=True)
     jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
+    web=Path(__file__).resolve().parents[1]/'web'
+    def session_codec():
+        return URLSafeTimedSerializer(app.config['API_TOKEN'],salt='kolbo-studio-web-session')
+    def studio_session():
+        token=app.config['API_TOKEN']
+        if not token:return False
+        cookie=request.cookies.get('kolbo_studio','')
+        try:return session_codec().loads(cookie,max_age=86400)=='studio'
+        except (BadSignature,ValueError):return False
 
     def cleanup():
         now=time.time()
@@ -54,12 +64,14 @@ def create_app(config=None):
             origin=request.headers.get('Origin')
             allowed={v.strip().rstrip('/') for v in app.config['ALLOWED_ORIGINS'].split(',') if v.strip()}
             allowed.add(request.host_url.rstrip('/'))
+            allowed.add('https://'+request.host)
+            allowed.add('http://'+request.host)
             if origin and origin.rstrip('/') not in allowed:return jsonify(error='מקור הבקשה אינו מורשה'),403
             if request.method=='OPTIONS':return '',204
             if request.path.startswith('/api/jobs') and not app.config.get('TESTING'):
                 token=app.config['API_TOKEN']
                 if not token:return jsonify(error='העיבוד בענן טרם הוגדר. ניתן לעבד במכשיר.'),503
-                if not secrets.compare_digest(request.headers.get('Authorization',''),'Bearer '+token):return jsonify(error='קוד הגישה אינו תקין'),401
+                if not studio_session() and not secrets.compare_digest(request.headers.get('Authorization',''),'Bearer '+token):return jsonify(error='קוד הגישה אינו תקין'),401
 
     @app.after_request
     def headers(response):
@@ -120,6 +132,24 @@ def create_app(config=None):
         path=root/job_id/'mix.mp3'
         if not ready or not path.is_file():return jsonify(error='המיקס לא זמין'),404
         return send_file(path,mimetype='audio/mpeg',as_attachment=True,download_name='Kolbo-Trance-Mix.mp3')
+
+    @app.get('/studio')
+    def studio():
+        response=send_from_directory(web,'studio.html')
+        response.headers['Cache-Control']='no-store'
+        if app.config['API_TOKEN']:
+            response.set_cookie('kolbo_studio',session_codec().dumps('studio'),max_age=86400,httponly=True,secure=True,samesite='Lax',path='/')
+        return response
+    @app.get('/studio.webmanifest')
+    def studio_manifest():return send_file(web/'studio.webmanifest',mimetype='application/manifest+json')
+    @app.get('/studio-sw.js')
+    def studio_sw():
+        response=send_file(web/'studio-sw.js',mimetype='application/javascript')
+        response.headers['Service-Worker-Allowed']='/'
+        response.headers['Cache-Control']='no-store'
+        return response
+    @app.get('/studio-icon.svg')
+    def studio_icon():return send_file(web/'studio-icon.svg',mimetype='image/svg+xml')
 
     @app.get('/')
     def index():
