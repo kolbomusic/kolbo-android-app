@@ -37,9 +37,10 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 <label for="audio">הוסף עד 4 הודעות קוליות</label><input id="audio" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div>
 <label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>צור גם סרטון אנימציה MP4</span></label>
-<details class="advanced"><summary>תוכן ההקלטה – לסטוריבורד לפי משמעות (רשות)</summary>
-<p class="hint">אפשר להזין משפטים שנאמרו בהקלטה כדי שהאנימציה תציג פעולות תואמות. בלי טקסט: המערכת יוצרת אנימציה מקורית שמגיבה לקול ולקצב, אך אינה מתיימרת להבין את משמעות המילים.</p>
-<textarea id="transcript" dir="rtl" maxlength="4000" rows="3" placeholder="למשל: נסעתי באוטו לים, ראיתי חמור, ואז כולם התחילו לרקוד..."></textarea>
+<details class="advanced" id="transcriptDetails"><summary>המילים שנאמרו בהקלטה — תמלול אוטומטי לאישור</summary>
+<p class="hint">לסרטון שמתאים לדיבור צריך לזהות מה נאמר בהודעת WhatsApp עצמה. המכשיר ינסה לתמלל את ההקלטה במודל עברי חינמי (הורדה ראשונית של כ־131MB). לפני יצירת הסרטון יוצג הטקסט לתיקון ואישור. אם הזיהוי נכשל, לא ניצור סרטון דמיוני.</p>
+<textarea id="transcript" dir="rtl" maxlength="4000" rows="4" placeholder="המילים שזוהו יופיעו כאן לבדיקה. אפשר גם לכתוב או לתקן ידנית."></textarea>
+<div id="transcriptNotice" class="hint" role="status" aria-live="polite">אפשר להשאיר ריק לתמלול אוטומטי.</div>
 </details></section>
 <section class="panel"><h2>02 / האפקטים על הקול שלך</h2>
 <label for="humor">אפקטים על קול ההקלטה מ־WhatsApp (לא על המוזיקה)</label><select id="humor">
@@ -127,10 +128,10 @@ audio{width:100%;margin:15px 0}#result{display:none}#result.visible{display:bloc
 'use strict';
 var $=function(id){return document.getElementById(id)};
 var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null,voiceUrl='',originalUrl='',videoUrl='',videoServerUrl='',videoBlob=null;
-var active=false;
+var active=false, transcriptReviewed=false, transcriptOrigin='manual';
 function message(txt){$('status').textContent=txt}
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות מהמכשיר או מתוך WhatsApp'}
-function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles()}
+function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles();transcriptReviewed=false;transcriptOrigin='manual';$('transcript').value='';$('transcriptNotice').textContent='הקלטה חדשה — תמלול ייבדק לפני יצירת סצנות.'}
 window.kolboImportSharedAudio=function(items){setFiles(items);message('ההקלטה מ־WhatsApp התקבלה! בחר את סוג המיקס ולחץ על יצירה.');};
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
@@ -138,10 +139,84 @@ $('voice').oninput=function(){$('voiceText').textContent=this.value+'%'};
 $('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'נמוכה','2':'רגילה','3':'גבוהה'})[this.value]};
 $('fx_gain').oninput=function(){$('fxGainText').textContent=this.value+'%'};
 function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
+function verifyTranscript(txt){
+ var words=String(txt||'').trim().split(/\\s+/).filter(Boolean);
+ var hebrew=(txt.match(/[\\u0590-\\u05ff]/g)||[]).length;
+ return words.length>=2&&hebrew>=3;
+}
+async function decodeHebrewVoice(file){
+ var Audio=window.AudioContext||window.webkitAudioContext;
+ if(!Audio||!window.OfflineAudioContext)throw new Error('המכשיר אינו תומך בפענוח ההקלטה לתמלול.');
+ var ctx=new Audio();
+ try{
+  var sound=await ctx.decodeAudioData(await file.arrayBuffer());
+  if(sound.duration>121)throw new Error('תמלול אוטומטי נתמך עד שתי דקות לכל הקלטה.');
+  var render=new OfflineAudioContext(1,Math.max(1,Math.ceil(sound.duration*16000)),16000);
+  var src=render.createBufferSource();src.buffer=sound;src.connect(render.destination);src.start(0);
+  var converted=await render.startRendering();
+  return new Float32Array(converted.getChannelData(0));
+ }finally{await ctx.close().catch(function(){})}
+}
+async function transcribeOne(file,i){
+ var samples=await decodeHebrewVoice(file);
+ return await new Promise(function(resolve,reject){
+  var worker=new Worker('/studio-asr-worker.js',{type:'module'});
+  var finished=false;
+  var timeout=setTimeout(function(){settle(new Error('זיהוי הדיבור עבר את זמן העיבוד. ניתן להזין תמלול ידני.'))},240000);
+  function settle(error,result){
+   if(finished)return;
+   finished=true;clearTimeout(timeout);worker.terminate();
+   if(error)reject(error);else resolve(result);
+  }
+  worker.onmessage=function(e){
+   var m=e.data||{};
+   if(m.type==='stage'){message('הקלטה '+(i+1)+': '+(m.label||'מזהה דיבור'));}
+   if(m.type==='model_progress')message('מוריד מודל תמלול עברי: '+m.percent+'%');
+   if(m.type==='error')settle(new Error(m.message||'התמלול נכשל'));
+   if(m.type==='done')settle(null,m.transcript);
+  };
+  worker.onerror=function(e){settle(new Error('מנוע התמלול לא נתמך או אינו זמין במכשיר.'))};
+  worker.postMessage({id:'audio-'+i,data:{samples:samples,sampleRate:16000}},[samples.buffer]);
+ });
+}
+async function recognizeBeforeVideo(){
+ $('transcriptDetails').open=true;
+ $('transcriptNotice').textContent='מזהה את מה שנאמר בהקלטת המקור, ללא המוזיקה...';
+ var sentences=[];
+ for(var i=0;i<files.length;i++){
+  var result=await transcribeOne(files[i],i);
+  if(!verifyTranscript(result))throw new Error('לא זוהה מספיק דיבור עברי בהקלטה '+(i+1));
+  sentences.push(result);
+ }
+ var transcript=sentences.join('. ');
+ $('transcript').value=transcript.slice(0,4000);
+ transcriptReviewed=false;transcriptOrigin='auto';
+ $('transcriptNotice').textContent='בדוק שהטקסט אכן תואם את ההקלטה ותקן מילים שגויות. לחץ שוב על יצירה לאישור. לא יופק סרטון עם תוכן לא מאומת.';
+ message('התמלול מוכן לבדיקה. אשר בלחיצה נוספת על יצירה.');
+ $('progress').hidden=true;
+ $('generate').textContent='אישור המילים ויצירת MP4';
+ $('transcriptDetails').scrollIntoView({behavior:'smooth',block:'center'});
+}
+$('transcript').addEventListener('input',function(){transcriptReviewed=false;transcriptOrigin='manual'});
+
 async function run(){
 if(active)return;
 if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
 if(files.some(function(f){return f.size>15*1048576||!f.size})){message('כל קובץ חייב להיות קטן מ־15MB ולא ריק.');return}
+if($('make_video').checked){
+ var current=$('transcript').value.trim();
+ if(!verifyTranscript(current)){
+  if(current){message('התמלול קצר מדי או לא מספיק ברור. יש לתקן את המילים שנאמרו.');$('transcriptDetails').open=true;return}
+  active=true;$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
+  try{await recognizeBeforeVideo()}catch(e){
+   $('transcriptDetails').open=true;
+   $('transcriptNotice').textContent='התמלול האוטומטי לא הצליח: '+e.message+' אפשר לתקן בכתב או לבטל את יצירת הווידאו.';
+   message('אין תמלול אמין. לא ניצור סרטון שאינו קשור לדיבור.');
+  }finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
+  return;
+ }
+ if(!transcriptReviewed){transcriptReviewed=true;transcriptOrigin=transcriptOrigin==='auto'?'auto':'manual';}
+}
 active=true;$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
 $('result').classList.remove('visible');message('מעלה את ההקלטה לשרת...');
 try{
@@ -149,7 +224,9 @@ var form=new FormData();
 files.forEach(function(f){form.append('audio',f,f.name)});
 form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
-form.set('make_video',$('make_video').checked?'on':'off');form.set('transcript',$('transcript').value);
+form.set('make_video',$('make_video').checked?'on':'off');
+form.set('transcript',$('transcript').value.trim());
+form.set('transcript_origin',transcriptOrigin);
 var variation=$('variation').value;
 form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99999)):variation);
 form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('fx_gain',String(Number($('fx_gain').value)/100));form.set('voice_level',String(Number($('voice').value)/100));
@@ -199,7 +276,7 @@ if(j.video_url){
 if(j.video_status==='error'){$('summary').textContent='סרטון הווידאו לא הושלם בשרת. המיקס מוכן להאזנה ולהורדה.';}
 $('player').src=resultUrl;$('result').classList.add('visible');
 $('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות · אפשר להשוות את הקול המקורי לקול המעובד ללא מוזיקה · הומור: '+$('humor').selectedOptions[0].textContent;
-message(j.video_url?'הצליח! ה־MP4 והמיקס מוכנים לשיתוף.':'המיקס מוכן להשמעה ולשיתוף.');$('result').scrollIntoView({behavior:'smooth'});
+message(j.video_url?'הסרטון הופק לפי התמלול שאישרת. בדוק את הסצנות מול ההקלטה.':'המיקס מוכן להשמעה ולשיתוף.');$('result').scrollIntoView({behavior:'smooth'});
 return;
 }
 }
