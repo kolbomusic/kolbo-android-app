@@ -51,12 +51,16 @@ def create_app(config=None):
         try:
             update(job_id,state='processing',percent=4,label='קורא את ההקלטות')
             clips=[load_audio(p) for p in paths]
-            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin')}
+            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed')}
             audio,vocal=render_mix(clips,**audio_options,return_voice=True,
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             export_mp3(audio,root/job_id/'mix.mp3')
             export_mp3(vocal,root/job_id/'voice.mp3')
             meta={'video_status':'disabled','storyboard_source':'not_requested'}
+            if options.get('video_requested') and not options.get('make_video'):
+                meta={'video_status':'unavailable',
+                      'video_error':'התמלול העברי לא זיהה דיבור אמין בהקלטה, ולכן לא ניתן להתאים סרטון למילים. המיקס נשמר.',
+                      'storyboard_source':'automatic_transcription_failed'}
             if options.get('make_video',False):
                 update(job_id,percent=87,label='מאתר צילומי וידאו לפי פעולות שנאמרו',
                        video_status='processing')
@@ -86,7 +90,7 @@ def create_app(config=None):
                     meta={'video_status':'error',
                           'video_error':'לא ניתן להפיק כרגע סרטון מתאים. המיקס זמין.',
                           'storyboard_source':'no_unrelated_video'}
-            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='real_footage_semantic_v1',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
+            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='real_footage_semantic_v2',audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             app.logger.exception('Kolbo audio/video worker error')
             update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
@@ -126,7 +130,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.9.0',cloud_ready=bool(app.config['API_TOKEN']))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.9.1',cloud_ready=bool(app.config['API_TOKEN']))
 
     @app.post('/api/jobs')
     def create_job():
@@ -134,7 +138,7 @@ def create_app(config=None):
         files=request.files.getlist('audio')
         if not 1<=len(files)<=4:return jsonify(error='יש לבחור בין הקלטה אחת לארבע הקלטות'),400
         try:
-            bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','off')=='on';transcript=request.form.get('transcript','')[:4000].strip();transcript_origin=request.form.get('transcript_origin','manual')
+            bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','off')=='on';video_requested=request.form.get('video_requested','off')=='on';transcription_failed=request.form.get('transcription_failed','off')=='on';transcript=request.form.get('transcript','')[:4000].strip();transcript_origin=request.form.get('transcript_origin','manual')
             if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5:raise ValueError()
         except (ValueError,TypeError):return jsonify(error='הגדרות המיקס אינן תקינות'),400
         # A semantic video must be grounded in real words from the source;
@@ -155,7 +159,7 @@ def create_app(config=None):
             admission.release();shutil.rmtree(directory,ignore_errors=True)
             return jsonify(error='קובץ ריק או גדול מ־15MB'),400
         with lock:jobs[job_id]={'state':'queued','percent':0,'label':'ממתין לעיבוד','created':time.time(),'seconds':seconds,'bpm':bpm}
-        executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'transcript':transcript,'transcript_origin':transcript_origin})
+        executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'video_requested':video_requested,'transcription_failed':transcription_failed,'transcript':transcript,'transcript_origin':transcript_origin})
         return jsonify(id=job_id,status_url='/api/jobs/'+job_id),202
 
     @app.get('/api/jobs/<job_id>')
