@@ -47,6 +47,31 @@ assert "Disallow: /login" not in client.get('/robots.txt').get_data(as_text=True
         self.assertEqual(0, result.returncode, result.stdout + "\n" + result.stderr)
 
 
+    def test_release_flags_cannot_bypass_missing_google_oauth_credentials(self):
+        # Even two accidentally enabled flags must not expose the private DB
+        # when the real Google OAuth client secret is missing.
+        env = os.environ.copy()
+        env["SECRET_KEY"] = "test-readonly-oauth-gate-not-production"
+        env["KARNAFIM_MAINTENANCE"] = "0"
+        env["KARNAFIM_SAFETY_RELEASE_APPROVED"] = "1"
+        env["KARNAFIM_GOOGLE_AUTH_ENABLED"] = "1"
+        env["GOOGLE_CLIENT_ID"] = "761981450509-3bvp5njfhghvrsitipl0vcde0g92q9h.apps.googleusercontent.com"
+        env.pop("GOOGLE_CLIENT_SECRET", None)
+        env.pop("DATABASE_URL", None)
+        code = """
+import app as site
+assert site.READ_ONLY_BOOT
+client = site.app.test_client()
+assert client.get('/health').json['access'] == 'read_only'
+assert client.get('/login').status_code == 410
+assert client.get('/directory').status_code == 503
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=str(SITE_DIR), env=env, text=True, capture_output=True, timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + "\\n" + result.stderr)
+
     def test_maintenance_off_cannot_bypass_the_security_release_lock(self):
         # A single wrong Render environment edit must not start the database
         # or expose member endpoints while Google marks the host unsafe.
