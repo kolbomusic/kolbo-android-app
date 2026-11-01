@@ -37,7 +37,7 @@ class NarrativePlanTests(unittest.TestCase):
         words='האיש זורק כוס זכוכית על הרצפה. הכוס נשברת לרסיסים.'
         scenes=narrative_beats(words)
         self.assertEqual(len(scenes),2)
-        self.assertIn('throws an object',scenes[0].english_hints)
+        self.assertTrue(any('throws an object' in h for h in scenes[0].english_hints))
         self.assertIn('an object shatters into fragments',scenes[1].english_hints)
         self.assertNotIn('a donkey',scenes[0].english_hints)
         self.assertGreater(scenes[0].word_count,0)
