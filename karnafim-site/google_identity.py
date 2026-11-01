@@ -23,10 +23,27 @@ RETURN_PATHS = {"/", "/new-post", "/my-posts", "/feed", "/chats",
                 "/directory", "/photos", "/profile"}
 
 
+CLIENT_ID_RE = re.compile(r"^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$")
+
+
+def configuration_checks():
+    """Non-secret configuration diagnostics; never include credential values."""
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    enabled_flag = os.getenv("KARNAFIM_GOOGLE_AUTH_ENABLED", "0") == "1"
+    return {
+        "explicitly_enabled": enabled_flag,
+        "valid_client_id": bool(CLIENT_ID_RE.fullmatch(client_id)),
+        "client_secret_present": len(secret) >= 8 and secret.lower() not in (
+            "your-client-secret", "replace-me", "changeme", "placeholder"),
+        "callback": CALLBACK,
+    }
+
+
 def enabled():
-    return (os.getenv("KARNAFIM_GOOGLE_AUTH_ENABLED", "0") == "1"
-            and bool(os.getenv("GOOGLE_CLIENT_ID", "").strip())
-            and bool(os.getenv("GOOGLE_CLIENT_SECRET", "").strip()))
+    checks = configuration_checks()
+    return all(checks[key] for key in
+               ("explicitly_enabled", "valid_client_id", "client_secret_present"))
 
 
 def authoritative_email(email: str, hd: str | None) -> bool:
@@ -53,6 +70,8 @@ def validate_google_identity(info, client_id: str) -> dict:
             raise ValueError("Unexpected multiple-audience token")
     elif aud != client_id:
         raise ValueError("Unexpected token audience")
+    elif info.get("azp") not in (None, client_id):
+        raise ValueError("Unexpected authorized party")
     sub = info.get("sub")
     email = info.get("email")
     if not isinstance(sub, str) or not 1 <= len(sub) <= 255 or not sub.isascii():
