@@ -251,6 +251,7 @@ $('ytMusicPreview').onclick=function(){
  box.appendChild(iframe);box.hidden=false;
  message('זהו נגן תצוגה מקדימה בלבד. כדי לשלב את השיר בתוצר יש להעלות קובץ מורשה.');
 };
+window.kolboCanImportSharedAudio=function(){return !active;};
 window.kolboImportSharedAudio=function(items){
  // Sharing from WhatsApp ONLY imports bytes. No scheduling or starting processing.
  // User must explicitly press #generate after inspecting the chosen files.
