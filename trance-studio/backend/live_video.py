@@ -441,15 +441,18 @@ def _make_segment(src,output,length):
         raise UnavailableVideo("קטע המקור קצר מדי")
     _video_profile(src)  # A genuine moving video stream is required.
     short=Path(output).with_name("encoded-"+Path(output).name)
-    # 4 seconds is enough motion to avoid a single still frame. Encoding a
-    # 60s soundtrack directly costs too much CPU on a 512 MB free instance.
-    source_duration=min(source_length,4.0,max(1.0,length))
+    # Retain up to eight real moving seconds per licensed source clip.
+    # The old four-second limit caused obvious looping throughout a long remix.
+    # Still bound decoding/encoding for low-resource CPU workers.
+    source_duration=min(source_length,8.0,max(1.0,length))
     command=[
         "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
         "-i",str(src),"-t",f"{source_duration:.3f}","-map","0:v:0","-an",
-        "-vf","fps=12,scale=360:640:force_original_aspect_ratio=decrease:"
-              "force_divisible_by=2,pad=360:640:(ow-iw)/2:(oh-ih)/2,"
-              "setsar=1,format=yuv420p",
+        # Fill the portrait viewport with real footage rather than inserting
+        # wide black bars. Scaling then centering is a crop, not an artificial
+        # zoom animation or a substitute static picture.
+        "-vf","fps=12,scale=360:640:force_original_aspect_ratio=increase:"
+              "force_divisible_by=2,crop=360:640,setsar=1,format=yuv420p",
         "-c:v","libx264","-profile:v","baseline","-level","3.0",
         "-preset","ultrafast","-crf","30","-movflags","+faststart",str(short)
     ]
