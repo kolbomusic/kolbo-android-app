@@ -15,6 +15,31 @@ from live_video import (
 )
 
 class GroundedVideoTests(unittest.TestCase):
+    def test_portrait_video_fills_screen_without_black_letterbox_bars(self):
+        # Test-only animated synthetic source verifies portrait conversion;
+        # actual user stories still use licensed moving real-world footage.
+        from live_video import _make_segment, _duration
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder)
+            original=root/'moving-landscape.webm'
+            output=root/'portrait.mp4'
+            subprocess.run([
+                'ffmpeg','-nostdin','-v','error','-y','-f','lavfi',
+                '-i','testsrc=size=640x360:rate=12:duration=3',
+                '-c:v','libvpx-vp9','-b:v','200k',str(original)
+            ],check=True,timeout=30)
+            _make_segment(original,output,5.)
+            raw=subprocess.check_output([
+                'ffmpeg','-nostdin','-v','error','-ss','1','-i',str(output),
+                '-frames:v','1','-vf','format=gray','-f','rawvideo','-'],
+                timeout=20)
+            self.assertEqual(len(raw),360*640)
+            top=raw[:360*32]
+            bottom=raw[-360*32:]
+            self.assertGreater(sum(top)/len(top),18)
+            self.assertGreater(sum(bottom)/len(bottom),18)
+            self.assertGreater(_duration(output),4.6)
+
     def test_no_love_from_levo(self):
         self.assertIsNone(action_for_clause('אני לא נקבו שיש לבוא'))
         self.assertIsNone(action_for_clause('יש לבוא מחר'))
