@@ -6,9 +6,9 @@ from urllib.error import HTTPError
 
 ROOT=Path(__file__).resolve().parent
 URL="https://karnafim-community-46.onrender.com"
-VALID=["/","/about","/privacy","/safety","/help","/accessibility","/photos","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
-BLOCKED=["/login","/register","/auth/google/start","/auth/google/callback","/auth/google/consent","/profile","/password","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
-RETIRED_CREDENTIALS={"/login","/register","/password","/auth/google/start","/auth/google/callback","/auth/google/consent"}
+VALID=["/","/about","/privacy","/safety","/help","/accessibility","/photos","/archive","/memorials","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
+BLOCKED=["/login","/register","/auth/google/start","/auth/google/callback","/auth/google/consent","/profile","/password","/find","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
+RETIRED_CREDENTIALS={"/login","/register","/password","/find","/auth/google/start","/auth/google/callback","/auth/google/consent"}
 def fetch(path):
     try:
         response=urlopen(Request(URL+path,headers={"User-Agent":"KarnafimSecurityAudit/1.0"}),timeout=18)
