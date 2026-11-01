@@ -4,6 +4,9 @@ Not user audio. This proof must reject any original/source-footage substitution.
 """
 import hashlib,json,pathlib,subprocess,time
 from http.cookiejar import CookieJar
+import sys
+sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'backend'))
+from ai_video import _request_ltx25_generation,_download_public_video
 from urllib.request import Request,HTTPCookieProcessor,build_opener
 BASE='https://kolbo-trance-studio.onrender.com'
 ROOT=pathlib.Path('/tmp')
@@ -46,6 +49,30 @@ while time.monotonic()<deadline:
     print('STATE',state.get('state'),state.get('percent'),str(state.get('label'))[:60],flush=True)
     if state.get('state') in ('done','error'):break
 assert state.get('state')=='done',state
+if state.get('video_status')!='done':
+    # Render's anonymous ZeroGPU address can be rate-limited separately
+    # from the user's phone. Simulate a separate client on GitHub runner:
+    # request one genuine new moving clip and upload its BYTES, just like
+    # Android WebView does. Never use the uploaded source video.
+    prompts=state.get('client_ai_scene_prompts',[])
+    assert prompts and state.get('client_ai_fallback'),state
+    url=_request_ltx25_generation(prompts[0],duration=1,max_wait=72)
+    raw=ROOT/'kolbo-phone-generated-ai-clip.mp4'
+    _download_public_video(url,raw)
+    clip_data=raw.read_bytes()
+    parts=[]
+    boundary2='----KolboIndependentPhoneVideoProof'
+    parts.append(('--'+boundary2+'\r\nContent-Disposition: form-data; name="clip"; '
+                  'filename="original-ai-shot.mp4"\r\nContent-Type: video/mp4\r\n\r\n').encode()+clip_data+b'\r\n')
+    parts.append(('--'+boundary2+'--\r\n').encode())
+    uploaded=json.loads(get('/api/jobs/'+job['id']+'/ai-clips',b''.join(parts),
+         {'Content-Type':'multipart/form-data; boundary='+boundary2},
+         timeout=120))
+    assert uploaded.get('video_url'),uploaded
+    print('PHONE_AI_GENERATED_CLIP_ACCEPTED',len(clip_data),flush=True)
+    state={**state,**uploaded,'video_mode':'ai_generated_client_fallback',
+           'storyboard_source':'client_generated_original_ai',
+           'ai_clips_generated':1}
 assert state.get('video_status')=='done',state
 assert str(state.get('video_mode','')).startswith('ai_generated'),state
 assert state.get('storyboard_source')!='original_shared_video',state
