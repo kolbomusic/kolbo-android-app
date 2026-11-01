@@ -116,6 +116,37 @@ class ApiTests(unittest.TestCase):
                 executor.return_value.submit.assert_called_once()
 
 
+    def test_video_strategy_and_licensed_music_are_explicit_and_forwarded(self):
+        from unittest import mock
+        from app import create_app
+        with tempfile.TemporaryDirectory() as folder:
+            with mock.patch('app.ThreadPoolExecutor') as executor:
+                app=create_app({'TESTING':True,'JOB_DIR':folder})
+                client=app.test_client()
+                rejected=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'x'*5000),'voice.opus'),
+                    'backing_music':(io.BytesIO(b'm'*10000),'song.mp3'),
+                    'video_strategy':'new_story','make_video':'on'})
+                self.assertEqual(rejected.status_code,400)
+                self.assertIn('זכויות',rejected.json['error'])
+                invalid=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'x'*5000),'voice.opus'),
+                    'video_strategy':'some_unvalidated_command'})
+                self.assertEqual(invalid.status_code,400)
+                permitted=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'x'*5000),'voice.opus'),
+                    'backing_music':(io.BytesIO(b'm'*10000),'song.mp3'),
+                    'video_strategy':'new_story','make_video':'on',
+                    'music_license_ack':'on'})
+                self.assertEqual(permitted.status_code,202,
+                                 permitted.get_data(as_text=True))
+                call=executor.return_value.submit.call_args
+                opts=call.args[3]
+                self.assertEqual(opts['video_strategy'],'new_story')
+                self.assertTrue(opts['music_license_ack'])
+                self.assertTrue(pathlib.Path(opts['backing_music_path']).is_file())
+                self.assertEqual(pathlib.Path(opts['backing_music_path']).stat().st_size,10000)
+
     def test_long_recording_is_rejected_before_render(self):
         import subprocess
         content=subprocess.check_output(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=337:duration=121','-c:a','libopus','-f','opus','pipe:1'])
