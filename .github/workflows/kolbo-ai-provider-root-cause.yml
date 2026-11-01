@@ -1,0 +1,16 @@
+name: Kolbo root cause actual Hebrew ASR-to-video provider responses
+on:
+  push:
+    branches: [kolbo-trance-ai-root-cause-20261101]
+    paths:
+      - "trance-studio/tests/probe_ai_provider_context.py"
+      - ".github/workflows/kolbo-ai-provider-root-cause.yml"
+  workflow_dispatch:
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare exact production-like Hebrew text with each validated engine
+        run: PYTHONPATH=trance-studio/backend python trance-studio/tests/probe_ai_provider_context.py
