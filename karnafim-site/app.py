@@ -12,10 +12,11 @@ app.config.update(SESSION_COOKIE_NAME="karnafim_oidc_session",SESSION_COOKIE_SEC
 # Fail closed while Google Safe Browsing flags the site. Accidentally changing
 # maintenance alone must not restore private accounts, uploads or message routes.
 # Explicitly release ONLY after Google clearance and security regressions pass:
-# KARNAFIM_MAINTENANCE=0 AND KARNAFIM_SAFETY_RELEASE_APPROVED=1.
+# KARNAFIM_MAINTENANCE=0 AND KARNAFIM_SAFETY_RELEASE_APPROVED=1
+# AND Google OAuth credentials pass server-side configuration validation.
 SAFETY_RELEASE_APPROVED=os.environ.get("KARNAFIM_SAFETY_RELEASE_APPROVED","0")=="1"
 READ_ONLY_BOOT=not (os.environ.get("KARNAFIM_MAINTENANCE","1")=="0"
-                    and SAFETY_RELEASE_APPROVED)
+                    and SAFETY_RELEASE_APPROVED and google_ready())
 DB=os.environ.get("DATABASE_URL","") if READ_ONLY_BOOT else os.environ["DATABASE_URL"]
 
 @app.before_request
