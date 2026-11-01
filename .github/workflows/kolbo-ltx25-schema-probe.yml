@@ -26,3 +26,32 @@ jobs:
             if str(dep.get('api_name')).find('run')>=0:
               print('LTX25_GRADIO_DEP',json.dumps(dep,ensure_ascii=False)[:3500],flush=True)
           PY
+      - name: Probe valid v2 LTX text-to-video invocation with public free quota
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.error
+          base='https://lightricks-ltx-2-5.hf.space'
+          data={'prompt':'Cinematic moving live-action video of a happy donkey braying on a farm. No subtitles or text.',
+                'image_path':None,'height':512,'width':768,
+                'duration_s':1.0,'seed':42,'decoder':'conv',
+                'auto_len':False,'randomize_seed':False,'do_enhance':False}
+          for path in ('/gradio_api/call/v2/run','/gradio_api/call/run'):
+            try:
+              req=urllib.request.Request(base+path,data=json.dumps(data).encode(),
+                  headers={'Content-Type':'application/json'})
+              with urllib.request.urlopen(req,timeout=30) as r:event=json.load(r)
+              print('LTX25_VALID_SUBMIT',path,event,flush=True)
+              if event.get('event_id'):
+                with urllib.request.urlopen(base+'/gradio_api/call/run/'+event['event_id'],timeout=120) as r:
+                  kind=''
+                  for raw in r:
+                    line=raw.decode('utf-8','replace').strip()
+                    if line.startswith('event:'):kind=line[6:].strip()
+                    if line.startswith('data:') and kind in ('complete','error'):
+                      print('LTX25_VALID_GENERATION',kind,line[:1300],flush=True)
+                      break
+              break
+            except Exception as e:
+              print('LTX25_VALID_FAILED',path,type(e).__name__,str(e)[:400],flush=True)
+          PY
