@@ -82,17 +82,21 @@ def run():
                     assert 'id="g_id_onload"' in html, "Google button missing in real page"
                     assert "gsi/client" in login.headers["Content-Security-Policy"]
                     assert "unsafe-eval" not in login.headers["Content-Security-Policy"]
-                    assert "data-login_uri=" in html
+                    assert 'data-callback="karnafimGoogleResponse"' in html
+                    assert "data-login_uri=" not in html
+                    assert 'id="karnafim-gis-form"' in html
+                    assert "script-src" in login.headers["Content-Security-Policy"]
+                    assert "karnafimGoogleResponse" in html
                     with client.session_transaction(base_url=BASE) as sess:
-                        nonce = sess["google_gis_nonce"]
+                        nonce, csrf = sess["google_gis_nonce"], sess["csrf"]
                     assert len(nonce) >= 32
-                    client.set_cookie("g_csrf_token", "signed-credential-csrf",
-                                      domain="karnafim-community-46.onrender.com")
+                    assert len(csrf) >= 24
+                    # Reproduce the first-party HTML form submission, with
+                    # SameSite=Lax browser session + server-issued CSRF token.
                     signed = create_token(nonce, email="existing@gmail.com")
                     response = client.post(
                         "/auth/google/callback", base_url=BASE,
-                        data={"credential": signed,
-                              "g_csrf_token": "signed-credential-csrf"})
+                        data={"credential": signed, "csrf": csrf})
                     assert response.status_code == 303, (response.status_code, response.get_data(as_text=True)[:200])
                     assert response.location == "/"
                     with client.session_transaction(base_url=BASE) as sess:
