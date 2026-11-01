@@ -77,6 +77,31 @@ for path in ('/accounts/google/verify', '/forgot-password', '/cgi-bin/test', '/.
         self.assertEqual(0, result.returncode, result.stdout + "\n" + result.stderr)
 
 
+    def test_search_console_html_meta_verification_in_security_mode(self):
+        # Search Console URL-prefix verification must work in the public
+        # read-only site WITHOUT enabling login or accessing member records.
+        env = os.environ.copy()
+        env["SECRET_KEY"] = "unit-test-only-secret"
+        env["KARNAFIM_MAINTENANCE"] = "1"
+        env["KARNAFIM_SAFETY_RELEASE_APPROVED"] = "0"
+        env["KARNAFIM_GSC_VERIFICATION"] = "GoogleVerificationUnitTestAbc123xyZ"
+        env.pop("DATABASE_URL", None)
+        code = """
+import app as site
+c = site.app.test_client()
+r = c.get("/")
+assert r.status_code == 200
+assert '<meta name="google-site-verification" content="GoogleVerificationUnitTestAbc123xyZ">' in r.get_data(as_text=True)
+assert r.headers.get("Cache-Control","").startswith("no-store")
+assert c.get("/login").status_code == 410
+assert c.get("/directory").status_code == 503
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", code], cwd=str(SITE_DIR),
+            env=env, text=True, capture_output=True, timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + "\\n" + result.stderr)
+
     def test_release_flags_cannot_bypass_missing_google_oauth_credentials(self):
         # Even two accidentally enabled flags must not expose the private DB
         # when the real Google OAuth client secret is missing.
