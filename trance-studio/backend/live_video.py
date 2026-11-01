@@ -287,6 +287,9 @@ def _matches_metadata(title,query):
                "presentation", "lecture", "speech about",
                # A cable car is not an automobile when the transcript says car.
                "cable car", "funicular",
+               # A historic car-parade montage contains intertitles/archival
+               # cars, not the modern driving shot implied by 'I'm driving'.
+               "automobile parade",
                # Never insert distressing real news footage into a funny
                # music story merely because the title also mentions a car.
                "terrorist","shooting","fire into","hostage","murder",
