@@ -48,7 +48,12 @@ class LicensedBackingTests(unittest.TestCase):
             self.assertEqual(song.shape,no_fx.shape)
             self.assertTrue(np.isfinite(song).all())
             self.assertGreater(float(np.max(np.abs(song-no_fx))),.025)
-            np.testing.assert_array_equal(off,no_fx)
+            clean=mix_licensed_backing(source,voice,sr,transcript_hint='',
+                                       bpm=145,humor='off')
+            np.testing.assert_array_equal(off,clean)
+            # Untranscribed audio still gets a few rhythmically safe
+            # punchline accents rather than returning completely dry.
+            self.assertGreater(float(np.max(np.abs(no_fx-clean))),.02)
 
     def test_rejects_empty_and_unsupported_music(self):
         with tempfile.TemporaryDirectory() as d:
