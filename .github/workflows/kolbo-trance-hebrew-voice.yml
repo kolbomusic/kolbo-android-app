@@ -35,7 +35,7 @@ jobs:
           docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 \
             -v /tmp/kolbo-hebrew-voice.opus:/tmp/kolbo-hebrew-voice.opus:ro \
             -v "$PWD/trance-studio/tests:/app/tests:ro" \
-            --entrypoint python kolbo-trance:hebrew-spoken /app/tests/ci_hebrew_voice.py
+            -e PYTHONPATH=/app/backend --entrypoint python kolbo-trance:hebrew-spoken /app/tests/ci_hebrew_voice.py
       - name: Ensure original regression suite still passes
         run: |
           docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 \
