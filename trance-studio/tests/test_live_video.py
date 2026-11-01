@@ -172,6 +172,32 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC0'}}))
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC BY-SA 2.0'}}))
 
+    def test_real_action_footage_not_talk_about_the_action(self):
+        # A prior live Wikimedia search matched an interview about self-driving
+        # cars. This is NOT evidence that a car is driving in the clip.
+        self.assertFalse(_matches_metadata(
+            'File:Travis Kalanick on why we need self-driving cars.webm',
+            'car driving'))
+        self.assertFalse(_matches_metadata(
+            'File:Interview with farmer feeding animals.webm',
+            'farmer feeding animals'))
+        self.assertTrue(_matches_metadata('File:Moving car on highway.webm','car moving'))
+        self.assertTrue(_matches_metadata('File:Lorry driving on road.webm','lorry driving'))
+
+    def test_action_media_search_expands_grounded_alternates(self):
+        from unittest.mock import patch
+        import live_video
+        queries=[]
+        def fake_api(params):
+            q=params['gsrsearch']
+            queries.append(q)
+            return {'query': {'pages':[]}}
+        with patch.object(live_video,'_json_api',side_effect=fake_api):
+            self.assertEqual(live_video.commons_candidates('truck driving'),[])
+        self.assertIn('filetype:video driving truck',queries)
+        self.assertIn('filetype:video moving truck',queries)
+        self.assertNotIn('filetype:video dancing people',queries)
+
     def test_preferred_small_official_video_source(self):
         item={'url':'https://upload.wikimedia.org/wikipedia/commons/b/b9/Maasai_people_singing_and_dancing.webm'}
         urls=list(_candidate_urls(item))
