@@ -148,6 +148,11 @@ var $=function(id){return document.getElementById(id)};
 var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null,voiceUrl='',originalUrl='',videoUrl='',videoServerUrl='',videoBlob=null;
 var active=false;
 if(window.KolboAndroid){$('nativeStatus').hidden=false;$('install').hidden=true;}
+try{$('ai_video_consent').checked=localStorage.getItem('kolbo_trance_ai_video_consent_v1')==='yes'}catch(e){}
+$('ai_video_consent').addEventListener('change',function(){
+ try{localStorage.setItem('kolbo_trance_ai_video_consent_v1',this.checked?'yes':'no')}catch(e){}
+});
+
 function markStage(stage){
  var names=['upload','recognize','mix','video'],index=names.indexOf(stage);
  document.querySelectorAll('#stages [data-step]').forEach(function(chip,i){
