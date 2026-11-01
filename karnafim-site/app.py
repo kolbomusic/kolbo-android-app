@@ -9,11 +9,14 @@ from google_identity import enabled as google_ready, install_google_login
 app=Flask(__name__)
 app.secret_key=os.environ['SECRET_KEY']
 app.config.update(SESSION_COOKIE_NAME="karnafim_oidc_session",SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=timedelta(hours=6),MAX_CONTENT_LENGTH=2*1024*1024,MAX_FORM_MEMORY_SIZE=64*1024,MAX_FORM_PARTS=25,TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"])
-DB=os.environ["DATABASE_URL"]
+# Read-only security mode must not depend on the private database being reachable.
+# Enabling the community again requires an explicit restart with maintenance disabled.
+READ_ONLY_BOOT=os.environ.get("KARNAFIM_MAINTENANCE","1")=="1"
+DB=os.environ.get("DATABASE_URL","") if READ_ONLY_BOOT else os.environ["DATABASE_URL"]
 
 @app.before_request
 def security_hold():
- if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path not in ("/health","/favicon.svg","/favicon.ico","/robots.txt","/sitemap.xml"):
+ if READ_ONLY_BOOT and request.path not in ("/health","/favicon.svg","/favicon.ico","/robots.txt","/sitemap.xml"):
   import re
   can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status","/photos","/accessibility","/help") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
   if request.method in ("GET","HEAD") and can_read:
@@ -130,14 +133,15 @@ def init():
  id BIGSERIAL PRIMARY KEY, sender_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
  recipient_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
  body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());""")
-init()
-sql("ALTER TABLE members ADD COLUMN IF NOT EXISTS google_sub TEXT UNIQUE")
-sql("CREATE UNIQUE INDEX IF NOT EXISTS members_google_sub_unique ON members(google_sub) WHERE google_sub IS NOT NULL")
-sql("""CREATE TABLE IF NOT EXISTS login_failures (
+if not READ_ONLY_BOOT:
+ init()
+ sql("ALTER TABLE members ADD COLUMN IF NOT EXISTS google_sub TEXT UNIQUE")
+ sql("CREATE UNIQUE INDEX IF NOT EXISTS members_google_sub_unique ON members(google_sub) WHERE google_sub IS NOT NULL")
+ sql("""CREATE TABLE IF NOT EXISTS login_failures (
  fingerprint TEXT NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-)""")
-sql("CREATE INDEX IF NOT EXISTS login_failures_lookup ON login_failures(fingerprint,created_at DESC)")
+ )""")
+ sql("CREATE INDEX IF NOT EXISTS login_failures_lookup ON login_failures(fingerprint,created_at DESC)")
 
 def auth_fingerprint(email):
  raw=(email+"|"+(request.remote_addr or "")).encode("utf-8")
@@ -198,7 +202,7 @@ def home():
 def favicon():
  return Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#19372c"/><path fill="#d8eaa2" d="M14 17h13v30h-7V24h-6zm17 0h13v30h-7V24h-6zm17 0h6v30h-6z"/><path d="M8 51h48" stroke="#d8eaa2" stroke-width="3" stroke-linecap="round"/></svg>',mimetype="image/svg+xml",headers={"Cache-Control":"public, max-age=604800","X-Content-Type-Options":"nosniff"})
 @app.route("/health")
-def health():return {"ok":True,"service":"karnafim","access":("read_only" if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" else "community")}
+def health():return {"ok":True,"service":"karnafim","access":("read_only" if READ_ONLY_BOOT else "community")}
 @app.route("/status")
 def public_status():
  available=google_ready()
@@ -211,14 +215,15 @@ def public_status():
   +'</div>')
 
 # Minimal privacy-preserving accessibility feedback: no public user directory, no messages to email.
-sql("""CREATE TABLE IF NOT EXISTS accessibility_reports(
+if not READ_ONLY_BOOT:
+ sql("""CREATE TABLE IF NOT EXISTS accessibility_reports(
  id BIGSERIAL PRIMARY KEY,
  fingerprint TEXT NOT NULL,
  description TEXT NOT NULL,
  reply_email TEXT NOT NULL DEFAULT '',
  status TEXT NOT NULL DEFAULT 'open',
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
-sql("CREATE INDEX IF NOT EXISTS accessibility_reports_recent ON accessibility_reports(fingerprint,created_at DESC)")
+ sql("CREATE INDEX IF NOT EXISTS accessibility_reports_recent ON accessibility_reports(fingerprint,created_at DESC)")
 
 @app.route("/accessibility/report",methods=["GET","POST"])
 def accessibility_report():
@@ -413,9 +418,13 @@ def manage():
   b+='<div class="card"><strong>'+esc(x["title"])+'</strong><p>'+esc(x["story"])+'</p><small>'+esc(x["name"])+'</small><form method="post" action="/admin/memory">'+formwrap('<input name="mid" type="hidden" value="'+str(x["id"])+'"><button name="action" value="approve">פרסום</button><button name="action" value="delete">מחיקה</button>')+'</form></div>'
  return view("ניהול",b)
 @app.errorhandler(500)
-def error(e):return view("שגיאה","<p>אירעה תקלה זמנית. נסו שוב מאוחר יותר.</p>"),500
+def error(e):
+ if READ_ONLY_BOOT:
+  return Response("אירעה תקלה זמנית. נסו שוב מאוחר יותר.",status=500,mimetype="text/plain")
+ return view("שגיאה","<p>אירעה תקלה זמנית. נסו שוב מאוחר יותר.</p>"),500
 
-sql("""CREATE TABLE IF NOT EXISTS memories(
+if not READ_ONLY_BOOT:
+ sql("""CREATE TABLE IF NOT EXISTS memories(
  id BIGSERIAL PRIMARY KEY, author_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
  title TEXT NOT NULL, story TEXT NOT NULL, year INTEGER,
  source_url TEXT NOT NULL DEFAULT '', approved BOOLEAN DEFAULT FALSE,
@@ -443,11 +452,13 @@ def change_password():
   '<p>הכניסה מתבצעת דרך חשבון Google. אין כאן טופס לאיסוף או לשינוי סיסמאות.</p>'
   '<p>ניתן לנהל את סיסמת חשבון Google דרך הגדרות החשבון של Google בלבד.</p>'),410
 
-install_google_login(app,sql,view,guard,formwrap,esc)
-
-from community_portal import install as install_portal
-install_portal(app,sql,view,me,admin,guard,formwrap,esc)
-from memorial_photos import setup as setup_memorial
-setup_memorial(app,sql,app.extensions["karnafim_portal"]["page"],me,admin,guard,formwrap)
+# The public security-hold site is entirely static and must boot without DB/OAuth.
+# In community mode the original migrations and route registration still run.
+if not READ_ONLY_BOOT:
+ install_google_login(app,sql,view,guard,formwrap,esc)
+ from community_portal import install as install_portal
+ install_portal(app,sql,view,me,admin,guard,formwrap,esc)
+ from memorial_photos import setup as setup_memorial
+ setup_memorial(app,sql,app.extensions["karnafim_portal"]["page"],me,admin,guard,formwrap)
 
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)))
