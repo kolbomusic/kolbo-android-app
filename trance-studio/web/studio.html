@@ -50,10 +50,11 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <p class="quickNote">באנדרואיד: משתפים הקלטת קול או סרטון מ־WhatsApp לאפליקציה, מוודאים שהקובץ מופיע כאן, ובוחרים הגדרות. <b>ההפקה מתחילה רק כשלוחצים על כפתור היצירה.</b></p>
 <label for="video_strategy">איזה סרטון ליצור?</label>
 <select id="video_strategy">
-<option value="new_story" selected>סרטון חדש מהסיפור שנאמר — לא להחזיר את הצילום המקורי</option>
-<option value="remix_original">קליפ חדש בעריכה של הסרטון ששלחתי (ללא המצאת אירועים)</option>
+<option value="new_story" selected>יצירת סרטון חדש עם AI מהדיבור — ללא צילום המקור</option>
+<option value="illustrated_story">המחשה עם צילומים חופשיים שמתאימים לדיבור — ללא צילום המקור</option>
+<option value="remix_original">עריכה יצירתית של הסרטון המקורי ששלחתי</option>
 </select>
-<small>ביצירה חדשה המערכת מחפשת סצנות המתאימות לדיבור או מנסה AI לאחר הסכמה. אם אין סצנה אמיתית זמינה, המערכת תאמר זאת ולא תחליף אותה בסרטון המקורי. עריכת מקור מיועדת לקובץ וידאו ולא להקלטת קול בלבד.</small>
+<small id="videoStrategyHelp">AI חדש: המערכת מנסה ליצור סצנות חדשות מתוך התמלול, בכפוף לזמינות חינמית ולהסכמתך לשיתוף הטקסט. היא לא תחליף אותן בצילום המקורי או במאגר. קיימת גם המחשה מצילומים חופשיים, בנפרד. עריכת מקור דורשת קובץ וידאו.</small>
 <label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>הפק גם סרטון וידאו לפי מה שנאמר (MP4)</span></label>
 <label class="videoToggle" for="ai_video_consent"><input id="ai_video_consent" type="checkbox"> <span>נסה גם ליצור סצנה חדשה באמצעות AI לפי הדיבור — ניסיוני וחינמי</span></label>
 <small id="aiVideoPrivacy">אם מסמנים: הטקסט שהמנוע זיהה מההקלטה נשלח לשירות AI ציבורי ב־Hugging Face. קובץ הקול עצמו אינו נשלח לשם. הווידאו עשוי להיות קצר, לחזור על עצמו או לא לדייק בכל האירועים; השירות החינמי כפוף לתורים ולמכסות. בלי סימון, המערכת משתמשת רק בצילומים קיימים בעלי רישיון.</small>
@@ -171,6 +172,17 @@ var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',de
 var active=false;
 if(window.KolboAndroid){$('nativeStatus').hidden=false;$('install').hidden=true;}
 try{$('ai_video_consent').checked=localStorage.getItem('kolbo_trance_ai_video_consent_v1')==='yes'}catch(e){}
+function explainVideoStrategy(){
+ var mode=$('video_strategy').value;
+ $('videoStrategyHelp').textContent=mode==='new_story'?
+  'AI חדש לגמרי: חובה להסכים במפורש לשליחת התמלול בלבד לשרת היצירה הציבורי. אם השרת החינמי אינו זמין לא יוחזר סרטון מקורי או צילום מאגר.' :
+  mode==='illustrated_story'?
+  'המחשה מצילומים חופשיים לפי מה שנאמר, ללא שליחת תמלול למנוע AI וללא חזרה לסרטון המקורי. החומר המצולם איננו חדש וייתכן שרק חלק מהאירועים יומחשו.' :
+  'עריכה מחודשת של הווידאו שהעלית עם חיתוכים, שינויי מהירות וקצב. הסרטון אינו חדש מבחינת האירועים המצולמים.';
+ $('ai_video_consent').disabled=mode!=='new_story';
+}
+$('video_strategy').addEventListener('change',explainVideoStrategy);
+explainVideoStrategy();
 $('ai_video_consent').addEventListener('change',function(){
  try{localStorage.setItem('kolbo_trance_ai_video_consent_v1',this.checked?'yes':'no')}catch(e){}
 });
@@ -394,6 +406,11 @@ if(active)return;
 if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
 if(files.some(function(f){return !f.size||f.size>(isVideoFile(f)?45:15)*1048576})){message('הגבלת גודל: עד 15MB להקלטה או 45MB לסרטון WhatsApp.');return}
 if(files.reduce(function(total,f){return total+f.size},0)>60*1048576){message('הקבצים גדולים מ־60MB יחד. יש לבחור פחות קבצים.');return}
+if($('make_video').checked&&$('video_strategy').value==='new_story'&&!$('ai_video_consent').checked){
+ message('לסרטון AI חדש נדרשת הסכמתך לשליחת התמלול העברי (לא הקול) לשירות AI חיצוני. סמן את אפשרות ה־AI ונסה שוב.');
+ $('ai_video_consent').focus();
+ return;
+}
 active=true;markStage('upload');$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
 $('result').classList.remove('visible');
 var wantsVideo=$('make_video').checked;
@@ -433,7 +450,7 @@ if(licensedMusic){
 }
 form.set('make_video',wantsVideo?'on':'off');
 form.set('video_requested',wantsVideo?'on':'off');
-form.set('ai_video_consent',wantsVideo&&$('ai_video_consent').checked?'on':'off');
+form.set('ai_video_consent',wantsVideo&&$('video_strategy').value==='new_story'&&$('ai_video_consent').checked?'on':'off');
 form.set('transcription_failed',wantsVideo&&!verifyTranscript(recognized)?'on':'off');
 form.set('transcript',verifyTranscript(recognized)?recognized:'');
 form.set('transcript_origin','auto');
