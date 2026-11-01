@@ -50,12 +50,17 @@ def live():
             'name="csrf"' in body and "כניסה לחשבון" in body)
         print(("PASS" if ok else "FAIL"),"/new-post","LOGIN_REQUIRED",status)
         if not ok:errors.append(("/new-post",status))
+        for route,nextpage in (("/my-posts","/my-posts"),("/chats","/chats")):
+            status,headers,body,landed=fetch(route)
+            ok=status==200 and "/login?next="+nextpage in landed and 'name="csrf"' in body
+            print(("PASS" if ok else "FAIL"),route,"LOGIN_REQUIRED",status)
+            if not ok:errors.append((route,status))
         for route in ("/profile","/directory","/password"):
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.rstrip("/")==URL+"/login"
             print(("PASS" if ok else "FAIL"),route,"REDIRECT_LOGIN",status)
             if not ok:errors.append((route,status))
-        for route in ("/admin","/community/moderation","/chats","/community-media/1"):
+        for route in ("/admin","/community/moderation","/community-media/1"):
             status,headers,body,landed=fetch(route)
             ok=status==403
             print(("PASS" if ok else "FAIL"),route,"FORBIDDEN",status)
