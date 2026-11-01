@@ -1,0 +1,116 @@
+"""Offline, signed-token Google Identity Services regression (no real Google/Neon)."""
+import os
+import sys
+import time
+from pathlib import Path
+from unittest.mock import patch
+from flask import Flask, session
+from cryptography.hazmat.primitives.asymmetric import rsa
+from authlib.jose import JsonWebKey, JsonWebToken
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import google_identity as google
+
+CLIENT = "761981450509-3bvp5njfhghvrsitipl0vcde0g92q9h.apps.googleusercontent.com"
+PRIVATE = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+PUB = JsonWebKey.import_key(PRIVATE.public_key(), {"kid": "test-google-key"})
+TOKEN = JsonWebToken(["RS256"])
+
+class Response:
+    status_code = 200
+    content = b'{"keys":[]}'
+    def raise_for_status(self):
+        return None
+    def json(self):
+        return {"keys": [PUB.as_dict()]}
+
+def create_token(nonce, **updates):
+    now = int(time.time())
+    payload = dict(iss="https://accounts.google.com", aud=CLIENT,
+                   sub="113301133011330", email="existing@gmail.com",
+                   email_verified=True, iat=now, exp=now+2400, nonce=nonce)
+    payload.update(updates)
+    token = TOKEN.encode({"alg": "RS256", "kid": "test-google-key"}, payload, PRIVATE)
+    return token.decode("ascii") if isinstance(token, bytes) else token
+
+def run():
+    env = dict(KARNAFIM_GOOGLE_AUTH_ENABLED="1",
+               KARNAFIM_GOOGLE_AUTH_MODE="gis", GOOGLE_CLIENT_ID=CLIENT)
+    with patch.dict(os.environ, env, clear=True):
+        assert google.enabled(), "GIS should not require a client secret"
+        assert google.auth_mode() == "gis"
+        app = Flask("karnafim_gis_test")
+        app.secret_key = "offline-test-key"
+        db = []
+        def sql(query, params=(), fetch=False):
+            db.append((query, params))
+            if query.startswith("SELECT id FROM members WHERE google_sub"):
+                return [{"id": 42}]
+            raise AssertionError("Unexpected database access")
+        google.install_google_login(app, sql, lambda t,b:b, lambda:None, lambda x:x, str)
+        @app.get("/login")
+        def login():
+            return google.gis_button_html()
+
+        with patch.object(google.requests, "get", return_value=Response()) as fetch:
+            with app.test_client() as client:
+                page = client.get("/login")
+                assert page.status_code == 200
+                html = page.get_data(as_text=True)
+                assert 'id="g_id_onload"' in html
+                assert google.CALLBACK in html
+                assert 'gsi/client' in html
+                with client.session_transaction() as sess:
+                    nonce = sess["google_gis_nonce"]
+                signed = create_token(nonce)
+
+                assert client.post("/auth/google/callback", data={
+                    "credential":signed}).status_code == 403, "Missing double-submit CSRF"
+
+                client.set_cookie("g_csrf_token","csrf-for-test")
+                invalid_csrf = client.post("/auth/google/callback", data={
+                    "g_csrf_token":"different","credential":signed})
+                assert invalid_csrf.status_code == 403
+                assert not db and fetch.call_count == 0
+
+                ok = client.post("/auth/google/callback", data={
+                    "g_csrf_token":"csrf-for-test","credential":signed})
+                assert ok.status_code == 303 and ok.location == "/", (ok.status_code,ok.location)
+                with client.session_transaction() as sess:
+                    assert sess["uid"] == 42 and sess["auth_method"] == "google"
+                    assert "google_gis_nonce" not in sess
+                assert len(db) == 1
+                # The signed nonce can never be replayed after first login.
+                assert client.post("/auth/google/callback", data={
+                    "g_csrf_token":"csrf-for-test","credential":signed}).status_code == 403
+
+                for token_kwargs in [
+                    {"aud":"attacker-client.apps.googleusercontent.com"},
+                    {"email_verified":False},
+                    {"iss":"https://attacker.example"},
+                    {"iat":int(time.time())-4000, "exp":int(time.time())-60},
+                    {"nonce":"not-the-issued-session-nonce"},
+                ]:
+                    client.get("/login")
+                    with client.session_transaction() as sess:
+                        new_nonce = sess["google_gis_nonce"]
+                    new_signed = create_token(new_nonce, **token_kwargs)
+                    failed = client.post("/auth/google/callback", data={
+                        "g_csrf_token":"csrf-for-test","credential":new_signed})
+                    assert failed.status_code == 401, (token_kwargs, failed.status_code)
+                client.get("/login")
+                bad_signed = create_token("unrelated-nonce")
+                forged = bad_signed[:30] + ("A" if bad_signed[30] != "A" else "B") + bad_signed[31:]
+                assert client.post("/auth/google/callback", data={
+                    "g_csrf_token":"csrf-for-test","credential":forged}).status_code == 401
+        assert len(db) == 1, "No rejected token should read the DB"
+        print("PASS GIS signed RS256 verification, Google JWKS, nonce, CSRF, replay, audience, issuer, expiry")
+
+    with patch.dict(os.environ, {"KARNAFIM_GOOGLE_AUTH_ENABLED":"1",
+                                  "KARNAFIM_GOOGLE_AUTH_MODE":"oauth",
+                                  "GOOGLE_CLIENT_ID":CLIENT},clear=True):
+        assert not google.enabled(), "Classic confidential OAuth still needs client secret"
+        assert google.gis_button_html() == ""
+
+if __name__=="__main__":
+    run()
