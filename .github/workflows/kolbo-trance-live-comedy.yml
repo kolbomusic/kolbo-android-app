@@ -1,11 +1,11 @@
 name: Kolbo LIVE original Israeli comic-trance master proof
+# Live requests use a shared public ZeroGPU quota. Never kick off a swarm
+# of 30-second AI generation proofs on an ordinary source-code push.
 on:
-  push:
-    branches: [kolbo-trance-studio-20261031]
-    paths:
-      - '.github/workflows/kolbo-trance-live-comedy.yml'
-      - 'trance-studio/tests/live_israeli_comedy_proof.py'
   workflow_dispatch:
+concurrency:
+  group: kolbo-trance-render-acceptance
+  cancel-in-progress: false
 jobs:
   live-original-comedy:
     runs-on: ubuntu-24.04
