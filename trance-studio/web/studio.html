@@ -147,7 +147,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </section>
 <section class="panel" id="result"><h2 id="resultTitle">✓ ההפקה מוכנה!</h2>
 <div id="videoNotice" role="alert" hidden></div>
-<div class="actions"><button type="button" id="retryVideo" class="secondary" hidden>נסה שוב ליצור סרטון בלבד — המיקס כבר מוכן</button></div>
+<div class="actions"><button type="button" id="retryVideo" class="secondary" hidden>נסה שוב ליצור סרטון AI בלבד — המיקס כבר מוכן</button><button type="button" id="fallbackIllustration" class="secondary" hidden>נסה ליצור MP4 מצילומים מתאימים לדיבור (ללא AI)</button></div>
 <div id="videoResult" hidden>
 <label for="videoPlayer">סרטון שנוצר לפי התוכן שזוהה בהקלטה</label>
 <video id="videoPlayer" controls playsinline preload="metadata" style="width:100%;max-height:620px;border-radius:14px;background:#000"></video>
@@ -480,7 +480,7 @@ if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד א
 if(resultUrl)URL.revokeObjectURL(resultUrl);
 if(voiceUrl)URL.revokeObjectURL(voiceUrl);
 if(originalUrl)URL.revokeObjectURL(originalUrl);
-videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;$('retryVideo').hidden=true;
+videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;$('retryVideo').hidden=true;$('fallbackIllustration').hidden=true;
 resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);resultServerUrl=j.download_url;
 if(j.voice_url){
   var voiceResponse=await fetch(j.voice_url,{credentials:'same-origin'});
@@ -560,6 +560,21 @@ if(wantsVideo&&!j.video_url){
   '\nבמצב הזה המערכת לא תחליף את הצילום המקורי ולא תייצר תמונות סטטיות.' :
   '');
  $('videoNotice').hidden=false;
+ // Make a failed AI attempt actionable without losing the WhatsApp upload.
+ // This button explicitly selects a DIFFERENT mode: licensed real footage
+ // is not falsely presented as new AI-generated events.
+ if($('video_strategy').value==='new_story'){
+  var illustrated=$('fallbackIllustration');
+  illustrated.hidden=false;
+  illustrated.onclick=function(){
+   if(active)return;
+   illustrated.hidden=true;
+   $('video_strategy').value='illustrated_story';
+   explainVideoStrategy();
+   message('מנסה המחשה מצולמת נפרדת מהמקור, ללא יצירת סצנות AI.');
+   run();
+  };
+ }
  // A user can explicitly retry a failed video generation without remixing
  // or uploading their original voice again. No automatic retry loop exists.
  if($('ai_video_consent').checked&&j.client_ai_prompt){
