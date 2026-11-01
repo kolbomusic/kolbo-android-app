@@ -1,11 +1,11 @@
 name: Kolbo Trance real free AI video availability proof
+# Live requests use a shared public ZeroGPU quota. Never kick off a swarm
+# of 30-second AI generation proofs on an ordinary source-code push.
 on:
-  push:
-    branches: [kolbo-trance-studio-20261031]
-    paths:
-      - '.github/workflows/kolbo-trance-real-free-ai-proof.yml'
-      - 'trance-studio/tests/production_ai_provider_canary.py'
   workflow_dispatch:
+concurrency:
+  group: kolbo-trance-render-acceptance
+  cancel-in-progress: false
 jobs:
   ai-canary:
     runs-on: ubuntu-24.04
