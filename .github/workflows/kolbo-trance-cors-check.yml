@@ -1,0 +1,30 @@
+name: Inspect free video Spaces browser CORS
+on:
+  push:
+    branches: [kolbo-trance-prompt-diagnostic-20261101]
+    paths: ['.github/workflows/kolbo-trance-cors-check.yml']
+  workflow_dispatch:
+jobs:
+  cors:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Android browser can POST and download Gradio video directly
+        run: |
+          python - <<'PY'
+          import urllib.request,urllib.error
+          origin='https://kolbo-trance-studio.onrender.com'
+          for host,endpoint in [
+            ('lightricks-ltx-video-distilled.hf.space','/gradio_api/call/text_to_video'),
+            ('lightricks-ltx-2-5.hf.space','/gradio_api/call/v2/run')]:
+            for method in ['OPTIONS','GET']:
+              try:
+                headers={'Origin':origin}
+                if method=='OPTIONS':
+                  headers.update({'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type'})
+                req=urllib.request.Request('https://'+host+endpoint,method=method,headers=headers)
+                with urllib.request.urlopen(req,timeout=20) as r:
+                  print('CORS_RESULT',host,method,r.status,'origin=',r.headers.get('access-control-allow-origin'),'headers=',r.headers.get('access-control-allow-headers'),'methods=',r.headers.get('access-control-allow-methods'),flush=True)
+              except urllib.error.HTTPError as e:
+                print('CORS_RESULT',host,method,e.code,'origin=',e.headers.get('access-control-allow-origin'),'headers=',e.headers.get('access-control-allow-headers'),'methods=',e.headers.get('access-control-allow-methods'),flush=True)
+              except Exception as e:print('CORS_ERROR',host,method,str(e)[:200],flush=True)
+          PY
