@@ -30,8 +30,12 @@ class Connection:
     def __exit__(self,*args):return False
     def cursor(self):return Cursor()
 def sql(query,params=(),fetch=False):
-    if fetch:return []
-    return None
+    if not fetch:return None
+    # The upload validation reads DB-backed storage quotas before the write.
+    # The fake DB must return the same row shape as the real SELECT SUM().
+    if "SELECT COALESCE(SUM(length),0)" in query:
+        return [{"n":0}]
+    return []
 def make_image(kind="JPEG"):
     out=io.BytesIO()
     image=Image.new("RGB",(80,60),(120,160,110))
