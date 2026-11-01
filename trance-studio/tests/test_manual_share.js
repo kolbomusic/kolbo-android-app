@@ -58,7 +58,7 @@ assert.equal(context.files[0].name,sharedVideo.name,
 assert.equal(count,0,'WhatsApp video sharing must not trigger rendering');
 assert.equal(scheduled,0,'WhatsApp video sharing must not schedule rendering');
 assert.equal(scheduled,0,'No delayed generation on WhatsApp share');
-assert.equal(focus,1);
+assert.equal(focus,2,'Each intentional WhatsApp share focuses Create without starting it');
 assert.ok(notified.at(-1).includes('לחץ'));
 context.window.kolboImportSharedAudio([]);
 assert.equal(button.disabled,true);
