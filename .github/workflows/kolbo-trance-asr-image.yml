@@ -19,3 +19,6 @@ jobs:
       - name: Confirm weights and CPU inference work offline within 512 MB
         run: |
           docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 --entrypoint python kolbo-trance-asr:test -c "import os;from pathlib import Path;from faster_whisper import WhisperModel;p=Path(os.environ['KOLBO_ASR_DIR'])/'model.bin';assert p.stat().st_size>1000000,p;m=WhisperModel(str(p.parent),device='cpu',compute_type='int8',cpu_threads=1);print('MODEL_PRELOADED_AND_LOADED',p.stat().st_size)"
+      - name: Run complete backend regression suite inside the production image
+        run: |
+          docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 -v "$PWD/trance-studio/tests:/app/tests:ro" --entrypoint python kolbo-trance-asr:test -m unittest discover -s /app/tests -v
