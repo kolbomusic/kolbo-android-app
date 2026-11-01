@@ -518,9 +518,10 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
                     except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
                         continue
                 if selected is not None:
-                if candidate_query!=query and match_level=="exact_action":
-                    match_level="alternate_action_query"
-                break
+                    if (candidate_query==query and match_level=="exact_action"
+                        and selected.get("matched_query",query)!=query):
+                        match_level="alternate_action_query"
+                    break
             cached[query]=(source,selected,match_level)
         source,selected,match_level=cached[query]
         if selected is None:
