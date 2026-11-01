@@ -491,10 +491,13 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     total_fx_seconds=0.
     pieces=[];masks=[];original_spans=[]
     position=0;offset=0
-    featured=('helium','comic_roll','monster','yo_yo')
-    extras=('dj','glitch','tape','stretch','scratch','cartoon','robot','pitch')
-    rotation=int(rng.integers(0,len(featured)))
-    mode_order=list(featured[rotation:]+featured[:rotation]+tuple(rng.permutation(extras)))
+    # A recording needs one consistent comic language, not an unrelated
+    # random effect family at every pause. These neutral hooks always use
+    # copies of the actual spoken syllable; contextual effects require
+    # an explicit, non-negated Hebrew story cue.
+    neutral_hooks=('comic_roll','stretch')
+    last_story_cue=None
+    last_story_cue_cut=-int(sr*20)
     for index,cut in enumerate(chosen):
         raw=x[position:cut].copy()
         if len(raw):
@@ -528,10 +531,16 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
         if source_rms<.008:
             continue
         if humor=='auto':
-            # Explicit story cues win; never skip a real comic action for
-            # an arbitrary "every third event" fallback.
+            # Never invent an animal, explosion or baby from generic speech.
+            # Avoid replaying the same specific gag in adjacent pauses;
+            # between events use rhythmic samples of the speaker instead.
             cue=_semantic_comedy_cue(transcript_hint,cut/max(1,len(x)))
-            mode=cue or mode_order[index%len(mode_order)]
+            if cue and cue==last_story_cue and cut-last_story_cue_cut<int(sr*7):
+                cue=None
+            if cue:
+                last_story_cue=cue
+                last_story_cue_cut=cut
+            mode=cue or neutral_hooks[index%len(neutral_hooks)]
         else:
             mode=(('helium','comic_roll','monster','yo_yo','rewind')[index%5]
                   if humor=='chaos' else humor)
@@ -814,14 +823,17 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     from scipy.ndimage import maximum_filter1d
     env=maximum_filter1d(np.abs(vocal),size=max(1,int(sr*.025)))
     env=lfilter([.003],[1,-.997],env).astype(np.float32)
-    music*= ((1-.79*np.clip(env/.18,0,1))*(1-.76*fx_highlight))[:,None]
-    music+=vocal[:,None]*1.13
-    # Original cartoon punctuation is audible only at selected existing
-    # FX cuts. Foley never replaces words, is independent of YouTube,
-    # and is disabled with the user's humour-off setting.
-    if humor=='auto':
-        # Still produce music-led accents when Hebrew ASR is unavailable.
-        # Explicit story cues override a prosodic/acoustic fallback.
+    # Keep a quiet rhythmic bed through the punchline instead of dropping
+    # the instrumental almost to silence and then suddenly bringing it back.
+    # Short voice samples and their story punctuation must remain a single
+    # cohesive arrangement, especially on small phone loudspeakers.
+    music*= ((1-.67*np.clip(env/.18,0,1))*(1-.20*fx_highlight))[:,None]
+    # Original cartoon punctuation is added to the INSTRUMENTAL stem ONLY.
+    # It must never attenuate, distort or re-limit the spoken original.
+    # Without a recognized contextual cue the treated voice itself is the
+    # joke; no unrelated stock-like cartoon noise is invented.
+    if humor=='auto' and transcript_hint:
+        # Explicit Hebrew story cues override generic musical accents.
         from comic_stingers import add_comic_stings
         # The score contains intro/outro padding. Locate the actual
         # performed voice span before approximately mapping spoken Hebrew
@@ -835,6 +847,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             lambda fraction:_semantic_comedy_cue(
                 transcript_hint,max(0.,min(.999,
                     ((fraction*len(vocal))-first)/span))))
+    music+=vocal[:,None]*1.13
     # Keep the voice solo clean, including in the reserved FX slots.
     # Echo and other delayed copies previously collided with the next line.
     # Conservative master gain / limiter: no global overdrive or loudness pumping.
