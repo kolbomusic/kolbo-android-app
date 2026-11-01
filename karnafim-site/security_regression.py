@@ -9,9 +9,12 @@ URL="https://karnafim-community-46.onrender.com"
 VALID=["/","/about","/privacy","/terms","/safety","/help","/accessibility","/photos","/archive","/memorials","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
 BLOCKED=["/login","/register","/auth/google/start","/auth/google/callback","/auth/google/consent","/profile","/password","/find","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
 RETIRED_CREDENTIALS={"/login","/register","/password","/find","/auth/google/start","/auth/google/callback","/auth/google/consent"}
-def fetch(path):
+def fetch(path, user_agent="KarnafimSecurityAudit/1.0", referer=None):
+    headers={"User-Agent":user_agent}
+    if referer is not None:
+        headers["Referer"]=referer
     try:
-        response=urlopen(Request(URL+path,headers={"User-Agent":"KarnafimSecurityAudit/1.0"}),timeout=18)
+        response=urlopen(Request(URL+path,headers=headers),timeout=18)
     except HTTPError as e:
         response=e
     with response:
@@ -109,6 +112,21 @@ def live(expected_revision=None):
             if "noindex" in headers.get("X-Robots-Tag","").lower():ok=False
             print(("PASS" if ok else "FAIL"),route,"READ_ONLY",status)
             if not ok:errors.append((route,status))
+        # Detect basic user-agent/referrer cloaking of retired login endpoints.
+        # These are Googlebot-like request headers, not an authenticated Google crawl.
+        googlebot="Googlebot/2.1 (+http://www.google.com/bot.html)"
+        google_referer="https://www.google.com/search?q=karnafim"
+        for route in ("/", "/status", "/login", "/register", "/password", "/find", "/auth/google/start"):
+            regular,reg_headers,reg_body,reg_url=fetch(route)
+            bot,bot_headers,bot_body,bot_url=fetch(route,googlebot,google_referer)
+            same=(regular==bot and reg_body==bot_body and reg_url==bot_url
+                  and reg_headers.get("X-Robots-Tag")==bot_headers.get("X-Robots-Tag")
+                  and reg_headers.get("Content-Security-Policy")==bot_headers.get("Content-Security-Policy"))
+            correct=bot==(200 if route in ("/", "/status") else 410)
+            clean="<form" not in bot_body.lower() and "<script" not in bot_body.lower()
+            ok=same and correct and clean
+            print(("PASS" if ok else "FAIL"),route,"GOOGLEBOT_HEADER_PARITY",bot)
+            if not ok:errors.append(("Googlebot-header parity: "+route,bot))
         for route in BLOCKED:
             status,headers,body,landed=fetch(route)
             expected=410 if route in RETIRED_CREDENTIALS else 503
