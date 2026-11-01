@@ -70,9 +70,8 @@ if state.get('video_status')!='done':
          timeout=120))
     assert uploaded.get('video_url'),uploaded
     print('PHONE_AI_GENERATED_CLIP_ACCEPTED',len(clip_data),flush=True)
-    state={**state,**uploaded,'video_mode':'ai_generated_client_fallback',
-           'storyboard_source':'client_generated_original_ai',
-           'ai_clips_generated':1}
+    # Verify persisted job status, not an invented test-side mode.
+    state=json.loads(get(job['status_url'],timeout=70))
 assert state.get('video_status')=='done',state
 assert str(state.get('video_mode','')).startswith('ai_generated'),state
 assert state.get('storyboard_source')!='original_shared_video',state
