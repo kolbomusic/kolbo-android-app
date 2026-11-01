@@ -19,7 +19,7 @@ class ReadOnlyBootTests(unittest.TestCase):
 import app as site
 assert site.READ_ONLY_BOOT
 client = site.app.test_client()
-for path in ('/', '/health', '/archive', '/source/1', '/memorial/yehonatan-sharabi', '/robots.txt', '/sitemap.xml'):
+for path in ('/', '/health', '/terms', '/archive', '/source/1', '/memorial/yehonatan-sharabi', '/robots.txt', '/sitemap.xml'):
     result = client.get(path)
     assert result.status_code == 200, (path, result.status_code, result.get_data(as_text=True)[:150])
 assert client.get('/health').json['access'] == 'read_only'
