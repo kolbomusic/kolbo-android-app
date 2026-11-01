@@ -125,7 +125,6 @@ def main():
     if health.get("access") not in ("read_only","community"):
         print("FAIL health access mode missing or invalid");return 2
     pages=list(MUST_HAVE)
-    if locked:pages=[p for p in pages if p not in ("/help",)]
     pages += [f"/source/{x['id']}" for x in sources]
     pages += [f"/memorial/{p['slug']}" for p in persons]
     findings=[]
