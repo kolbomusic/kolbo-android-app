@@ -59,8 +59,18 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <label class="videoToggle" for="ai_video_consent"><input id="ai_video_consent" type="checkbox"> <span>נסה גם ליצור סצנה חדשה באמצעות AI לפי הדיבור — ניסיוני וחינמי</span></label>
 <small id="aiVideoPrivacy">אם מסמנים: הטקסט שהמנוע זיהה מההקלטה נשלח לשירות AI ציבורי ב־Hugging Face. קובץ הקול עצמו אינו נשלח לשם. הווידאו עשוי להיות קצר, לחזור על עצמו או לא לדייק בכל האירועים; השירות החינמי כפוף לתורים ולמכסות. בלי סימון, המערכת משתמשת רק בצילומים קיימים בעלי רישיון.</small>
 </section>
-<section class="panel"><h2>02 / האפקטים על הקול שלך</h2>
-<label for="humor">אפקטים על קול ההקלטה מ־WhatsApp (לא על המוזיקה)</label><select id="humor">
+<section class="panel"><h2>02 / סאונד מצחיק, מסודר ומקצועי</h2>
+<p class="hint">קול הדיבור נשאר ברור. האפקטים נבנים מתוך המילים והפסקות הדיבור, עם מוזיקת טראנס בהרמוניה אחידה. בלי להוסיף צלילים אקראיים שאינם קשורים לסיפור.</p>
+<label for="creativePreset">איך יישמע המיקס?</label>
+<select id="creativePreset">
+<option value="balanced" selected>מאוזן ומצחיק — מומלץ</option>
+<option value="subtle">עדין ומוזיקלי — פחות בדיחות קול</option>
+<option value="bold">קומי מוגבר — יותר רולים ומשחקי קול</option>
+<option value="music">טראנס נקי — קול מקורי בלי אפקטים קומיים</option>
+<option value="custom">מותאם אישית — הגדרות מתקדמות</option>
+</select>
+<details class="advanced"><summary>כיוון ידני של אפקטי קול (לא חובה)</summary>
+<label for="humor">סוג העיבוד על קול ה־WhatsApp בלבד</label><select id="humor">
 <option value="auto" selected>אוטומטי — מעבד את הקול עצמו לאורך כל ההקלטה</option>
 <option value="dj">DJ רטרו — חיתוך באמצע מילה, רול ודרופ</option>
 <option value="glitch">רולים שבורים וסטאטרים בקצב</option>
@@ -84,7 +94,8 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <small>1 — מדי פעם · 2 — רגיל · 3 — כמה שיותר במהלך הדיבור</small>
 <label for="fx_gain">עוצמת האפקטים ביחס לקול המקורי — <output id="fxGainText">130%</output></label>
 <input id="fx_gain" type="range" min="55" max="170" value="130" step="5">
-<small>ברירת המחדל החדשה מגבירה את האפקטים ומנמיכה את הליווי ברגעי ההדגשה. מנגנון התזמון מפזר אפקטים בין הפסקות דיבור אמיתיות בלי לקצוץ את המשפטים.</small>
+<small>המערכת ממקמת את האפקטים בהפסקות אמיתיות, שומרת את המשפטים המקוריים, ומנמיכה רק את הליווי בזמן הדיבור. אפקט דרמטי מתווסף רק כאשר זוהה אירוע מתאים.</small>
+</details>
 <details class="advanced"><summary>בחירת מוזיקה ישראלית / עברית וחיבור קובץ מורשה</summary>
 <label for="ytMusicSearch">חיפוש מהיר ביוטיוב (ישראל / עברית)</label>
 <input id="ytMusicSearch" type="search" placeholder="למשל: טראנס ישראלי, רמיקס מצחיק, שירים בעברית">
@@ -252,6 +263,23 @@ $('bpm').oninput=function(){$('bpmText').textContent=this.value};
 $('voice').oninput=function(){$('voiceText').textContent=this.value+'%'};
 $('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'נמוכה','2':'רגילה — תזמון לפי משפטים','3':'גבוהה'})[this.value]};
 $('fx_gain').oninput=function(){$('fxGainText').textContent=this.value+'%'};
+$('creativePreset').onchange=function(){
+ var p={
+  balanced:['auto','2','130'],
+  subtle:['auto','1','105'],
+  bold:['auto','3','140'],
+  music:['off','1','100']
+ }[this.value];
+ if(!p)return;
+ $('humor').value=p[0];
+ $('fx_intensity').value=p[1];
+ $('fx_gain').value=p[2];
+ $('fx_intensity').oninput();
+ $('fx_gain').oninput();
+};
+['humor','fx_intensity','fx_gain'].forEach(function(id){
+ $(''+id).addEventListener('change',function(){$('creativePreset').value='custom'});
+});
 function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
 function verifyTranscript(txt){
  var words=String(txt||'').trim().split(/\s+/).filter(Boolean);
