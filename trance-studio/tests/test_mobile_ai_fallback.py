@@ -122,6 +122,22 @@ class PhoneAIRecoveryTests(unittest.TestCase):
             self.assertNotIn('client_ai_prompt',completed)
             self.assertEqual(client.get(completed['download_url']).status_code,200)
 
+    def test_compact_but_real_moving_mp4_is_not_mistaken_for_missing_clip(self):
+        # Public model clips may compress extremely well. Security comes from
+        # ftyp, ffprobe and decoded frame-motion validation, not an arbitrary
+        # 12-KB minimum. This intentionally stays below that old threshold.
+        with tempfile.TemporaryDirectory() as folder:
+            clip=pathlib.Path(folder)/'tiny-moving.mp4'
+            subprocess.run([
+                'ffmpeg','-nostdin','-v','error','-y','-f','lavfi',
+                '-i','testsrc=size=192x192:rate=8:duration=1.1',
+                '-c:v','libx264','-crf','39','-pix_fmt','yuv420p',
+                str(clip)
+            ],check=True,timeout=30)
+            self.assertLess(clip.stat().st_size,12000)
+            self.assertGreater(clip.stat().st_size,2048)
+            self.assertGreater(validate_mp4_clip(clip),.67)
+
     def test_three_ordered_real_motion_scenes_follow_original_speech_weights(self):
         with tempfile.TemporaryDirectory() as folder:
             root=pathlib.Path(folder)
