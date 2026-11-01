@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'backend'))
 from ai_video import (
     AIVideoUnavailable, _video_result_url, cinematic_prompt,
-    _request_video_generation, generate_ai_story, _narrative_shots,
+    _request_video_generation, _request_ltx25_generation, generate_ai_story, _narrative_shots,
 )
 
 
@@ -107,6 +107,37 @@ class AIVideoTests(unittest.TestCase):
                              ('h264',360,640))
             subprocess.run(['ffmpeg','-v','error','-ss','4.3','-i',str(out),
                 '-frames:v','1','-f','null','-'],check=True)
+
+    def test_ltx25_public_generator_uses_actual_named_schema_and_safe_url(self):
+        class Response:
+            def __init__(self, body):self.body=body
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self,count=None):return self.body
+            def __iter__(self):return iter(self.body.splitlines(keepends=True))
+        calls=[]
+        good='https://lightricks-ltx-2-5.hf.space/gradio_api/file=/tmp/gradio/clip.mp4'
+        def opener(req,timeout):
+            calls.append(req)
+            if len(calls)==1:
+                body=json.loads(req.data)
+                self.assertEqual(body['height'],512)
+                self.assertEqual(body['width'],768)
+                self.assertEqual(body['decoder'],'conv')
+                self.assertEqual(body['duration_s'],2.0)
+                self.assertIsNone(body['image_path'])
+                self.assertEqual(body['prompt'],'A happy donkey')
+                return Response(b'{"event_id":"0123456789abcdef0123456789abcdef"}')
+            event='event: complete\\ndata: '+json.dumps([
+                {'url':good,'path':'/tmp/gradio/clip.mp4'},'narration',42
+            ])+'\\n\\n'
+            return Response(event.replace('\\\\n','\\n').encode())
+        result=_request_ltx25_generation('A happy donkey',opener=opener)
+        self.assertEqual(result,good)
+        self.assertEqual(len(calls),2)
+        with self.assertRaises(AIVideoUnavailable):
+            _video_result_url([{'url':'https://evil.com/gradio_api/file=x'}],
+                              expected_host='lightricks-ltx-2-5.hf.space')
 
     def test_gen_video_is_original_motion_and_full_sound_no_subtitles(self):
         with tempfile.TemporaryDirectory() as folder:
