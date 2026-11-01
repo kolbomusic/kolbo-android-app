@@ -357,7 +357,11 @@ def commons_candidates(query):
             size=int(info.get("size",0))
             url=str(info.get("url",""))
             if mime not in ("video/webm","video/ogg","application/ogg","video/mp4"):continue
-            if size<10000 or size>MAX_BYTES:continue
+            # Original WebM files may be huge while Commons publishes an
+            # official low-bitrate 360p transcode. Inspect the small, verified
+            # transcode before rejecting the scene; streaming still enforces
+            # MAX_BYTES, so no oversized video is accepted into the worker.
+            if size<10000 or (size>MAX_BYTES and mime!='video/webm'):continue
             if not _valid_license(info.get("extmetadata",{})):continue
             parsed=urllib.parse.urlparse(url)
             if parsed.scheme!="https" or parsed.netloc not in (
@@ -384,7 +388,10 @@ def _candidate_urls(item):
         name=fragment.rsplit("/",1)[-1]
         base="https://upload.wikimedia.org/wikipedia/commons/transcoded/"
         yield base+fragment+"/"+name+".360p.vp9.webm"
-    yield original
+    # Do not attempt a known oversized original as a fallback. Only the
+    # Wikimedia-hosted transcode is eligible when its original is very large.
+    if int(item.get("bytes",0))<=MAX_BYTES:
+        yield original
 
 def download_video(item,dest):
     errors=[]
