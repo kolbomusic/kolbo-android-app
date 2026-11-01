@@ -125,6 +125,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </section>
 <section class="panel" id="result"><h2 id="resultTitle">✓ ההפקה מוכנה!</h2>
 <div id="videoNotice" role="alert" hidden></div>
+<div class="actions"><button type="button" id="retryVideo" class="secondary" hidden>נסה שוב ליצור סרטון בלבד — המיקס כבר מוכן</button></div>
 <div id="videoResult" hidden>
 <label for="videoPlayer">סרטון שנוצר לפי התוכן שזוהה בהקלטה</label>
 <video id="videoPlayer" controls playsinline preload="metadata" style="width:100%;max-height:620px;border-radius:14px;background:#000"></video>
@@ -398,7 +399,7 @@ if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד א
 if(resultUrl)URL.revokeObjectURL(resultUrl);
 if(voiceUrl)URL.revokeObjectURL(voiceUrl);
 if(originalUrl)URL.revokeObjectURL(originalUrl);
-videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;
+videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;$('retryVideo').hidden=true;
 resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);resultServerUrl=j.download_url;
 if(j.voice_url){
   var voiceResponse=await fetch(j.voice_url,{credentials:'same-origin'});
@@ -458,6 +459,34 @@ if(wantsVideo&&!j.video_url){
  $('resultTitle').textContent='המיקס מוכן — לא הופק סרטון';
  $('videoNotice').textContent='סרטון MP4 לא נוצר. '+(videoReason||'לא אותר מקור וידאו מתאים לדיבור. המיקס זמין.');
  $('videoNotice').hidden=false;
+ // A user can explicitly retry a failed video generation without remixing
+ // or uploading their original voice again. No automatic retry loop exists.
+ if($('ai_video_consent').checked&&j.client_ai_prompt){
+   var retry=$('retryVideo');
+   retry.hidden=false;
+   retry.onclick=async function(){
+     if(active)return;
+     active=true;retry.disabled=true;
+     try{
+       message('מנסה מחדש להפיק סצנות וידאו לפי הדיבור. המיקס כבר נשמר...');
+       var clipResult=await completeAIVideoOnPhone(data.id,j.client_ai_prompt);
+       j=Object.assign({},j,clipResult);
+       videoServerUrl=j.video_url;
+       videoUrl=j.video_preview_url||j.video_url;
+       $('videoPlayer').src=videoUrl;
+       $('videoResult').hidden=false;
+       $('storyboardInfo').textContent='הסצנות נוצרו לפי התמלול המקורי. זו המחשה משוערת, לא צילום מדויק של כל פרט.';
+       $('resultTitle').textContent='✓ סרטון ומיקס מוכנים';
+       $('videoNotice').textContent=j.video_note||'סצנות AI קצרות עשויות לחזור לאורך הסרטון.';
+       $('videoNotice').hidden=false;
+       retry.hidden=true;
+       message('נוצר MP4. הסרטון והמיקס מוכנים לצפייה ולשיתוף.');
+     }catch(err){
+       $('videoNotice').textContent='המיקס נשמר. יצירת הסרטון עדיין מוגבלת: '+(err&&err.message||'השירות החינמי אינו זמין כרגע');
+       message('ניסיון הווידאו נכשל, אפשר לנסות שוב ידנית ללא עיבוד הקול.');
+     }finally{active=false;retry.disabled=false;}
+   };
+ }
 }else{
  $('resultTitle').textContent=j.video_url?'✓ סרטון ומיקס מוכנים':'✓ המיקס מוכן';
  if(j.video_url&&(j.visual_coverage==='partial'||j.visual_coverage==='approximate')){
