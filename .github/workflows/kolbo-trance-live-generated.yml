@@ -4,6 +4,7 @@ on:
     branches: [kolbo-trance-studio-20261031]
     paths:
       - 'trance-studio/tests/live_generated_video_smoke.py'
+      - 'trance-studio/backend/ai_video.py'
       - '.github/workflows/kolbo-trance-live-generated.yml'
   workflow_dispatch:
 jobs:
