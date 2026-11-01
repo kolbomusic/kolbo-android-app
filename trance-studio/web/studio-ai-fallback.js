@@ -89,7 +89,7 @@ function requestPayload(model,prompt){
   }
   return {data:[prompt,
     'blurry, deformed, text, watermark, anime, cartoon, illustration',
-    '','',704,512,'text-to-video',1.0,9,42,true,1.0,true]};
+    null,null,512,704,'text-to-video',1.0,9,42,true,1.0,true]};
 }
 async function oneClip(model,prompt,onStage){
   var base='https://'+model.host;
