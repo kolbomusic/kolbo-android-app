@@ -75,7 +75,11 @@ def run():
                     "g_csrf_token":"different","credential":signed})
                 assert invalid_csrf.status_code == 403
                 assert not db and fetch.call_count == 0
-
+                # A failed CSRF check consumes the one-time session nonce.
+                # Refresh the login page to issue a new, valid nonce.
+                client.get("/login")
+                with client.session_transaction() as sess:
+                    signed = create_token(sess["google_gis_nonce"])
                 ok = client.post("/auth/google/callback", data={
                     "g_csrf_token":"csrf-for-test","credential":signed})
                 assert ok.status_code == 303 and ok.location == "/", (ok.status_code,ok.location)
