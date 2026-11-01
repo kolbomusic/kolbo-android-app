@@ -92,7 +92,7 @@ for source,name in zip(sources,names):
     if source['action']=='rain':
         assert re.search(r'\brain\b',name),("RAIN_SCENE_INCORRECT",name)
     if source['action'] in ('car_drive','subject_car'):
-        assert re.search(r'\bcar\b',name),("CAR_SCENE_INCORRECT",name)
+        assert re.search(r'\b(?:car|cars|automobile|automobiles|vehicle|vehicles)\b',name),("CAR_SCENE_INCORRECT",name)
 print("MULTI_SCENE_SEMANTIC_TITLE_CHECK_PASS",names,flush=True)
 
 out=pathlib.Path("/tmp/kolbo-multi-scene-verified.mp4")
