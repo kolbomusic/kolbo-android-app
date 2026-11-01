@@ -313,15 +313,28 @@ def create_app(config=None):
         prepared=workdir/'device-ai-prepared.mp4'
         result=workdir/'story.mp4'
         try:
-            upload=request.files.get('video')
-            if not upload:
-                return jsonify(error='קובץ וידאו לא צורף'),400
-            # Read only a small movie, regardless of Content-Length or the
-            # untrusted browser-supplied name. Do not follow source URLs.
-            raw=upload.stream.read(14*1024*1024+1)
-            if len(raw)<12000 or len(raw)>14*1024*1024 or raw[4:8]!=b'ftyp':
-                return jsonify(error='קובץ הווידאו שנוצר אינו תקין או גדול מדי'),400
-            original.write_bytes(raw)
+            if request.is_json:
+                # Most phones only need to POST the file URL; the Render
+                # server downloads bytes from precisely the two verified
+                # Gradio hosts. No mobile video bandwidth is wasted.
+                supplied=(request.get_json(silent=True) or {}).get('video_url','')
+                if not isinstance(supplied,str) or len(supplied)>1200:
+                    return jsonify(error='כתובת סרטון אינה תקינה'),400
+                from ai_video import _download_public_video, AIVideoUnavailable
+                try:
+                    _download_public_video(supplied,original)
+                except AIVideoUnavailable:
+                    return jsonify(error='הקובץ שיצר שירות ה־AI אינו זמין להורדה מאובטחת'),422
+            else:
+                upload=request.files.get('video')
+                if not upload:
+                    return jsonify(error='קובץ וידאו לא צורף'),400
+                # Optional direct upload is for devices where the provider's
+                # file URL has already expired. Never trust client filenames.
+                raw=upload.stream.read(14*1024*1024+1)
+                if len(raw)<12000 or len(raw)>14*1024*1024 or raw[4:8]!=b'ftyp':
+                    return jsonify(error='קובץ הווידאו שנוצר אינו תקין או גדול מדי'),400
+                original.write_bytes(raw)
             from live_video import _duration, _video_profile, _make_segment
             try:
                 codec,width,height=_video_profile(original)
