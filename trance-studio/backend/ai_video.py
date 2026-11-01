@@ -21,6 +21,7 @@ from pathlib import Path
 
 from live_video import _duration, _make_segment, _video_profile, visual_plan, UnavailableVideo
 from narrative_plan import narrative_beats, scene_prompt
+from motion_quality import require_visible_motion, NoVisibleMotion
 
 SPACE = "https://lightricks-ltx-video-distilled.hf.space"
 SPACE_HOST = "lightricks-ltx-video-distilled.hf.space"
@@ -236,6 +237,10 @@ def _download_public_video(url, destination, *, opener=urllib.request.urlopen):
         seconds = _duration(destination)
         if not codec or not width or not height or not 0.6 <= seconds <= 12:
             raise AIVideoUnavailable("לא התקבל סרטון נע תקין")
+        try:
+            require_visible_motion(destination)
+        except NoVisibleMotion as exc:
+            raise AIVideoUnavailable(str(exc)) from exc
         return seconds
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         Path(destination).unlink(missing_ok=True)
