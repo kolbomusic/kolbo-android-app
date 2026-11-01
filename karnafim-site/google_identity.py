@@ -1,9 +1,9 @@
 """Google-only OIDC authentication for the Karnafim veterans community.
 
-Explicitly disabled until Google OAuth client credentials are configured and the
-Google Safe Browsing warning is resolved. Uses Authlib's signed ID-token,
-issuer/audience validation and per-request state+nonce. Never accepts a raw
-client-supplied email as proof of identity.
+Both Google OAuth authorization-code and Google Identity Services (GIS)
+ID-token sign-in are supported. GIS verifies Google-signed tokens using the
+official Google Python library; no client secret is needed for GIS.
+Neither mode is exposed while the Safe Browsing security hold remains active.
 
 Google identity != verification of military service; admin approval is separate.
 """
@@ -13,7 +13,10 @@ import os
 import re
 import secrets
 import time
+import hmac
 
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 from authlib.integrations.flask_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
 from flask import abort, redirect, request, session
@@ -44,6 +47,40 @@ def enabled():
     checks = configuration_checks()
     return all(checks[key] for key in
                ("explicitly_enabled", "valid_client_id", "client_secret_present"))
+
+
+def gsi_enabled():
+    """Client-secret-free Google Identity Services mode, explicitly opt-in."""
+    checks = configuration_checks()
+    return checks["explicitly_enabled"] and checks["valid_client_id"]
+
+
+def gsi_button_markup(formwrap, esc):
+    """Popup Google sign-in: signed ID token delivered via POST, not query URL."""
+    if not gsi_enabled():
+        return ""
+    nonce = secrets.token_urlsafe(32)
+    session["gsi_nonce"] = nonce
+    html_client = esc(os.environ["GOOGLE_CLIENT_ID"].strip())
+    html_nonce = esc(nonce)
+    return (
+        '<div id="g_id_onload" data-client_id="'+html_client+'" '
+        'data-callback="karnafimGoogleResponse" data-ux_mode="popup" '
+        'data-auto_prompt="false" data-nonce="'+html_nonce+'"></div>'
+        '<div class="g_id_signin" data-type="standard" data-size="large" '
+        'data-theme="outline" data-text="signin_with" data-shape="rectangular"></div>'
+        '<form id="google-gis-post" action="/auth/google/verify" method="post" hidden>'
+        +formwrap('<input type="hidden" name="credential" id="google-gis-credential">')
+        +'</form>'
+        '<script>function karnafimGoogleResponse(r){'
+        'if(!r || typeof r.credential!=="string")return;'
+        'const input=document.getElementById("google-gis-credential");'
+        'if(!input || r.credential.length>8192)return;'
+        'input.value=r.credential;'
+        'document.getElementById("google-gis-post").submit();'
+        '}</script>'
+        '<script async defer src="https://accounts.google.com/gsi/client"></script>'
+    )
 
 
 def authoritative_email(email: str, hd: str | None) -> bool:
@@ -110,21 +147,8 @@ def install_google_login(app, sql, view, guard, formwrap, esc):
             CALLBACK, nonce=secrets.token_urlsafe(32)
         )
 
-    @app.route("/auth/google/callback", methods=["GET"])
-    def google_callback():
-        if not enabled():
-            abort(503)
-        try:
-            token = oauth.google.authorize_access_token()
-            identity = validate_google_identity(
-                token.get("userinfo"), os.environ["GOOGLE_CLIENT_ID"])
-        except (OAuthError, KeyError, ValueError, TypeError):
-            session.pop("google_return", None)
-            return view("אימות Google נכשל",
-                        '<div class="card" role="alert"><h1>אימות ההתחברות לא הושלם</h1>'
-                        '<p>לא נוצר חשבון ולא נשמרו פרטי גישה. ניתן לנסות שוב.</p>'
-                        '<a href="/login">חזרה לכניסה</a></div>'), 401
-
+    def complete_google_login(identity):
+        """Bind verified Google subject or require member consent; no privilege escalation."""
         rows = sql("SELECT id FROM members WHERE google_sub=%s",
                    (identity["sub"],), True)
         if rows:
@@ -162,6 +186,48 @@ def install_google_login(app, sql, view, guard, formwrap, esc):
         session["uid"] = uid
         session["auth_method"] = "google"
         return redirect(destination if destination in RETURN_PATHS else "/", code=303)
+
+
+    @app.route("/auth/google/callback", methods=["GET"])
+    def google_callback():
+        if not enabled():
+            abort(503)
+        try:
+            token = oauth.google.authorize_access_token()
+            identity = validate_google_identity(
+                token.get("userinfo"), os.environ["GOOGLE_CLIENT_ID"])
+        except (OAuthError, KeyError, ValueError, TypeError):
+            session.pop("google_return", None)
+            return view("אימות Google נכשל",
+                        '<div class="card" role="alert"><h1>אימות ההתחברות לא הושלם</h1>'
+                        '<p>לא נוצר חשבון ולא נשמרו פרטי גישה. ניתן לנסות שוב.</p>'
+                        '<a href="/login">חזרה לכניסה</a></div>'), 401
+
+        return complete_google_login(identity)
+
+    @app.route("/auth/google/verify", methods=["POST"])
+    def google_gsi_verify():
+        if not gsi_enabled():
+            abort(503)
+        # CSRF is linked to our signed, HTTP-only Flask session. Consume nonce
+        # before token verification and avoid DB calls on rejected tokens.
+        guard()
+        nonce = session.pop("gsi_nonce", None)
+        jwt = request.form.get("credential", "")
+        if not isinstance(nonce, str) or not nonce or not isinstance(jwt, str) or not 50 < len(jwt) <= 8192:
+            abort(403)
+        try:
+            claims = google_id_token.verify_oauth2_token(
+                jwt, google_requests.Request(), os.environ["GOOGLE_CLIENT_ID"].strip())
+            if not hmac.compare_digest(str(claims.get("nonce") or ""), nonce):
+                raise ValueError("Unexpected Google nonce")
+            identity = validate_google_identity(
+                claims, os.environ["GOOGLE_CLIENT_ID"].strip())
+        except (ValueError, TypeError, KeyError):
+            return view("אימות Google נכשל",
+                        '<div class="card" role="alert"><h1>אימות Google לא הצליח</h1>'
+                        '<p>לא נוצר חשבון ולא נפתחה גישה. ניתן לנסות שוב.</p></div>'), 401
+        return complete_google_login(identity)
 
     @app.route("/auth/google/consent", methods=["GET", "POST"])
     def google_consent():
