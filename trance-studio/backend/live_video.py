@@ -37,6 +37,14 @@ ACTIONS=(
     ("pizza_eat",("פיצה",),("אכלתי","אוכל","אוכלת","לאכול","אכלה","אכלנו"),"person eating pizza"),
     ("beach_walk",("ים","חוף"),("הלכתי","הולך","הולכים","טיילתי","מטייל"),"person walking beach"),
     ("hug",("חיבוק","חיבק","חיבקתי","מחבק","מחבקת"),("חיבוק","חיבק","חיבקתי","מחבק","מחבקת"),"people hugging"),
+    ("donkey_eat",("חמור","חמורה","חמורים"),("אוכל","אוכלת","אכל","אכלה","לועס","לועסת"),"donkey eating"),
+    ("dog_run",("כלב","כלבה","כלבים"),("רץ","רצה","רצים","רצות"),"dog running"),
+    ("bird_fly",("ציפור","ציפורים","יונה","עורב"),("עפה","עף","עפים","עפות","עופפת","טסה"),"bird flying"),
+    ("baby_cry",("תינוק","תינוקת","פעוט","פעוטה"),("בוכה","בוכים","בכיתי","בכה","בכתה"),"baby crying"),
+    ("person_laugh",("איש","אישה","בחור","בחורה","ילד","ילדה","אני","אנחנו"),("צוחק","צוחקת","צחק","צחקה","צחקתי","צוחקים"),"person laughing"),
+    ("person_cry",("איש","אישה","בחור","בחורה","ילד","ילדה","אני"),("בוכה","בוכים","בכיתי","בכה","בכתה"),"person crying"),
+    ("person_sing",("איש","אישה","בחור","בחורה","ילד","ילדה","אני","אנחנו"),("שר","שרה","שרים","שרות","לשיר","שרתי","שרנו"),"person singing"),
+    ("person_cook",("טבח","טבחית","איש","אישה","אמא","אבא","אני"),("מבשל","מבשלת","בישל","בישלה","אופה","מטגן"),"person cooking"),
 )
 # Explicit subject-only visuals: only if the utterance names an actual place
 # and no distinct unsupported action. Avoid interpreting "לבוא" as "love".
@@ -57,7 +65,8 @@ SUBJECT_VISUALS=(
     ("horse",("סוס","סוסים"),"horse"),
     ("farmer",("חקלאי","חקלאית"),"farmer"),
     ("cow",("פרה","פרות"),"cow"),
-    ("bird",("ציפור","ציפורים"),"bird"),
+    ("bird",("ציפור","ציפורים","יונה","עורב"),"bird"),
+    ("baby",("תינוק","תינוקת","פעוט","פעוטה"),"baby"),
     ("police",("שוטר","שוטרים","משטרה"),"police"),
     ("fire",("אש","שריפה","להבות"),"fire"),
     ("food",("פיצה","אוכל","ארוחה"),"food"),
@@ -67,8 +76,8 @@ SUBJECT_VISUALS=(
     ("beach",("ים","חוף"),"beach"),
 )
 CLAUSE_SPLIT=re.compile(
-    r"[.!?;]+|\b(?:ואז|ואחר כך|אחר כך|לאחר מכן|אחרי זה|פתאום|ולפתע|בינתיים)\b"
-    r"|\s+(?=(?:ו)?(?:החקלאי|החמור|הכלב|החתול|המשאית|הסוס|האישה|האיש|האוטו|הילד)\b)"
+    r"[.!?;,]+|\b(?:ואז|ואחר כך|אחר כך|לאחר מכן|אחרי זה|פתאום|ולפתע|בינתיים)\b"
+    r"|\s+(?=(?:ו)?(?:החקלאי|החמור|הכלב|החתול|המשאית|הסוס|האישה|האיש|האוטו|הילד|התינוק|התינוקת|הציפור|הטבח)\b)"
 )
 HEBREW_TOKEN=re.compile(r"[א-ת]+")
 NEGATIONS={"לא","בלי","אינו","אינה","אינם","אין"}
@@ -96,6 +105,31 @@ def _positive_clause(tokens):
     # Doesn't visualize negated actions as if they occurred.
     return not any(t in NEGATIONS for t in tokens)
 
+def _asr_spelling_neighbor(token, expected):
+    """Bounded Hebrew spelling tolerance ONLY alongside an exact spoken verb.
+
+    This does not replace or rewrite the transcript. A base-sized Whisper
+    frequently returns e.g. "המסעית נוסעת" for "המשאית נוסעת". Only
+    longer, near-identical actor nouns are considered; no generic topic guess.
+    """
+    if len(expected)<5 or len(token)<5:
+        return False
+    variants=(expected, "ה"+expected, "ו"+expected, "וה"+expected)
+    for variant in variants:
+        if abs(len(token)-len(variant))>2:
+            continue
+        distance=list(range(len(variant)+1))
+        for i,left in enumerate(token,1):
+            next_distance=[i]
+            for j,right in enumerate(variant,1):
+                next_distance.append(min(
+                    next_distance[-1]+1, distance[j]+1,
+                    distance[j-1]+(left!=right)))
+            distance=next_distance
+        if distance[-1]<=2 and min(len(token),len(variant))>=6:
+            return True
+    return False
+
 def action_for_clause(sentence):
     words=_words(sentence)
     if not words or not _positive_clause(words):return None
@@ -112,6 +146,19 @@ def action_for_clause(sentence):
             "במשפט זוהו כמה פעולות שלא ניתן להפריד ביניהן באופן אמין. "
             "לא ייווצר סרטון לא תואם.")
     if candidates:return candidates[0]
+    # Whisper base struggles with Hebrew actor nouns (e.g. משאית/מסעית).
+    # Only use phonetic spelling recovery when the VERB is exact and one
+    # unambiguous named physical actor is near the original recognized token.
+    repaired=[]
+    for name,subjects,verbs,query in ACTIONS:
+        if not tokens.intersection(verbs):
+            continue
+        if any(_asr_spelling_neighbor(token,actor)
+               for token in words for actor in subjects):
+            repaired.append({"action":name,"query":query,
+                             "basis":"asr_spelling_approximation"})
+    if len(repaired)==1:
+        return repaired[0]
     for name,terms,query in VISUAL_LOCATIONS:
         if tokens.intersection(terms) and len(tokens)<=6:
             return {"action":name,"query":query,"basis":"explicit_location"}
@@ -205,7 +252,8 @@ def visual_plan(transcript,duration):
         "recognized_action_beats":original_beats,
         "visual_beats":len(scenes),
         "visual_coverage":"partial" if (unmatched or original_beats>len(scenes)
-                         or any(sc["basis"]=="explicit_subject_only" for sc in scenes))
+                         or any(sc["basis"] in ("explicit_subject_only",
+                                              "asr_spelling_approximation") for sc in scenes))
                          else "matched",
         "scenes":scenes
     }
@@ -246,7 +294,13 @@ def _matches_metadata(title,query):
              "walking":("walking","walks","walk"),
              "barking":("barking","barks","bark"),
              "feeding":("feeding","feeds","feed"),
-             "swimming":("swimming","swims","swim")}
+             "swimming":("swimming","swims","swim"),
+             "laughing":("laughing","laughs","laugh","laughed"),
+             "crying":("crying","cries","cry","cried"),
+             "singing":("singing","sings","sing","sang"),
+             "cooking":("cooking","cooks","cook"),
+             "flying":("flying","flies","fly"),
+             "running":("running","runs","run")}
     return all(any(word in title for word in aliases.get(token,(token,)))
                for token in keywords)
 
@@ -380,6 +434,14 @@ def _make_segment(src,output,length):
 SUBJECT_FALLBACK_QUERIES={
     "donkey_bray":"donkey",
     "dog_bark":"dog",
+    "dog_run":"dog",
+    "donkey_eat":"donkey",
+    "bird_fly":"bird",
+    "baby_cry":"baby",
+    "person_laugh":"person",
+    "person_cry":"person",
+    "person_sing":"person",
+    "person_cook":"person",
     "cat_eat":"cat",
     "car_drive":"car",
     "truck_drive":"truck",

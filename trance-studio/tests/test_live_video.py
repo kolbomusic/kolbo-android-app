@@ -25,6 +25,45 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertEqual(action_for_clause('הלכתי לים').get('action'),'beach_walk')
         self.assertEqual(action_for_clause('אכלתי פיצה').get('action'),'pizza_eat')
 
+    def test_extended_hebrew_actions_are_grounded_not_guessed(self):
+        cases={
+            'החמור אוכל קש': 'donkey_eat',
+            'הכלב רץ בחצר': 'dog_run',
+            'הציפור עפה בשמיים': 'bird_fly',
+            'התינוק בוכה בקול': 'baby_cry',
+            'האיש צוחק בחוזקה': 'person_laugh',
+            'האישה בוכה בקול': 'person_cry',
+            'אני שר שיר': 'person_sing',
+            'הטבח מבשל במטבח': 'person_cook',
+        }
+        for spoken, action in cases.items():
+            with self.subTest(spoken=spoken):
+                self.assertEqual(action_for_clause(spoken)['action'],action)
+        self.assertIsNone(action_for_clause('אני מכין סרטון וידאו'))
+        self.assertIsNone(action_for_clause('התינוק לא בוכה'))
+        self.assertTrue(_matches_metadata('File:Bird flying over a lake.webm','bird flying'))
+        self.assertTrue(_matches_metadata('File:Person laughs.webm','person laughing'))
+        self.assertFalse(_matches_metadata('File:Dog walking.webm','dog running'))
+
+    def test_actual_whisper_base_hebrew_errors_recover_only_grounded_motion(self):
+        # Captured from a synthetic Hebrew speech -> actual OPUS -> Whisper
+        # base CI run. Never substitute imagined words for the transcript.
+        spoken='הכל אבנובח בחצר, המסעית נוסעת בקויש, הכל אבנובח שוב.'
+        plan=visual_plan(spoken,40)
+        self.assertEqual(plan['transcript'],spoken)
+        self.assertEqual([s['action'] for s in plan['scenes']],['truck_drive'])
+        self.assertEqual(plan['scenes'][0]['basis'],'asr_spelling_approximation')
+        self.assertEqual(plan['visual_coverage'],'partial')
+        self.assertGreater(plan['unmatched_clauses'],0)
+        self.assertIsNone(action_for_clause('המסעית לא נוסעת'))
+        self.assertIsNone(action_for_clause('משהו מוזר קורה לכולם'))
+
+    def test_new_hebrew_subjects_split_into_independent_scenes(self):
+        p=visual_plan('התינוק בוכה והאיש צוחק. הציפור עפה.',12)
+        self.assertEqual([s['action'] for s in p['scenes']],
+                         ['baby_cry','person_laugh','bird_fly'])
+        self.assertEqual(p['visual_coverage'],'matched')
+
     def test_two_actions_in_same_original_sentence_are_separate(self):
         plan=visual_plan('החמור נוער והחקלאי מגיש לו קש.',12)
         self.assertEqual([scene['action'] for scene in plan['scenes']],
