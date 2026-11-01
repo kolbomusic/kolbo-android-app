@@ -28,6 +28,28 @@ class LicensedBackingTests(unittest.TestCase):
             # Spoken voice must be perceptible above the dynamically ducked bed.
             self.assertGreater(float(np.sqrt(np.mean(mixed[sr:sr*3]**2))),.12)
 
+    def test_authorized_backing_keeps_comic_accents_after_speech_pauses(self):
+        with tempfile.TemporaryDirectory() as d:
+            source=pathlib.Path(d)/'authorized.mp3'
+            self.make_song(source)
+            sr=self.sr
+            t=np.arange(sr*5,dtype=np.float32)/sr
+            voice=np.zeros(len(t),np.float32)
+            # Two distinct spoken phrases, with enough real silence to place
+            # an accent. The original sample voice must not be overwritten.
+            voice[sr:2*sr]=.20*np.sin(2*np.pi*225*t[sr:2*sr])
+            voice[3*sr:4*sr]=.18*np.sin(2*np.pi*245*t[3*sr:4*sr])
+            song=mix_licensed_backing(source,voice,sr,transcript_hint='החמור נוער. כולם צוחקים.',
+                                      bpm=145,humor='auto')
+            no_fx=mix_licensed_backing(source,voice,sr,transcript_hint='',
+                                      bpm=145,humor='auto')
+            off=mix_licensed_backing(source,voice,sr,transcript_hint='החמור נוער.',
+                                    bpm=145,humor='off')
+            self.assertEqual(song.shape,no_fx.shape)
+            self.assertTrue(np.isfinite(song).all())
+            self.assertGreater(float(np.max(np.abs(song-no_fx))),.025)
+            np.testing.assert_array_equal(off,no_fx)
+
     def test_rejects_empty_and_unsupported_music(self):
         with tempfile.TemporaryDirectory() as d:
             wrong=pathlib.Path(d)/'unlicensed.mp4';wrong.write_bytes(b'x')
