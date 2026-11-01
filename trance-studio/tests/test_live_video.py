@@ -223,6 +223,19 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertIn('filetype:video moving truck',queries)
         self.assertNotIn('filetype:video dancing people',queries)
 
+    def test_large_licensed_webm_uses_only_verified_small_transcodes(self):
+        # The original may exceed worker storage, but a licensed Commons
+        # transcode can still be downloaded safely under the size cap.
+        url='https://upload.wikimedia.org/wikipedia/commons/b/b9/Moving_car.webm'
+        big={'url':url,'bytes':95000000}
+        small={'url':url,'bytes':2500000}
+        big_urls=list(_candidate_urls(big))
+        small_urls=list(_candidate_urls(small))
+        self.assertEqual(len(big_urls),1)
+        self.assertIn('.360p.vp9.webm',big_urls[0])
+        self.assertEqual(len(small_urls),2)
+        self.assertEqual(small_urls[-1],url)
+
     def test_preferred_small_official_video_source(self):
         item={'url':'https://upload.wikimedia.org/wikipedia/commons/b/b9/Maasai_people_singing_and_dancing.webm'}
         urls=list(_candidate_urls(item))
