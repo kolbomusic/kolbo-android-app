@@ -1,0 +1,28 @@
+name: Inspect alternate free LTX 2.5 generation API
+on:
+  push:
+    branches: [kolbo-trance-asr-ai-diagnostics-20261101]
+    paths: ['.github/workflows/kolbo-ltx25-schema-probe.yml']
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check public API schema and tiny safe motion prompt
+        run: |
+          python - <<'PY'
+          import json,urllib.request
+          base='https://lightricks-ltx-2-5.hf.space'
+          req=urllib.request.Request(base+'/gradio_api/openapi.json')
+          with urllib.request.urlopen(req,timeout=20) as r:doc=json.load(r)
+          endpoint=doc['paths']['/gradio_api/call/v2/run']['post']
+          schema=endpoint.get('requestBody',{}).get('content',{}).get('application/json',{}).get('schema',{})
+          print('LTX25_REQUEST_SCHEMA',json.dumps(schema,ensure_ascii=False)[:6000],flush=True)
+          print('LTX25_SUCCESS_SCHEMA',json.dumps(endpoint.get('responses',{}),ensure_ascii=False)[:3500],flush=True)
+          cfg=json.load(urllib.request.urlopen(base+'/config',timeout=20))
+          for dep in cfg.get('dependencies',[]):
+            if str(dep.get('api_name')).find('run')>=0:
+              print('LTX25_GRADIO_DEP',json.dumps(dep,ensure_ascii=False)[:3500],flush=True)
+          PY
