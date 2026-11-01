@@ -1,0 +1,37 @@
+name: Kolbo Trance PROOF TWO distinct real scenes from Hebrew speech
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - '.github/workflows/kolbo-trance-two-scene-proof.yml'
+      - 'trance-studio/tests/production_multi_scene_voice_mp4.py'
+  workflow_dispatch:
+jobs:
+  real-multi-scene:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare original fictional Hebrew speech and FFmpeg
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+          python - <<'PY'
+          from gtts import gTTS
+          text='גשם יורד חזק בחוץ. אחר כך אני נוסע במכונית.'
+          gTTS(text,lang='iw',slow=False).save('/tmp/kolbo-multi-story-hebrew.mp3')
+          PY
+          ffmpeg -nostdin -v error -y -i /tmp/kolbo-multi-story-hebrew.mp3 -c:a libopus -b:a 32k -ar 48000 -ac 1 /tmp/kolbo-multi-story-hebrew.opus
+      - name: Require TWO different licensed motion scenes from ORIGINAL Hebrew audio
+        run: python trance-studio/tests/production_multi_scene_voice_mp4.py
+      - name: Keep actual tested MP4 for inspection, if produced
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-2-Scene-Original-Hebrew-Proof
+          path: /tmp/kolbo-multi-scene-verified.mp4
+          if-no-files-found: ignore
+          retention-days: 7
