@@ -48,7 +48,10 @@ def validate_google_identity(info, client_id: str) -> dict:
     aud = info.get("aud")
     if issuer not in ("accounts.google.com", "https://accounts.google.com"):
         raise ValueError("Unexpected token issuer")
-    if aud != client_id and not (isinstance(aud, list) and client_id in aud):
+    if isinstance(aud, list):
+        if client_id not in aud or info.get("azp") != client_id:
+            raise ValueError("Unexpected multiple-audience token")
+    elif aud != client_id:
         raise ValueError("Unexpected token audience")
     sub = info.get("sub")
     email = info.get("email")
