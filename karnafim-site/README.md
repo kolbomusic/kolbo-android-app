@@ -6,12 +6,13 @@ Hebrew RTL heritage and veterans community. PostgreSQL via Neon; Flask on Render
 
 Google Safe Browsing currently flags the `karnafim-community-46.onrender.com` host. Keep account sign-in, member lookup, contact requests, chat, photo uploads and moderation writes disabled. The public archive and memorial pages are available without collecting visitor passwords.
 
-**Two independent release gates are required to restore private features:**
+**Three independent release conditions are required to restore private features:**
 
 - `KARNAFIM_MAINTENANCE=0`
 - `KARNAFIM_SAFETY_RELEASE_APPROVED=1`
+- Google OAuth must be explicitly enabled and pass client ID/secret configuration checks (`KARNAFIM_GOOGLE_AUTH_ENABLED=1`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
 
-If either is missing or differs, the server boots read-only without reading the private database. Never set the release-approval variable before a verified clean Google Safe Browsing classification and passing security regression tests. The release flag is an operator approval, *not* an automatic Google API status check.
+If any condition is missing or invalid, the server boots read-only without reading the private database. Never set the release-approval variable before a verified clean Google Safe Browsing classification and passing security regression tests. The release flag is an operator approval, *not* an automatic Google API status check.
 
 Google OAuth also separately requires `KARNAFIM_GOOGLE_AUTH_ENABLED=1`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` injected privately in Render; this must only happen once the host is confirmed safe. The OAuth redirect URI is `https://karnafim-community-46.onrender.com/auth/google/callback`. Never commit secrets or display them in logs.
 
