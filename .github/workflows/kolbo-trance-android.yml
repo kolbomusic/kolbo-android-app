@@ -10,6 +10,12 @@ on:
       - 'trance-studio/android/**'
       - 'trance-studio/web/studio.html'
       - 'trance-studio/backend/live_video.py'
+      - 'trance-studio/backend/ai_video.py'
+      - 'trance-studio/backend/narrative_plan.py'
+      - 'trance-studio/backend/client_ai_fallback.py'
+      - 'trance-studio/web/studio-ai-fallback.js'
+      - 'trance-studio/tests/test_narrative_plan.py'
+      - 'trance-studio/tests/test_manual_share.js'
       - 'trance-studio/tests/test_live_video.py'
       - '.github/workflows/kolbo-trance-android.yml'
 permissions:
@@ -57,6 +63,7 @@ jobs:
           Path('/tmp/trance22.js').write_text(src)
           PY
           node --check /tmp/trance22.js
+          node --check trance-studio/web/studio-ai-fallback.js
           node trance-studio/tests/test_manual_share.js
       - name: Build installable Android APK
         run: gradle --no-daemon --stacktrace -p trance-studio/android :app:assembleDebug
