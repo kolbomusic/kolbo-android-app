@@ -15,6 +15,8 @@ VIDEO_UPLOADS={'.mp4','.webm','.3gp','.3gpp','.mov'}
 MAX_AUDIO_UPLOAD=15*1024*1024
 MAX_VIDEO_UPLOAD=45*1024*1024
 MAX_COMBINED_UPLOAD=60*1024*1024
+AUTHORIZED_MUSIC_EXT={'.mp3','.wav','.ogg','.m4a'}
+MAX_BACKING_UPLOAD=15*1024*1024
 
 def create_app(config=None):
     app=Flask(__name__,static_folder=None)
@@ -75,13 +77,16 @@ def create_app(config=None):
                     asr_recovery_error=str(exc)[:180]
                     app.logger.exception('Original-file ASR failed; keeping the requested audio job alive')
             clips=[load_audio(p) for p in paths]
-            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent')}
+            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent','video_strategy','backing_music_path','music_license_ack')}
             # Make the already recognized Hebrew speech useful for comic
             # timing/preset decisions. Keep it in-process; never transmit
             # private audio or transcript to a new third party.
             audio_options['transcript_hint']=detected_transcript[:4000]
             audio,vocal=render_mix(clips,**audio_options,return_voice=True,
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
+            if options.get('backing_music_path'):
+                from licensed_music import mix_licensed_backing
+                audio=mix_licensed_backing(options['backing_music_path'],vocal,32000)
             export_mp3(audio,root/job_id/'mix.mp3')
             export_mp3(vocal,root/job_id/'voice.mp3')
             meta={'video_status':'disabled','storyboard_source':'not_requested'}
@@ -94,7 +99,7 @@ def create_app(config=None):
                 # spending a public AI quota. This is a video remix, not
                 # an invented visual reconstruction of the narration.
                 from source_video_fallback import VIDEO_TYPES
-                if any(Path(p).suffix.lower() in VIDEO_TYPES for p in paths):
+                if options.get('video_strategy')!='new_story' and any(Path(p).suffix.lower() in VIDEO_TYPES for p in paths):
                     try:
                         from source_video_fallback import compose_original_video_with_mix
                         remixed=compose_original_video_with_mix(
@@ -113,6 +118,11 @@ def create_app(config=None):
                         (root/job_id/'story.mp4').unlink(missing_ok=True)
                 if meta.get('video_status')=='done':
                     pass
+                elif options.get('video_strategy')=='remix_original':
+                    meta={'video_status':'unavailable',
+                          'video_error':'לא ניתן לערוך סרטון מקור ללא קובץ וידאו נע תקין. בחר יצירת סיפור חדש כדי לייצר סצנות מהדיבור.',
+                          'storyboard_source':'video_input_required',
+                          'visual_coverage':'none'}
                 elif not detected_transcript or len(detected_transcript.split())<2:
                     meta={'video_status':'unavailable',
                           'video_error':'נוסו תמלול במכשיר ובשרת, אך לא זוהו מילים מספיק אמינות מההקלטה המקורית. '+asr_recovery_error,
@@ -122,6 +132,8 @@ def create_app(config=None):
                     # reuse ONLY the owner's real moving input footage.
                     # Audio-only files remain audio-only, never fake an MP4.
                     try:
+                        if options.get('video_strategy')=='new_story':
+                            raise UnavailableVideo('יצירת סיפור חדש אינה משתמשת בצילום המקורי')
                         from source_video_fallback import compose_original_video_with_mix
                         original_recovery=compose_original_video_with_mix(
                             paths,root/job_id/'mix.mp3',root/job_id/'story.mp4',
@@ -213,6 +225,8 @@ def create_app(config=None):
                             # an AI reconstruction of what was spoken.
                             recovered=None
                             try:
+                                if options.get('video_strategy')=='new_story':
+                                    raise UnavailableVideo('אסור להחליף יצירת סיפור חדש בצילום המקורי')
                                 from source_video_fallback import compose_original_video_with_mix
                                 recovered=compose_original_video_with_mix(
                                     paths,root/job_id/'mix.mp3',
@@ -313,8 +327,8 @@ def create_app(config=None):
         files=request.files.getlist('audio')
         if not 1<=len(files)<=4:return jsonify(error='יש לבחור בין הקלטה אחת לארבע הקלטות'),400
         try:
-            bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','off')=='on';video_requested=request.form.get('video_requested','on' if make_video else 'off')=='on';transcription_failed=request.form.get('transcription_failed','off')=='on';transcript=request.form.get('transcript','')[:4000].strip();transcript_origin=request.form.get('transcript_origin','manual');source_hashes=request.form.get('source_hashes','');ai_video_consent=request.form.get('ai_video_consent','off')=='on'
-            if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','helium','monster','yo_yo','comic_roll','rewind','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5:raise ValueError()
+            bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','off')=='on';video_requested=request.form.get('video_requested','on' if make_video else 'off')=='on';transcription_failed=request.form.get('transcription_failed','off')=='on';transcript=request.form.get('transcript','')[:4000].strip();transcript_origin=request.form.get('transcript_origin','manual');source_hashes=request.form.get('source_hashes','');ai_video_consent=request.form.get('ai_video_consent','off')=='on';video_strategy=request.form.get('video_strategy','auto_legacy');music_license_ack=request.form.get('music_license_ack','off')=='on'
+            if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','helium','monster','yo_yo','comic_roll','rewind','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or video_strategy not in ('new_story','remix_original','auto_legacy'):raise ValueError()
         except (ValueError,TypeError):return jsonify(error='הגדרות המיקס אינן תקינות'),400
         # Never reject the upload before trying original-file server ASR.
         # If both ASR paths fail, finish the MP3 and report the MP4 limitation.
@@ -323,6 +337,12 @@ def create_app(config=None):
         if transcript_origin not in ('auto','manual'):
             return jsonify(error='מקור התמלול אינו תקין'),400
         if any(Path(f.filename or '').suffix.lower() not in ALLOWED for f in files):return jsonify(error='סוג הקובץ אינו נתמך'),400
+        backing_file=request.files.get('backing_music')
+        if backing_file and backing_file.filename:
+            if not music_license_ack:
+                return jsonify(error='נדרש אישור זכויות שימוש בקובץ המוזיקה'),400
+            if Path(backing_file.filename).suffix.lower() not in AUTHORIZED_MUSIC_EXT:
+                return jsonify(error='קובץ מוזיקה אינו בפורמט נתמך'),400
         if not admission.acquire(blocking=False):return jsonify(error='השרת עסוק כרגע. נסו שוב בעוד רגע או בחרו עיבוד במכשיר.'),429
         job_id=secrets.token_hex(24);directory=root/job_id;directory.mkdir(mode=0o700);paths=[]
         total_bytes=0
@@ -354,8 +374,22 @@ def create_app(config=None):
         except Exception:
             admission.release();shutil.rmtree(directory,ignore_errors=True)
             return jsonify(error='לא ניתן לקרוא את הקובץ המקורי'),400
+        backing_music_path=None
+        if backing_file and backing_file.filename:
+            try:
+                chunk=backing_file.stream.read(MAX_BACKING_UPLOAD+1)
+                if not chunk or len(chunk)>MAX_BACKING_UPLOAD or total_bytes+len(chunk)>MAX_COMBINED_UPLOAD:
+                    raise ValueError()
+                ext=Path(backing_file.filename).suffix.lower()
+                backing_music_path=directory/('licensed-backing'+ext)
+                backing_music_path.write_bytes(chunk)
+            except (OSError,ValueError):
+                admission.release();shutil.rmtree(directory,ignore_errors=True)
+                return jsonify(error='המוזיקה או סך הקבצים חורגים ממגבלת ההעלאה המורשית'),400
         with lock:jobs[job_id]={'state':'queued','percent':0,'label':'ממתין לעיבוד','created':time.time(),'seconds':seconds,'bpm':bpm}
-        executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'video_requested':video_requested,'transcription_failed':transcription_failed,'transcript':transcript,'transcript_origin':transcript_origin,'source_hashes':source_hashes,'ai_video_consent':ai_video_consent and video_requested})
+        executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'video_requested':video_requested,'transcription_failed':transcription_failed,'transcript':transcript,'transcript_origin':transcript_origin,'source_hashes':source_hashes,'ai_video_consent':ai_video_consent and video_requested,
+             'video_strategy':video_strategy,'backing_music_path':backing_music_path,
+             'music_license_ack':music_license_ack})
         return jsonify(id=job_id,status_url='/api/jobs/'+job_id),202
 
     @app.get('/api/jobs/<job_id>')
