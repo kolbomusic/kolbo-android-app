@@ -313,13 +313,17 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         r=sql("SELECT m.*,p.approved post_approved FROM community_media m LEFT JOIN community_posts p ON p.id=m.post_id WHERE m.id=%s",(media_id,),True)
         if not r:abort(404)
         m=r[0]
-        # Moderators must be able to inspect unapproved attachments before
-        # publishing; ordinary approved members cannot view held post media.
-        can_view=bool(admin(u) or m["owner_id"]==u["id"])
-        if not can_view and m["post_id"] is not None:
-            can_view=bool(m["post_approved"])
-        elif not can_view and m["recipient_id"]==u["id"]:
-            can_view=is_connected(m["owner_id"],u["id"])
+        # Publication moderation and private conversation permissions are
+        # distinct. Admins can review pending POST media, NEVER private chat
+        # attachments unless they themselves own/receive that message.
+        owner=m["owner_id"]==u["id"]
+        if m["post_id"] is not None:
+            can_view=bool(owner or admin(u) or m["post_approved"])
+        elif m["recipient_id"] is not None:
+            can_view=bool(owner or (m["recipient_id"]==u["id"]
+                                    and is_connected(m["owner_id"],u["id"])))
+        else:
+            can_view=bool(owner)
         if not can_view:abort(403)
         response=send_file(io.BytesIO(bytes(m["data"])),mimetype=m["mime"],as_attachment=False,download_name="shared-"+str(media_id))
         response.headers["Cache-Control"]="private, no-store"
