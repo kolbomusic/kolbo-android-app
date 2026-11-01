@@ -39,7 +39,7 @@ def live():
     active='"access":"community"' in health.replace(" ","")
     errors=[]
     if active:
-        for route in ("/","/photos","/archive","/memorials","/find","/status","/about","/privacy","/safety","/help","/accessibility","/accessibility/report","/login","/register","/feed","/invite"):
+        for route in ("/","/photos","/archive","/memorials","/status","/about","/privacy","/safety","/help","/accessibility","/accessibility/report","/login","/register","/feed","/invite"):
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.startswith(URL) and "text/html" in headers.get("Content-Type","")
             if route=="/accessibility/report":
@@ -66,10 +66,11 @@ def live():
             ok=status==200 and landed.rstrip("/")==URL+"/login"
             print(("PASS" if ok else "FAIL"),route,"REDIRECT_LOGIN",status)
             if not ok:errors.append((route,status))
-        status,headers,body,landed=fetch("/password")
-        ok=status==410 and 'name="password"' not in body
-        print(("PASS" if ok else "FAIL"),"/password","RETIRED",status)
-        if not ok:errors.append(("/password",status))
+        for retired in ("/password", "/find"):
+            status,headers,body,landed=fetch(retired)
+            ok=status==410 and "noindex" in headers.get("X-Robots-Tag","").lower()
+            print(("PASS" if ok else "FAIL"),retired,"RETIRED",status)
+            if not ok:errors.append((retired,status))
         for route in ("/admin","/community/moderation","/community-media/1"):
             status,headers,body,landed=fetch(route)
             ok=status==403
