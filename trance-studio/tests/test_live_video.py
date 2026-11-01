@@ -40,6 +40,38 @@ class GroundedVideoTests(unittest.TestCase):
             self.assertGreater(sum(bottom)/len(bottom),18)
             self.assertGreater(_duration(output),4.6)
 
+    def test_explicit_standalone_verbs_get_grounded_partial_motion(self):
+        cases={
+            'הוא צוחק בקול גדול':'person_laugh',
+            'וכולם רוקדים כאן':'person_dance',
+            'אני בכיתי כל הלילה':'person_cry',
+            'הם רצים ביחד':'person_run',
+            'אנחנו שרים ביחד':'person_sing',
+        }
+        for phrase,action in cases.items():
+            with self.subTest(phrase=phrase):
+                found=action_for_clause(phrase)
+                self.assertIsNotNone(found)
+                self.assertEqual(found['action'],action)
+                self.assertEqual(found['basis'],'explicit_intransitive_action')
+                plan=visual_plan(phrase,10)
+                self.assertEqual(plan['visual_coverage'],'partial')
+        self.assertIsNone(action_for_clause('אני לא צוחק'))
+        self.assertIsNone(action_for_clause('סיפור מצחיק'))
+        self.assertIsNone(action_for_clause('כולם צוחקים ובוכים'))
+
+    def test_named_music_instruments_are_subject_footage_only(self):
+        for phrase,action in [
+            ('אני מנגן על גיטרה','subject_guitar'),
+            ('קניתי פסנתר','subject_piano'),
+            ('ליד התופים','subject_drums'),
+            ('מיקרופון חדש','subject_microphone'),
+        ]:
+            with self.subTest(phrase=phrase):
+                found=action_for_clause(phrase)
+                self.assertEqual(found['action'],action)
+                self.assertEqual(found['basis'],'explicit_subject_only')
+
     def test_no_love_from_levo(self):
         self.assertIsNone(action_for_clause('אני לא נקבו שיש לבוא'))
         self.assertIsNone(action_for_clause('יש לבוא מחר'))
