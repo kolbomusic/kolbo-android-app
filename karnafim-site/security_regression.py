@@ -1,5 +1,5 @@
 """Read-only regression checks for public and authenticated routes in both deployment modes."""
-import ast, sys
+import ast, sys, json, re
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -41,9 +41,16 @@ def static():
     assert 'install_google_login' in app
     print("STATIC: file syntax and security invariants OK")
 
-def live():
+def live(expected_revision=None):
     health_status,_,health,_=fetch("/health")
     assert health_status==200, ("health",health_status)
+    if expected_revision is not None:
+        assert re.fullmatch(r"[0-9a-fA-F]{40}", expected_revision), "Invalid expected commit SHA"
+        try:
+            actual_revision=json.loads(health).get("revision", "unknown")
+        except (ValueError, AttributeError):
+            actual_revision="unknown"
+        assert actual_revision==expected_revision[:12].lower(), ("Deployment drift: Render is not running the tested commit", actual_revision, expected_revision[:12].lower())
     active='"access":"community"' in health.replace(" ","")
     errors=[]
     if active:
@@ -118,4 +125,10 @@ def live():
     if errors:sys.exit(1)
 if __name__=="__main__":
     static()
-    if "--live" in sys.argv:live()
+    if "--live" in sys.argv:
+        expected=None
+        if "--expect-revision" in sys.argv:
+            index=sys.argv.index("--expect-revision")
+            if index+1>=len(sys.argv):sys.exit("--expect-revision requires a 40-character Git SHA")
+            expected=sys.argv[index+1]
+        live(expected)
