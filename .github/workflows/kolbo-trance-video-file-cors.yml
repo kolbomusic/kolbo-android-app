@@ -1,0 +1,29 @@
+name: Check browser CORS for generated mp4 file and SSE
+on:
+  push:
+    branches: [kolbo-trance-prompt-diagnostic-20261101]
+    paths: ['.github/workflows/kolbo-trance-video-file-cors.yml']
+  workflow_dispatch:
+jobs:
+  cors:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the generated video file routes against Android origin
+        run: |
+          python - <<'PY'
+          import urllib.request,urllib.error
+          origin='https://kolbo-trance-studio.onrender.com'
+          for host,path in [
+            ('lightricks-ltx-video-distilled.hf.space','/gradio_api/file=/tmp/gradio/test.mp4'),
+            ('lightricks-ltx-2-5.hf.space','/gradio_api/file=/tmp/gradio/test.mp4'),
+            ('lightricks-ltx-video-distilled.hf.space','/gradio_api/call/text_to_video/00000000000000000000000000000000'),
+            ('lightricks-ltx-2-5.hf.space','/gradio_api/call/run/00000000000000000000000000000000'),
+          ]:
+            for method in ('GET','OPTIONS'):
+              h={'Origin':origin}
+              if method=='OPTIONS':h.update({'Access-Control-Request-Method':'GET','Access-Control-Request-Headers':'content-type'})
+              req=urllib.request.Request('https://'+host+path,headers=h,method=method)
+              try:
+                with urllib.request.urlopen(req,timeout=15) as resp:print('VIDEO_CORS',host,path.split('=')[0],method,resp.status,resp.headers.get('Access-Control-Allow-Origin'),resp.headers.get('Access-Control-Allow-Headers'),flush=True)
+              except urllib.error.HTTPError as e:print('VIDEO_CORS',host,path.split('=')[0],method,e.code,e.headers.get('Access-Control-Allow-Origin'),e.headers.get('Access-Control-Allow-Headers'),flush=True)
+          PY
