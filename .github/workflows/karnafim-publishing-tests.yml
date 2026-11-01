@@ -26,6 +26,8 @@ jobs:
         run: python karnafim-site/tests/test_publish.py
       - name: Verify moderator media access without leaking pending uploads
         run: python karnafim-site/tests/test_media_access.py
+      - name: Confirm private conversation attachment isolation
+        run: python karnafim-site/tests/test_chat_attachment_authorization.py
       - name: Verify Google OIDC and removal of local credential forms
         run: python karnafim-site/tests/test_google_identity.py
       - name: Verify member account linking and explicit consent without real Google or database calls
