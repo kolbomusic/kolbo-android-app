@@ -1,5 +1,6 @@
 # Production recheck after semantic-audio FX and original-video salvage fixes.
 name: Kolbo Trance PROOF TWO distinct real scenes from Hebrew speech
+# Verification after longer genuine-motion segments are deployed.
 on:
   push:
     branches: [kolbo-trance-studio-20261031]
