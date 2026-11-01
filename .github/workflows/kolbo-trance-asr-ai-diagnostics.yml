@@ -1,0 +1,38 @@
+name: Diagnose original Hebrew transcription vs generated video
+on:
+  push:
+    branches: [kolbo-trance-asr-ai-diagnostics-20261101]
+    paths: ['.github/workflows/kolbo-trance-asr-ai-diagnostics.yml']
+  workflow_dispatch:
+jobs:
+  same-voice-pipeline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare same synthetic Hebrew story as production smoke
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+          python - <<'PY'
+          from gtts import gTTS
+          gTTS('איש זורק כוס זכוכית על הרצפה. הכוס נשברת לרסיסים.',lang='iw',slow=False).save('/tmp/kolbo-debug-hebrew.mp3')
+          PY
+          ffmpeg -nostdin -loglevel error -y -i /tmp/kolbo-debug-hebrew.mp3 -c:a libopus -b:a 24k -ar 48000 -ac 1 /tmp/kolbo-debug-hebrew.opus
+      - name: Build production ASR model and inspect output from actual spoken Hebrew
+        run: |
+          docker build -t kolbo-trance:diag trance-studio
+          docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 -e PYTHONPATH=/app/backend \
+            -v /tmp/kolbo-debug-hebrew.opus:/tmp/kolbo-debug-hebrew.opus:ro \
+            --entrypoint python kolbo-trance:diag -c "
+          from source_asr import transcribe_original_files
+          from ai_video import cinematic_prompt, AIVideoUnavailable
+          transcript, complete=transcribe_original_files(['/tmp/kolbo-debug-hebrew.opus'])
+          print('HEBREW_REAL_OPUS_TRANSCRIPT',repr(transcript),flush=True)
+          print('HEBREW_REAL_OPUS_CONFIDENT',complete,flush=True)
+          prompt=cinematic_prompt(transcript)
+          print('HEBREW_REAL_OPUS_AI_PROMPT',repr(prompt),flush=True)
+          "
