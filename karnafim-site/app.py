@@ -243,18 +243,32 @@ def register():
  return view("הרשמה",body+'<p>כבר רשומים בקהילה? <a href="/login"><strong>כניסה לחשבון</strong></a></p>')
 @app.route("/login",methods=["GET","POST"])
 def login():
+ # Only explicit local destinations are accepted; never redirect OAuth/login to an arbitrary URL.
+ allowed={"/new-post","/my-posts","/feed","/chats","/directory","/photos"}
+ dest=request.form.get("next","") if request.method=="POST" else request.args.get("next","")
+ dest=dest if dest in allowed else "/"
  if request.method=="POST":
   guard();email=request.form.get("email","").strip().lower()
   fingerprint=auth_fingerprint(email)
   if is_rate_limited(fingerprint):
-   return view("כניסה",'<p class="error">בוצעו יותר מדי ניסיונות כניסה. ניתן לנסות שוב בעוד 15 דקות.</p><a href="/login">חזרה</a>'),429
+   return view("כניסה",'<p class="error" role="alert">בוצעו יותר מדי ניסיונות כניסה. ניתן לנסות שוב בעוד 15 דקות.</p><a href="/login">חזרה</a>'),429
   rows=sql("SELECT * FROM members WHERE email=%s",(email,),True)
   if rows and verify(request.form.get("password",""),rows[0]["password"]):
    sql("DELETE FROM login_failures WHERE fingerprint=%s",(fingerprint,))
-   session.clear();session.permanent=True;session["uid"]=rows[0]["id"];return redirect("/")
+   session.clear();session.permanent=True;session["uid"]=rows[0]["id"]
+   return redirect(dest,code=303)
   sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
-  return view("כניסה",'<p class="error">פרטי ההתחברות לא נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
- return view("כניסה",'<h1>כניסה לחשבון</h1><form method="post" class="card">'+formwrap(field("email","דוא״ל","email",True)+field("password","סיסמה","password",True)+'<button>כניסה לחשבון</button></form><p>עדיין אין לך חשבון? <a href="/register"><strong>להרשמה לקהילה</strong></a></p><p>התחברות באמצעות Google תתווסף לאחר הגדרת OAuth מאובטחת מול Google.</p>'))
+  return view("כניסה",'<p class="error" role="alert">פרטי ההתחברות לא נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
+ if me():return redirect(dest)
+ return view("כניסה",'<h1>🔑 כניסה לחשבון הקרנפים</h1>'
+  +('<p class="card" role="status">כדי לשתף סיפור, אירוע או תמונה יש להתחבר לחשבון חבר מאושר. אחרי הכניסה נחזיר אותך אוטומטית למסך הפרסום.</p>' if dest=="/new-post" else '')
+  +'<form method="post" class="card">'+formwrap(
+    '<input type="hidden" name="next" value="'+esc(dest)+'">'
+    +field("email","דוא״ל","email",True)
+    +field("password","סיסמה","password",True)
+    +'<button>כניסה לחשבון</button>')+'</form>'
+    +'<p>עדיין אין לך חשבון? <a href="/register"><strong>להרשמה לקהילה</strong></a></p>'
+    +'<p class="muted">התחברות באמצעות Google עדיין אינה מוגדרת. האתר תומך בשלב זה בדוא״ל וסיסמה.</p>')
 @app.route("/logout",methods=["GET","POST"])
 def logout():
  if request.method=="POST":
