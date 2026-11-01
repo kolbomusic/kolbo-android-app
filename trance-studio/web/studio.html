@@ -169,13 +169,13 @@ function setFiles(items){
  $('generate').disabled=files.length===0;
 }
 window.kolboImportSharedAudio=function(items){
- // Sharing from WhatsApp ONLY imports bytes. No scheduling or calling run().
+ // Sharing from WhatsApp ONLY imports bytes. No scheduling or starting processing.
  // User must explicitly press #generate after inspecting the chosen files.
  if(active){message('מתבצעת כבר יצירה. הקובץ החדש לא נוסף.');return;}
  setFiles(items);
  if(files.length){
    message('התקבלו '+files.length+' קובצי שמע. בחר הגדרות ולחץ על ״צור סרטון ומיקס״ כדי להתחיל.');
-   markStage('ready');
+   markStage('idle');
    $('generate').focus();
  }else{message('לא התקבל קובץ שמע תקין.');}
 };
