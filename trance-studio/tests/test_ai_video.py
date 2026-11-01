@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'backend'))
 from ai_video import (
     AIVideoUnavailable, _video_result_url, cinematic_prompt,
-    _request_video_generation, generate_ai_story,
+    _request_video_generation, generate_ai_story, _narrative_shots,
 )
 
 
@@ -62,6 +62,51 @@ class AIVideoTests(unittest.TestCase):
         out=_request_video_generation('Narration',opener=opener,duration=2)
         self.assertEqual(out,video)
         self.assertEqual(len(calls),2)
+
+    def test_film_plan_splits_new_unknown_hebrew_story_into_two_shots(self):
+        spoken='האדם מרים את הכוס. אחר כך היא נופלת על הרצפה ונשברת.'
+        scenes=_narrative_shots(spoken)
+        self.assertEqual(len(scenes),2)
+        self.assertIn('הכוס',scenes[0])
+        self.assertIn('נשברת',scenes[1])
+        self.assertIn('הכוס',cinematic_prompt(scenes[0]))
+
+    def test_two_original_ai_shots_are_distinct_and_audio_is_complete(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder)
+            audio=root/'mix.mp3'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-f','lavfi',
+                '-i','sine=frequency=385:duration=6',
+                '-c:a','libmp3lame',str(audio)],check=True)
+            count={'n':0}
+            prompts=[]
+            def generate(prompt):
+                prompts.append(prompt)
+                return 'https://lightricks-ltx-video-distilled.hf.space/gradio_api/file=/tmp/gradio/a.mp4'
+            def download(url,dest):
+                count['n']+=1
+                v='testsrc' if count['n']==1 else 'smptebars'
+                subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                    '-f','lavfi','-i',f'{v}=size=512x704:rate=12:duration=2',
+                    '-c:v','libvpx-vp9','-b:v','180k',str(dest)],check=True)
+                return 2.0
+            out=root/'story.mp4'
+            plan=generate_ai_story(
+                'האיש צוחק בקול. אחר כך הכוס נשברת על הרצפה.',
+                audio,out,root/'generated',generator=generate,download=download)
+            self.assertEqual(count['n'],2)
+            self.assertEqual(len(prompts),2)
+            self.assertEqual(plan['ai_clips_generated'],2)
+            self.assertEqual(len(plan['scenes']),2)
+            probe=json.loads(subprocess.check_output([
+                'ffprobe','-v','error','-show_streams','-show_format',
+                '-of','json',str(out)]))
+            self.assertGreater(float(probe['format']['duration']),5.4)
+            codec=next(s for s in probe['streams'] if s['codec_type']=='video')
+            self.assertEqual((codec['codec_name'],codec['width'],codec['height']),
+                             ('h264',360,640))
+            subprocess.run(['ffmpeg','-v','error','-ss','4.3','-i',str(out),
+                '-frames:v','1','-f','null','-'],check=True)
 
     def test_gen_video_is_original_motion_and_full_sound_no_subtitles(self):
         with tempfile.TemporaryDirectory() as folder:
