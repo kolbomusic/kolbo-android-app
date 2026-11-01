@@ -8,10 +8,10 @@
 (function(){
 'use strict';
 var MODELS=[
-  {id:'ltx-distilled',host:'lightricks-ltx-video-distilled.hf.space',
-   call:'/gradio_api/call/text_to_video'},
   {id:'ltx25',host:'lightricks-ltx-2-5.hf.space',
-   call:'/gradio_api/call/v2/run',result:'/gradio_api/call/run/'}
+   call:'/gradio_api/call/v2/run',result:'/gradio_api/call/run/'},
+  {id:'ltx-distilled',host:'lightricks-ltx-video-distilled.hf.space',
+   call:'/gradio_api/call/text_to_video'}
 ];
 var MAX_VIDEO_BYTES=10*1024*1024;
 var MAX_SHOTS=3;
