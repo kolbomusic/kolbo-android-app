@@ -22,6 +22,7 @@ TOKEN = JsonWebToken(["RS256"])
 
 class Response:
     status_code = 200
+    headers = {"Cache-Control": "public, max-age=180"}
     content = b'{"keys":[]}'
     def raise_for_status(self):
         return None
@@ -120,7 +121,9 @@ def run():
                 assert client.post("/auth/google/callback", data={
                     "csrf":final_csrf,"credential":forged}).status_code == 401
         assert len(db) == 1, "No rejected token should read the DB"
-        print("PASS GIS signed RS256 verification, Google JWKS, nonce, CSRF, replay, audience, issuer, expiry")
+        assert fetch.call_count == 1, "Google JWKS must be cached across signature checks"
+        assert google._GOOGLE_JWKS_CACHE["expires_at"] > time.monotonic()
+        print("PASS GIS signed RS256 verification, cached Google JWKS, nonce, CSRF, replay, audience, issuer, expiry")
 
     with patch.dict(os.environ, {"KARNAFIM_GOOGLE_AUTH_ENABLED":"1",
                                   "KARNAFIM_GOOGLE_AUTH_MODE":"oauth",
