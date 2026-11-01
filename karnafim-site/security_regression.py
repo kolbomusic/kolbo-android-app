@@ -44,12 +44,18 @@ def live():
                 ok=ok and 'id="main-content"' in body and 'skip-to-content' in body
             print(("PASS" if ok else "FAIL"),route,"ACTIVE",status)
             if not ok:errors.append((route,status))
+        # Publishing must guide logged-out users through login and then resume.
+        status,headers,body,landed=fetch("/new-post")
+        ok=(status==200 and "/login?next=/new-post" in landed and
+            'name="csrf"' in body and "כניסה לחשבון" in body)
+        print(("PASS" if ok else "FAIL"),"/new-post","LOGIN_REQUIRED",status)
+        if not ok:errors.append(("/new-post",status))
         for route in ("/profile","/directory","/password"):
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.rstrip("/")==URL+"/login"
             print(("PASS" if ok else "FAIL"),route,"REDIRECT_LOGIN",status)
             if not ok:errors.append((route,status))
-        for route in ("/admin","/community/moderation","/chats","/new-post","/community-media/1"):
+        for route in ("/admin","/community/moderation","/chats","/community-media/1"):
             status,headers,body,landed=fetch(route)
             ok=status==403
             print(("PASS" if ok else "FAIL"),route,"FORBIDDEN",status)
