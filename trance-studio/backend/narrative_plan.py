@@ -39,7 +39,7 @@ ACTIONS = (
     (r"רוקד|רוקדת|רוקדים|רקד|רקדה", "dances with body movement"),
     (r"שר|שרה|שרים|שרות|לשיר", "sings"),
     (r"נרגע|נרגעה|רגוע|רגועה", "becomes calm and relaxed"),
-    (r"מ[כ]?ה|מכה|הכה|חובט|חובטת", "strikes an object"),
+    (r"מכה|הכה|חובט|חובטת", "strikes an object"),
     (r"עף|עפה|עפים|טס|טסה", "flies through the air"),
     (r"מתפוצץ|התפוצץ|פיצוץ|מתפוצצת", "an explosion occurs"),
     (r"משפריץ|מתיז|מתיזה|התיז|שופך|שופכת|נשפך", "liquid splashes and flows"),
