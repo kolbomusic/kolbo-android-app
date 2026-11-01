@@ -171,7 +171,7 @@ async function transcribeOne(file,i){
  return await new Promise(function(resolve,reject){
   var worker=new Worker('/studio-asr-worker.js',{type:'module'});
   var finished=false;
-  var timeout=setTimeout(function(){settle(new Error('זיהוי הדיבור עבר את זמן העיבוד. ניתן להזין תמלול ידני.'))},240000);
+  var timeout=setTimeout(function(){settle(new Error('פענוח הדיבור במכשיר נמשך זמן רב; ממשיך אוטומטית לפענוח מהקובץ המקורי בשרת.'))},95000);
   function settle(error,result){
    if(finished)return;
    finished=true;clearTimeout(timeout);worker.terminate();
@@ -208,9 +208,16 @@ var wantsVideo=$('make_video').checked;
 var videoAllowed=wantsVideo, recognized='', videoReason='';
 try{
 if(wantsVideo){
- message('מזהה אוטומטית את הדיבור — בלי להציג מילים או לבקש אישור...');
- try{recognized=await recognizeBeforeVideo()}
- catch(error){videoReason='התמלול במכשיר לא הצליח; מנסה אוטומטית פענוח נוסף מקובץ המקור בשרת.';}
+ // The native Android WebView already needs cloud connectivity to mix.
+ // Use the preloaded server ASR directly to avoid heavy Whisper downloads
+ // and memory failures on the phone; upload the same original audio bytes.
+ if(window.KolboAndroid){
+   message('מכין תמלול וידאו מתוך ההקלטה המקורית בשרת — ללא אישור מילים...');
+ }else{
+   message('מזהה אוטומטית את הדיבור — בלי להציג מילים או לבקש אישור...');
+   try{recognized=await recognizeBeforeVideo()}
+   catch(error){videoReason='התמלול במכשיר לא הצליח; מנסה אוטומטית פענוח נוסף מקובץ המקור בשרת.';}
+ }
 }
 message('מעבד את קובץ ההקלטה המקורי'+(wantsVideo?' ומכין סצנות וידאו לפי הדיבור':'')+'...');
 var form=new FormData();

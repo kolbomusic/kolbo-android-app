@@ -14,6 +14,26 @@ import source_asr
 
 
 class SourceAsrRecoveryTests(unittest.TestCase):
+    def test_preloaded_model_is_used_without_online_download(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pathlib.Path(temp, 'model.bin').write_bytes(b'preloaded model marker')
+            with (mock.patch.dict('os.environ',{'KOLBO_ASR_DIR':temp}),
+                  mock.patch('faster_whisper.WhisperModel') as ctor):
+                old_model=source_asr._MODEL
+                try:
+                    source_asr._MODEL=None
+                    source_asr._get_model()
+                    self.assertEqual(ctor.call_args.args[0],temp)
+                    ctor.assert_called_once()
+                finally:
+                    source_asr._MODEL=old_model
+
+    def test_native_android_hands_off_to_server_before_heavy_browser_asr(self):
+        page=(ROOT/'web'/'studio.html').read_text(encoding='utf-8')
+        self.assertIn('if(window.KolboAndroid)',page)
+        self.assertIn("form.set('make_video',wantsVideo?'on':'off')",page)
+        self.assertIn("form.set('transcript',verifyTranscript(recognized)?recognized:'')",page)
+
     def test_original_utterances_are_used_not_music(self):
         class FakeSegment:
             def __init__(self, text): self.text=text
