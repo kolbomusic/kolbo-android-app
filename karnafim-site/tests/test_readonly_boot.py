@@ -39,6 +39,31 @@ for path in ('/.env', '/wp-admin', '/fake-login-collector', '/unknown-path'):
     assert response.status_code == 404, (path, response.status_code)
     assert 'noindex' in response.headers.get('X-Robots-Tag', ''), path
 assert "Disallow: /login" not in client.get('/robots.txt').get_data(as_text=True)
+# Public content is inert: no credential form, scripts or third-party JS.
+for path in ('/', '/about', '/privacy', '/status', '/safety', '/terms'):
+    result = client.get(path)
+    html = result.get_data(as_text=True).lower()
+    assert '<form' not in html and '<script' not in html, path
+    assert "form-action 'none'" in result.headers.get('Content-Security-Policy', ''), path
+    assert result.headers.get('X-Frame-Options') == 'DENY', path
+    assert 'no-store' in result.headers.get('Cache-Control',''), path
+# Both GET and POST to prior credential pages stay retired.
+for path in ('/login', '/register', '/password', '/find', '/auth/google/start', '/auth/google/callback'):
+    for method in ('GET', 'POST'):
+        result = client.open(path, method=method)
+        assert result.status_code == 410, (method, path, result.status_code)
+        assert 'noindex' in result.headers.get('X-Robots-Tag',''), path
+# Neither guessable member media URLs nor social/message endpoints reveal data.
+for path in ('/directory', '/new-post', '/my-posts', '/profile', '/chats', '/chat/42',
+             '/contact/42', '/community-media/10', '/community/moderation', '/admin'):
+    for method in ('GET', 'POST'):
+        result = client.open(path, method=method)
+        assert result.status_code == 503, (method, path, result.status_code)
+        assert 'no-store' in result.headers.get('Cache-Control',''), path
+# Unrecognized paths must be permanent 404, not generic app errors.
+for path in ('/accounts/google/verify', '/forgot-password', '/cgi-bin/test', '/.git/config'):
+    result = client.get(path)
+    assert result.status_code == 404, path
 """
         result = subprocess.run(
             [sys.executable, "-c", code],
