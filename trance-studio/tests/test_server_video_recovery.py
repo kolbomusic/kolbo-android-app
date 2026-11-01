@@ -14,6 +14,33 @@ import source_asr
 
 
 class VideoJobRecoveryTests(unittest.TestCase):
+    def test_pyvav_decoder_error_does_not_destroy_the_music_job(self):
+        # PyAV 19 changed av.open() and previously crashed the WHOLE worker.
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.object(server, 'ThreadPoolExecutor') as executor_factory:
+                app=server.create_app({'TESTING':True,'JOB_DIR':temporary})
+                client=app.test_client()
+                response=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'voice bytes'),'original.opus'),
+                    'make_video':'on', 'video_requested':'on',
+                    'transcript':'', 'transcript_origin':'auto',
+                })
+                self.assertEqual(response.status_code,202)
+                args=executor_factory.return_value.submit.call_args.args
+                voice=np.zeros(32000*5,dtype=np.float32)
+                def write_mp3(audio,path,sr=32000):
+                    pathlib.Path(path).write_bytes(b'audio-output')
+                with (mock.patch.object(source_asr,'transcribe_original_files',
+                        side_effect=TypeError("open() got an unexpected keyword argument 'metadata_errors'")),
+                      mock.patch.object(server,'load_audio',return_value=voice),
+                      mock.patch.object(server,'render_mix',return_value=(voice,voice)),
+                      mock.patch.object(server,'export_mp3',side_effect=write_mp3)):
+                    args[0](*args[1:])
+                result=client.get('/api/jobs/'+response.json['id']).json
+                self.assertEqual(result['state'],'done',result)
+                self.assertEqual(result['video_status'],'unavailable',result)
+                self.assertTrue((pathlib.Path(temporary)/response.json['id']/'mix.mp3').exists())
+
     def test_server_asr_failure_recovery_keeps_mp4_requested_and_finishes(self):
         with tempfile.TemporaryDirectory() as temporary:
             with mock.patch.object(server, 'ThreadPoolExecutor') as executor_factory:

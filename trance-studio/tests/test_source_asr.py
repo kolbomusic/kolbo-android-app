@@ -68,6 +68,54 @@ class SourceAsrRecoveryTests(unittest.TestCase):
         self.assertFalse(source_asr._valid_utterance('חמור חמור'))
         self.assertTrue(source_asr._valid_utterance('החמור נוער'))
 
+    def test_short_hebrew_speech_retried_without_vad(self):
+        class FakeSegment:
+            text = "הנה המשאית נוסעת"
+        class FakeModel:
+            def __init__(self): self.calls = []
+            def transcribe(self, path, **kwargs):
+                self.calls.append((str(path), kwargs['vad_filter']))
+                return (iter([]) if kwargs['vad_filter']
+                        else iter([FakeSegment()])), None
+        fake = FakeModel()
+        with (mock.patch.object(source_asr, '_get_model', return_value=fake),
+              mock.patch.object(source_asr, '_clean_voice') as normalize):
+            transcript, complete = source_asr.transcribe_original_files(['/tmp/whatsapp.opus'])
+        self.assertTrue(complete)
+        self.assertEqual(transcript, 'הנה המשאית נוסעת')
+        self.assertEqual(fake.calls, [('/tmp/whatsapp.opus', True),
+                                      ('/tmp/whatsapp.opus', False)])
+        normalize.assert_not_called()
+
+    def test_normalized_original_retry_when_vad_free_pass_fails(self):
+        class FakeSegment:
+            text = "הכלב נובח בבית"
+        class FakeModel:
+            def __init__(self): self.paths = []
+            def transcribe(self, path, **kwargs):
+                self.paths.append(str(path))
+                return iter([FakeSegment()] if str(path).endswith('normalized.wav') else []), None
+        fake = FakeModel()
+        with tempfile.TemporaryDirectory() as directory:
+            wav = pathlib.Path(directory, 'normalized.wav')
+            wav.touch()
+            with (mock.patch.object(source_asr, '_get_model', return_value=fake),
+                  mock.patch.object(source_asr, '_clean_voice', return_value=wav)):
+                transcript, complete = source_asr.transcribe_original_files(['/tmp/from-whatsapp.opus'])
+            self.assertEqual(transcript, 'הכלב נובח בבית')
+            self.assertTrue(complete)
+            self.assertEqual(fake.paths, ['/tmp/from-whatsapp.opus'] * 2 + [str(wav)])
+            self.assertFalse(wav.exists())
+
+    def test_reject_explicit_low_confidence_even_when_text_is_hebrew(self):
+        class FakeSegment:
+            text = "המשאית נוסעת עכשיו"
+            avg_logprob = -2.3
+            no_speech_prob = 0.12
+        class FakeModel:
+            def transcribe(self, path, **kwargs): return iter([FakeSegment()]), None
+        self.assertEqual(source_asr._recognize(FakeModel(), '/tmp/audio.opus', use_vad=False), '')
+
     def test_missing_browser_transcript_submits_video_request_without_422(self):
         with tempfile.TemporaryDirectory() as temp:
             with mock.patch.object(server,'ThreadPoolExecutor') as factory:

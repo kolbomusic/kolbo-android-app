@@ -4,3 +4,6 @@ numpy==2.2.6
 scipy==1.15.3
 Pillow==11.3.0
 faster-whisper==1.2.1
+# faster-whisper 1.2.1 calls av.open(metadata_errors=...), removed in PyAV >=18.
+# Pin a decoded-audio-compatible build; without this ALL original-file ASR fails.
+av==17.1.0
