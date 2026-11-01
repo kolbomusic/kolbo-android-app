@@ -69,6 +69,9 @@ public final class MainActivity extends Activity {
     private TextView offlineDetails;
     private final Handler mainHandler=new Handler(Looper.getMainLooper());
     private long navigationId=0;
+    private long incomingVersion=0;
+    private long lastImportedVersion=-1;
+    private long lastImportNavigation=-1;
     private int automaticRetries=0;
     private boolean pageReady;
     private boolean pageLoadFailed;
@@ -229,11 +232,12 @@ public final class MainActivity extends Activity {
                 // HTTP success is not enough. Check the actual studio DOM
                 // before hiding the loader or importing WhatsApp media.
                 view.evaluateJavascript(
-                    "(function(){return !!(document.body&&document.getElementById('generate')&&document.getElementById('result')&&document.querySelector('main'));})()",
+                    "(function(){return !!(document.body&&document.getElementById('generate')&&document.getElementById('result')&&document.querySelector('main')&&typeof window.kolboImportSharedAudio==='function'&&typeof window.kolboCanImportSharedAudio==='function'&&document.getElementById('generate').onclick);})()",
                     result->{
                         if(token!=navigationId||pageLoadFailed)return;
                         if("true".equals(result)){
                             pageReady=true;
+                            automaticRetries=0;
                             loading.setVisibility(View.GONE);
                             startupPanel.setVisibility(View.GONE);
                             offlinePanel.setVisibility(View.GONE);
@@ -344,6 +348,7 @@ public final class MainActivity extends Activity {
             }
         }
         incoming.clear();
+        incomingVersion++;
         long totalBytes=0;
         for(Uri uri:candidates){
             if(incoming.size()>=4)break;
@@ -387,6 +392,9 @@ public final class MainActivity extends Activity {
         ArrayList<Uri> snapshot;
         synchronized(incoming){snapshot=new ArrayList<>(incoming);}
         if(snapshot.isEmpty())return;
+        if(lastImportedVersion==incomingVersion&&lastImportNavigation==navigationId)return;
+        lastImportedVersion=incomingVersion;
+        lastImportNavigation=navigationId;
         JSONArray names=new JSONArray();
         for(int i=0;i<snapshot.size();i++)names.put(audioName(snapshot.get(i),i));
         // WhatsApp sharing imports clips only. Creation is started only by
@@ -396,14 +404,41 @@ public final class MainActivity extends Activity {
                 +"if(!r.ok)throw Error('קובץ לא זמין');var b=await r.blob();"
                 +"clips.push(new File([b],names[i],{type:b.type||'audio/ogg'}));}"
                 +"if(window.kolboImportSharedAudio)window.kolboImportSharedAudio(clips);"
-                +"}catch(e){console.error('Import from WhatsApp',e);}})();";
+                +"}catch(e){console.error('Import from WhatsApp',e);"
+                +"if(window.KolboAndroid)window.KolboAndroid.importFailure();}})();";
         webView.evaluateJavascript(js,null);
     }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);
         setIntent(intent);
-        collectIncoming(intent);
-        beginLoad(true);
+        if(intent==null)return;
+        String action=intent.getAction();
+        boolean isShare=Intent.ACTION_SEND.equals(action)||
+                        Intent.ACTION_SEND_MULTIPLE.equals(action);
+        if(!isShare){
+            // Tapping the launcher must not destroy an in-progress remix.
+            if(!pageReady&&offlinePanel.getVisibility()==View.VISIBLE)beginLoad(true);
+            return;
+        }
+        if(pageReady){
+            // A new WhatsApp share must never reload the page, clear its
+            // active audio job or overwrite a result the user has not saved.
+            webView.evaluateJavascript(
+                "(function(){return !!(window.kolboCanImportSharedAudio&&window.kolboCanImportSharedAudio());})()",
+                allowed->{
+                    if(!pageReady)return;
+                    if(!"true".equals(allowed)){
+                        toast("מיקס פעיל כעת. שמור את התוצאה לפני שיתוף הקלטה חדשה.");
+                        return;
+                    }
+                    collectIncoming(intent);
+                    importIncoming();
+                });
+        }else{
+            // Keep the shared URI for import after slow Render cold start.
+            collectIncoming(intent);
+            if(offlinePanel.getVisibility()==View.VISIBLE)beginLoad(true);
+        }
     }
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
@@ -414,6 +449,9 @@ public final class MainActivity extends Activity {
     }
     private void toast(String s){runOnUiThread(()->Toast.makeText(this,s,Toast.LENGTH_LONG).show());}
     private class AudioBridge{
+        @JavascriptInterface public void importFailure(){
+            toast("לא ניתן לקרוא את הקובץ המשותף. אפשר לבחור אותו שוב או לנסות חיבור מחדש.");
+        }
         @JavascriptInterface public void downloadMix(String relative){saveMix(relative,false);}
         @JavascriptInterface public void shareMix(String relative){saveMix(relative,true);}
         @JavascriptInterface public void downloadVideo(String relative){saveOutput(relative,false,true);}
