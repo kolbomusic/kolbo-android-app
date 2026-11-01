@@ -32,6 +32,8 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.FrameLayout;
+import android.webkit.WebResourceError;
 
 import org.json.JSONArray;
 
@@ -62,6 +64,13 @@ public final class MainActivity extends Activity {
     private WebView webView;
     private ProgressBar loading;
     private LinearLayout offlinePanel;
+    private LinearLayout startupPanel;
+    private TextView startupMessage;
+    private TextView offlineDetails;
+    private final Handler mainHandler=new Handler(Looper.getMainLooper());
+    private long navigationId=0;
+    private int automaticRetries=0;
+    private boolean pageReady;
     private boolean pageLoadFailed;
     private android.webkit.ValueCallback<Uri[]> fileCallback;
 
@@ -76,8 +85,38 @@ public final class MainActivity extends Activity {
         loading=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
         loading.setIndeterminate(true);
         root.addView(loading,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,5));
+        FrameLayout stage=new FrameLayout(this);
+        root.addView(stage,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
         webView=new WebView(this);
-        root.addView(webView,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
+        webView.setBackgroundColor(Color.rgb(24,16,39));
+        stage.addView(webView,new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
+        startupPanel=new LinearLayout(this);
+        startupPanel.setOrientation(LinearLayout.VERTICAL);
+        startupPanel.setGravity(Gravity.CENTER);
+        startupPanel.setPadding(36,50,36,50);
+        startupPanel.setBackgroundColor(Color.rgb(24,16,39));
+        TextView startupTitle=new TextView(this);
+        startupTitle.setText("Kolbo Trance Story");
+        startupTitle.setTextColor(Color.WHITE);
+        startupTitle.setTextSize(25f);
+        startupTitle.setGravity(Gravity.CENTER);
+        startupPanel.addView(startupTitle,new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        ProgressBar spinner=new ProgressBar(this);
+        LinearLayout.LayoutParams spinnerParams=new LinearLayout.LayoutParams(72,72);
+        spinnerParams.gravity=Gravity.CENTER;
+        spinnerParams.setMargins(0,30,0,20);
+        startupPanel.addView(spinner,spinnerParams);
+        startupMessage=new TextView(this);
+        startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
+        startupMessage.setTextColor(Color.rgb(228,208,244));
+        startupMessage.setTextSize(18f);
+        startupMessage.setGravity(Gravity.CENTER);
+        startupPanel.addView(startupMessage,new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        stage.addView(startupPanel,new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
         offlinePanel=new LinearLayout(this);
         offlinePanel.setOrientation(LinearLayout.VERTICAL);
         offlinePanel.setGravity(Gravity.CENTER);
@@ -91,7 +130,8 @@ public final class MainActivity extends Activity {
         offlineTitle.setGravity(Gravity.CENTER);
         offlinePanel.addView(offlineTitle,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
         TextView offlineHelp=new TextView(this);
-        offlineHelp.setText("ההקלטות לא נמחקו מהמכשיר. שיתוף קובץ רק טוען אותו לאפליקציה; כדי ליצור סרטון יש ללחוץ על כפתור היצירה. בדוק חיבור לאינטרנט ונסה שוב.");
+        offlineHelp.setText("ההקלטות נשמרות במכשיר. אפשר לנסות חיבור מחדש בלי להפעיל יצירה.");
+        offlineDetails=offlineHelp;
         offlineHelp.setTextColor(Color.rgb(220,204,237));
         offlineHelp.setTextSize(16f);
         offlineHelp.setGravity(Gravity.CENTER);
@@ -102,9 +142,9 @@ public final class MainActivity extends Activity {
         retry.setText("נסה שוב להתחבר");
         retry.setAllCaps(false);
         retry.setTextSize(16f);
-        retry.setOnClickListener(v->webView.loadUrl(STUDIO));
+        retry.setOnClickListener(v->beginLoad(true));
         offlinePanel.addView(retry,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addView(offlinePanel,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
+        stage.addView(offlinePanel,new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         WebSettings settings=webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -134,15 +174,18 @@ public final class MainActivity extends Activity {
                 return true;
             }
             @Override public void onProgressChanged(WebView view,int progress){
-                if(!pageLoadFailed)loading.setVisibility(progress>=100?View.GONE:View.VISIBLE);
+                if(!pageReady&&!pageLoadFailed)loading.setVisibility(View.VISIBLE);
             }
         });
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView view,String url,Bitmap favicon){
                 pageLoadFailed=false;
+                pageReady=false;
                 offlinePanel.setVisibility(View.GONE);
-                webView.setVisibility(View.VISIBLE);
+                startupPanel.setVisibility(View.VISIBLE);
+                startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
                 loading.setVisibility(View.VISIBLE);
+                webView.setVisibility(View.VISIBLE);
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
                 Uri u=request.getUrl();
@@ -181,24 +224,101 @@ public final class MainActivity extends Activity {
                 }catch(Exception ex){return failStream();}
             }
             @Override public void onPageFinished(WebView view,String url){
-                if(!pageLoadFailed&&url!=null&&url.startsWith(STUDIO))importIncoming();
+                if(pageLoadFailed||url==null||!url.startsWith(STUDIO))return;
+                final long token=navigationId;
+                // HTTP success is not enough. Check the actual studio DOM
+                // before hiding the loader or importing WhatsApp media.
+                view.evaluateJavascript(
+                    "(function(){return !!(document.body&&document.getElementById('generate')&&document.getElementById('result')&&document.querySelector('main'));})()",
+                    result->{
+                        if(token!=navigationId||pageLoadFailed)return;
+                        if("true".equals(result)){
+                            pageReady=true;
+                            loading.setVisibility(View.GONE);
+                            startupPanel.setVisibility(View.GONE);
+                            offlinePanel.setVisibility(View.GONE);
+                            importIncoming(); // import does not start creation
+                        }else{
+                            recoverConnection("השרת השיב דף ללא ממשק היצירה.");
+                        }
+                    });
             }
             @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,SslError error){
                 handler.cancel();
-                toast("שגיאת אבטחה בחיבור לאתר");
+                showOffline("חיבור HTTPS לא מאובטח. לא נעקוף שגיאת תעודה.");
             }
-            @Override public void onReceivedError(WebView view,WebResourceRequest req,android.webkit.WebResourceError err){
+            @Override public void onReceivedHttpError(WebView view,WebResourceRequest req,
+                                                      WebResourceResponse response){
+                if(req.isForMainFrame()&&response.getStatusCode()>=500){
+                    recoverConnection("שרת היצירה אינו זמין זמנית (HTTP "+response.getStatusCode()+").");
+                }
+            }
+            @Override public void onReceivedError(WebView view,WebResourceRequest req,
+                                                  WebResourceError err){
                 if(req.isForMainFrame()){
-                    pageLoadFailed=true;
-                    loading.setVisibility(View.GONE);
-                    webView.setVisibility(View.GONE);
-                    offlinePanel.setVisibility(View.VISIBLE);
+                    recoverConnection("לא ניתן להתחבר לשרת. בדוק אינטרנט או נסה שוב.");
                 }
             }
         });
         collectIncoming(getIntent());
-        webView.loadUrl(STUDIO);
+        beginLoad(false);
     }
+
+    private void beginLoad(boolean manuallyRequested){
+        if(manuallyRequested){
+            automaticRetries=0;
+            // Manual retry bypasses any cached error page from sleeping Render.
+            webView.clearCache(true);
+        }
+        final long current=++navigationId;
+        pageReady=false;
+        pageLoadFailed=false;
+        offlinePanel.setVisibility(View.GONE);
+        startupPanel.setVisibility(View.VISIBLE);
+        startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
+        loading.setVisibility(View.VISIBLE);
+        webView.setVisibility(View.VISIBLE);
+        webView.loadUrl(STUDIO+"?android=243&load="+current);
+        mainHandler.postDelayed(()->{
+            if(navigationId==current&&!pageReady&&!pageLoadFailed){
+                startupMessage.setText("שרת הענן החינמי מתעורר. ההקלטות שלך נשארות במכשיר...");
+            }
+        },15000);
+        mainHandler.postDelayed(()->{
+            if(navigationId==current&&!pageReady&&!pageLoadFailed){
+                recoverConnection("החיבור לשרת נמשך זמן רב מדי.");
+            }
+        },75000);
+    }
+
+    private void recoverConnection(String reason){
+        if(pageLoadFailed||pageReady)return;
+        pageLoadFailed=true;
+        if(automaticRetries<1){
+            automaticRetries++;
+            final long failedNavigation=navigationId;
+            startupPanel.setVisibility(View.VISIBLE);
+            startupMessage.setText(reason+" מנסה להתחבר פעם נוספת...");
+            mainHandler.postDelayed(()->{
+                if(navigationId==failedNavigation&&!pageReady)beginLoad(false);
+            },6500);
+        }else{
+            showOffline(reason);
+        }
+    }
+
+    private void showOffline(String reason){
+        pageLoadFailed=true;
+        pageReady=false;
+        ++navigationId; // ignore stale JS callbacks and old timeout tasks
+        loading.setVisibility(View.GONE);
+        startupPanel.setVisibility(View.GONE);
+        webView.setVisibility(View.GONE);
+        offlinePanel.setVisibility(View.VISIBLE);
+        startupMessage.setText(reason);
+        if(offlineDetails!=null)offlineDetails.setText(reason+"\nההקלטות נשמרות במכשיר. לחץ על ניסיון חוזר כדי להתחבר.");
+    }
+
     private WebResourceResponse failStream(){
         return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",
                 Collections.singletonMap("Cache-Control","no-store"),
@@ -283,7 +403,7 @@ public final class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         collectIncoming(intent);
-        webView.loadUrl(STUDIO);
+        beginLoad(true);
     }
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
@@ -358,6 +478,7 @@ public final class MainActivity extends Activity {
         if(webView!=null&&webView.canGoBack())webView.goBack();else super.onBackPressed();
     }
     @Override protected void onDestroy(){
+        mainHandler.removeCallbacksAndMessages(null);
         if(webView!=null){webView.removeJavascriptInterface("KolboAndroid");webView.destroy();}
         io.shutdown();
         super.onDestroy();
