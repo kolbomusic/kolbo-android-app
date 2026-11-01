@@ -43,7 +43,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </style>
 </head>
 <body><main>
-<header><div class="brand">≋ KOLBO / TRANCE STORY</div><h1>ההקלטה שלך.<br><span>טראנס מצחיק וסרטון אמיתי.</span></h1><p>שיתוף ישיר מ־WhatsApp, פענוח עברית ויצירת סרטון מהסיפור. אפשר להשתמש בצילומים קיימים או לנסות יצירת סצנה חדשה באמצעות AI. בלי גלי קול במקום סרטון.</p><div id="nativeStatus" hidden>● גרסת Android 2.2 · יצירה אוטומטית בשיתוף</div></header>
+<header><div class="brand">≋ KOLBO / TRANCE STORY</div><h1>ההקלטה שלך.<br><span>טראנס מצחיק וסרטון אמיתי.</span></h1><p>שיתוף ישיר מ־WhatsApp, פענוח עברית ויצירת סרטון מהסיפור. אפשר להשתמש בצילומים קיימים או לנסות יצירת סצנה חדשה באמצעות AI. בלי גלי קול במקום סרטון.</p><div id="nativeStatus" hidden>● קבצים משותפים נטענים בלבד · היצירה מתחילה בלחיצה</div></header>
 <section class="panel"><h2>01 / ההקלטות שלך</h2>
 <label for="audio">הוסף עד 4 הודעות קוליות</label><input id="audio" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div>
@@ -162,12 +162,16 @@ function markStage(stage){
 }
 function message(txt){$('status').textContent=txt}
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות מהמכשיר או מתוך WhatsApp'}
-function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles();}
+function setFiles(items){files=Array.from(items||[]).filter(Boolean).slice(0,4);syncFiles();if(files.length){markStage('upload');$('generate').disabled=active;}}
 window.kolboImportSharedAudio=function(items){
+ // IMPORTANT: WhatsApp ACTION_SEND only imports the audio; NEVER starts
+ // processing. The user may adjust settings and must explicitly press Create.
  setFiles(items);
- message('ההקלטה מ־WhatsApp התקבלה. מתחיל מיקס וסרטון באופן אוטומטי...');
+ message(files.length?'ההקלטה מ־WhatsApp נטענה. בדוק את ההגדרות ולחץ ״צור סרטון ומיקס עכשיו״ כדי להתחיל.':'לא התקבלה הקלטה תקינה.');
  markStage('upload');
- if(!active&&files.length)setTimeout(function(){if(!active)run();},240);
+ if(files.length&&!active){
+   $('generate').focus({preventScroll:true});
+ }
 };
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
@@ -491,7 +495,7 @@ var cache=await caches.open('kolbo-studio-share-v1');
 var r=await cache.match('/studio/shared-audio');if(!r)return;
 var blob=await r.blob();var fn=decodeURIComponent(r.headers.get('x-filename')||'WhatsApp-voice.opus');
 setFiles([new File([blob],fn,{type:blob.type||'audio/ogg'})]);await cache.delete('/studio/shared-audio');
-message('התקבלה הקלטה מ־WhatsApp. בחר סגנון ולחץ יצירת מיקס.');
+message('הקובץ מ־WhatsApp נטען בלבד. לחץ על ״צור סרטון ומיקס עכשיו״ כדי להתחיל.');
 }catch(e){message('לא הצלחנו לפתוח את ההקלטה המשותפת. אפשר להעלות ידנית.')}}
 )();
 }}
