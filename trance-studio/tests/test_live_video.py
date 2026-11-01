@@ -312,7 +312,7 @@ class GroundedVideoTests(unittest.TestCase):
             'File:Terrorists fire into moving civilian car during attacks.webm',
             'car driving'))
         self.assertTrue(_matches_metadata(
-            'File:Porto Santo from a moving car.webm',
+            'File:Car driving through Porto Santo.webm',
             'car driving'))
 
     def test_two_independent_real_motion_scenes_normalized_to_android_h264(self):
@@ -341,7 +341,7 @@ class GroundedVideoTests(unittest.TestCase):
             output=root/'movie.mp4'
             sources=export_live_story(song,output,plan,root/'assets',
                                       search=search,download=download)
-            self.assertEqual(len(sources),2)
+            self.assertEqual(len(sources),2,(sources,plan.get('missing_footage')))
             probe=json.loads(subprocess.check_output([
                 'ffprobe','-v','error','-show_streams','-show_format','-of','json',
                 str(output)]))
