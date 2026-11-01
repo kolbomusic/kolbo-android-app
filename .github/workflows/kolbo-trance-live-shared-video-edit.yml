@@ -1,0 +1,42 @@
+name: Kolbo Trance PROOF automatic real WhatsApp video remix
+on:
+  workflow_dispatch:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - '.github/workflows/kolbo-trance-live-shared-video-edit.yml'
+      - 'trance-studio/tests/live_whatsapp_video_edit_proof.py'
+jobs:
+  live-shared-video-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate synthetic moving MP4 with original spoken Hebrew
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+          python - <<'PY'
+          from gtts import gTTS
+          gTTS('החמור נוער בקול גדול. כולם צוחקים ואז שומעים בום.',lang='iw').save('/tmp/kolbo-mock-speech.mp3')
+          PY
+          ffmpeg -nostdin -v error -y \
+            -f lavfi -i 'testsrc2=size=360x640:rate=12:duration=4' \
+            -i /tmp/kolbo-mock-speech.mp3 -map 0:v:0 -map 1:a:0 \
+            -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -c:a aac -b:a 96k -shortest /tmp/kolbo-mock-whatsapp-video.mp4
+          test -s /tmp/kolbo-mock-whatsapp-video.mp4
+      - name: Require ACTUAL EDITED MOVING H264 and AAC returned by Render
+        run: python trance-studio/tests/live_whatsapp_video_edit_proof.py
+      - name: Retain resulting MP4 for frame inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-Actual-Edited-WhatsApp-MP4
+          path: /tmp/kolbo-edited-whatsapp-live.mp4
+          if-no-files-found: ignore
+          retention-days: 7
