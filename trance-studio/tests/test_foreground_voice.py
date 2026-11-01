@@ -13,6 +13,19 @@ class ForegroundVoiceTests(unittest.TestCase):
         envelope=np.where((t%1.3)<1.05,.31,.004)
         return (envelope*(np.sin(2*np.pi*230*t)+.22*np.sin(2*np.pi*520*t))).astype(np.float32)
 
+    def test_auto_hook_scoring_prefers_clear_voiced_syllables_to_hiss(self):
+        sr=self.sr
+        t=np.arange(int(.40*sr))/sr
+        voiced=(.18*np.sin(2*np.pi*225*t)+
+                .035*np.sin(2*np.pi*450*t)).astype(np.float32)
+        rng=np.random.default_rng(30)
+        hiss=(rng.standard_normal(len(t))*.19).astype(np.float32)
+        score_voice=e._vocal_hook_quality(voiced,sr)
+        score_hiss=e._vocal_hook_quality(hiss,sr)
+        self.assertGreater(score_voice,score_hiss*1.6)
+        self.assertEqual(e._vocal_hook_quality(np.zeros(len(t)),sr),0.)
+        self.assertGreater(score_voice,0.015)
+
     def test_source_entirely_preserved_and_fx_never_overlaid(self):
         x=self.voice(16)
         y,fx,spans=e.arranged_vocal_track(x,self.sr,145,'auto',3,1.2,np.random.default_rng(12))
