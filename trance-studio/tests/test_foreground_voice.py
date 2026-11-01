@@ -27,6 +27,40 @@ class ForegroundVoiceTests(unittest.TestCase):
         self.assertGreater(float(np.sqrt(np.mean(y[fx>.5]**2))),.02)
         self.assertTrue(np.isfinite(y).all())
 
+    def test_all_edits_are_at_measured_pauses_and_source_is_bit_exact(self):
+        sr=self.sr
+        t=np.arange(sr*18)/sr
+        speech=np.zeros(len(t),dtype=np.float32)
+        # Each syllabic phrase is separated by 340 ms of actual silence.
+        for start in np.arange(0,17,1.7):
+            a=int(start*sr);b=min(len(speech),a+int(sr*1.36))
+            wave=np.arange(b-a)/sr
+            speech[a:b]=.29*np.sin(2*np.pi*227*wave)
+        y,mask,spans=e.arranged_vocal_track(
+            speech,sr,145,'stretch',3,1.2,np.random.default_rng(21))
+        reconstructed=np.concatenate([y[a:b] for _,_,a,b in spans])
+        np.testing.assert_array_equal(reconstructed,speech)
+        self.assertTrue(all(np.all(mask[os:oe]==0) for _,_,os,oe in spans))
+        # No arbitrarily placed edits inside voiced portions of the source:
+        # every non-final chunk must end in a genuinely quiet source gap.
+        for source_start,source_end,_,_ in spans[:-1]:
+            cut=source_end
+            neighbourhood=speech[max(0,cut-int(.025*sr)):min(len(speech),cut+int(.025*sr))]
+            self.assertLess(float(np.sqrt(np.mean(neighbourhood**2))),.01)
+        # A 18-second speech recording cannot be inflated to twice its length.
+        self.assertLess(len(y)-len(speech),sr*4)
+
+    def test_continuous_speech_is_never_chopped_at_fixed_intervals(self):
+        sr=self.sr;t=np.arange(sr*15)/sr
+        # No low-energy gaps: only a tail-end, optional voice flourish.
+        source=(.22*np.sin(2*np.pi*223*t)).astype(np.float32)
+        y,mask,spans=e.arranged_vocal_track(
+            source,sr,145,'auto',3,1.0,np.random.default_rng(5))
+        self.assertEqual(len(spans),1)
+        self.assertEqual(spans[0][0:2],(0,len(source)))
+        np.testing.assert_array_equal(y[:len(source)],source)
+        self.assertLess(len(y)-len(source),sr*.9)
+
     def test_new_distinct_comedy_voice_modes_change_original_sound(self):
         voice=self.voice(3)
         names=('helium','monster','yo_yo','comic_roll','rewind')
