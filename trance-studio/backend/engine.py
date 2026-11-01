@@ -466,7 +466,15 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
             cut=(left[1]+right[0])//2
             if int(.7*sr)<cut<len(x)-int(.25*sr):
                 possible.append(cut)
-    min_spacing={1:7.5,2:5.0,3:3.3}[density]
+    # The old fixed five-second gap left most short WhatsApp speech
+    # untouched and piled the only comic effect onto the final word.
+    # Keep conservative gaps for longer narration, but adapt to 5–10s
+    # voice notes: two or three spaced punchlines are more intelligible
+    # than either no humor or a single exaggerated ending.
+    duration=len(x)/sr
+    min_spacing={1:6.5,2:3.8,3:2.5}[density]
+    if duration<10.:
+        min_spacing=min(min_spacing,max(1.75,duration/3.0))
     chosen=[]
     previous=0
     for cut in possible:
