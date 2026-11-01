@@ -141,6 +141,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <div class="actions"><button id="download">הורדת MP3</button><button id="share" class="secondary">שיתוף ל־WhatsApp ולאפליקציות</button></div></section>
 <div class="foot">KOLBO TRANCE STUDIO · ללא מנוי · לשימוש אישי · עיבוד בענן · שמירת הקובץ עד שעה</div>
 </main>
+<script src="/studio-ai-fallback.js"></script>
 <script>
 (function(){
 'use strict';
@@ -293,6 +294,11 @@ async function requestPhoneVideo(provider,prompt){
  }finally{clearTimeout(timeout)}
 }
 async function completeAIVideoOnPhone(jobId,prompt){
+ // Prefer the validated byte-upload route. A URL handed to Render can be
+ // blocked by the GPU host even when the phone already downloaded the clip.
+ if(window.KolboAIFallback){
+   return window.KolboAIFallback.generate(jobId,message,prompt);
+ }
  if(!/^[a-f0-9]{48}$/.test(String(jobId||''))||
     typeof prompt!=='string'||!prompt.trim())
     throw new Error('פרטי ההפקה אינם תקינים');
@@ -371,15 +377,6 @@ markStage(completed<10?'recognize':completed<87?'mix':'video');
 message(j.label||'מכין את המיקס');
 if(j.state==='error')throw new Error(j.message||'אירעה תקלה בעיבוד');
 if(j.state==='done'){
-if(wantsVideo&&!j.video_url&&$('ai_video_consent').checked&&j.client_ai_prompt){
- try{
-  var fromPhone=await completeAIVideoOnPhone(data.id,j.client_ai_prompt);
-  Object.assign(j,fromPhone);
-  videoReason='';
- }catch(deviceError){
-  videoReason=(deviceError&&deviceError.message)||'שירות הווידאו החינמי אינו זמין';
- }
-}
 var mp3=await fetch(j.download_url,{credentials:'same-origin'});
 if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד אותו.');
 if(resultUrl)URL.revokeObjectURL(resultUrl);
@@ -392,6 +389,18 @@ if(j.voice_url){
   if(voiceResponse.ok){voiceUrl=URL.createObjectURL(await voiceResponse.blob());$('voicePreview').src=voiceUrl;}
 }
 if(files.length){originalUrl=URL.createObjectURL(files[0]);$('originalPreview').src=originalUrl;}
+$('player').src=resultUrl;
+$('resultTitle').textContent='המיקס מוכן — מנסה להפיק סצנות AI כעת...';
+$('result').classList.add('visible');
+if(wantsVideo&&!j.video_url&&$('ai_video_consent').checked&&j.client_ai_prompt){
+ try{
+  var fromPhone=await completeAIVideoOnPhone(data.id,j.client_ai_prompt);
+  Object.assign(j,fromPhone);
+  videoReason='';
+ }catch(deviceError){
+  videoReason=(deviceError&&deviceError.message)||'שירות הווידאו החינמי אינו זמין';
+ }
+}
 if(j.video_url){
   videoReason='';
   // Keep the MP4 as a streaming URL: no need to load a large file into RAM
@@ -400,12 +409,12 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent=(j.video_mode==='ai_generated_experimental'||j.video_mode==='ai_generated_on_device')?
-   'סצנה חדשה נוצרה באמצעות AI לפי התמלול. זו המחשה משוערת: קטע קצר עשוי לחזור לאורך המיקס, ולא כל פרט בהקלטה בהכרח מוצג.' :
+ $('storyboardInfo').textContent=(String(j.video_mode||'').indexOf('ai_generated')===0)?
+   'סצנות וידאו נוצרו באמצעות AI לפי התמלול. זו המחשה משוערת: קטעי וידאו קצרים עשויים לחזור לאורך המיקס.' :
    (j.visual_coverage==='partial'?
    'נמצא צילום מתאים לחלק מהמשפטים בלבד. המיקס המקורי נשמר לכל אורכו. הסצנות האחרות עדיין לא הומחשו במדויק.':
    'צילום וידאו נע שנבחר לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול או ציורים.');
- $('videoPlayer').setAttribute('aria-label',(j.video_mode==='ai_generated_experimental'||j.video_mode==='ai_generated_on_device')?
+ $('videoPlayer').setAttribute('aria-label',(String(j.video_mode||'').indexOf('ai_generated')===0)?
    'סרטון AI ניסיוני שנוצר מן הסיפור':'סרטון מצולם מתוך הפעולות שזוהו');
  if(j.storyboard_url){
   try{
