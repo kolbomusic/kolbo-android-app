@@ -18,10 +18,11 @@ jobs:
         run: |
           for attempt in {1..32}; do
             echo "Checking deployment attempt $attempt"
-            if python karnafim-site/security_regression.py --live; then
+            if python karnafim-site/security_regression.py --live --expect-revision "$GITHUB_SHA"; then
               echo "Public routes, security headers, and sensitive-route lockdown verified."
               exit 0
             fi
             sleep 6
           done
+          echo '::error::Karnafim live site is failing safety checks or Render deploy is behind the tested Git SHA.'
           exit 1
