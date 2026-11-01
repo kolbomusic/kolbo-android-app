@@ -179,8 +179,30 @@ def create_app(config=None):
             if (options.get('ai_video_consent') and
                     meta.get('video_status') != 'done'):
                 try:
-                    from ai_video import cinematic_prompt, AIVideoUnavailable
+                    from ai_video import (cinematic_prompt, AIVideoUnavailable,
+                                          build_ai_scene_plan)
+                    scenes=build_ai_scene_plan(detected_transcript)
+                    if not scenes:
+                        raise AIVideoUnavailable('אין סצנות זיהוי דיבור להמחשה')
                     meta['client_ai_prompt']=cinematic_prompt(detected_transcript)
+                    meta['client_ai_prompts']=[item['prompt'] for item in scenes]
+                    meta['client_ai_scene_weights']=[item['weight'] for item in scenes]
+                    # Genuine timing evidence: vocal activity from the same
+                    # original-source remix. This is an estimated scene cut,
+                    # not a claim of word-level synchronization.
+                    if len(scenes)>1:
+                        aligned=align_storyboard_to_vocal({
+                            'transcript':detected_transcript,
+                            'scenes':[{'spoken':item['spoken'],
+                                       'start':0,'end':len(audio)/32000}
+                                      for item in scenes]},vocal,sr=32000)
+                        parts=aligned['scenes']
+                        lengths=[round(float(s['end'])-float(s['start']),3)
+                                 for s in parts]
+                        if min(lengths)>.6:
+                            meta['client_ai_scene_durations']=lengths
+                            meta['client_ai_timing_method']=aligned.get(
+                                'alignment','word_proportional_estimate')
                     meta['client_ai_fallback']=True
                 except AIVideoUnavailable:
                     pass
@@ -224,7 +246,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.14.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.post('/api/jobs')
     def create_job():
@@ -332,8 +354,13 @@ def create_app(config=None):
                 src.write_bytes(data)
                 inputs.append(src)
             output=root/job_id/'story.mp4'
+            cuts=job.get('client_ai_scene_durations')
+            scene_lengths=cuts if isinstance(cuts,list) and len(cuts)==len(inputs) else None
             board=combine_mobile_ai_clips(inputs,root/job_id/'mix.mp3',
-                                          output,work_dir/'encode')
+                                          output,work_dir/'encode',
+                                          scene_durations=scene_lengths)
+            board['timing_method']=(job.get('client_ai_timing_method')
+                                   if scene_lengths else 'single_clip_full_track')
             board['transcript_origin']=job.get('transcript_origin','server_original_asr')
             (root/job_id/'storyboard.json').write_text(
                 json.dumps(board,ensure_ascii=False),encoding='utf-8')
@@ -344,6 +371,9 @@ def create_app(config=None):
                     return jsonify(error='תוקף המיקס פג'),404
                 current.pop('video_error',None)
                 current.pop('client_ai_prompt',None)
+                current.pop('client_ai_prompts',None)
+                current.pop('client_ai_scene_weights',None)
+                current.pop('client_ai_scene_durations',None)
                 current.update(
                     video_status='done',
                     video_mode='ai_generated_client_fallback',
@@ -353,6 +383,7 @@ def create_app(config=None):
                     client_ai_fallback=False,
                     ai_clips_generated=board['ai_clips_generated'],
                     ai_clip_seconds=board['ai_clip_seconds'],
+                    scene_timing_method=board['timing_method'],
                     video_note='נוצרו סצנות AI לפי התמלול, בהסכמה. זו המחשה משוערת, לא שחזור מדויק של כל משפט.',
                     label='סרטון ה־AI והמיקס מוכנים')
             return jsonify(video_url='/api/jobs/'+job_id+'/video',
