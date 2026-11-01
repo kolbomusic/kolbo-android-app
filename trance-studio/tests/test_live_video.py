@@ -243,8 +243,10 @@ class GroundedVideoTests(unittest.TestCase):
             'File:Scarlet macaw flying.webm','car'))
         self.assertTrue(_matches_metadata(
             'File:Moving car in traffic.webm','car'))
-        self.assertTrue(_matches_metadata(
+        self.assertFalse(_matches_metadata(
             'File:Automobile parade.ogv','car'))
+        self.assertTrue(_matches_metadata(
+            'File:Porto Santo from a moving car.webm','moving car'))
         self.assertFalse(_matches_metadata(
             'File:Cable Car Singapore.webm','car'))
         self.assertTrue(_matches_metadata(
