@@ -42,7 +42,7 @@ def prepare_voice(x,sr):
 
 
 STYLES = ('melodic', 'psy', 'progressive', 'goa', 'acid', 'uplifting',
-          'eurodance', 'hard', 'rave', 'mixed', 'auto')
+          'eurodance', 'hard', 'rave', 'mixed', 'auto', 'israeli')
 HUMOR = ('auto', 'classic', 'cartoon', 'scratch', 'robot', 'chaos',
          'stretch', 'tape', 'pitch', 'glitch', 'vinyl', 'dj',
          'helium','monster','yo_yo','comic_roll','rewind','off')
@@ -632,11 +632,21 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     kick=sample(.32,lambda t:.78*np.sin(2*np.pi*(48*t+115*.021*(1-np.exp(-t/.021))))*np.exp(-t*13)+rng.uniform(-1,1,len(t))*.035*np.exp(-t*250))
     hat=sample(.12,lambda t:rng.uniform(-1,1,len(t))*np.exp(-t*65)*.065)
     snare=sample(.22,lambda t:(rng.uniform(-1,1,len(t))*.14*np.exp(-t*24)+.11*np.sin(2*np.pi*185*t)*np.exp(-t*32))*(1-np.exp(-t*400)))
+    # Synthetic hand-drum, not a sampled melody or recorded performance.
+    darbuka=sample(.17,lambda t:(
+        .27*np.sin(2*np.pi*(174*t-45*t*t))*np.exp(-t*29)+
+        .075*rng.uniform(-1,1,len(t))*np.exp(-t*65)))
     # Music production: stable D-minor scale and i–VI–III–VII chord cycle.
     # Timbres, rhythms and melodic phrases change while harmony remains coherent.
     cache={}
-    allowed_pc=(0,2,4,5,7,9,10)  # D natural minor pitch classes: C D E F G A Bb
-    chords=((38,(2,5,9)),(34,(10,2,5)),(41,(5,9,0)),(36,(0,4,7)))
+    # Distinctive original Israeli-folk / trance flavor uses D Freygish
+    # (Phrygian dominant), not a copyrighted popular Hebrew song.
+    if style=='israeli':
+        allowed_pc=(0,2,3,6,7,9,10)  # C D Eb F# G A Bb
+        chords=((38,(2,6,9)),(39,(3,7,10)),(43,(7,10,2)),(36,(0,3,7)))
+    else:
+        allowed_pc=(0,2,4,5,7,9,10)  # D natural minor
+        chords=((38,(2,5,9)),(34,(10,2,5)),(41,(5,9,0)),(36,(0,4,7)))
     contours=(
         (0,2,4,7,4,2,0,2),(0,4,3,2,0,2,5,4),(4,3,2,0,2,3,5,7),
         (7,5,4,2,4,2,0,2),(0,0,4,5,7,5,4,2),(2,5,7,5,4,2,0,4))
@@ -682,6 +692,18 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             raw=fundamental+.27*second+.08*third
             env=np.exp(-t*13.)
             level=.165
+        elif kind=='oud':
+            # Original plucked timbre: woody attack and natural harmonic
+            # decay, not a sample of a recorded artist.
+            raw=.84*fundamental+.32*second+.24*third
+            env=np.minimum(1.,t/.004)*np.exp(-t*9.8)
+            level=.19
+        elif kind=='reed':
+            vibrato=np.sin(2*np.pi*5.3*t)*.012
+            raw=(.68*np.sin(2*np.pi*f*t*(1.+vibrato))+
+                 .34*second+.20*third)
+            env=np.minimum(1.,t/.012)*np.clip((dur-t)/.055,0,1)
+            level=.135
         else:
             raw=fundamental+.18*second+.11*np.sin(2*np.pi*f*1.009*t)
             env=np.exp(-t*6.5)
@@ -718,6 +740,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         if style=='progressive':theme='pluck'
         if style in ('psy','goa'):theme='saw'
         if style=='uplifting':theme='bell'
+        if style=='israeli':theme='oud' if phrase%2==0 else 'reed'
         # Percussion patterns, musical bass and volume-driven section changes.
         strength={'intro':.22,'groove':.55,'build':.63,'drop':.9,
                   'breakdown':.19,'final':.98,'outro':.33}[section]
@@ -729,6 +752,12 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                 add(hat,time+beat*.75,.52,.40)
         if quarter in (1,3) and section in ('groove','build','drop','final'):
             add(snare,time,.48 if section=='groove' else .70)
+        if style=='israeli' and section in ('groove','build','drop','final'):
+            if quarter in (0,2):
+                add(darbuka,time+beat*.5,.56 if quarter==0 else .42,
+                    -.12 if quarter==0 else .13)
+            if quarter==3:
+                add(darbuka,time+beat*.75,.30,.18)
         if section=='build' and quarter==3:
             for j in range(4):
                 add(snare,time+j*beat/4,.20+j*.12)
@@ -749,7 +778,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             density=2 if section in ('drop','final') else 1
             for j in range(density):
                 step=(quarter*2+j)%8
-                scale_steps=(0,2,3,5,7,8,10,12)
+                scale_steps=(0,1,4,5,7,8,10,12) if style=='israeli' else (0,2,3,5,7,8,10,12)
                 target=74+scale_steps[motif[step]%8]-5
                 pitch=quantized_pitch(target,chord_pcs,strong=(quarter==0 and j==0))
                 wave=synth(pitch,beat*(.70 if j==0 else .35),theme)
