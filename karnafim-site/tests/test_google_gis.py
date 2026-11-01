@@ -27,11 +27,11 @@ class Response:
     def json(self):
         return {"keys": [PUB.as_dict()]}
 
-def create_token(nonce, **updates):
+def create_token(session_nonce, **updates):
     now = int(time.time())
     payload = dict(iss="https://accounts.google.com", aud=CLIENT,
                    sub="113301133011330", email="existing@gmail.com",
-                   email_verified=True, iat=now, exp=now+2400, nonce=nonce)
+                   email_verified=True, iat=now, exp=now+2400, nonce=session_nonce)
     payload.update(updates)
     token = TOKEN.encode({"alg": "RS256", "kid": "test-google-key"}, payload, PRIVATE_PEM)
     return token.decode("ascii") if isinstance(token, bytes) else token
