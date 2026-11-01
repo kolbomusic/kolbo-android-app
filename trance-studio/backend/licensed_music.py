@@ -14,7 +14,7 @@ SUPPORTED={".mp3",".wav",".ogg",".m4a"}
 
 class BackingTrackError(ValueError):pass
 
-def mix_licensed_backing(path,vocal,sr=32000):
+def mix_licensed_backing(path,vocal,sr=32000,transcript_hint='',bpm=145,humor='auto'):
     src=Path(path)
     if src.suffix.lower() not in SUPPORTED or not src.is_file():
         raise BackingTrackError("סוג קובץ המוזיקה אינו נתמך")
@@ -51,6 +51,30 @@ def mix_licensed_backing(path,vocal,sr=32000):
     gain=1.-.73*np.clip(env/.17,0,1)
     bed*=gain[:,None]
     mixed=bed+mono[:,None]*1.15
+    # Keep the story-aware comic punctuation with licensed tracks too.
+    # The custom backing replaces the original synthesizer, but it must
+    # not strip the sound design. Accents are placed after measured voice
+    # phrases, and only if there is physical space before the next phrase.
+    if humor=='auto' and transcript_hint:
+        from engine import speech_boundaries,_semantic_comedy_cue
+        from comic_stingers import create_sting
+        units=speech_boundaries(mono,sr)
+        last=-sr*5
+        count=0
+        for index,(lo,hi) in enumerate(units):
+            following=units[index+1][0] if index+1<len(units) else len(mono)
+            available=following-hi
+            if available<sr*.21 or hi-last<sr*1.5 or count>=3:
+                continue
+            cue=_semantic_comedy_cue(transcript_hint,hi/max(1,len(mono)))
+            if not cue:continue
+            one=create_sting(cue,sr,bpm,count)
+            start=min(len(mixed)-1,hi+int(sr*.025))
+            size=min(len(one),len(mixed)-start,available-int(sr*.035))
+            if size<sr*.15:continue
+            mixed[start:start+size,0]+=one[:size]*.72
+            mixed[start:start+size,1]+=one[:size]*.81
+            last=hi;count+=1
     fade=np.clip(np.arange(len(mono),dtype=np.float32)/(sr*.03),0,1)
     fade*=np.clip((len(mono)-1-np.arange(len(mono),dtype=np.float32))/(sr*.5),0,1)
     mixed*=fade[:,None]
