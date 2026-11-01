@@ -171,6 +171,19 @@ def create_app(config=None):
                                   'video_error':'לא ניתן לייצר סרטון שממחיש את המילים במדויק. המיקס נשמר, ולא ייוצר סרטון גלי קול.',
                                   'storyboard_source':'no_grounded_story',
                                   'visual_coverage':'none'}
+            # A Render Free server has one shared anonymous ZeroGPU quota.
+            # If it is exhausted, a user who explicitly opted in can try the
+            # SAME narration from their own phone's browser quota instead.
+            # Save only a bounded text-to-video prompt in this private, expiring
+            # job status; NEVER expose the original audio to a third party.
+            if (options.get('ai_video_consent') and
+                    meta.get('video_status') != 'done'):
+                try:
+                    from ai_video import cinematic_prompt, AIVideoUnavailable
+                    meta['client_ai_prompt']=cinematic_prompt(detected_transcript)
+                    meta['client_ai_fallback']=True
+                except AIVideoUnavailable:
+                    pass
             update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             app.logger.exception('Kolbo audio/video worker error')
@@ -272,6 +285,98 @@ def create_app(config=None):
             if (root/job_id/'storyboard.json').exists():
                 job['storyboard_url']='/api/jobs/'+job_id+'/storyboard'
         return jsonify(job)
+
+    @app.post('/api/jobs/<job_id>/generated-video')
+    def finalize_browser_generated_video(job_id):
+        """Authenticated, consent-only, bounded upload of a phone-generated shot.
+
+        Rendering is done on the original Render server, but anonymous AI
+        compute is requested from the phone's public Gradio quota. MP3/voice
+        downloads remain intact if an unsafe or invalid video is supplied.
+        """
+        cleanup()
+        if not re.fullmatch(r'[a-f0-9]{48}',job_id):
+            return jsonify(error='המשימה אינה תקינה'),404
+        with lock:
+            job=jobs.get(job_id)
+            if not job or job.get('state')!='done':
+                return jsonify(error='המיקס לא נמצא או שתוקפו פג'),404
+            if not job.get('client_ai_fallback') or not job.get('client_ai_prompt'):
+                return jsonify(error='לא ניתנה הרשאה ליצירת וידאו AI במכשיר'),403
+            if job.get('video_status')=='done':
+                return jsonify(error='כבר קיים סרטון מוכן'),409
+            if job.get('ai_client_busy'):
+                return jsonify(error='הסרטון נמצא כעת בעיבוד'),409
+            job['ai_client_busy']=True
+        workdir=root/job_id
+        original=workdir/'device-ai-original.mp4'
+        prepared=workdir/'device-ai-prepared.mp4'
+        result=workdir/'story.mp4'
+        try:
+            upload=request.files.get('video')
+            if not upload:
+                return jsonify(error='קובץ וידאו לא צורף'),400
+            # Read only a small movie, regardless of Content-Length or the
+            # untrusted browser-supplied name. Do not follow source URLs.
+            raw=upload.stream.read(14*1024*1024+1)
+            if len(raw)<12000 or len(raw)>14*1024*1024 or raw[4:8]!=b'ftyp':
+                return jsonify(error='קובץ הווידאו שנוצר אינו תקין או גדול מדי'),400
+            original.write_bytes(raw)
+            from live_video import _duration, _video_profile, _make_segment
+            try:
+                codec,width,height=_video_profile(original)
+                clip_seconds=_duration(original)
+                if (codec not in ('h264','hevc','vp9','vp8','av1') or
+                    not 160<=width<=1536 or not 160<=height<=1536 or
+                    not .7<=clip_seconds<=12):
+                    raise ValueError('invalid_generated_media')
+                audio_seconds=_duration(workdir/'mix.mp3')
+                if not 1<=audio_seconds<=360:
+                    raise ValueError('invalid_soundtrack_duration')
+                _make_segment(original,prepared,audio_seconds)
+                subprocess.run(['ffmpeg','-nostdin','-hide_banner','-loglevel','error',
+                    '-y','-i',str(prepared),'-i',str(workdir/'mix.mp3'),
+                    '-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac',
+                    '-b:a','160k','-shortest','-movflags','+faststart',
+                    str(result)],capture_output=True,check=True,timeout=65)
+                if (_video_profile(result)!=('h264',360,640) or
+                    abs(_duration(result)-audio_seconds)>.8 or
+                    result.stat().st_size<25000):
+                    raise ValueError('invalid_final_movie')
+            except (OSError,ValueError,RuntimeError,subprocess.SubprocessError):
+                app.logger.warning('Phone-generated AI clip failed local media validation')
+                result.unlink(missing_ok=True)
+                return jsonify(error='לא ניתן לשלב את קליפ ה־AI עם המיקס. המוזיקה נשמרה.'),422
+            board={
+                'source':'ai_generated_from_private_original_narration_on_phone',
+                'transcript_origin':job.get('transcript_origin','server_original_asr'),
+                'visual_coverage':'approximate',
+                'video_mode':'ai_generated_on_device',
+                'ai_clips_generated':1,'ai_clip_seconds':round(clip_seconds,2),
+                'audio_seconds':round(audio_seconds,2),
+                'sources':[],
+                'video_note':'קליפ AI חדש נוצר דרך המכשיר מתוך תמלול הדיבור. '
+                             'הקליפ חוזר לאורך המיקס ואינו שחזור מדויק של כל משפט.'
+            }
+            (workdir/'storyboard.json').write_text(
+                json.dumps(board,ensure_ascii=False),encoding='utf-8')
+            with lock:
+                job.update(video_status='done',video_mode='ai_generated_on_device',
+                           visual_coverage='approximate',visual_beats=1,
+                           ai_clips_generated=1,ai_clip_seconds=round(clip_seconds,2),
+                           video_note=board['video_note'])
+                job.pop('client_ai_prompt',None)
+                job.pop('client_ai_fallback',None)
+            return jsonify(video_status='done',video_mode='ai_generated_on_device',
+                visual_coverage='approximate',video_note=board['video_note'],
+                video_url='/api/jobs/'+job_id+'/video',
+                video_preview_url='/api/jobs/'+job_id+'/video_preview',
+                storyboard_url='/api/jobs/'+job_id+'/storyboard'),200
+        finally:
+            original.unlink(missing_ok=True)
+            prepared.unlink(missing_ok=True)
+            with lock:
+                if job_id in jobs:jobs[job_id]['ai_client_busy']=False
 
     @app.get('/api/jobs/<job_id>/audio')
     def download(job_id):
