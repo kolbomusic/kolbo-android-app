@@ -69,6 +69,9 @@ public final class MainActivity extends Activity {
     private TextView offlineDetails;
     private final Handler mainHandler=new Handler(Looper.getMainLooper());
     private long navigationId=0;
+    private long incomingVersion=0;
+    private long lastImportedVersion=-1;
+    private long lastImportNavigation=-1;
     private int automaticRetries=0;
     private boolean pageReady;
     private boolean pageLoadFailed;
@@ -345,6 +348,7 @@ public final class MainActivity extends Activity {
             }
         }
         incoming.clear();
+        incomingVersion++;
         long totalBytes=0;
         for(Uri uri:candidates){
             if(incoming.size()>=4)break;
@@ -388,6 +392,9 @@ public final class MainActivity extends Activity {
         ArrayList<Uri> snapshot;
         synchronized(incoming){snapshot=new ArrayList<>(incoming);}
         if(snapshot.isEmpty())return;
+        if(lastImportedVersion==incomingVersion&&lastImportNavigation==navigationId)return;
+        lastImportedVersion=incomingVersion;
+        lastImportNavigation=navigationId;
         JSONArray names=new JSONArray();
         for(int i=0;i<snapshot.size();i++)names.put(audioName(snapshot.get(i),i));
         // WhatsApp sharing imports clips only. Creation is started only by
