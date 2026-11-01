@@ -72,7 +72,10 @@ def check(url,ids):
   # urllib's HTTP request line must be ASCII. Archive URLs can contain
   # raw Hebrew path characters; percent-encode them before making the request.
   # Preserve existing %-escapes and URL delimiters to avoid double encoding.
-  encoded_url=urllib.parse.quote(url,safe=":/%?&=#+,;@!
+  encoded_url=urllib.parse.quote(url, safe="/:%?&=#+,;@._~-")
+  request=urllib.request.Request(encoded_url, headers={
+    "User-Agent":USER_AGENT, "Accept":"text/html,application/xhtml+xml;q=0.9,*/*;q=0.5"
+  }, method="GET")
   try:
     with urllib.request.urlopen(request,timeout=TIMEOUT) as response:
       code=response.status
