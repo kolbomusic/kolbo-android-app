@@ -55,41 +55,67 @@ def create_sting(style,sr=32000,bpm=145,variant=0):
     signal*=env
     signal=np.asarray(np.tanh(signal*1.1),dtype=np.float32)
     peak=float(np.max(np.abs(signal)))
-    if peak>.001:signal*=.30/peak
+    # Make the accent clearly audible on smartphone speakers, while the
+    # final mix is still peak-limited. The previous 0.30 peak, followed
+    # by .72 gain, often disappeared under bass and vocals.
+    if peak>.001:signal*=.47/peak
     return signal
 
-def add_comic_stings(mix,mask,sr,bpm,cue_for_fraction,max_stings=3):
-    """Add select Foley only in existing voice-FX inserts, not over words."""
+def add_comic_stings(mix,mask,sr,bpm,cue_for_fraction,max_stings=4):
+    """Dynamic, audible cartoon punctuation on actual beat-fit speech FX.
+
+    Follow the *measured* FX mask and keep every accent entirely inside that
+    slot. First match an explicit Hebrew story cue; if there is none, classify
+    the already transformed vocal sample by energy/brightness to choose a
+    subtle musical flourish. Silence and unrelated narration are not
+    described as an identified joke or event.
+    """
     a=np.asarray(mix,dtype=np.float32)
     m=np.asarray(mask,dtype=np.float32)
     if a.ndim!=2 or a.shape[1]!=2 or len(a)!=len(m):
         raise ValueError("invalid stereo and FX mask dimensions")
-    if max_stings<=0 or len(m)<sr*.5:
-        return a
-    # Rising edges indicate the start of a separate, already beat-fit vocal
-    # effect. We do not force timing from an unreliable Hebrew ASR estimate.
+    if max_stings<=0 or len(m)<sr*.5:return a
     starts=np.flatnonzero((m[1:]>.5)&(m[:-1]<=.5))+1
     if m[0]>.5:starts=np.concatenate(([0],starts))
     if not len(starts):return a
-    out=a.copy()
-    used=0
-    previous=-sr*10
+    out=a.copy();used=0;previous=-sr*10
     for start in starts:
         if used>=max_stings:break
-        if start-previous<sr*1.5:continue
+        if start-previous<sr*1.45:continue
+        # This clip is a separate processed syllable. Never spill music or
+        # Foley outside it onto the next word of original WhatsApp speech.
+        end_candidates=np.flatnonzero(m[start:]<=.5)
+        stop=start+int(end_candidates[0]) if len(end_candidates) else len(m)
+        at=int(start+max(1,int(.035*sr)))
+        if stop-at<int(.16*sr):continue
         cue=cue_for_fraction(float(start)/max(1,len(m)))
-        if not cue:continue
+        if not cue:
+            # No made-up animal/noise. Only a musically appropriate accent
+            # selected by the acoustic contour of the isolated voice hook.
+            window=a[start:min(stop,start+int(.22*sr))]
+            energy=float(np.sqrt(np.mean(window*window))) if len(window) else 0.
+            if energy<.009:continue
+            l=np.abs(np.fft.rfft(window[:,0]))
+            centroid=float(np.sum(np.arange(len(l))*l)/max(.00001,np.sum(l)))/max(1,len(l))
+            cycle=("comic_roll","yo_yo","tape","helium")
+            cue=cycle[(used+(1 if centroid>.30 else 0)+(1 if energy>.22 else 0))%len(cycle)]
         sound=create_sting(cue,sr,bpm,used)
         if not len(sound):continue
-        # Accent sits just after the beginning of a spoken-word FX, to
-        # underline the punchline without erasing the original speech.
-        offset=int(.06*sr)
-        at=min(len(out)-1,int(start+offset))
-        end=min(len(out),at+len(sound))
-        if end<=at:continue
-        mid=sound[:end-at]
-        out[at:end,0]+=mid*.72
-        out[at:end,1]+=mid*.81
-        used+=1
-        previous=start
+        size=min(len(sound),stop-at)
+        if size<int(.14*sr):continue
+        sound=sound[:size].copy()
+        fade=min(int(.042*sr),size//4)
+        if fade:
+            sound[-fade:]*=np.linspace(1.,0.,fade,endpoint=True,dtype=np.float32)
+        # Momentarily push the backing into the background, then insert the
+        # punchline in both channels. This is true local ducking, *not*
+        # making the complete song quieter or clipping the vocal track.
+        release=np.minimum(1.,np.arange(size,dtype=np.float32)/max(1,int(.045*sr)))
+        local_gain=.63+.12*release
+        out[at:at+size]*=local_gain[:,None]
+        out[at:at+size,0]+=sound*.96
+        out[at:at+size,1]+=sound*1.03
+        # Limit local accents only; leave untouched words bit-for-bit intact.
+        out[at:at+size]=np.tanh(out[at:at+size]*1.12)*.95
+        used+=1;previous=start
     return out
