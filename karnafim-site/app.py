@@ -9,9 +9,13 @@ from google_identity import enabled as google_ready, install_google_login
 app=Flask(__name__)
 app.secret_key=os.environ['SECRET_KEY']
 app.config.update(SESSION_COOKIE_NAME="karnafim_oidc_session",SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=timedelta(hours=6),MAX_CONTENT_LENGTH=2*1024*1024,MAX_FORM_MEMORY_SIZE=64*1024,MAX_FORM_PARTS=25,TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"])
-# Read-only security mode must not depend on the private database being reachable.
-# Enabling the community again requires an explicit restart with maintenance disabled.
-READ_ONLY_BOOT=os.environ.get("KARNAFIM_MAINTENANCE","1")=="1"
+# Fail closed while Google Safe Browsing flags the site. Accidentally changing
+# maintenance alone must not restore private accounts, uploads or message routes.
+# Explicitly release ONLY after Google clearance and security regressions pass:
+# KARNAFIM_MAINTENANCE=0 AND KARNAFIM_SAFETY_RELEASE_APPROVED=1.
+SAFETY_RELEASE_APPROVED=os.environ.get("KARNAFIM_SAFETY_RELEASE_APPROVED","0")=="1"
+READ_ONLY_BOOT=not (os.environ.get("KARNAFIM_MAINTENANCE","1")=="0"
+                    and SAFETY_RELEASE_APPROVED)
 DB=os.environ.get("DATABASE_URL","") if READ_ONLY_BOOT else os.environ["DATABASE_URL"]
 
 @app.before_request
