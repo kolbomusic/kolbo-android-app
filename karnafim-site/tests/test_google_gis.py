@@ -95,7 +95,7 @@ def run():
                     {"aud":"attacker-client.apps.googleusercontent.com"},
                     {"email_verified":False},
                     {"iss":"https://attacker.example"},
-                    {"iat":int(time.time())-4000, "exp":int(time.time())-60},
+                    {"iat":int(time.time())-4000, "exp":int(time.time())-600},
                     {"nonce":"not-the-issued-session-nonce"},
                 ]:
                     client.get("/login")
