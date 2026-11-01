@@ -103,17 +103,18 @@ class ApiTests(unittest.TestCase):
                 server=create_app({'TESTING':True,'JOB_DIR':folder,
                                    'MAX_CONTENT_LENGTH':64*1024*1024})
                 client=server.test_client()
+                too_big=io.BytesIO(b'0'*(45*1024*1024+1))
+                response=client.post('/api/jobs',data={
+                    'audio':(too_big,'oversized.mp4'),'make_video':'on'})
+                self.assertEqual(response.status_code,400)
+                self.assertIn('45MB',response.json['error'])
                 video=io.BytesIO(b'0'*(15*1024*1024+1024))
                 response=client.post('/api/jobs',data={
                     'audio':(video,'VID-WhatsApp.mp4'),'make_video':'on'})
                 self.assertEqual(response.status_code,202,
                                  response.get_data(as_text=True))
                 executor.return_value.submit.assert_called_once()
-                too_big=io.BytesIO(b'0'*(45*1024*1024+1))
-                response=client.post('/api/jobs',data={
-                    'audio':(too_big,'oversized.mp4'),'make_video':'on'})
-                self.assertEqual(response.status_code,400)
-                self.assertIn('45MB',response.json['error'])
+
 
     def test_long_recording_is_rejected_before_render(self):
         import subprocess
