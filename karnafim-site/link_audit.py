@@ -88,7 +88,11 @@ def path_type(url):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--live",action="store_true")
+    parser.add_argument("--expect-revision",default=None,
+                        help="Exact Git commit SHA that must be deployed before accepting live links")
     args=parser.parse_args()
+    if args.expect_revision and (not args.live or not re.fullmatch(r"[a-fA-F0-9]{40}",args.expect_revision)):
+        parser.error("--expect-revision requires --live and a full 40-character Git SHA")
     sources=repo_sources()
     persons=memorial_people()
     ids=[x["id"] for x in sources]
@@ -105,7 +109,21 @@ def main():
     health_code,_,_,h=request("/health")
     if health_code!=200:
         print("FAIL health",health_code,h[:150]);return 2
-    locked='"read_only"' in h
+    try:
+        health=json.loads(h)
+    except (ValueError, TypeError):
+        print("FAIL health is not a JSON object");return 2
+    if not isinstance(health,dict):
+        print("FAIL health response must be a JSON object");return 2
+    if args.expect_revision:
+        expected=args.expect_revision[:12].lower()
+        deployed=health.get("revision","unknown")
+        if deployed!=expected:
+            print("FAIL deployment drift: live SHA",deployed,"expected",expected)
+            return 3
+    locked=health.get("access")=="read_only"
+    if health.get("access") not in ("read_only","community"):
+        print("FAIL health access mode missing or invalid");return 2
     pages=list(MUST_HAVE)
     if locked:pages=[p for p in pages if p not in ("/help",)]
     pages += [f"/source/{x['id']}" for x in sources]
