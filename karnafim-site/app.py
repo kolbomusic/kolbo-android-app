@@ -45,6 +45,14 @@ def security_hold():
 
 @app.after_request
 def harden_responses(resp):
+ # Verification must remain available after the site leaves read-only mode;
+ # otherwise Search Console can revoke ownership on its periodic recheck.
+ if request.path=="/" and resp.status_code==200 and resp.mimetype=="text/html":
+  token=os.environ.get("KARNAFIM_GSC_VERIFICATION","").strip()
+  if token and re.fullmatch(r"[A-Za-z0-9_-]{20,256}",token):
+   data=resp.get_data(as_text=True)
+   if 'name="google-site-verification"' not in data and "</head>" in data:
+    resp.set_data(data.replace("</head>",'<meta name="google-site-verification" content="'+token+'"></head>',1))
  resp.headers.setdefault("X-Content-Type-Options","nosniff")
  resp.headers.setdefault("X-Frame-Options","DENY")
  resp.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
