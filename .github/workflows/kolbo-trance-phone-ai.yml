@@ -35,8 +35,8 @@ jobs:
           from pathlib import Path
           s=Path('trance-studio/web/studio.html').read_text('utf-8')
           assert '<script src="/studio-ai-fallback.js"></script>' in s
-          assert "KolboAIFallback.generate(data.id,message)" in s
-          assert "client_ai_fallback_available" in s
+          assert "KolboAIFallback.generate(jobId,message,prompt)" in s
+          assert "client_ai_prompt" in s
           assert "'ai_video_consent'" in s
           j=s.rsplit('<script>',1)[1].split('</script>',1)[0]
           Path('/tmp/kolbo-phone-ui.js').write_text(j,'utf-8')
