@@ -16,6 +16,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'numpy>=1.26,<3' 'scipy>=1.13,<2'
           ffmpeg -nostdin -v error -y -f lavfi \
             -i 'sine=frequency=230:sample_rate=48000:duration=6' \
             -af 'volume=0.22' -ar 48000 -ac 1 \
