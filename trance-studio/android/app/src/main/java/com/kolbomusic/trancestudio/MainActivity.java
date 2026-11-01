@@ -54,7 +54,8 @@ public final class MainActivity extends Activity {
     private static final String SITE="https://"+HOST;
     private static final String STUDIO=SITE+"/studio";
     private static final int PICK_AUDIO=119;
-    private static final long MAX_FILE_BYTES=15L*1024L*1024L;
+    private static final long MAX_AUDIO_BYTES=15L*1024L*1024L;
+    private static final long MAX_VIDEO_BYTES=45L*1024L*1024L;
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final List<Uri> incoming=Collections.synchronizedList(new ArrayList<>());
     private WebView webView;
@@ -165,7 +166,8 @@ public final class MainActivity extends Activity {
                         uri=incoming.get(index);
                     }
                     String type=getContentResolver().getType(uri);
-                    if(type==null||type.isEmpty())type="audio/ogg";
+                    if(type==null||type.isEmpty()||"application/octet-stream".equals(type))
+                        type=isVideoUri(uri)?"video/mp4":"audio/ogg";
                     InputStream stream=getContentResolver().openInputStream(uri);
                     if(stream==null)return failStream();
                     Map<String,String> headers=new HashMap<>();
@@ -221,10 +223,20 @@ public final class MainActivity extends Activity {
         for(Uri uri:candidates){
             if(incoming.size()>=4)break;
             if(!"content".equals(uri.getScheme()))continue;
-            if(contentLength(uri)>MAX_FILE_BYTES)continue;
+            if(contentLength(uri)>(isVideoUri(uri)?MAX_VIDEO_BYTES:MAX_AUDIO_BYTES))continue;
             incoming.add(uri);
         }
-        if(!candidates.isEmpty()&&incoming.isEmpty())toast("הקובץ המשותף גדול מדי או אינו נתמך");
+        if(!candidates.isEmpty()&&incoming.isEmpty())
+            toast("סרטון מעל 45MB או הקלטה מעל 15MB אינם נתמכים. אפשר לשתף סרטוני MP4 מ־WhatsApp.");
+    }
+    private boolean isVideoUri(Uri uri){
+        String mime=getContentResolver().getType(uri);
+        if(mime!=null&&mime.toLowerCase(Locale.ROOT).startsWith("video/"))return true;
+        String name=null;
+        try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){
+            if(c!=null&&c.moveToFirst())name=c.getString(0);
+        }catch(Exception ignored){}
+        return name!=null&&name.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|3gp|3gpp|mov)$");
     }
     private long contentLength(Uri uri){
         try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.SIZE},null,null,null)){
@@ -232,7 +244,7 @@ public final class MainActivity extends Activity {
         }catch(Exception ignored){}
         return 0;
     }
-    private String audioName(Uri uri,int i){
+    private String sharedName(Uri uri,int i){
         String name=null;
         try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){
             if(c!=null&&c.moveToFirst())name=c.getString(0);
@@ -240,18 +252,20 @@ public final class MainActivity extends Activity {
         if(name!=null){
             name=name.replaceAll("[^\\p{L}\\p{N}._ -]","_");
             if(name.length()>70)name=name.substring(name.length()-70);
-            if(name.toLowerCase(Locale.ROOT).matches(".*\\.(opus|ogg|oga|mp3|m4a|mp4|wav|webm|flac|aac)$"))return name;
+            if(name.toLowerCase(Locale.ROOT).matches(".*\\.(opus|ogg|oga|mp3|m4a|mp4|wav|webm|flac|aac|3gp|3gpp|mov)$"))return name;
         }
         String mime=getContentResolver().getType(uri);
-        String ext=mime!=null&&mime.contains("mpeg")?".mp3":mime!=null&&mime.contains("mp4")?".m4a":".opus";
-        return "WhatsApp-Voice-"+(i+1)+ext;
+        boolean video=isVideoUri(uri);
+        String ext=video?".mp4":mime!=null&&mime.contains("mpeg")?".mp3":
+                mime!=null&&mime.contains("mp4")?".m4a":".opus";
+        return (video?"WhatsApp-Video-":"WhatsApp-Voice-")+(i+1)+ext;
     }
     private void importIncoming(){
         ArrayList<Uri> snapshot;
         synchronized(incoming){snapshot=new ArrayList<>(incoming);}
         if(snapshot.isEmpty())return;
         JSONArray names=new JSONArray();
-        for(int i=0;i<snapshot.size();i++)names.put(audioName(snapshot.get(i),i));
+        for(int i=0;i<snapshot.size();i++)names.put(sharedName(snapshot.get(i),i));
         // WhatsApp sharing imports clips only. Creation is started only by
         // an explicit press on the web form Create button, never by Android.
         // Assemble the import script as a Java StringBuilder: protects the
@@ -262,7 +276,8 @@ public final class MainActivity extends Activity {
                 .append(";var clips=[];")
                 .append("for(var i=0;i<names.length;i++){var r=await fetch('/native-shared-audio/'+i,{cache:'no-store'});")
                 .append("if(!r.ok)throw Error('קובץ לא זמין');var b=await r.blob();")
-                .append("clips.push(new File([b],names[i],{type:b.type||'audio/ogg'}));}")
+                .append("var isVideo=/\\.(mp4|webm|3gp|3gpp|mov)$/i.test(names[i])||b.type.indexOf('video/')===0;")
+                .append("clips.push(new File([b],names[i],{type:b.type||(isVideo?'video/mp4':'audio/ogg')}));}")
                 .append("if(window.kolboImportSharedAudio)window.kolboImportSharedAudio(clips);")
                 .append("}catch(e){console.error('Import from WhatsApp',e);}})();")
                 .toString();
