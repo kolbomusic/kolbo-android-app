@@ -40,11 +40,11 @@ ACTIONS=(
     ("donkey_eat",("חמור","חמורה","חמורים"),("אוכל","אוכלת","אכל","אכלה","לועס","לועסת"),"donkey eating"),
     ("dog_run",("כלב","כלבה","כלבים"),("רץ","רצה","רצים","רצות"),"dog running"),
     ("bird_fly",("ציפור","ציפורים","יונה","עורב"),("עפה","עף","עפים","עפות","עופפת","טסה"),"bird flying"),
-    ("baby_cry",("תינוק","תינוקת","פעוט","פעוטה"),("בוכה","בכים","בוכים","בכיתי","בכה","בכתה"),"baby crying"),
+    ("baby_cry",("תינוק","תינוקת","פעוט","פעוטה"),("בוכה","בוכים","בכיתי","בכה","בכתה"),"baby crying"),
     ("person_laugh",("איש","אישה","בחור","בחורה","ילד","ילדה","אני","אנחנו"),("צוחק","צוחקת","צחק","צחקה","צחקתי","צוחקים"),"person laughing"),
     ("person_cry",("איש","אישה","בחור","בחורה","ילד","ילדה","אני"),("בוכה","בוכים","בכיתי","בכה","בכתה"),"person crying"),
     ("person_sing",("איש","אישה","בחור","בחורה","ילד","ילדה","אני","אנחנו"),("שר","שרה","שרים","שרות","לשיר","שרתי","שרנו"),"person singing"),
-    ("person_cook",("טבח","טבחית","איש","אישה","אמא","אבא","אני"),("מבשל","מבשלת","בישל","בישלה","מכין","מכינה","אופה","מטגן"),"person cooking"),
+    ("person_cook",("טבח","טבחית","איש","אישה","אמא","אבא","אני"),("מבשל","מבשלת","בישל","בישלה","אופה","מטגן"),"person cooking"),
 )
 # Explicit subject-only visuals: only if the utterance names an actual place
 # and no distinct unsupported action. Avoid interpreting "לבוא" as "love".
@@ -255,7 +255,13 @@ def _matches_metadata(title,query):
              "walking":("walking","walks","walk"),
              "barking":("barking","barks","bark"),
              "feeding":("feeding","feeds","feed"),
-             "swimming":("swimming","swims","swim")}
+             "swimming":("swimming","swims","swim"),
+             "laughing":("laughing","laughs","laugh","laughed"),
+             "crying":("crying","cries","cry","cried"),
+             "singing":("singing","sings","sing","sang"),
+             "cooking":("cooking","cooks","cook"),
+             "flying":("flying","flies","fly"),
+             "running":("running","runs","run")}
     return all(any(word in title for word in aliases.get(token,(token,)))
                for token in keywords)
 
