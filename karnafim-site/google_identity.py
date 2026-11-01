@@ -15,6 +15,7 @@ import secrets
 import time
 import hmac
 import html
+import threading
 import requests
 
 from authlib.jose import JsonWebToken, JoseError
@@ -98,18 +99,41 @@ def gis_button_html():
     )
 
 
+# A short in-process cache prevents an outbound request on *every* attempted
+# sign-in. Stale certificates are never used past expiry; a failed fetch leaves
+# login closed rather than accepting a token without signature verification.
+_GOOGLE_JWKS_CACHE = {"keys": None, "expires_at": 0.0}
+_GOOGLE_JWKS_LOCK = threading.RLock()
+
+
+def _get_google_jwks():
+    now = time.monotonic()
+    with _GOOGLE_JWKS_LOCK:
+        if _GOOGLE_JWKS_CACHE["keys"] and now < _GOOGLE_JWKS_CACHE["expires_at"]:
+            return _GOOGLE_JWKS_CACHE["keys"]
+        response = requests.get(
+            "https://www.googleapis.com/oauth2/v3/certs",
+            headers={"Accept": "application/json"}, timeout=7
+        )
+        response.raise_for_status()
+        if len(response.content) > 100000:
+            raise ValueError("JWKS too large")
+        keys = response.json()
+        if not isinstance(keys, dict) or not isinstance(keys.get("keys"), list) or not 1 <= len(keys["keys"]) <= 20:
+            raise ValueError("Invalid Google public keys")
+        cache_control = getattr(response, "headers", {}).get("Cache-Control", "")
+        max_age = re.search(r"(?:^|,)\\s*max-age=(\\d+)(?:,|$)", cache_control, re.I)
+        ttl = min(300, max(30, int(max_age.group(1)))) if max_age else 120
+        _GOOGLE_JWKS_CACHE["keys"] = keys
+        _GOOGLE_JWKS_CACHE["expires_at"] = time.monotonic() + ttl
+        return keys
+
+
 def verify_google_gis_token(raw_token, client_id):
-    """Verify Google's RSA signature and expiry against Google's HTTPS JWKS."""
+    """Verify Google's RSA signature and expiry against fresh public JWKS."""
     if not isinstance(raw_token, str) or not 50 < len(raw_token) <= 8192:
         raise ValueError("Malformed ID token")
-    response = requests.get("https://www.googleapis.com/oauth2/v3/certs",
-                            headers={"Accept": "application/json"}, timeout=7)
-    response.raise_for_status()
-    if len(response.content) > 100000:
-        raise ValueError("JWKS too large")
-    keys = response.json()
-    if not isinstance(keys, dict) or not isinstance(keys.get("keys"), list) or not 1 <= len(keys["keys"]) <= 20:
-        raise ValueError("Invalid Google public keys")
+    keys = _get_google_jwks()
     # RS256 only, reject HS256, none, and token-key algorithm confusion.
     claims = JsonWebToken(["RS256"]).decode(raw_token, keys)
     claims.validate(leeway=60)
