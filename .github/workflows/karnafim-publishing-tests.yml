@@ -22,6 +22,8 @@ jobs:
         run: python -m compileall -q karnafim-site
       - name: Test story, event and photo publishing without production database
         run: python karnafim-site/tests/test_publish.py
+      - name: Verify Google OIDC and removal of local credential forms
+        run: python karnafim-site/tests/test_google_identity.py
       - name: Verify moderation engine safety boundaries
         run: python karnafim-site/tests/test_moderation.py
       - name: Verify page accessibility landmarks
