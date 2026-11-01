@@ -44,7 +44,18 @@ MAX_SCENES = 2
 
 def _actors_in(text):
     words=set(HEBREW_WORDS.findall(text))
-    return [name for name,forms in ACTORS if words.intersection(forms)]
+    # Hebrew joins conjunctions to the next noun: "והילד", "ולמשאית",
+    # "בהחמור". Missing this produces incorrect pronoun resolution; e.g.
+    # "האיש והילד... הוא" is genuinely ambiguous, not certainly the man.
+    expanded=set(words)
+    all_forms={v for _,forms in ACTORS for v in forms}
+    for word in words:
+        if len(word)>=3 and word[0] in "ובלהמכ" and word[1:] in all_forms:
+            expanded.add(word[1:])
+        if len(word)>=4 and word[:2] in ("וה","ול","וב","מה","בה","לה"):
+            if word[2:] in all_forms:
+                expanded.add(word[2:])
+    return [name for name,forms in ACTORS if expanded.intersection(forms)]
 
 
 def _clauses(transcript):
@@ -92,7 +103,7 @@ def plan_narration(transcript,max_scenes=MAX_SCENES):
             # A new named subject is a sensible fresh shot, provided both
             # resulting scenes keep a reasonable amount of spoken material.
             balance=1-abs(left-right)/max(1,total)
-            quality=balance+(0.26 if new_actor and min(left,right)>=2 else 0)
+            quality=balance+(0.95 if new_actor and min(left,right)>=2 else 0)
             cuts.append((quality,i))
             previous_actors+=_actors_in(clauses[i-1])
         cut=max(cuts,key=lambda x:(x[0],-x[1]))[1]
