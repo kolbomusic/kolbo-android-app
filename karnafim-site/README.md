@@ -10,11 +10,11 @@ Google Safe Browsing currently flags the `karnafim-community-46.onrender.com` ho
 
 - `KARNAFIM_MAINTENANCE=0`
 - `KARNAFIM_SAFETY_RELEASE_APPROVED=1`
-- Google OAuth must be explicitly enabled and pass client ID/secret configuration checks (`KARNAFIM_GOOGLE_AUTH_ENABLED=1`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
+- Google identity must be explicitly enabled and validated. Classic mode (`KARNAFIM_GOOGLE_AUTH_MODE=oauth`) requires a confidential `GOOGLE_CLIENT_SECRET`. Google Identity Services (`KARNAFIM_GOOGLE_AUTH_MODE=gis`) uses Google's signed ID token and public JWKS and requires only a valid `GOOGLE_CLIENT_ID`, but still requires the `KARNAFIM_GOOGLE_AUTH_ENABLED=1` flag and all safety-release gates.
 
 If any condition is missing or invalid, the server boots read-only without reading the private database. Never set the release-approval variable before a verified clean Google Safe Browsing classification and passing security regression tests. The release flag is an operator approval, *not* an automatic Google API status check.
 
-Google OAuth also separately requires `KARNAFIM_GOOGLE_AUTH_ENABLED=1`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` injected privately in Render; this must only happen once the host is confirmed safe. The OAuth redirect URI is `https://karnafim-community-46.onrender.com/auth/google/callback`. Never commit secrets or display them in logs.
+Staged GIS mode uses the existing Google Web client ID and verified Google RS256 ID token, Google's public JWKS, double-submit cookie CSRF, one-time session nonce, issuer, audience, subject, expiry and verified-email checks. Google's button posts securely to the existing configured redirect `https://karnafim-community-46.onrender.com/auth/google/callback`; no extra OAuth client secret is required. The default remains classic confidential OAuth until the operator explicitly switches to GIS. **Do not enable either method while Chrome warns about this host.** Run `python karnafim-site/tests/test_google_gis.py` to verify local cryptography and forgery defenses. An actual Google login must still be tested after Safe Browsing clearance. Never commit secrets or display them in logs.
 
 Set `SECRET_KEY`, `DATABASE_URL` and `ADMIN_EMAIL` privately. Admins and other members must be approved in the DB; Google verifies identity, not military service. Do not display personal details or contact information without member opt-in.
 
