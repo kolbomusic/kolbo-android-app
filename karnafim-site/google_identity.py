@@ -122,7 +122,7 @@ def _get_google_jwks():
         if not isinstance(keys, dict) or not isinstance(keys.get("keys"), list) or not 1 <= len(keys["keys"]) <= 20:
             raise ValueError("Invalid Google public keys")
         cache_control = getattr(response, "headers", {}).get("Cache-Control", "")
-        max_age = re.search(r"(?:^|,)\\s*max-age=(\\d+)(?:,|$)", cache_control, re.I)
+        max_age = re.search(r"(?:^|,)\s*max-age=(\d+)(?:,|$)", cache_control, re.I)
         ttl = min(300, max(30, int(max_age.group(1)))) if max_age else 120
         _GOOGLE_JWKS_CACHE["keys"] = keys
         _GOOGLE_JWKS_CACHE["expires_at"] = time.monotonic() + ttl
