@@ -8,6 +8,8 @@ on:
     paths:
       - 'trance-studio/android/**'
       - 'trance-studio/web/studio.html'
+      - 'trance-studio/backend/live_video.py'
+      - 'trance-studio/tests/test_live_video.py'
       - '.github/workflows/kolbo-trance-android.yml'
 permissions:
   contents: write
