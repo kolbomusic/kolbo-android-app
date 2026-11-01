@@ -65,9 +65,11 @@ def create_app(config=None):
                     detected_transcript,transcript_complete=transcribe_original_files(
                         paths,progress=lambda label:update(job_id,label=label))
                     detected_origin='server_original_asr'
-                except (OSError,ValueError,RuntimeError) as exc:
+                except Exception as exc:
+                    # Transcription is a best-effort subtask. A decoder/library
+                    # incompatibility must NEVER destroy the finished MP3.
                     asr_recovery_error=str(exc)[:180]
-                    app.logger.warning('Original-file ASR recovery unavailable: %s',type(exc).__name__)
+                    app.logger.exception('Original-file ASR failed; keeping the requested audio job alive')
             clips=[load_audio(p) for p in paths]
             audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes')}
             audio,vocal=render_mix(clips,**audio_options,return_voice=True,
