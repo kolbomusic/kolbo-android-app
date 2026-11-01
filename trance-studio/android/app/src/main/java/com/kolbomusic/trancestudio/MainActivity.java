@@ -32,6 +32,8 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.FrameLayout;
+import android.webkit.WebResourceError;
 
 import org.json.JSONArray;
 
@@ -62,6 +64,12 @@ public final class MainActivity extends Activity {
     private WebView webView;
     private ProgressBar loading;
     private LinearLayout offlinePanel;
+    private LinearLayout startupPanel;
+    private TextView startupMessage;
+    private final Handler mainHandler=new Handler(Looper.getMainLooper());
+    private long navigationId=0;
+    private int automaticRetries=0;
+    private boolean pageReady;
     private boolean pageLoadFailed;
     private android.webkit.ValueCallback<Uri[]> fileCallback;
 
@@ -76,8 +84,38 @@ public final class MainActivity extends Activity {
         loading=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
         loading.setIndeterminate(true);
         root.addView(loading,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,5));
+        FrameLayout stage=new FrameLayout(this);
+        root.addView(stage,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
         webView=new WebView(this);
-        root.addView(webView,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
+        webView.setBackgroundColor(Color.rgb(24,16,39));
+        stage.addView(webView,new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
+        startupPanel=new LinearLayout(this);
+        startupPanel.setOrientation(LinearLayout.VERTICAL);
+        startupPanel.setGravity(Gravity.CENTER);
+        startupPanel.setPadding(36,50,36,50);
+        startupPanel.setBackgroundColor(Color.rgb(24,16,39));
+        TextView startupTitle=new TextView(this);
+        startupTitle.setText("Kolbo Trance Story");
+        startupTitle.setTextColor(Color.WHITE);
+        startupTitle.setTextSize(25f);
+        startupTitle.setGravity(Gravity.CENTER);
+        startupPanel.addView(startupTitle,new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        ProgressBar spinner=new ProgressBar(this);
+        LinearLayout.LayoutParams spinnerParams=new LinearLayout.LayoutParams(72,72);
+        spinnerParams.gravity=Gravity.CENTER;
+        spinnerParams.setMargins(0,30,0,20);
+        startupPanel.addView(spinner,spinnerParams);
+        startupMessage=new TextView(this);
+        startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
+        startupMessage.setTextColor(Color.rgb(228,208,244));
+        startupMessage.setTextSize(18f);
+        startupMessage.setGravity(Gravity.CENTER);
+        startupPanel.addView(startupMessage,new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        stage.addView(startupPanel,new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
         offlinePanel=new LinearLayout(this);
         offlinePanel.setOrientation(LinearLayout.VERTICAL);
         offlinePanel.setGravity(Gravity.CENTER);
@@ -102,9 +140,9 @@ public final class MainActivity extends Activity {
         retry.setText("נסה שוב להתחבר");
         retry.setAllCaps(false);
         retry.setTextSize(16f);
-        retry.setOnClickListener(v->webView.loadUrl(STUDIO));
+        retry.setOnClickListener(v->beginLoad(true));
         offlinePanel.addView(retry,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addView(offlinePanel,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
+        stage.addView(offlinePanel,new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         WebSettings settings=webView.getSettings();
         settings.setJavaScriptEnabled(true);
