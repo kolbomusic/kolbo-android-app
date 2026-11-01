@@ -44,11 +44,15 @@ class Links(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.links=[]
+        self.images=[]
         self.h1=0
         self.text=[]
     def handle_starttag(self, tag, attrs):
         attributes=dict(attrs)
         if tag=="a" and attributes.get("href"):self.links.append(attributes["href"])
+        if tag=="img":
+            if attributes.get("src"):self.images.append(attributes["src"])
+            if not (attributes.get("alt") or "").strip():self.images.append("__missing_alt__")
         if tag=="h1":self.h1+=1
     def handle_data(self, data):
         self.text.append(data)
@@ -115,7 +119,8 @@ def main():
         meaningful=len(" ".join(parser.text).strip())
         expected=MUST_HAVE.get(path)
         has_h1=parser.h1>0
-        ok=code==200 and meaningful>=75 and has_h1 and (not expected or expected in document)
+        ok=(code==200 and meaningful>=75 and has_h1 and (not expected or expected in document)
+            and "__missing_alt__" not in parser.images)
         if path.startswith("/source/"):
             item=sources[int(path.split("/")[-1])-1]
             direct=html.escape(item["url"],quote=True)
@@ -125,7 +130,15 @@ def main():
             person=next(p for p in persons if path.endswith("/"+p["slug"]))
             ok=ok and (person["official"] in document or html.escape(person["official"]) in document)
         if not ok:findings.append({"path":path,"status":code,"bodyChars":meaningful,"h1":parser.h1,"problem":"missing_or_incomplete_content"})
-        if code==200:crawled[path]=parser.links
+        if code==200:
+            crawled[path]=parser.links
+            for src in parser.images:
+                if src.startswith("/") and src!="__missing_alt__":
+                    imgcode,imgurl,imgheaders,imgbody=request(src)
+                    # Image bytes cannot be decoded by request(); only check status/content-type here.
+                    good=imgcode==200 and "image/" in imgheaders.get("Content-Type","")
+                    if not good:findings.append({"path":src,"status":imgcode,"linked_from":[path],"problem":"broken_local_image"})
+                    print(("PASS" if good else "FAIL"),"image",src,"HTTP",imgcode)
         print(("PASS" if ok else "FAIL"),"content",path,"HTTP",code,"chars",meaningful)
     # Follow EVERY internal link actually rendered on public pages. Avoid private URLs,
     # which are checked separately for the correct unauthenticated behavior.
@@ -141,7 +154,10 @@ def main():
             internal.setdefault(path,[]).append(page)
     for path,parents in sorted(internal.items()):
         code,landing,headers,document=request(path)
-        ok=code==200 or (code in (302,303,403,503) and path in ALLOWED_AUTH_PATHS)
+        parsed=Links()
+        if code==200:parsed.feed(document)
+        good_content=parsed.h1>0 and len(" ".join(parsed.text).strip())>=75
+        ok=(code==200 and good_content) or (code in (302,303,403,503) and path in ALLOWED_AUTH_PATHS)
         if not ok:findings.append({"path":path,"status":code,"linked_from":parents,"problem":"invalid_internal_link"})
         print(("PASS" if ok else "FAIL"),"navigation",path,"HTTP",code)
     for path in ("/new-post","/my-posts","/chats","/directory","/profile","/admin"):
