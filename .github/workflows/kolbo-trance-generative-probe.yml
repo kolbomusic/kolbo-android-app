@@ -59,3 +59,29 @@ jobs:
           except Exception as error:
             print('LTX_GENERATION_UNAVAILABLE',type(error).__name__,str(error)[:700],flush=True)
           PY
+      - name: Try alternative LTX public distilled AI video space without an API key
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.error
+          base='https://lightricks-ltx-video-distilled.hf.space'
+          data={'data':[
+            'A cheerful donkey brays on a sunny farm, cinematic live-action action, no words on screen.',
+            'low quality, blurry, text', '', '',704,512,'text-to-video',2.0,9,42,True,1.0,True]}
+          try:
+            req=urllib.request.Request(base+'/gradio_api/call/text_to_video',
+              data=json.dumps(data).encode(),headers={'Content-Type':'application/json'})
+            with urllib.request.urlopen(req,timeout=35) as response:
+              event=json.load(response)
+            print('LTX_DISTILLED_SUBMITTED',str(event)[:250],flush=True)
+            with urllib.request.urlopen(base+'/gradio_api/call/text_to_video/'+event['event_id'],timeout=220) as response:
+              ev=''
+              for raw in response:
+                line=raw.decode('utf-8','replace').strip()
+                if line.startswith('event:'):ev=line[6:].strip()
+                if line.startswith('data:') and ev in ('complete','error'):
+                  print('LTX_DISTILLED_RESULT',ev,line[:900],flush=True)
+                  break
+          except Exception as error:
+            print('LTX_DISTILLED_UNAVAILABLE',type(error).__name__,str(error)[:700],flush=True)
+          PY
