@@ -16,6 +16,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build complete Docker image, including quantized free Whisper weights
         run: docker build --pull -t kolbo-trance-asr:test trance-studio
-      - name: Confirm image contains a readable model
+      - name: Confirm weights and CPU inference work offline within 512 MB
         run: |
-          docker run --rm --entrypoint python kolbo-trance-asr:test -c "import os;from pathlib import Path;p=Path(os.environ['KOLBO_ASR_DIR'])/'model.bin';assert p.stat().st_size>1000000,p;print('MODEL_PRELOADED',p.stat().st_size)"
+          docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 --entrypoint python kolbo-trance-asr:test -c "import os;from pathlib import Path;from faster_whisper import WhisperModel;p=Path(os.environ['KOLBO_ASR_DIR'])/'model.bin';assert p.stat().st_size>1000000,p;m=WhisperModel(str(p.parent),device='cpu',compute_type='int8',cpu_threads=1);print('MODEL_PRELOADED_AND_LOADED',p.stat().st_size)"
