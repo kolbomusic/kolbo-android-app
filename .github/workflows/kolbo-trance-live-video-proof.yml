@@ -2,7 +2,7 @@ name: Kolbo PROOF real Hebrew voice to moving MP4
 on:
   push:
     branches: [kolbo-trance-studio-20261031]
-    paths: ['.github/workflows/kolbo-trance-live-video-proof.yml']
+    paths: ['.github/workflows/kolbo-trance-live-video-proof.yml', 'trance-studio/tests/production_hebrew_voice_mp4.py']
   workflow_dispatch:
 jobs:
   live-video-proof:
