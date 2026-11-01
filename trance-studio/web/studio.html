@@ -433,7 +433,9 @@ if(j.video_url){
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
  $('storyboardInfo').textContent=j.video_mode==='original_input_video'?
-   'שולב סרטון המקור האמיתי ששיתפת עם המיקס החדש. זה איננו וידאו AI שנוצר מהמילים.' :
+   (j.video_edit_style==='beat_cut_punch_in_speed_ramp'?
+    'צילום WhatsApp המקורי נערך מחדש עם '+(j.video_edit_shots||'כמה')+' חיתוכים בקצב המוזיקה, הדגשות צילום ושינויי מהירות מתונים. לא נוצרו אירועים חדשים על סמך המילים.' :
+    'שולב צילום המקור עם המיקס. הקלטה מצולמת אינה יצירת AI של אירועים חדשים.') :
    (String(j.video_mode||'').indexOf('ai_generated')===0?
    'סצנות AI מתוך התמלול. זו המחשה משוערת: קטעי וידאו קצרים עשויים לחזור לאורך המיקס.' :
    (j.visual_coverage==='partial'?
