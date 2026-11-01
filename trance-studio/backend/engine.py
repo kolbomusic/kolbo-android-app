@@ -401,7 +401,7 @@ def _vocal_hook_quality(sample, sr):
     flatness=float(np.exp(np.mean(np.log(spectrum+1e-10)))/(mean+1e-10))
     saturation=float(np.mean(np.abs(x)>.94))
     # Use a modest loudness weighting to avoid picking consonant transients.
-    return min(.35,rms)*(.16+.84*(1.-min(1.,flatness)))*(1.-min(1.,saturation*8))
+    return min(.35,rms)*(.04+.96*(1.-min(1.,flatness))**2)*(1.-min(1.,saturation*8))
 
 
 def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
