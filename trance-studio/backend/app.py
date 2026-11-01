@@ -105,12 +105,13 @@ def create_app(config=None):
                                   'transcript_origin':detected_origin,
                                   'transcript_complete':transcript_complete,
                                   'visual_coverage':'approximate',
-                                  'visual_beats':1,
+                                  'visual_beats':board.get('ai_clips_generated',1),
                                   'ai_clip_seconds':board['ai_clip_seconds'],
+                                  'ai_clips_generated':board.get('ai_clips_generated',1),
                                   'video_note':(
                                       'הקטע נוצר באמצעות AI מתוך תמלול ההקלטה. '
                                       'זו המחשה משוערת, לא שחזור מדויק של כל משפט. '
-                                      'קטע AI קצר חוזר לאורך המיקס; '
+                                      'סצנות AI קצרות עשויות לחזור לאורך המיקס; '
                                       'השירות החינמי מוגבל.')}
                         except AIVideoUnavailable as err:
                             ai_generation_error=str(err)[:180]
