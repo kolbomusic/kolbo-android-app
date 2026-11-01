@@ -65,10 +65,10 @@ def add_comic_stings(mix,mask,sr,bpm,cue_for_fraction,max_stings=4):
     """Dynamic, audible cartoon punctuation on actual beat-fit speech FX.
 
     Follow the *measured* FX mask and keep every accent entirely inside that
-    slot. First match an explicit Hebrew story cue; if there is none, classify
-    the already transformed vocal sample by energy/brightness to choose a
-    subtle musical flourish. Silence and unrelated narration are not
-    described as an identified joke or event.
+    slot. Only play an accent when a Hebrew story cue actually indicates an
+    event. The treated voice provides musical comedy for generic speech;
+    no acoustically guessed Foley is added. Input must be the instrumental
+    stem (before the original vocal is mixed), protecting spoken words.
     """
     a=np.asarray(mix,dtype=np.float32)
     m=np.asarray(mask,dtype=np.float32)
@@ -90,15 +90,9 @@ def add_comic_stings(mix,mask,sr,bpm,cue_for_fraction,max_stings=4):
         if stop-at<int(.16*sr):continue
         cue=cue_for_fraction(float(start)/max(1,len(m)))
         if not cue:
-            # No made-up animal/noise. Only a musically appropriate accent
-            # selected by the acoustic contour of the isolated voice hook.
-            window=a[start:min(stop,start+int(.22*sr))]
-            energy=float(np.sqrt(np.mean(window*window))) if len(window) else 0.
-            if energy<.009:continue
-            l=np.abs(np.fft.rfft(window[:,0]))
-            centroid=float(np.sum(np.arange(len(l))*l)/max(.00001,np.sum(l)))/max(1,len(l))
-            cycle=("comic_roll","yo_yo","tape","helium")
-            cue=cycle[(used+(1 if centroid>.30 else 0)+(1 if energy>.22 else 0))%len(cycle)]
+            # No guessing animal noises, explosions or unrelated transitions
+            # when the recorded sentence supplies no such event.
+            continue
         sound=create_sting(cue,sr,bpm,used)
         if not len(sound):continue
         size=min(len(sound),stop-at)
