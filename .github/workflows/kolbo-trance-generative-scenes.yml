@@ -1,0 +1,63 @@
+name: Kolbo original Hebrew narration to free AI-motion video
+on:
+  push:
+    branches: [kolbo-trance-generative-scenes-20261101]
+    paths:
+      - 'trance-studio/backend/ai_video.py'
+      - 'trance-studio/backend/app.py'
+      - 'trance-studio/tests/test_ai_video.py'
+      - 'trance-studio/web/studio.html'
+      - '.github/workflows/kolbo-trance-generative-scenes.yml'
+  workflow_dispatch:
+jobs:
+  original-motion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies and FFmpeg
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python -m pip install -r trance-studio/backend/requirements.txt
+      - name: Confirm syntax of backend, English/Hebrew prompts and Android webview client
+        run: |
+          python -m compileall -q trance-studio/backend trance-studio/tests
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('trance-studio/web/studio.html').read_text('utf-8')
+          assert 'id="ai_video_consent"' in p
+          assert 'form.set(\'ai_video_consent\'' in p
+          assert 'video_mode===\'ai_generated_experimental\'' in p
+          script=p.rsplit('<script>',1)[1].split('</script>',1)[0]
+          Path('/tmp/kolbo-ai-video.js').write_text(script,encoding='utf-8')
+          print('AI_PRIVACY_CONSENT_AND_ANDROID_CLIENT_CHECKS_PASS')
+          PY
+          node --check /tmp/kolbo-ai-video.js
+      - name: Run all video, audio and API regressions
+        run: python -m unittest discover -s trance-studio/tests -p 'test_*.py' -v
+      - name: Verify public model renders ORIGINAL AI shot from a fictional story
+        continue-on-error: true
+        run: |
+          PYTHONPATH=trance-studio/backend python - <<'PY'
+          from pathlib import Path
+          import json,subprocess,tempfile
+          from ai_video import AIVideoUnavailable, _request_video_generation, _download_public_video
+          try:
+            url=_request_video_generation(
+                'Photorealistic live-action video of a happy farmer feeding a braying donkey on a sunny farm. The donkey visibly moves its mouth and the farmer walks over with hay, no subtitles.',
+                duration=2.0)
+            with tempfile.TemporaryDirectory() as temp:
+                out=Path(temp)/'real-generated.mp4'
+                seconds=_download_public_video(url,out)
+                profile=json.loads(subprocess.check_output([
+                    'ffprobe','-v','error','-show_streams','-show_format','-of','json',str(out)]))
+                assert out.stat().st_size>20000
+                assert any(s['codec_type']=='video' for s in profile['streams'])
+                print('REAL_ORIGINAL_AI_MOVING_CLIP_PASS',
+                      {'seconds':seconds,'bytes':out.stat().st_size},flush=True)
+          except AIVideoUnavailable as exc:
+            print('FREE_PROVIDER_NOT_GUARANTEED',str(exc),flush=True)
+          PY
