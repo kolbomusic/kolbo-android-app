@@ -1,0 +1,56 @@
+name: Kolbo Trance real Android-compatible two-scene MP4 gate
+on:
+  push:
+    branches: [kolbo-trance-real-portrait-video-20261101]
+    paths:
+      - 'trance-studio/backend/live_video.py'
+      - 'trance-studio/tests/test_live_video.py'
+      - '.github/workflows/kolbo-trance-real-portrait.yml'
+  workflow_dispatch:
+jobs:
+  verified-motion-mp4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install fast media validation environment
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install production dependencies
+        run: python -m pip install -r trance-studio/backend/requirements.txt
+      - name: Run full audio/video reliability suite
+        run: python -m unittest discover -s trance-studio/tests -p 'test_*.py' -v
+      - name: Fetch REAL licensed camera footage and export portrait MP4
+        run: |
+          python - <<'PY'
+          import pathlib,subprocess,tempfile,json,sys
+          sys.path.insert(0,'trance-studio/backend')
+          from live_video import commons_candidates,visual_plan,export_live_story
+          from live_video import _video_profile
+          with tempfile.TemporaryDirectory() as tmp:
+              root=pathlib.Path(tmp)
+              audio=root/'voice.mp3'
+              subprocess.run(['ffmpeg','-nostdin','-loglevel','error','-y',
+                  '-f','lavfi','-i','sine=frequency=400:duration=9',
+                  '-c:a','libmp3lame',str(audio)],check=True)
+              plan=visual_plan('החמור נוער. כולם רוקדים במסיבה.',9)
+              movie=root/'motion.mp4'
+              clips=export_live_story(audio,movie,plan,root/'assets')
+              assert len(clips)==2, ('Two real clips required',clips)
+              profile=_video_profile(movie)
+              assert profile==('h264',360,640),profile
+              streams=json.loads(subprocess.check_output(['ffprobe','-v','error',
+                  '-show_streams','-show_format','-of','json',str(movie)]))
+              assert {s['codec_type'] for s in streams['streams']}=={'audio','video'}
+              seconds=float(streams['format']['duration'])
+              assert 8.5<seconds<9.5,seconds
+              subprocess.run(['ffmpeg','-v','error','-ss','6','-i',str(movie),
+                  '-frames:v','1','-f','null','-'],check=True)
+              print('TWO_REAL_AUTHENTIC_MOTION_SCENES_ANDROID_MP4_PASS',
+                  {'bytes':movie.stat().st_size,'duration':seconds,
+                   'sources':[c['page'] for c in clips],'codec':profile,
+                   'coverage':plan.get('visual_coverage')},flush=True)
+          PY

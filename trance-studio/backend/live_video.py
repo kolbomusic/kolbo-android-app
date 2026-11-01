@@ -283,7 +283,11 @@ def _matches_metadata(title,query):
                "computer generated","cgi","3d model","slideshow",
                "wrong side","wrong way", "on why ", "interview",
                "explaining", "explains why", "talking about",
-               "presentation", "lecture", "speech about")
+               "presentation", "lecture", "speech about",
+               # Never insert distressing real news footage into a funny
+               # music story merely because the title also mentions a car.
+               "terrorist","shooting","fire into","hostage","murder",
+               "police brutality","dead body","fatal crash","war crime")
     if any(x in title for x in forbidden):return False
     keywords=query.lower().split()
     # Preserve the actor and the action without depending on word order
@@ -422,36 +426,49 @@ def _video_profile(path):
     return stream.get("codec_name"),stream.get("width"),stream.get("height")
 
 def _make_segment(src,output,length):
-    if length<=0:raise UnavailableVideo("קטע וידאו ריק")
+    """Encode real camera footage into a consistent Android-compatible portrait stream.
+
+    The previous VP9-in-MP4 stream-copy route produced a playable file in
+    ffprobe, but its codec and frame geometry changed between scenes. Android
+    WebView/WhatsApp may black-screen after the first scene. Reencode only a
+    short real footage excerpt, then loop that excerpt without reencoding the
+    whole soundtrack. No generated graphics or caption substitutions.
+    """
+    if length<=0:
+        raise UnavailableVideo("קטע וידאו ריק")
     source_length=_duration(src)
     if source_length<min(.7,length*.4):
         raise UnavailableVideo("קטע המקור קצר מדי")
-    codec,_,_=_video_profile(src)
-    # Zero-reencoding fast path. Wikimedia supplied VP9 clips can be remuxed
-    # into MP4 without scaling or H.264 CPU-intensive work. The low-power
-    # free Render instance previously timed out after 100 seconds on 30s
-    # of H.264 encoding, silently discarding the otherwise valid MP3.
-    if codec in ("vp9","h264","hevc","av1"):
-        command=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
-                 "-stream_loop","-1","-i",str(src),"-t",f"{length:.3f}",
-                 "-map","0:v:0","-an","-c:v","copy",
-                 "-movflags","+faststart",str(output)]
-        subprocess.run(command,capture_output=True,check=True,timeout=35)
-        return
-    # For VP8 / Theora transcode ONLY a brief source clip once, then repeat
-    # the completed H.264 segment by stream copy. Do not reencode every repeat.
+    _video_profile(src)  # A genuine moving video stream is required.
     short=Path(output).with_name("encoded-"+Path(output).name)
-    source_duration=min(source_length,6.0)
-    command=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
-             "-i",str(src),"-t",f"{source_duration:.3f}","-an",
-             "-vf","fps=10,scale=360:-2,format=yuv420p",
-             "-c:v","libx264","-preset","ultrafast","-crf","30",str(short)]
-    subprocess.run(command,capture_output=True,check=True,timeout=70)
-    command=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
-             "-stream_loop","-1","-i",str(short),"-t",f"{length:.3f}",
-             "-map","0:v:0","-an","-c:v","copy",
-             "-movflags","+faststart",str(output)]
-    subprocess.run(command,capture_output=True,check=True,timeout=30)
+    # 4 seconds is enough motion to avoid a single still frame. Encoding a
+    # 60s soundtrack directly costs too much CPU on a 512 MB free instance.
+    source_duration=min(source_length,4.0,max(1.0,length))
+    command=[
+        "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
+        "-i",str(src),"-t",f"{source_duration:.3f}","-map","0:v:0","-an",
+        "-vf","fps=12,scale=360:640:force_original_aspect_ratio=decrease:"
+              "force_divisible_by=2,pad=360:640:(ow-iw)/2:(oh-ih)/2,"
+              "setsar=1,format=yuv420p",
+        "-c:v","libx264","-profile:v","baseline","-level","3.0",
+        "-preset","ultrafast","-crf","30","-movflags","+faststart",str(short)
+    ]
+    try:
+        subprocess.run(command,capture_output=True,check=True,timeout=65)
+        codec,width,height=_video_profile(short)
+        if (codec,width,height)!=("h264",360,640):
+            raise UnavailableVideo("פורמט הסרטון אינו תואם למכשירי אנדרואיד")
+        if _duration(short)<.65:
+            raise UnavailableVideo("לא נוצר קטע צילום נע תקין")
+        command=[
+            "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
+            "-stream_loop","-1","-i",str(short),"-t",f"{length:.3f}",
+            "-map","0:v:0","-an","-c:v","copy",
+            "-movflags","+faststart",str(output)
+        ]
+        subprocess.run(command,capture_output=True,check=True,timeout=35)
+    finally:
+        short.unlink(missing_ok=True)
 
 # When an exact action clip cannot be found, an explicitly named
 # physical subject may still be shown as relevant footage. This is thematic

@@ -307,6 +307,56 @@ class GroundedVideoTests(unittest.TestCase):
             self.assertEqual({x['codec_type'] for x in probe['streams']},
                              {'audio','video'})
 
+    def test_exact_footage_rejects_unrelated_traumatic_clip(self):
+        self.assertFalse(_matches_metadata(
+            'File:Terrorists fire into moving civilian car during attacks.webm',
+            'car driving'))
+        self.assertTrue(_matches_metadata(
+            'File:Car driving through Porto Santo.webm',
+            'car driving'))
+
+    def test_two_independent_real_motion_scenes_normalized_to_android_h264(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=pathlib.Path(tmp)
+            song=root/'song.mp3'
+            subprocess.run(['ffmpeg','-nostdin','-loglevel','error','-y',
+                            '-f','lavfi','-i','sine=frequency=440:duration=6',
+                            '-c:a','libmp3lame',str(song)],check=True)
+            plan=visual_plan('הכלב נובח. החמור נוער.',6.0)
+            def search(query):
+                return [{
+                    'url':'https://upload.wikimedia.org/example.webm',
+                    'title':'File:Test authentic motion.webm',
+                    'page':'https://commons.wikimedia.org/wiki/File:Test.webm',
+                    'license':'CC0'}]
+            def download(item,dest):
+                # Deliberately different original codecs, shapes and frame
+                # rates. Old concat stream-copy silently corrupted scene 2.
+                freq=11 if 'source-0' in str(dest) else 19
+                width,height=(640,360) if freq==11 else (320,240)
+                codec='libvpx-vp9' if freq==11 else 'libvpx'
+                subprocess.run(['ffmpeg','-nostdin','-loglevel','error','-y',
+                    '-f','lavfi','-i',f'testsrc=size={width}x{height}:rate={freq}:duration=3',
+                    '-c:v',codec,'-b:v','160k',str(dest)],check=True,timeout=35)
+            output=root/'movie.mp4'
+            sources=export_live_story(song,output,plan,root/'assets',
+                                      search=search,download=download)
+            self.assertEqual(len(sources),2,(sources,plan.get('missing_footage')))
+            probe=json.loads(subprocess.check_output([
+                'ffprobe','-v','error','-show_streams','-show_format','-of','json',
+                str(output)]))
+            video=next(s for s in probe['streams'] if s['codec_type']=='video')
+            self.assertEqual(video['codec_name'],'h264')
+            self.assertEqual((video['width'],video['height']),(360,640))
+            self.assertEqual({s['codec_type'] for s in probe['streams']},
+                             {'video','audio'})
+            self.assertGreater(float(probe['format']['duration']),5.5)
+            # Decode frames past the second-scene boundary, not just metadata.
+            decoded=subprocess.check_output([
+                'ffmpeg','-v','error','-ss','4','-i',str(output),
+                '-frames:v','1','-f','rawvideo','-pix_fmt','gray','pipe:1'])
+            self.assertEqual(len(decoded),360*640)
+
     def test_native_motion_video_and_original_audio_without_subtitles(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
@@ -333,8 +383,9 @@ class GroundedVideoTests(unittest.TestCase):
             types={x['codec_type'] for x in streams['streams']}
             self.assertEqual(types,{'audio','video'})
             codec=[x for x in streams['streams'] if x['codec_type']=='video'][0]
-            self.assertEqual(codec['width'],640)
-            self.assertEqual(codec['height'],360)
+            self.assertEqual(codec['codec_name'],'h264')
+            self.assertEqual(codec['width'],360)
+            self.assertEqual(codec['height'],640)
             # No subtitle stream or text filter in produced video.
             self.assertNotIn('subtitle',types)
 
