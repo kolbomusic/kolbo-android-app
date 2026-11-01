@@ -222,18 +222,39 @@ public final class MainActivity extends Activity {
                 }catch(Exception ex){return failStream();}
             }
             @Override public void onPageFinished(WebView view,String url){
-                if(!pageLoadFailed&&url!=null&&url.startsWith(STUDIO))importIncoming();
+                if(pageLoadFailed||url==null||!url.startsWith(STUDIO))return;
+                final long token=navigationId;
+                // HTTP success is not enough. Check the actual studio DOM
+                // before hiding the loader or importing WhatsApp media.
+                view.evaluateJavascript(
+                    "(function(){return !!(document.body&&document.getElementById('generate')&&document.getElementById('result')&&document.querySelector('main'));})()",
+                    result->{
+                        if(token!=navigationId||pageLoadFailed)return;
+                        if("true".equals(result)){
+                            pageReady=true;
+                            loading.setVisibility(View.GONE);
+                            startupPanel.setVisibility(View.GONE);
+                            offlinePanel.setVisibility(View.GONE);
+                            importIncoming(); // import does not start creation
+                        }else{
+                            recoverConnection("השרת השיב דף ללא ממשק היצירה.");
+                        }
+                    });
             }
             @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,SslError error){
                 handler.cancel();
-                toast("שגיאת אבטחה בחיבור לאתר");
+                showOffline("חיבור HTTPS לא מאובטח. לא נעקוף שגיאת תעודה.");
             }
-            @Override public void onReceivedError(WebView view,WebResourceRequest req,android.webkit.WebResourceError err){
+            @Override public void onReceivedHttpError(WebView view,WebResourceRequest req,
+                                                      WebResourceResponse response){
+                if(req.isForMainFrame()&&response.getStatusCode()>=500){
+                    recoverConnection("שרת היצירה אינו זמין זמנית (HTTP "+response.getStatusCode()+").");
+                }
+            }
+            @Override public void onReceivedError(WebView view,WebResourceRequest req,
+                                                  WebResourceError err){
                 if(req.isForMainFrame()){
-                    pageLoadFailed=true;
-                    loading.setVisibility(View.GONE);
-                    webView.setVisibility(View.GONE);
-                    offlinePanel.setVisibility(View.VISIBLE);
+                    recoverConnection("לא ניתן להתחבר לשרת. בדוק אינטרנט או נסה שוב.");
                 }
             }
         });
