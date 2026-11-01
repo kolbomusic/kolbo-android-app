@@ -254,7 +254,8 @@ if(j.voice_url){
 }
 if(files.length){originalUrl=URL.createObjectURL(files[0]);$('originalPreview').src=originalUrl;}
 if(j.video_url){
- // Keep the MP4 as a streaming URL: no need to load a large file into RAM
+  videoReason='';
+  // Keep the MP4 as a streaming URL: no need to load a large file into RAM
  // just to display the playback controls on Android.
  videoServerUrl=j.video_url;
  videoUrl=j.video_preview_url||j.video_url;
