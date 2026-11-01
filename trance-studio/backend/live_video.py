@@ -47,6 +47,17 @@ ACTIONS=(
     ("person_sing",("איש","אישה","בחור","בחורה","ילד","ילדה","אני","אנחנו"),("שר","שרה","שרים","שרות","לשיר","שרתי","שרנו"),"person singing"),
     ("person_cook",("טבח","טבחית","איש","אישה","אמא","אבא","אני"),("מבשל","מבשלת","בישל","בישלה","אופה","מטגן"),"person cooking"),
 )
+# Standalone action verbs: when the speaker explicitly says "laughing" or
+# "dancing", a named actor isn't always present. Do not fabricate a specific
+# person or situation: generic genuine footage is thematic coverage only.
+# No inference from adjectives such as "funny" or speech about an action.
+INTRANSITIVE_ACTIONS=(
+    ("person_laugh",("צוחק","צוחקת","צוחקים","צחקתי","צחקנו"),"person laughing"),
+    ("person_cry",("בוכה","בוכים","בוכות","בכיתי"),"person crying"),
+    ("person_dance",("רוקד","רוקדת","רוקדים","רוקדות","רקדתי","רקדנו"),"people dancing"),
+    ("person_run",("רצים","רצות","רצתי","רצנו"),"person running"),
+    ("person_sing",("שרים","שרות","שרתי","שרנו","לשיר"),"person singing"),
+)
 # Explicit subject-only visuals: only if the utterance names an actual place
 # and no distinct unsupported action. Avoid interpreting "לבוא" as "love".
 VISUAL_LOCATIONS=(
@@ -75,6 +86,13 @@ SUBJECT_VISUALS=(
     ("city",("רחוב","עיר","כביש"),"street"),
     ("house",("בית","דירה"),"house"),
     ("beach",("ים","חוף"),"beach"),
+    ("guitar",("גיטרה","גיטרות"),"guitar playing"),
+    ("piano",("פסנתר","קלידים"),"piano playing"),
+    ("drums",("תופים","מתופף","מתופפים"),"drums playing"),
+    ("microphone",("מיקרופון","מיקרופונים"),"microphone"),
+    ("bicycle",("אופניים","אופניי"),"bicycle riding"),
+    ("motorcycle",("אופנוע","אופנועים"),"motorcycle riding"),
+    ("train",("רכבת","רכבות"),"train moving"),
 )
 CLAUSE_SPLIT=re.compile(
     r"[.!?;,]+|\b(?:ואז|ואחר כך|אחר כך|לאחר מכן|אחרי זה|פתאום|ולפתע|בינתיים)\b"
@@ -91,6 +109,7 @@ def _words(sentence):
     known=set()
     for _,subjects,verbs,_ in ACTIONS:
         known.update(subjects);known.update(verbs)
+    for _,verbs,_ in INTRANSITIVE_ACTIONS:known.update(verbs)
     for _,items,_ in VISUAL_LOCATIONS:known.update(items)
     for _,items,_ in SUBJECT_VISUALS:known.update(items)
     normalized=[]
@@ -160,6 +179,16 @@ def action_for_clause(sentence):
                              "basis":"asr_spelling_approximation"})
     if len(repaired)==1:
         return repaired[0]
+    # Only explicit verbs support a generic action shot; unrelated narration
+    # still fails closed rather than presenting stock footage as a real event.
+    intransitive=[{"action":name,"query":query,
+                    "basis":"explicit_intransitive_action"}
+                  for name,verbs,query in INTRANSITIVE_ACTIONS
+                  if tokens.intersection(verbs)]
+    if len(intransitive)==1:
+        return intransitive[0]
+    if len(intransitive)>1:
+        return None
     for name,terms,query in VISUAL_LOCATIONS:
         if tokens.intersection(terms) and len(tokens)<=6:
             return {"action":name,"query":query,"basis":"explicit_location"}
@@ -254,6 +283,7 @@ def visual_plan(transcript,duration):
         "visual_beats":len(scenes),
         "visual_coverage":"partial" if (unmatched or original_beats>len(scenes)
                          or any(sc["basis"] in ("explicit_subject_only",
+                                              "explicit_intransitive_action",
                                               "asr_spelling_approximation") for sc in scenes))
                          else "matched",
         "scenes":scenes
