@@ -6,6 +6,8 @@ on:
     paths:
       - 'trance-studio/Dockerfile'
       - 'trance-studio/backend/source_asr.py'
+      - 'trance-studio/backend/app.py'
+      - 'trance-studio/tests/test_server_video_recovery.py'
       - 'trance-studio/tests/test_source_asr.py'
       - '.github/workflows/kolbo-trance-hebrew-asr-fix.yml'
   workflow_dispatch:
