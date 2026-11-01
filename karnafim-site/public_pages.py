@@ -109,6 +109,21 @@ def source_detail(source_id):
  item=next((x for x in ARCHIVE if str(x["id"])==source_id),None)
  if item is None:return None
  url=item["url"]
+ # These old articles were checked on 2026-11-01 and returned HTTP 404.
+ # Never route visitors to a known-broken source URL or imply that the
+ # publisher's archive is the full original article.
+ if item["id"] in (4,5,7,12):
+  return ('<section><p><a href="/archive">← חזרה לארכיון</a></p>'
+   '<div class="year">'+e(item["tag"])+' · '+e(item["year"] or "ללא תאריך")+'</div>'
+   '<h1>'+e(item["title"])+'</h1>'
+   '<div class="card"><h2>תמצית התיעוד</h2><p>'+e(item["summary"])+'</p>'
+   '<p><strong>מקור התיעוד:</strong> '+e(item["source"])+'</p></div>'
+   '<div class="note"><h2>הקישור למאמר המקורי אינו פעיל</h2>'
+   '<p>כתובת המאמר ההיסטורית החזירה שגיאת 404 בבדיקה ב־1.11.2026. '\
+   'תמצית התיעוד נשמרת כאן, אך העמוד המלא אינו זמין כרגע בקישור זה.</p>'
+   '<p><strong>כתובת היסטורית (לא קישור פעיל):</strong> <code dir="ltr">'+e(url)+'</code></p>'
+   '<p><a href="https://www.yadlashiryon.com/archives" target="_blank" rel="noopener noreferrer">פתיחת ארכיון יד לשריון הרשמי ↗</a></p>'
+   '<p>לתשומת הלב: הקישור החלופי מוביל לעמוד הארכיון הכללי ולא למאמר המקורי.</p></div></section>')
  label="לקריאת העמוד המקורי המלא ↗" if item["id"] not in (5,7,12) else "לעמוד המקור והחומרים הזמינים ↗"
  qualifier=("זהו רישום ספר מפורט, אך אינו כולל את כל 84 עמודי החוברת." if item["id"]==5 else
            "הכתבה מכילה גם הפניות לקבצי מדיה חיצוניים. זמינותם אינה מובטחת." if item["id"] in (7,12) else
