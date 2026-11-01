@@ -31,6 +31,9 @@ EXPECT={
   12:("חטיבה 401","סרטונים"), 13:("אדם","גורן"),14:("אלכסנדר","בונימוביץ")
 }
 SOURCE_DOMAINS=("izkor.gov.il","yadlashiryon.com","idf.il","gd46401.org.il","benaya-rhein.com")
+# Four publisher URLs were confirmed to return 404 on 2026-11-01. Their historical
+# references are retained as nonclickable text on the public source detail pages.
+RETIRED_SOURCE_IDS={4,5,7,12}
 
 class TextParser(HTMLParser):
   def __init__(self):
@@ -122,11 +125,19 @@ def run():
   results=[]
   for url,ids in urls.items():
     result=check(url,ids)
+    # Do not fail the publisher audit for links ALREADY REMOVED from clickable
+    # navigation and clearly identified as unavailable in public source pages.
+    # This exception is limited to the four independently confirmed dead URLs.
+    # A newly broken or mismatching active source still fails the check.
+    if set(ids).issubset(RETIRED_SOURCE_IDS) and result["status"] in ("broken","unverified_content"):
+      result["original_status"]=result["status"]
+      result["status"]="retired"
+      result["reason"]="Legacy article URL is deliberately not linked; public page discloses unavailability"
     results.append(result)
     print(result["status"].upper(),",".join(map(str,ids)),result.get("http"),result["reason"])
     sys.stdout.flush()
   counts={name:sum(x["status"]==name for x in results)
-          for name in ("verified","broken","unverified_content","inconclusive","invalid_url")}
+          for name in ("verified","retired","broken","unverified_content","inconclusive","invalid_url")}
   report={"unique_external_sources":len(urls),"archive_items":len(archive),
           "counts":counts,"sources":results,
           "note":"Automated successful page-content checks do not validate media embeds or guarantee future availability."}
