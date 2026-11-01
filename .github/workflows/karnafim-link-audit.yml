@@ -1,0 +1,34 @@
+name: Karnafim link and content quality audit
+on:
+  push:
+    branches: [karnafim-veterans-portal-20261031]
+    paths:
+      - 'karnafim-site/**'
+      - '.github/workflows/karnafim-link-audit.yml'
+  schedule:
+    - cron: '20 6 * * *'
+  workflow_dispatch:
+jobs:
+  verify-links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check published source registry and internal link contracts
+        run: python karnafim-site/link_audit.py
+      - name: Check live source pages, memorials and site navigation
+        shell: bash
+        run: |
+          for attempt in {1..18}; do
+            echo "Verification pass $attempt"
+            if python karnafim-site/link_audit.py --live; then
+              echo "Public links and full-source routes passed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Public links/content audit failed; see logged failing URLs."
+          exit 1
