@@ -189,9 +189,19 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
   blobs.forEach(function(blob,i){
     form.append('clip',blob,'kolbo-ai-scene-'+i+'.mp4');
   });
-  var resp=await fetch('/api/jobs/'+encodeURIComponent(jobId)+'/ai-clips',
-                       {method:'POST',credentials:'same-origin',body:form});
-  var answer=await resp.json();
+  var resp,answer;
+  for(var attempt=0;attempt<3;attempt++){
+    resp=await fetch('/api/jobs/'+encodeURIComponent(jobId)+'/ai-clips',
+      {method:'POST',credentials:'same-origin',body:form});
+    answer=await resp.json().catch(function(){return {error:'תגובת שרת לא תקינה'}});
+    if(resp.status!==429||attempt===2)break;
+    // Preserve the already-generated original AI bytes in FormData.
+    // Never call ZeroGPU again just because the Render mux is busy.
+    onStage('קטעי ה־AI כבר נוצרו. השרת עסוק; שומר אותם ומנסה שוב לשלב במיקס...');
+    var seconds=Number(resp.headers.get('Retry-After')||6);
+    await new Promise(function(resolve){setTimeout(resolve,
+      Math.min(12000,Math.max(3000,seconds*1000)))});
+  }
   if(!resp.ok||!answer.video_url)
     throw fail(answer.error||'לא ניתן לשלב את סצנות הווידאו');
   return answer;
