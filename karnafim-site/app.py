@@ -18,7 +18,7 @@ DB=os.environ.get("DATABASE_URL","") if READ_ONLY_BOOT else os.environ["DATABASE
 def security_hold():
  if READ_ONLY_BOOT and request.path not in ("/health","/favicon.svg","/favicon.ico","/robots.txt","/sitemap.xml"):
   import re
-  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status","/photos","/accessibility","/help") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
+  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/status","/photos","/accessibility","/help") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
   if request.method in ("GET","HEAD") and can_read:
    from pathlib import Path
    if request.path=="/accessibility":
@@ -42,8 +42,9 @@ def security_hold():
    # Previously active credential endpoints are fully retired while the site is under review.
    # 410 (rather than temporary 503) explicitly tells crawlers that these forms are gone;
    # no private content or credentials are served, even if an old bookmark is followed.
-   retired_credentials=(request.path in ("/login","/register","/password") or request.path.startswith("/auth/google/"))
-   response=Response(("עמוד הכניסה הוסר במסגרת טיפול באבטחת האתר. אין להזין כאן פרטי התחברות." if retired_credentials else "אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה."),status=(410 if retired_credentials else 503),mimetype="text/plain")
+   retired_credentials=(request.path in ("/login","/register","/password","/find") or request.path.startswith("/auth/google/"))
+   message=("שירות איתור החברים הוסר זמנית בעקבות בדיקת אבטחת האתר. לא נאספים כאן פרטים אישיים." if request.path=="/find" else "עמוד הכניסה הוסר במסגרת טיפול באבטחת האתר. אין להזין כאן פרטי התחברות." if retired_credentials else "אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה.")
+   response=Response(message,status=(410 if retired_credentials else 503),mimetype="text/plain")
    response.headers["Content-Security-Policy"]="default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   response.headers["Cache-Control"]="no-store, max-age=0"
   response.headers["X-Robots-Tag"]=("index, follow" if response.status_code==200 else "noindex, nofollow")
@@ -58,7 +59,7 @@ def robots_txt():
  content="\n".join([
    "User-agent: *",
    "Allow: /",
-   # Login and registration have explicit 410 responses during security review.
+   # /find and credential endpoints now explicitly return 410 so Google can recrawl.
    # Do not disallow crawling these URLs: Google must be able to observe removal.
    "Disallow: /new-post",
    "Disallow: /my-posts",
@@ -78,7 +79,7 @@ def robots_txt():
 def public_sitemap():
  from memorial_photos import PEOPLE
  paths=["/","/about","/privacy","/safety","/archive","/memorials",
-        "/find","/photos","/help","/accessibility"]
+        "/photos","/help","/accessibility"]
  paths.extend("/source/"+str(n) for n in range(1,15))
  paths.extend("/memorial/"+p["slug"] for p in PEOPLE)
  xml='<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -98,7 +99,7 @@ def harden_responses(resp):
    data=resp.get_data(as_text=True)
    if 'name="google-site-verification"' not in data and "</head>" in data:
     resp.set_data(data.replace("</head>",'<meta name="google-site-verification" content="'+token+'"></head>',1))
- if request.path in ("/login","/register","/password") or request.path.startswith("/auth/google/"):
+ if request.path in ("/login","/register","/password","/find") or request.path.startswith("/auth/google/"):
   resp.headers.setdefault("X-Robots-Tag","noindex, nofollow")
  resp.headers.setdefault("X-Content-Type-Options","nosniff")
  resp.headers.setdefault("X-Frame-Options","DENY")
