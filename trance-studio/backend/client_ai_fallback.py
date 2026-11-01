@@ -44,7 +44,7 @@ def validate_mp4_clip(path):
     return length
 
 
-def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir):
+def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,scene_durations=None):
     """Mux at most two genuine moving AI clips + the ENTIRE existing MP3.
 
     Inputs are server-written MP4 files uploaded as bytes, NOT external URLs.
@@ -63,13 +63,28 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir):
         raise MobileClipError("קובץ המיקס המקורי אינו זמין") from None
     if not 1<=duration<=360:
         raise MobileClipError("משך המיקס המקורי אינו תקין")
-    # Preserve spoken order by allocating successive timeslices evenly.
-    # This is approximate and is clearly labelled in the UI.
+    # Prefer server-computed cuts from the actual mixed vocal activity,
+    # never unvalidated user-submitted boundaries. A substantial difference
+    # in spoken phrase durations must not trigger a visual cut at 50%.
+    if scene_durations is None:
+        durations=[duration/len(paths) for _ in paths]
+    else:
+        if (not isinstance(scene_durations,(list,tuple)) or
+                len(scene_durations)!=len(paths)):
+            raise MobileClipError("תזמון הסצנות אינו תואם למספר הקטעים")
+        try:
+            durations=[float(value) for value in scene_durations]
+        except (ValueError,TypeError) as exc:
+            raise MobileClipError("זמני הסצנות אינם מספרים תקינים") from exc
+        if (any(not 0.65<=d<=360 for d in durations)
+                or abs(sum(durations)-duration)>.35):
+            raise MobileClipError("תזמון הסצנות אינו מתאים לאורך המיקס")
+        # Use the exact audio length as the endpoint, not rounded frame cuts.
+        durations[-1]+=duration-sum(durations)
     parts=[]
     try:
         for i,path in enumerate(paths):
-            length=duration/len(paths) if i<len(paths)-1 else duration-sum(
-                duration/len(paths) for _ in parts)
+            length=durations[i]
             segment=work/f"mobile-scene-{i}.mp4"
             _make_segment(path,segment,length)
             parts.append(segment)
@@ -108,12 +123,13 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir):
         "ai_clips_generated":len(paths),
         "audio_seconds":round(duration,2),
         "ai_clip_seconds":round(sum(seconds),2),
-        "repeated_ai_shot":any(duration/len(paths)>n+.5 for n in seconds),
+        "repeated_ai_shot":any(durations[i]>n+.5
+                                 for i,n in enumerate(seconds)),
         "sources":[],
         "scenes":[
             {"action":"original_ai_generated_motion",
-             "start":round(i*duration/len(paths),2),
-             "end":round((i+1)*duration/len(paths),2),
+             "start":round(sum(durations[:i]),2),
+             "end":round(sum(durations[:i+1]),2),
              "basis":"consented_browser_text_to_video",
              "original_motion_seconds":round(seconds[i],2)}
             for i in range(len(paths))
