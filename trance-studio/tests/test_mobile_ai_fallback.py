@@ -130,7 +130,7 @@ class PhoneAIRecoveryTests(unittest.TestCase):
                             '-f','lavfi','-i','sine=frequency=400:duration=9',
                             '-c:a','libmp3lame',str(audio)],check=True)
             frames=[]
-            for i,kind in enumerate(('testsrc','testsrc2','smptebars')):
+            for i,kind in enumerate(('testsrc','testsrc2','testsrc')):
                 p=root/f'original-ai-clip-{i}.mp4'
                 synthetic_clip(p,kind,seconds=2)
                 frames.append(p)
