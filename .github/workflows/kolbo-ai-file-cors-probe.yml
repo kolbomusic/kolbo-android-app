@@ -1,0 +1,36 @@
+name: Kolbo check HuggingFace Gradio generated video file browser CORS
+on:
+  push:
+    branches: [kolbo-trance-ai-root-cause-20261101]
+    paths: ['.github/workflows/kolbo-ai-file-cors-probe.yml']
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          import urllib.request,urllib.error
+          origin='https://kolbo-trance-studio.onrender.com'
+          urls=[
+          'https://lightricks-ltx-2-5.hf.space/gradio_api/file=/tmp/gradio/a1e1ffd3a009605d97e5725646976e0d36e2559c12f49ad2b8b9c96cb17addad/tmp7d07sudo.mp4',
+          'https://lightricks-ltx-video-distilled.hf.space/gradio_api/file=/tmp/gradio/e27d9dd437859339a3145bd6cd16f9c2f258fa9ffe35ecb1cf12ce7ee05440d7/output_52716.mp4'
+          ]
+          for url in urls:
+            for method in ('GET','OPTIONS'):
+              headers={'Origin':origin,'Range':'bytes=0-4095'}
+              if method=='OPTIONS':
+                headers.update({'Access-Control-Request-Method':'GET','Access-Control-Request-Headers':'range'})
+              req=urllib.request.Request(url,headers=headers,method=method)
+              try:
+                with urllib.request.urlopen(req,timeout=25) as r:
+                  chunk=r.read(4096)
+                  print('GRADIO_FILE_CORS',method,r.status,'host',r.url.split('/')[2],
+                        'allow-origin',r.headers.get('Access-Control-Allow-Origin'),
+                        'content-type',r.headers.get('Content-Type'),
+                        'bytes',len(chunk),flush=True)
+              except urllib.error.HTTPError as e:
+                print('GRADIO_FILE_HTTP',method,e.code,e.headers.get('Access-Control-Allow-Origin'),flush=True)
+              except Exception as e:
+                print('GRADIO_FILE_ERROR',method,type(e).__name__,str(e)[:140],flush=True)
+          PY
