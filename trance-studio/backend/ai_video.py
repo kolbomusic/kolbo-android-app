@@ -221,7 +221,15 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                      " מתוך " + str(len(shots)))
         try:
             prompt=cinematic_prompt(words)
-            url=generator(prompt)
+            try:
+                url=generator(prompt)
+            except AIVideoUnavailable:
+                if generator is not _request_video_generation:
+                    raise
+                # The free shared GPU sometimes rejects a 2-second request
+                # while accepting a 1-second request. One bounded retry;
+                # never subscribe, pay, or invent a completed video.
+                url=generator(prompt,duration=1.0)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             prepared.append((words,raw,seconds))
