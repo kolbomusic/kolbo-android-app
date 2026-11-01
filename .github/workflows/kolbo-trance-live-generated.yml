@@ -1,0 +1,29 @@
+name: Kolbo live free AI-generated original Hebrew story video
+on:
+  push:
+    branches: [kolbo-trance-generative-scenes-20261101, kolbo-trance-studio-20261031]
+    paths:
+      - 'trance-studio/tests/live_generated_video_smoke.py'
+      - '.github/workflows/kolbo-trance-live-generated.yml'
+  workflow_dispatch:
+jobs:
+  production-hebrew-ai:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare only an invented Hebrew sample recording
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+          python - <<'PY'
+          from gtts import gTTS
+          text='איש זורק כוס זכוכית על הרצפה. הכוס נשברת לרסיסים.'
+          gTTS(text,lang='iw',slow=False).save('/tmp/kolbo-ai-hebrew.mp3')
+          PY
+          ffmpeg -nostdin -loglevel error -y -i /tmp/kolbo-ai-hebrew.mp3 -c:a libopus -b:a 24k -ar 48000 -ac 1 /tmp/kolbo-ai-original-hebrew.opus
+      - name: Require an actual free AI-created motion MP4 from the LIVE Render server
+        run: python trance-studio/tests/live_generated_video_smoke.py
