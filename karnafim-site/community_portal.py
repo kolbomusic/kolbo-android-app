@@ -509,7 +509,10 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
 
     @app.route("/my-posts")
     def my_posts():
-        u=approved()
+        u=me()
+        if not u:return redirect("/login?next=/my-posts",code=303)
+        if not u["approved"]:
+            return page("אין עדיין הרשאת פרסום",'<div class="note"><h1>החברות שלך ממתינה לאישור</h1><p>לאחר אישור המנהל אפשר לראות כאן סיפורים ותמונות ששיתפת.</p><a href="/archive">לארכיון המורשת</a></div>'),403
         retry_ai_queue()
         rows=sql("SELECT id,title,body,post_type,story_year,event_date,event_place,approved,ai_status,ai_reason,created_at FROM community_posts WHERE author_id=%s ORDER BY created_at DESC LIMIT 100",(u["id"],),True)
         b='<h1>📝 הפרסומים שלי</h1><p>תמונות, אירועים וסיפורים ששלחת. עד שהמנהל מאשר אותם, רק אתה והמנהל יכולים לראות את התוכן.</p>'
@@ -529,14 +532,15 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             b+='<p>'+e(p["body"]).replace("\n","<br>")+'</p>'
             attachments=sql("SELECT id,kind FROM community_media WHERE post_id=%s ORDER BY id",(p["id"],),True)
             b+=''.join(media_html(a["id"],a["kind"]) for a in attachments)
-            comments=sql("SELECT c.body,m.name FROM community_comments c JOIN members m ON m.id=c.author_id WHERE c.post_id=%s AND c.approved=TRUE ORDER BY c.created_at DESC LIMIT 40",(p["id"],),True)
-            b+='<div id="post-'+str(p["id"])+'"><h3>תגובות החברים</h3>'
-            for comment_row in reversed(comments):
-                b+='<div class="note"><strong>'+e(comment_row["name"])+'</strong><p>'+e(comment_row["body"])+'</p></div>'
-            b+='<form method="post" action="/post/'+str(p["id"])+'/comment" class="form-box">'+formwrap(
-                '<label>הוספת תגובה<textarea name="body" required minlength="3" maxlength="1200" placeholder="איזה זיכרון טוב..."></textarea></label>'
-                '<label><input style="width:auto;display:inline" type="checkbox" name="ai_consent" required> אני מסכים לבדיקת התגובה באמצעות שירות AI חיצוני; במסלול החינמי ספק השירות עשוי להשתמש בתוכן לשיפור מוצריו.</label>'
-                '<button>בדיקה ופרסום תגובה</button>')+'</form></div></article>'
+            if p["approved"]:
+                comments=sql("SELECT c.body,m.name FROM community_comments c JOIN members m ON m.id=c.author_id WHERE c.post_id=%s AND c.approved=TRUE ORDER BY c.created_at DESC LIMIT 40",(p["id"],),True)
+                b+='<div id="post-'+str(p["id"])+'"><h3>תגובות החברים</h3>'
+                for comment_row in reversed(comments):
+                    b+='<div class="note"><strong>'+e(comment_row["name"])+'</strong><p>'+e(comment_row["body"])+'</p></div>'
+                b+='</div>'
+            else:
+                b+='<p class="muted">תגובות יהיו זמינות רק לאחר אישור הפרסום והופעתו בפני חברי הקהילה.</p>'
+            b+='</article>'
         return page("הפרסומים שלי",b)
 
     @app.route("/photos")
@@ -594,12 +598,24 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             if p["event_place"]:b+='<p>📍 '+e(p["event_place"])+'</p>'
             b+='<p>'+e(p["body"]).replace("\n","<br>")+'</p><div class="byline">שותף על ידי '+e(p["name"])+'</div>'
             attachments=sql("SELECT id,kind FROM community_media WHERE post_id=%s ORDER BY id",(p["id"],),True)
-            b+=''.join(media_html(a["id"],a["kind"]) for a in attachments)+'</article>'
+            b+=''.join(media_html(a["id"],a["kind"]) for a in attachments)
+            comments=sql("SELECT c.body,m.name FROM community_comments c JOIN members m ON m.id=c.author_id WHERE c.post_id=%s AND c.approved=TRUE ORDER BY c.created_at ASC LIMIT 50",(p["id"],),True)
+            b+='<section id="post-'+str(p["id"])+'" aria-label="תגובות לפרסום"><h3>תגובות החברים</h3>'
+            if not comments:b+='<p class="muted">עדיין אין תגובות לפרסום הזה.</p>'
+            for x in comments:
+                b+='<div class="note"><strong>'+e(x["name"])+'</strong><p>'+e(x["body"]).replace("\n","<br>")+'</p></div>'
+            b+='<form method="post" action="/post/'+str(p["id"])+'/comment" class="form-box">'+formwrap(
+                '<label>כתיבת תגובה<textarea name="body" required minlength="3" maxlength="1200" placeholder="איזה זיכרון טוב..."></textarea></label>'
+                '<label><input style="width:auto;display:inline" type="checkbox" name="ai_consent" required> אני מסכים לבדיקת התגובה באמצעות מנגנון AI חיצוני אם הוא זמין. ספק חינמי עשוי להשתמש בתוכן לשיפור השירות.</label>'
+                '<button type="submit">שליחת תגובה לבדיקת בטיחות</button>')+'</form></section></article>'
         return page("ציר הזמן",b)
 
     @app.route("/chats")
     def chats():
-        u=approved()
+        u=me()
+        if not u:return redirect("/login?next=/chats",code=303)
+        if not u["approved"]:
+            return page("אישור חברות",'<div class="note" role="status"><h1>הודעות זמינות לחברי הקהילה המאושרים</h1><p>אפשר לפתוח שיחות אישיות רק לאחר שהמנהל מאשר את החברות ושני החברים מאשרים בקשת קשר.</p><a href="/archive">בינתיים אפשר לצפות במורשת</a></div>'),403
         incoming=sql("SELECT r.sender_id,m.name,r.note FROM requests r JOIN members m ON m.id=r.sender_id WHERE r.recipient_id=%s AND NOT r.accepted ORDER BY r.created_at DESC",(u["id"],),True)
         connected=sql("SELECT DISTINCT m.id,m.name FROM members m JOIN requests r ON r.accepted AND ((r.sender_id=%s AND r.recipient_id=m.id) OR (r.recipient_id=%s AND r.sender_id=m.id)) WHERE m.approved ORDER BY m.name",(u["id"],u["id"]),True)
         pending=sql("SELECT m.name FROM requests r JOIN members m ON m.id=r.recipient_id WHERE r.sender_id=%s AND NOT r.accepted",(u["id"],),True)
