@@ -128,10 +128,10 @@ class AIVideoTests(unittest.TestCase):
                 self.assertIsNone(body['image_path'])
                 self.assertEqual(body['prompt'],'A happy donkey')
                 return Response(b'{"event_id":"0123456789abcdef0123456789abcdef"}')
-            event='event: complete\\ndata: '+json.dumps([
+            event="event: complete"+chr(10)+"data: "+json.dumps([
                 {'url':good,'path':'/tmp/gradio/clip.mp4'},'narration',42
-            ])+'\\n\\n'
-            return Response(event.replace('\\\\n','\\n').encode())
+            ])+chr(10)*2
+            return Response(event.encode())
         result=_request_ltx25_generation('A happy donkey',opener=opener)
         self.assertEqual(result,good)
         self.assertEqual(len(calls),2)
