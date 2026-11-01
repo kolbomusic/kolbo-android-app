@@ -4,10 +4,11 @@ from flask import Flask,request,redirect,session,render_template_string,abort,Re
 import psycopg
 from psycopg.rows import dict_row
 from accessibility_ui import integrate_html, accessibility_statement_body
+from google_identity import enabled as google_ready, install_google_login
 
 app=Flask(__name__)
 app.secret_key=os.environ['SECRET_KEY']
-app.config.update(SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=timedelta(hours=6),MAX_CONTENT_LENGTH=2*1024*1024,MAX_FORM_MEMORY_SIZE=64*1024,MAX_FORM_PARTS=25,TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"])
+app.config.update(SESSION_COOKIE_NAME="karnafim_oidc_session",SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=timedelta(hours=6),MAX_CONTENT_LENGTH=2*1024*1024,MAX_FORM_MEMORY_SIZE=64*1024,MAX_FORM_PARTS=25,TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"])
 DB=os.environ["DATABASE_URL"]
 
 @app.before_request
@@ -124,6 +125,8 @@ def init():
  recipient_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
  body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());""")
 init()
+sql("ALTER TABLE members ADD COLUMN IF NOT EXISTS google_sub TEXT UNIQUE")
+sql("CREATE UNIQUE INDEX IF NOT EXISTS members_google_sub_unique ON members(google_sub) WHERE google_sub IS NOT NULL")
 sql("""CREATE TABLE IF NOT EXISTS login_failures (
  fingerprint TEXT NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -145,7 +148,7 @@ def verify(p,h):
  try: return hmac.compare_digest(hashpw(p,h.split(":")[0]),h)
  except: return False
 def me():
- if "uid" not in session:return None
+ if session.get("auth_method")!="google" or "uid" not in session:return None
  rows=sql("SELECT * FROM members WHERE id=%s",(session["uid"],),True)
  return rows[0] if rows else None
 def admin(u):return bool(u and u["email"].lower()==os.getenv("ADMIN_EMAIL","").lower() and u["approved"])
@@ -162,8 +165,8 @@ def view(title,body):
  if u:
   nav+='<a href="/new-post">📸 שתפו סיפור או אירוע</a> <a href="/my-posts">📝 הפרסומים שלי</a> <a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/admin/accessibility">דיווחי נגישות</a> <a href="/community/moderation">אישור פרסומים</a> '
-  nav+='<a href="/password">סיסמה</a> <a href="/logout">יציאה</a>'
- else:nav+='<a class="nav-register" href="/register">הרשמה</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
+  nav+='<a href="/logout">יציאה</a>'
+ else:nav+='<a class="nav-register" href="/register">הצטרפות באמצעות Google</a> <a class="nav-login" href="/login">🔑 Google Sign-In</a>'
  return integrate_html(render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
  :root{font-family:Arial,'Segoe UI',sans-serif;background:#f3f1e8;color:#172a25}*{box-sizing:border-box}body{margin:0;line-height:1.7}header{background:#172b25;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header a{color:white;text-decoration:none;margin-left:12px;font-size:14px}.logo{font-size:21px;font-weight:800;color:#dbeb9f}main{max-width:1050px;margin:auto;padding:36px 18px}h1{font-size:clamp(30px,5vw,54px);line-height:1.2;margin:0 0 18px}h2{margin-top:32px}.hero{background:linear-gradient(125deg,#142b23,#365441);padding:50px 32px;color:white;border-radius:22px}.hero p{color:#e2e9db;font-size:19px;max-width:700px}.btn,button{background:#cce38d;color:#152b24;border:0;padding:11px 20px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 0}a{color:#246448}.btn.secondary{background:#e5ebe3}.card{background:white;border:1px solid #dee2d8;border-radius:15px;padding:23px;margin:14px 0;box-shadow:0 4px 18px #13251c09}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}label{display:block;font-weight:600;margin:12px 0}input,textarea,select{width:100%;display:block;padding:12px;border:1px solid #b8c4b4;border-radius:8px;font:inherit;background:white}textarea{min-height:105px}form{max-width:560px}.muted{color:#60736a}.tag{display:inline-block;padding:3px 9px;background:#e6eedb;border-radius:14px;font-size:12px}.error{background:#fff0e8;padding:14px;border-radius:8px}footer{text-align:center;padding:28px;color:#66766b;font-size:13px}
 header{position:sticky;top:0;z-index:1000;min-height:76px;box-shadow:0 3px 12px #0002}
@@ -192,7 +195,14 @@ def favicon():
 def health():return {"ok":True,"service":"karnafim","access":("read_only" if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" else "community")}
 @app.route("/status")
 def public_status():
- return view("מצב הקהילה",'<h1>מצב קהילת הקרנפים</h1><div class="card"><h2>המערכת פעילה</h2><p>ניתן לפתוח חשבון, להתחבר ולבקש אישור חברות. פרופילים ופרסומים פרטיים מוצגים רק לחברים מאושרים ועל פי הגדרות השיתוף.</p><p>כניסה באמצעות חשבון Google אינה מוגדרת בשלב זה. משתמשים נכנסים באמצעות דוא״ל וסיסמה.</p><p><a class="btn" href="/login">🔑 התחברות</a> <a class="btn secondary" href="/register">הרשמה</a></p></div>')
+ available=google_ready()
+ return view("מצב הקהילה",'<h1>מצב קהילת הקרנפים</h1><div class="card"><h2>חברות והרשאות</h2>'
+  '<p>האתר הוא יוזמה עצמאית של יוצאי פלוגה ב׳ ואינו אתר רשמי של צה״ל או משרד הביטחון.</p>'
+  '<p>הכניסה החדשה תתבצע באמצעות Google בלבד. Google מאמתת בעלות על חשבון Google, לא שירות צבאי. '
+  'כל חבר יידרש לאישור נפרד של מנהל הקהילה לפני צפייה בתוכן הקהילתי ויצירת קשר.</p>'
+  +('<p><a href="/login">לכניסה באמצעות Google</a></p>'
+    if available else '<p><strong>התחברות Google עדיין אינה זמינה.</strong> היא תופעל רק לאחר השלמת בדיקת האבטחה והגדרות OAuth.</p>')
+  +'</div>')
 
 # Minimal privacy-preserving accessibility feedback: no public user directory, no messages to email.
 sql("""CREATE TABLE IF NOT EXISTS accessibility_reports(
@@ -270,7 +280,7 @@ def about_public():
 
 @app.route("/privacy")
 def privacy_public():
- return view("מדיניות פרטיות",'<h1>פרטיות בקהילה</h1><div class="card"><p>המערכת שומרת פרטי הרשמה, סיסמה במנגנון גיבוב, והודעות ותמונות שחברים בוחרים לשתף. האתר משתמש בעוגיית התחברות מאובטחת.</p><p>חברות מאושרת ידנית; פרטי קשר אינם מפורסמים במדריך כברירת מחדל. פרופיל מופיע רק כאשר החבר בחר להציגו. פרסומים אישיים זמינים לחברים מאושרים לאחר ביקורת מנהל.</p><p>אפשר לשנות את הגדרות החשיפה או למחוק את החשבון דרך <a href="/profile">הפרופיל שלי</a> לאחר כניסה. אין להעלות פרטים או תמונות של אחרים ללא אישור.</p></div>')
+ return view("מדיניות פרטיות",'<h1>פרטיות בקהילה</h1><div class="card"><p>בעת חידוש הפעילות ההתחברות תהיה דרך Google בלבד; האתר ישמור מזהה חשבון, שם ודוא״ל בהסכמה, וכן הודעות ותמונות שחברים בוחרים לשתף. סיסמאות מקומיות ישנות אינן משמשות עוד להתחברות. האתר משתמש בעוגיית התחברות מאובטחת.</p><p>חברות מאושרת ידנית; פרטי קשר אינם מפורסמים במדריך כברירת מחדל. פרופיל מופיע רק כאשר החבר בחר להציגו. פרסומים אישיים זמינים לחברים מאושרים לאחר ביקורת מנהל.</p><p>אפשר לשנות את הגדרות החשיפה או למחוק את החשבון דרך <a href="/profile">הפרופיל שלי</a> לאחר כניסה. אין להעלות פרטים או תמונות של אחרים ללא אישור.</p></div>')
 
 @app.route("/safety")
 def safety_public():
@@ -278,45 +288,34 @@ def safety_public():
 
 @app.route("/register",methods=["GET","POST"])
 def register():
- if request.method=="POST":
-  guard();
-  if request.form.get("consent")!="on":abort(400)
-  name=request.form.get("name","").strip()[:100];email=request.form.get("email","").lower().strip()[:200];pw=request.form.get("password","")
-  if len(name)<2 or "@" not in email or len(pw)<12:return view("הרשמה",'<div class="error">שם תקין, דוא״ל תקין וסיסמה של לפחות 12 תווים נדרשים.</div><a href="/register">חזרה</a>'),400
-  try:
-   sql("INSERT INTO members(name,email,password,nickname,service_start,service_end,company,role) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",(name,email,hashpw(pw),request.form.get("nickname","")[:100],request.form.get("start","")[:40],request.form.get("end","")[:40],request.form.get("company","")[:100],request.form.get("role","")[:100]))
-  except psycopg.errors.UniqueViolation:return view("הרשמה","<p>הכתובת כבר רשומה. אפשר להיכנס לחשבון.</p>"),409
-  return view("הבקשה נקלטה",'<div class="card"><h1>הבקשה נקלטה</h1><p>החשבון ממתין לאישור מנהל הקהילה. אין פרסום אוטומטי של הפרטים.</p><a href="/login">לכניסה</a></div>')
- body='<h1>מצטרפים לקרנפים</h1><p>ההרשמה מאושרת ידנית. אין למסור מספר אישי צבאי, כתובת או מידע רגיש.</p><form method="post" class="card">'+formwrap(field("name","שם מלא",required=True)+field("nickname","כינוי מהשירות")+field("email","כתובת דוא״ל","email",True)+field("password","סיסמה (12 תווים לפחות)","password",True)+field("start","מחזור גיוס / שנה")+field("end","שנת שחרור")+field("company","פלוגה (קרנפים / ברקן)")+field("role","תפקיד / צוות")+ '<label><input type="checkbox" name="consent" required style="width:auto;display:inline"> אני מסכים/ה לשמירת הפרטים לצורך קהילת החברים</label><button>שליחת בקשת הצטרפות</button></form>')
- return view("הרשמה",body+'<p>כבר רשומים בקהילה? <a href="/login"><strong>כניסה לחשבון</strong></a></p>')
+ if request.method=="POST":abort(405)
+ return view("הצטרפות לקהילת הקרנפים",
+  '<h1>🦏 הצטרפות לקהילה</h1><div class="card">'
+  '<p>ההרשמה מתבצעת באמצעות חשבון Google מאומת בלבד. '
+  'לא נבקש ממך ליצור סיסמה חדשה באתר.</p>'
+  '<p>Google אינה מאמתת שירות בפלוגה. אחרי ההתחברות תתבקש להסכים לשמירת פרטי הקשר '
+  'ולאחר מכן להמתין לאישור מנהל הקהילה.</p>'
+  +('<a class="btn" href="/auth/google/start">המשך עם Google</a>'
+    if google_ready() else '<div class="note" role="status">ההצטרפות עדיין אינה פעילה עד לסיום בדיקת האבטחה והגדרת Google OAuth.</div>')
+  +'</div><p>הקהילה עצמאית ואינה מייצגת את צה״ל או משרד הביטחון.</p>')
+
 @app.route("/login",methods=["GET","POST"])
 def login():
- # Only explicit local destinations are accepted; never redirect OAuth/login to an arbitrary URL.
- allowed={"/new-post","/my-posts","/feed","/chats","/directory","/photos"}
- dest=request.form.get("next","") if request.method=="POST" else request.args.get("next","")
- dest=dest if dest in allowed else "/"
- if request.method=="POST":
-  guard();email=request.form.get("email","").strip().lower()
-  fingerprint=auth_fingerprint(email)
-  if is_rate_limited(fingerprint):
-   return view("כניסה",'<p class="error" role="alert">בוצעו יותר מדי ניסיונות כניסה. ניתן לנסות שוב בעוד 15 דקות.</p><a href="/login">חזרה</a>'),429
-  rows=sql("SELECT * FROM members WHERE email=%s",(email,),True)
-  if rows and verify(request.form.get("password",""),rows[0]["password"]):
-   sql("DELETE FROM login_failures WHERE fingerprint=%s",(fingerprint,))
-   session.clear();session.permanent=True;session["uid"]=rows[0]["id"]
-   return redirect(dest,code=303)
-  sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
-  return view("כניסה",'<p class="error" role="alert">פרטי ההתחברות לא נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
- if me():return redirect(dest)
- return view("כניסה",'<h1>🔑 כניסה לחשבון הקרנפים</h1>'
-  +('<p class="card" role="status">כדי לשתף סיפור, אירוע או תמונה יש להתחבר לחשבון חבר מאושר. אחרי הכניסה נחזיר אותך אוטומטית למסך הפרסום.</p>' if dest=="/new-post" else '')
-  +'<form method="post" class="card">'+formwrap(
-    '<input type="hidden" name="next" value="'+esc(dest)+'">'
-    +field("email","דוא״ל","email",True)
-    +field("password","סיסמה","password",True)
-    +'<button>כניסה לחשבון</button>')+'</form>'
-    +'<p>עדיין אין לך חשבון? <a href="/register"><strong>להרשמה לקהילה</strong></a></p>'
-    +'<p class="muted">התחברות באמצעות Google עדיין אינה מוגדרת. האתר תומך בשלב זה בדוא״ל וסיסמה.</p>')
+ if request.method=="POST":abort(405)
+ destination=request.args.get("next","/")
+ from google_identity import RETURN_PATHS
+ destination=destination if destination in RETURN_PATHS else "/"
+ if me():return redirect(destination,code=303)
+ href="/auth/google/start?next="+destination
+ return view("כניסה לקהילת הקרנפים",
+  '<h1>🔐 כניסה באמצעות Google</h1><div class="card">'
+  '<p>התחברות לחשבון Google המאומת שלך — אין צורך בסיסמה נוספת לאתר הקרנפים.</p>'
+  '<p><strong>חשוב:</strong> אישור זהות Google אינו אישור חברות בפלוגת הקרנפים. '
+  'הגישה למדריך, להודעות ולהעלאת תמונות מותנית באישור מנהל הקהילה.</p>'
+  +('<a class="btn" href="'+esc(href)+'">התחברות מאובטחת עם Google</a>'
+    if google_ready() else '<div class="note" role="status">הכניסה אינה פעילה כרגע. חסרה הפעלת Google OAuth ואישור בטיחות האתר.</div>')
+  +'</div><p>לא נבקש סיסמת Google בתוך אתר זה.</p>')
+
 @app.route("/logout",methods=["GET","POST"])
 def logout():
  if request.method=="POST":
@@ -432,18 +431,13 @@ def memory_admin():
 
 @app.route("/password",methods=["GET","POST"])
 def change_password():
- u=me()
- if not u:return redirect("/login")
- if request.method=="POST":
-  guard()
-  old=request.form.get("old","")
-  new=request.form.get("new","")
-  if not verify(old,u["password"]) or len(new)<12 or len(new)>200:
-   return view("שינוי סיסמה",'<p class="error">הסיסמה הנוכחית שגויה או שהחדשה קצרה מדי. נדרשים לפחות 12 תווים.</p><a href="/password">חזרה</a>'),400
-  sql("UPDATE members SET password=%s WHERE id=%s",(hashpw(new),u["id"]))
-  session.clear()
-  return view("הסיסמה הוחלפה",'<div class="card"><h1>הסיסמה עודכנה</h1><p>אפשר להיכנס מחדש עם הסיסמה החדשה.</p><a href="/login">כניסה</a></div>')
- return view("שינוי סיסמה",'<h1>שינוי סיסמה</h1><form method="post" class="card">'+formwrap(field("old","הסיסמה הנוכחית","password",True)+field("new","סיסמה חדשה (לפחות 12 תווים)","password",True)+'<button>עדכון סיסמה</button></form>'))
+ # Legacy local-password handling is retired; a Google account owns its password.
+ return view("סיסמאות מנוהלות ב־Google",
+  '<h1>אין סיסמה מקומית באתר הקרנפים</h1>'
+  '<p>הכניסה מתבצעת דרך חשבון Google. אין כאן טופס לאיסוף או לשינוי סיסמאות.</p>'
+  '<p>ניתן לנהל את סיסמת חשבון Google דרך הגדרות החשבון של Google בלבד.</p>'),410
+
+install_google_login(app,sql,view,guard,formwrap,esc)
 
 from community_portal import install as install_portal
 install_portal(app,sql,view,me,admin,guard,formwrap,esc)
