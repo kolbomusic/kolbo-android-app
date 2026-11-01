@@ -254,12 +254,18 @@ public final class MainActivity extends Activity {
         for(int i=0;i<snapshot.size();i++)names.put(audioName(snapshot.get(i),i));
         // WhatsApp sharing imports clips only. Creation is started only by
         // an explicit press on the web form Create button, never by Android.
-        String js="(async function(){try{var names="+names.toString()+";var clips=[];"
-                +"for(var i=0;i<names.length;i++){var r=await fetch('/native-shared-audio/'+i,{cache:'no-store'});"
-                +"if(!r.ok)throw Error('קובץ לא זמין');var b=await r.blob();"
-                +"clips.push(new File([b],names[i],{type:b.type||'audio/ogg'}));}"
-                +"if(window.kolboImportSharedAudio)window.kolboImportSharedAudio(clips);"
-                +"}catch(e){console.error('Import from WhatsApp',e);}})();";
+        // Assemble the import script as a Java StringBuilder: protects the
+        // Android build from an accidentally missing '+' between JS lines.
+        // Sharing stages the files; only the visible Create button starts work.
+        String js = new StringBuilder("(async function(){try{var names=")
+                .append(names.toString())
+                .append(";var clips=[];")
+                .append("for(var i=0;i<names.length;i++){var r=await fetch('/native-shared-audio/'+i,{cache:'no-store'});")
+                .append("if(!r.ok)throw Error('קובץ לא זמין');var b=await r.blob();")
+                .append("clips.push(new File([b],names[i],{type:b.type||'audio/ogg'}));}")
+                .append("if(window.kolboImportSharedAudio)window.kolboImportSharedAudio(clips);")
+                .append("}catch(e){console.error('Import from WhatsApp',e);}})();")
+                .toString();
         webView.evaluateJavascript(js,null);
     }
     @Override protected void onNewIntent(Intent intent){
