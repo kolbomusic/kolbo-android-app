@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 
 ROOT=Path(__file__).resolve().parent
 URL="https://karnafim-community-46.onrender.com"
-VALID=["/","/about","/privacy","/safety","/help","/accessibility","/photos","/archive","/memorials","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
+VALID=["/","/about","/privacy","/terms","/safety","/help","/accessibility","/photos","/archive","/memorials","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
 BLOCKED=["/login","/register","/auth/google/start","/auth/google/callback","/auth/google/consent","/profile","/password","/find","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
 RETIRED_CREDENTIALS={"/login","/register","/password","/find","/auth/google/start","/auth/google/callback","/auth/google/consent"}
 def fetch(path):
@@ -83,6 +83,7 @@ def live():
             if route=="/accessibility":ok=ok and "הצהרת נגישות" in body and 'id="main-content"' in body
             if route=="/about":ok=ok and "על קהילת הקרנפים" in body
             if route=="/privacy":ok=ok and "פרטיות המידע באתר" in body
+            if route=="/terms":ok=ok and "תנאי שימוש" in body
             if route=="/safety":ok=ok and "מצב אבטחת אתר הקרנפים" in body
             if route=="/help":ok=ok and "שאלות נפוצות" in body
             if route=="/find":ok=ok and "איתור חברי פלוגת הקרנפים" in body
