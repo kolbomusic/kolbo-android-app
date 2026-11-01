@@ -8,6 +8,7 @@ ROOT=Path(__file__).resolve().parent
 URL="https://karnafim-community-46.onrender.com"
 VALID=["/","/about","/privacy","/safety","/help","/accessibility","/photos","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
 BLOCKED=["/login","/register","/auth/google/start","/auth/google/callback","/auth/google/consent","/profile","/password","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
+RETIRED_CREDENTIALS={"/login","/register","/password","/auth/google/start","/auth/google/callback","/auth/google/consent"}
 def fetch(path):
     try:
         response=urlopen(Request(URL+path,headers={"User-Agent":"KarnafimSecurityAudit/1.0"}),timeout=18)
@@ -93,12 +94,13 @@ def live():
             if not ok:errors.append((route,status))
         for route in BLOCKED:
             status,headers,body,landed=fetch(route)
-            ok=status==503 and "no-store" in headers.get("Cache-Control","") and "noindex" in headers.get("X-Robots-Tag","")
+            expected=410 if route in RETIRED_CREDENTIALS else 503
+            ok=status==expected and "no-store" in headers.get("Cache-Control","") and "noindex" in headers.get("X-Robots-Tag","")
             print(("PASS" if ok else "FAIL"),route,"BLOCKED",status)
             if not ok:errors.append((route,status))
     robots,_,rules,_=fetch("/robots.txt")
     sitemap,_,xml,_=fetch("/sitemap.xml")
-    if robots!=200 or "Disallow: /login" not in rules:errors.append(("robots",robots))
+    if robots!=200 or (not active and ("Disallow: /login" in rules or "Disallow: /register" in rules)):errors.append(("robots",robots))
     if sitemap!=200 or "https://karnafim-community-46.onrender.com/memorial/" not in xml:errors.append(("sitemap",sitemap))
     favicon,*_=fetch("/favicon.svg")
     if favicon!=200:errors.append(("favicon",favicon))
