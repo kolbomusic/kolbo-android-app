@@ -307,7 +307,13 @@ def _matches_metadata(title,query):
              "cooking":("cooking","cooks","cook"),
              "flying":("flying","flies","fly"),
              "running":("running","runs","run")}
-    return all(any(word in title for word in aliases.get(token,(token,)))
+    # Match complete English words, never substrings inside unrelated
+    # names: "car" must not match "Carina Nebula", "rain" not "train".
+    # This matters for semantic safety: a video can have genuine motion
+    # while portraying the WRONG action or object.
+    def whole_word(word):
+        return re.search(r"(?<![a-z0-9])"+re.escape(word)+r"(?![a-z0-9])",title) is not None
+    return all(any(whole_word(word) for word in aliases.get(token,(token,)))
                for token in keywords)
 
 # Search real recorded events by several grounded names rather than one
