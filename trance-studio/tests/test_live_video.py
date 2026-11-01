@@ -197,6 +197,41 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC0'}}))
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC BY-SA 2.0'}}))
 
+    def test_static_video_is_rejected_before_selecting_motion_footage(self):
+        # Real video codecs can contain an unmoving still image. It is not
+        # enough to check ffprobe says 'video'.
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            audio=root/'sound.mp3'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i','sine=frequency=240:duration=3',
+                '-c:a','libmp3lame',str(audio)],check=True,timeout=25)
+            board=visual_plan('גשם יורד.',3)
+            def search(query):
+                return [
+                    {'url':'https://upload.wikimedia.org/black.webm',
+                     'page':'https://commons.wikimedia.org/wiki/File:Static.webm',
+                     'license':'CC0'},
+                    {'url':'https://upload.wikimedia.org/moving.webm',
+                     'page':'https://commons.wikimedia.org/wiki/File:Real_rain.webm',
+                     'license':'CC0'}
+                ]
+            def download(item,output):
+                if 'black.webm' in item['url']:
+                    source='color=c=black:size=320x240:rate=12:duration=3'
+                else:
+                    source='testsrc=size=320x240:rate=12:duration=3'
+                subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                    '-f','lavfi','-i',source,
+                    '-c:v','libvpx-vp9','-b:v','90k',str(output)],
+                    check=True,timeout=30)
+            result=root/'movie.mp4'
+            matched=export_live_story(audio,result,board,root/'assets',
+                                      search=search,download=download)
+            self.assertEqual(len(matched),1)
+            self.assertTrue(matched[0]['page'].endswith('Real_rain.webm'))
+            self.assertGreater(result.stat().st_size,12000)
+
     def test_metadata_does_not_match_carina_to_car_or_train_to_rain(self):
         # Reproduces a REAL failed production run which showed a tour of the
         # Carina Nebula while the Hebrew audio mentioned a moving car.
