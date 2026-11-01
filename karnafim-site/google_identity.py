@@ -56,19 +56,44 @@ def enabled():
                  (auth_mode() == "oauth" and checks["client_secret_present"])))
 
 
+# The callback is deterministic so the exact first-party script can be hashed
+# in the Content Security Policy instead of permitting unsafe-inline.
+GIS_CALLBACK_JS = (
+    "function karnafimGoogleResponse(response){"
+    "if(!response||typeof response.credential!=='string'||"
+    "response.credential.length<50||response.credential.length>8192)return;"
+    "var form=document.getElementById('karnafim-gis-form');"
+    "if(!form)return;"
+    "form.elements.namedItem('credential').value=response.credential;"
+    "form.submit();"
+    "}"
+)
+
+
 def gis_button_html():
-    """Official GIS HTML API: Google posts a signed token, never a password."""
+    """Google's popup returns a signed ID token via a first-party form POST.
+
+    The callback runs on our own login page; posting a local form keeps the
+    secure SameSite=Lax session cookie and the one-time CSRF/nonce available.
+    """
     if not enabled() or auth_mode() != "gis":
         return ""
     nonce = secrets.token_urlsafe(32)
     session["google_gis_nonce"] = nonce
+    csrf = session.setdefault("csrf", secrets.token_urlsafe(24))
     client_id = html.escape(os.environ["GOOGLE_CLIENT_ID"].strip(), quote=True)
     return (
         '<div id="g_id_onload" data-client_id="' + client_id + '" '
-        'data-login_uri="' + CALLBACK + '" data-ux_mode="popup" '
+        'data-callback="karnafimGoogleResponse" data-ux_mode="popup" '
         'data-auto_prompt="false" data-nonce="' + html.escape(nonce, quote=True) + '"></div>'
         '<div class="g_id_signin" data-type="standard" data-size="large" '
         'data-theme="outline" data-text="signin_with" data-shape="rectangular"></div>'
+        '<form id="karnafim-gis-form" action="' + CALLBACK + '" '
+        'method="post" hidden autocomplete="off">'
+        '<input type="hidden" name="csrf" value="' + html.escape(csrf, quote=True) + '">'
+        '<input type="hidden" name="credential" value="">'
+        '</form>'
+        '<script>' + GIS_CALLBACK_JS + '</script>'
         '<script src="https://accounts.google.com/gsi/client" async defer></script>'
     )
 
@@ -213,12 +238,12 @@ def install_google_login(app, sql, view, guard, formwrap, esc):
         if request.method == "POST":
             if auth_mode() != "gis":
                 abort(405)
-            csrf_cookie = request.cookies.get("g_csrf_token", "")
-            csrf_form = request.form.get("g_csrf_token", "")
+            # This callback uses a same-origin POST, not Google's cross-site
+            # form POST. Flask's session-bound CSRF token and one-time nonce
+            # protect the operation without weakening SameSite cookie policy.
+            guard()
             nonce = session.pop("google_gis_nonce", "")
-            if (not csrf_cookie or not csrf_form or
-                    not hmac.compare_digest(csrf_cookie, csrf_form) or
-                    not isinstance(nonce, str) or len(nonce) < 32):
+            if not isinstance(nonce, str) or len(nonce) < 32:
                 abort(403)
             try:
                 identity, claims = verify_google_gis_token(
