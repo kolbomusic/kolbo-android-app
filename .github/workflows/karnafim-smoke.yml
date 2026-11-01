@@ -2,6 +2,9 @@ name: Karnafim security and route regression
 on:
   push:
     branches: [karnafim-veterans-portal-20261031]
+    paths:
+      - 'karnafim-site/**'
+      - '.github/workflows/karnafim-smoke.yml'
   workflow_dispatch:
 permissions:
   contents: read
