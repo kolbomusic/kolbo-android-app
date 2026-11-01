@@ -14,7 +14,7 @@ var MODELS=[
    call:'/gradio_api/call/v2/run',result:'/gradio_api/call/run/'}
 ];
 var MAX_VIDEO_BYTES=10*1024*1024;
-var MAX_SHOTS=2;
+var MAX_SHOTS=3;
 var HEBREW=/[\u0590-\u05ff]/;
 
 function fail(msg){return new Error(msg)}
@@ -113,7 +113,7 @@ async function oneClip(model,prompt,onStage){
     throw fail('המנוע החזיר קובץ שאינו סרטון MP4');
   return blob;
 }
-function narrateTwoShots(fullPrompt){
+function splitPromptIntoBeats(fullPrompt){
   var all=String(fullPrompt||'').trim();
   var marker='The narration is in HEBREW. Interpret its meaning and depict it: ';
   var i=all.lastIndexOf(marker);
@@ -123,14 +123,29 @@ function narrateTwoShots(fullPrompt){
     return (x.match(/[\\u0590-\\u05ff]/g)||[]).length>=3
   });
   if(words.length<2)return [all];
-  var half=Math.max(1,Math.ceil(words.length/2));
-  var shots=[words.slice(0,half).join('. '),words.slice(half).join('. ')].filter(Boolean);
-  return shots.map(function(s){return prefix+s}).slice(0,MAX_SHOTS);
+  // Preserve chronological clauses. Never divide an actor/action sentence
+  // in half or replace it with unrelated footage. The server normally supplies
+  // its more precise narrative-beat prompts; this is a legacy safeguard.
+  var count=Math.min(MAX_SHOTS,words.length),shots=[];
+  for(var j=0;j<count;j++){
+    var from=Math.floor(j*words.length/count);
+    var to=Math.floor((j+1)*words.length/count);
+    shots.push(prefix+words.slice(from,to).join('. '));
+  }
+  return shots.filter(Boolean);
 }
-async function getPlan(id,passedPrompt){
+async function getPlan(id,passedPrompt,passedScenes){
+  // The server extracted physically specific events (actors, action and
+  // objects) from the original Hebrew. Prefer those ordered grounded scenes.
+  if(Array.isArray(passedScenes)&&passedScenes.length){
+    var grounded=passedScenes.slice(0,MAX_SHOTS).filter(function(p){
+      return typeof p==='string'&&p.length>20&&p.length<2000&&HEBREW.test(p);
+    });
+    if(grounded.length)return grounded;
+  }
   if(passedPrompt){
-    var local=narrateTwoShots(passedPrompt).filter(function(p){
-      return p.length>20&&p.length<2000&&HEBREW.test(p)
+    var local=splitPromptIntoBeats(passedPrompt).filter(function(p){
+      return p.length>20&&p.length<2000&&HEBREW.test(p);
     });
     if(local.length)return local;
   }
@@ -145,12 +160,12 @@ async function getPlan(id,passedPrompt){
     return typeof p==='string'&&p.length>20&&p.length<2000&&HEBREW.test(p);
   });
 }
-async function generate(jobId,onStage,passedPrompt){
+async function generate(jobId,onStage,passedPrompt,passedScenes){
   if(!document.getElementById('ai_video_consent').checked)
     throw fail('נדרשת הסכמה לשימוש במנוע AI חיצוני');
   if(!/^[a-f0-9]{48}$/.test(String(jobId||'')))
     throw fail('לא נמצא מזהה המיקס');
-  var prompts=await getPlan(jobId,passedPrompt);
+  var prompts=await getPlan(jobId,passedPrompt,passedScenes);
   var blobs=[];
   for(var i=0;i<prompts.length;i++){
     var clip=null;
@@ -182,5 +197,5 @@ async function generate(jobId,onStage,passedPrompt){
   return answer;
 }
 window.KolboAIFallback={generate:generate,
-  version:'1.14.0',isDirectBrowserMode:true};
+  version:'1.15.0',isDirectBrowserMode:true};
 })();
