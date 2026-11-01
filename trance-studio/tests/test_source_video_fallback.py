@@ -77,6 +77,48 @@ class OriginalMovingVideoTests(unittest.TestCase):
                 self.assertEqual(status['storyboard_source'],'original_shared_video')
                 self.assertIn('/video',status['video_url'])
 
+    def test_fresh_story_mode_never_returns_original_video_on_asr_failure(self):
+        import app as server
+        import source_asr
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            movie=root/'uploaded.mp4'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-f','lavfi',
+                '-i','testsrc=size=320x240:rate=12:duration=2',
+                '-c:v','libx264','-pix_fmt','yuv420p',str(movie)],
+                check=True,timeout=25)
+            with mock.patch.object(server,'ThreadPoolExecutor') as executor:
+                app=server.create_app({'TESTING':True,'JOB_DIR':str(root/'jobs'),
+                                       'API_TOKEN':'test-only'})
+                client=app.test_client()
+                response=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(movie.read_bytes()),'video.mp4'),
+                    'make_video':'on','video_requested':'on',
+                    'video_strategy':'new_story',
+                    'transcript':'','transcript_origin':'auto','seconds':'30'})
+                self.assertEqual(response.status_code,202,response.json)
+                worker=executor.return_value.submit.call_args.args
+                def export_fake_mp3(samples,path,sr=32000):
+                    subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                        '-f','lavfi','-i','sine=frequency=260:duration=5',
+                        '-c:a','libmp3lame',str(path)],check=True,timeout=25)
+                with (mock.patch.object(source_asr,'transcribe_original_files',
+                                        side_effect=RuntimeError('offline')),
+                      mock.patch.object(server,'load_audio',
+                                        return_value=np.ones(160000,np.float32)*.01),
+                      mock.patch.object(server,'render_mix',
+                                        return_value=(np.zeros((160000,2),np.float32),
+                                                      np.zeros(160000,np.float32))),
+                      mock.patch.object(server,'export_mp3',side_effect=export_fake_mp3),
+                      mock.patch('source_video_fallback.compose_original_video_with_mix',
+                                 side_effect=AssertionError('original forbidden'))):
+                    worker[0](*worker[1:])
+                result=client.get('/api/jobs/'+response.json['id']).json
+                self.assertEqual(result['state'],'done',result)
+                self.assertEqual(result['video_status'],'unavailable',result)
+                self.assertNotIn('video_url',result)
+                self.assertIn('download_url',result)
+
     def test_audio_only_does_not_invent_a_real_world_scene(self):
         with tempfile.TemporaryDirectory() as temp:
             root=pathlib.Path(temp);music=root/'mix.mp3'
