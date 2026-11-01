@@ -616,6 +616,39 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
 
 
 
+
+def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
+    """Locate REAL voiced spans for musical call-and-response arrangement.
+
+    Uses the original-sample mapping returned by arranged_vocal_track;
+    inserted jokes and silence do not masquerade as spoken sentences.
+    Energy is only used to schedule music, never to delete speech.
+    No unreliable word timestamps or external transcription dependency.
+    """
+    frames=max(1,int(math.ceil(seconds/frame_seconds)))
+    voiced=np.zeros(frames,dtype=np.float32)
+    fill_locations=[]
+    cursor=4*(60./bpm)
+    for track,mask,spans in arranged:
+        for _,_,start,end in spans:
+            for at in range(start,end,max(1,int(frame_seconds*sr))):
+                excerpt=track[at:min(end,at+int(frame_seconds*sr))]
+                if len(excerpt)<int(.02*sr):
+                    continue
+                rms=float(np.sqrt(np.mean(excerpt*excerpt)))
+                if rms>=.024:
+                    index=int((cursor+at/sr)/frame_seconds)
+                    if index<frames:
+                        voiced[index]=max(voiced[index],min(1.,rms/.095))
+        marks=np.flatnonzero((mask[1:]>.5)&(mask[:-1]<=.5))+1
+        for index in marks:
+            fill_locations.append(cursor+index/sr)
+        cursor+=len(track)/sr+3*(60./bpm)
+    # 300ms 'look both ways' smoothing keeps single loud consonants from
+    # producing jarring note-by-note volume oscillations.
+    smoothed=np.convolve(voiced,np.array([.12,.20,.36,.20,.12],np.float32),mode='same')
+    return smoothed.astype(np.float32),fill_locations
+
 def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint=''):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
@@ -639,6 +672,12 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     seconds=max(30.,float(seconds),math.ceil(needed))
     if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
     n=int(round(seconds*sr))
+    activity,fx_fill_times=speech_aware_music_map(arranged,sr,bpm,seconds)
+    def talking(t):
+        if t<0:return 0.
+        frame=int(t/.10)
+        if frame>=len(activity):return 0.
+        return float(np.max(activity[max(0,frame-1):min(len(activity),frame+4)]))
     music=np.zeros((n,2),dtype=np.float32)
     def add(x,time,gain=1,pan=0):
         start=int(round(time*sr));count=min(len(x),n-start)
@@ -686,8 +725,10 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             env=np.exp(-t*8.5)*np.minimum(1.,t/.006)
             level=.27
         elif kind=='pad':
-            raw=.52*fundamental+.27*second+.14*third
-            env=np.minimum(1.,t/.075)*np.clip((dur-t)/.16,0,1)
+            # Smooth dual-oscillator pad: avoids the repetitive naked sine tune.
+            detuned=np.sin(2*np.pi*f*1.006*t+.12*np.sin(2*np.pi*.65*t))
+            raw=.42*fundamental+.23*second+.10*third+.24*detuned
+            env=np.minimum(1.,t/.12)*np.clip((dur-t)/.24,0,1)
             level=.10
         elif kind=='acid':
             raw=(2*((t*f)%1)-1)+.19*second
@@ -702,9 +743,13 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             env=np.clip((dur-t)/.055,0,1)*np.minimum(1.,t/.009)
             level=.095
         elif kind=='saw':
-            raw=fundamental+.35*second+.20*third+.10*np.sin(2*np.pi*f*4*t)
-            env=np.exp(-t*4.5)
-            level=.14
+            # Band-limited harmonic stack rather than brittle full-scale saw.
+            raw=(fundamental+.42*second+.22*third+
+                 .10*np.sin(2*np.pi*f*4*t)+
+                 .06*np.sin(2*np.pi*f*5*t)+
+                 .16*np.sin(2*np.pi*f*1.008*t))
+            env=np.exp(-t*5.6)*np.minimum(1.,t/.006)
+            level=.12
         elif kind=='pluck':
             raw=fundamental+.27*second+.08*third
             env=np.exp(-t*13.)
@@ -749,9 +794,11 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             section='groove' if pct<.22 else 'build' if pct<.35 else 'drop' if pct<.57 else 'breakdown' if pct<.70 else 'final'
         chord_root,chord_pcs=chords[bar%4]
         phrase=(bar//4)
-        motif_index=(music_seed+phrase//2)%len(contours) if melody=='auto' else music_seed
+        motif_index=(music_seed+bar//4)%len(contours) if melody=='auto' else music_seed
         motif=contours[motif_index]
-        theme=sound_colors[(phrase//2+music_seed)%len(sound_colors)]
+        # Change instrumental color every two bars, keeping the rhythmic
+        # hook for four bars. Variation is arranged, never randomly pasted.
+        theme=sound_colors[(bar//2+music_seed)%len(sound_colors)]
         if style=='acid':theme='acid'
         if style=='eurodance':theme='organ'
         if style=='progressive':theme='pluck'
@@ -790,19 +837,37 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                           key=lambda p:abs(p-(chord_root+19)))
                 add(synth(pitch,beat*3.65,'pad'),time,.53 if section=='breakdown' else .46,
                     (k-1)*.30)
-        # Melodic variation every two phrases: same key, changed contour/timbre.
+        # DJ-style call and response: voice gets first priority. The motif
+        # answers in REAL measured gaps, instead of a constant annoying loop
+        # under every spoken syllable. Original key and chord remain stable.
         if section in ('intro','drop','final','breakdown') or (section=='groove' and bar%2==0):
             density=2 if section in ('drop','final') else 1
             for j in range(density):
-                step=(quarter*2+j)%8
+                note_time=time+j*beat/2
+                speech_level=talking(note_time)
+                if speech_level>.31:
+                    # Leave speech clear: no competing high synth during
+                    # active conversation, but drums/bass keep the groove.
+                    continue
+                # Musical rests stop the incessant eight-note machine loop.
+                if j==1 and (quarter+bar)%3==0:
+                    continue
+                if section=='breakdown' and quarter==1:
+                    continue
+                step=(quarter*2+j+(bar%4==3))%8
                 scale_steps=(0,1,4,5,7,8,10,12) if style=='israeli' else (0,2,3,5,7,8,10,12)
                 target=74+scale_steps[motif[step]%8]-5
                 pitch=quantized_pitch(target,chord_pcs,strong=(quarter==0 and j==0))
-                wave=synth(pitch,beat*(.70 if j==0 else .35),theme)
-                gain=(.62 if section=='intro' else .72 if section=='breakdown' else .93)
-                add(wave,time+j*beat/2,gain,-.18 if j==0 else .18)
-                if section=='final' and j==0:
-                    add(wave,time+beat*.75,.12,.38)
+                wave=synth(pitch,beat*(.62 if j==0 else .30),theme)
+                gain=(.53 if section=='intro' else .58 if section=='breakdown' else .73)
+                gain*=1.03-.60*speech_level
+                add(wave,note_time,gain,-.18 if j==0 else .18)
+                if section=='final' and j==0 and speech_level<.14 and quarter==3:
+                    add(wave,time+beat*.75,.10,.38)
+        # Small original rhythmic turnaround in each four-bar phrase.
+        if section in ('drop','final') and bar%4==3 and quarter==3:
+            add(snare,time+beat*.5,.30,-.12)
+            add(hat,time+beat*.75,.45,.28)
         # A build is actual snare acceleration; the breakdown removes drums.
         if b%16==0:
             progress(10+int(45*b/max(1,total)),'מפיק ליווי עשיר עם הרמוניה ומעברים')
@@ -828,6 +893,21 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # Short voice samples and their story punctuation must remain a single
     # cohesive arrangement, especially on small phone loudspeakers.
     music*= ((1-.67*np.clip(env/.18,0,1))*(1-.20*fx_highlight))[:,None]
+    # At a copied-voice comic punchline, create a short, intentional backing
+    # break before its entrance. This leaves the spoken original untouched.
+    # No arbitrary swooshes or cartoon noises are inserted here.
+    for cue_time in fx_fill_times:
+        at=int(cue_time*sr)
+        left=max(0,at-int(.11*sr))
+        right=min(n,at+int(.15*sr))
+        if right<=left:continue
+        down=np.ones(right-left,dtype=np.float32)
+        until=at-left
+        if until:
+            down[:until]=np.linspace(.88,.28,until,endpoint=False,dtype=np.float32)
+        if right>at:
+            down[until:]=np.linspace(.28,.87,right-at,endpoint=True,dtype=np.float32)
+        music[left:right]*=down[:,None]
     # Original cartoon punctuation is added to the INSTRUMENTAL stem ONLY.
     # It must never attenuate, distort or re-limit the spoken original.
     # Without a recognized contextual cue the treated voice itself is the
