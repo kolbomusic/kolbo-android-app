@@ -13,7 +13,11 @@ import os
 import re
 import secrets
 import time
+import hmac
+import html
+import requests
 
+from authlib.jose import JsonWebToken, JoseError
 from authlib.integrations.flask_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
 from flask import abort, redirect, request, session
@@ -40,10 +44,60 @@ def configuration_checks():
     }
 
 
+def auth_mode():
+    """Default remains confidential OAuth; GIS is explicit and secretless."""
+    return os.getenv("KARNAFIM_GOOGLE_AUTH_MODE", "oauth").strip().lower()
+
+
 def enabled():
     checks = configuration_checks()
-    return all(checks[key] for key in
-               ("explicitly_enabled", "valid_client_id", "client_secret_present"))
+    return (checks["explicitly_enabled"] and checks["valid_client_id"]
+            and (auth_mode() == "gis" or
+                 (auth_mode() == "oauth" and checks["client_secret_present"])))
+
+
+def gis_button_html():
+    """Official GIS HTML API: Google posts a signed token, never a password."""
+    if not enabled() or auth_mode() != "gis":
+        return ""
+    nonce = secrets.token_urlsafe(32)
+    session["google_gis_nonce"] = nonce
+    client_id = html.escape(os.environ["GOOGLE_CLIENT_ID"].strip(), quote=True)
+    return (
+        '<div id="g_id_onload" data-client_id="' + client_id + '" '
+        'data-login_uri="' + CALLBACK + '" data-ux_mode="popup" '
+        'data-auto_prompt="false" data-nonce="' + html.escape(nonce, quote=True) + '"></div>'
+        '<div class="g_id_signin" data-type="standard" data-size="large" '
+        'data-theme="outline" data-text="signin_with" data-shape="rectangular"></div>'
+        '<script src="https://accounts.google.com/gsi/client" async defer></script>'
+    )
+
+
+def verify_google_gis_token(raw_token, client_id):
+    """Verify Google's RSA signature and expiry against Google's HTTPS JWKS."""
+    if not isinstance(raw_token, str) or not 50 < len(raw_token) <= 8192:
+        raise ValueError("Malformed ID token")
+    response = requests.get("https://www.googleapis.com/oauth2/v3/certs",
+                            headers={"Accept": "application/json"}, timeout=7)
+    response.raise_for_status()
+    if len(response.content) > 100000:
+        raise ValueError("JWKS too large")
+    keys = response.json()
+    if not isinstance(keys, dict) or not isinstance(keys.get("keys"), list) or not 1 <= len(keys["keys"]) <= 20:
+        raise ValueError("Invalid Google public keys")
+    # RS256 only, reject HS256, none, and token-key algorithm confusion.
+    claims = JsonWebToken(["RS256"]).decode(raw_token, keys)
+    claims.validate(leeway=60)
+    for claim in ("exp", "iat", "iss", "aud", "sub"):
+        if claim not in claims:
+            raise ValueError("Missing mandatory Google claim")
+    if not isinstance(claims["exp"], int) or not isinstance(claims["iat"], int):
+        raise ValueError("Invalid Google issue/expiry timestamps")
+    if claims["iat"] > time.time() + 60:
+        raise ValueError("Future-issued Google credential")
+    if claims["exp"] - claims["iat"] > 7200:
+        raise ValueError("Unreasonable Google credential lifetime")
+    return validate_google_identity(dict(claims), client_id), dict(claims)
 
 
 def authoritative_email(email: str, hd: str | None) -> bool:
@@ -98,33 +152,8 @@ def install_google_login(app, sql, view, guard, formwrap, esc):
         client_kwargs={"scope": "openid email profile", "code_challenge_method": "S256"},
     )
 
-    @app.route("/auth/google/start", methods=["GET"])
-    def google_start():
-        if not enabled():
-            return view("ההתחברות אינה זמינה",
-                        '<h1>כניסה באמצעות Google עדיין אינה פעילה</h1>'
-                        '<p>האתר ממתין להשלמת בדיקות האבטחה ולהגדרת התחברות רשמית.</p>'), 503
-        path = request.args.get("next", "/")
-        session["google_return"] = path if path in RETURN_PATHS else "/"
-        return oauth.google.authorize_redirect(
-            CALLBACK, nonce=secrets.token_urlsafe(32)
-        )
-
-    @app.route("/auth/google/callback", methods=["GET"])
-    def google_callback():
-        if not enabled():
-            abort(503)
-        try:
-            token = oauth.google.authorize_access_token()
-            identity = validate_google_identity(
-                token.get("userinfo"), os.environ["GOOGLE_CLIENT_ID"])
-        except (OAuthError, KeyError, ValueError, TypeError):
-            session.pop("google_return", None)
-            return view("אימות Google נכשל",
-                        '<div class="card" role="alert"><h1>אימות ההתחברות לא הושלם</h1>'
-                        '<p>לא נוצר חשבון ולא נשמרו פרטי גישה. ניתן לנסות שוב.</p>'
-                        '<a href="/login">חזרה לכניסה</a></div>'), 401
-
+    def finish_google_login(identity):
+        """Keep all account linking, consent and privilege decisions in one place."""
         rows = sql("SELECT id FROM members WHERE google_sub=%s",
                    (identity["sub"],), True)
         if rows:
@@ -162,6 +191,59 @@ def install_google_login(app, sql, view, guard, formwrap, esc):
         session["uid"] = uid
         session["auth_method"] = "google"
         return redirect(destination if destination in RETURN_PATHS else "/", code=303)
+
+    @app.route("/auth/google/start", methods=["GET"])
+    def google_start():
+        if enabled() and auth_mode() == "gis":
+            return redirect("/login", code=303)
+        if not enabled():
+            return view("ההתחברות אינה זמינה",
+                        '<h1>כניסה באמצעות Google עדיין אינה פעילה</h1>'
+                        '<p>האתר ממתין להשלמת בדיקות האבטחה ולהגדרת התחברות רשמית.</p>'), 503
+        path = request.args.get("next", "/")
+        session["google_return"] = path if path in RETURN_PATHS else "/"
+        return oauth.google.authorize_redirect(
+            CALLBACK, nonce=secrets.token_urlsafe(32)
+        )
+
+    @app.route("/auth/google/callback", methods=["GET", "POST"])
+    def google_callback():
+        if not enabled():
+            abort(503)
+        if request.method == "POST":
+            if auth_mode() != "gis":
+                abort(405)
+            csrf_cookie = request.cookies.get("g_csrf_token", "")
+            csrf_form = request.form.get("g_csrf_token", "")
+            nonce = session.pop("google_gis_nonce", "")
+            if (not csrf_cookie or not csrf_form or
+                    not hmac.compare_digest(csrf_cookie, csrf_form) or
+                    not isinstance(nonce, str) or len(nonce) < 32):
+                abort(403)
+            try:
+                identity, claims = verify_google_gis_token(
+                    request.form.get("credential", ""),
+                    os.environ["GOOGLE_CLIENT_ID"].strip())
+                if not hmac.compare_digest(str(claims.get("nonce") or ""), nonce):
+                    raise ValueError("Google nonce does not match this session")
+            except (JoseError, requests.RequestException, ValueError, TypeError, KeyError):
+                session.pop("google_return", None)
+                return ('אימות Google נכשל. לא נוצר חשבון.', 401)
+            return finish_google_login(identity)
+        if auth_mode() != "oauth":
+            abort(405)
+        try:
+            token = oauth.google.authorize_access_token()
+            identity = validate_google_identity(
+                token.get("userinfo"), os.environ["GOOGLE_CLIENT_ID"])
+        except (OAuthError, KeyError, ValueError, TypeError):
+            session.pop("google_return", None)
+            return view("אימות Google נכשל",
+                        '<div class="card" role="alert"><h1>אימות ההתחברות לא הושלם</h1>'
+                        '<p>לא נוצר חשבון ולא נשמרו פרטי גישה. ניתן לנסות שוב.</p>'
+                        '<a href="/login">חזרה לכניסה</a></div>'), 401
+
+        return finish_google_login(identity)
 
     @app.route("/auth/google/consent", methods=["GET", "POST"])
     def google_consent():
