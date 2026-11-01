@@ -184,7 +184,24 @@ def create_app(config=None):
                             ai_generation_error='שירות יצירת הווידאו הניסיוני לא הצליח'
                             app.logger.exception('Experimental AI video failed')
                             (root/job_id/'story.mp4').unlink(missing_ok=True)
-                    if meta.get('video_status')!='done':
+                    # A user selecting NEW AI STORY must never be given
+                    # third-party archive footage disguised as AI generation.
+                    # Archive shots remain available only in the legacy and
+                    # explicitly selected illustration workflows.
+                    if (meta.get('video_status')!='done' and
+                            options.get('video_strategy')=='new_story'):
+                        (root/job_id/'story.mp4').unlink(missing_ok=True)
+                        meta={'video_status':'unavailable',
+                              'video_error':(
+                                  ('יצירת סרטון AI חדש לא הושלמה: '+ai_generation_error)
+                                  if options.get('ai_video_consent')
+                                  else 'כדי לייצר סרטון AI חדש נדרש אישור לשליחת התמלול לשירות הווידאו החיצוני'
+                              )[:350],
+                              'storyboard_source':'independent_ai_not_available',
+                              'video_mode':'new_story_requested',
+                              'visual_coverage':'none'}
+                    if (meta.get('video_status')!='done' and
+                            options.get('video_strategy')!='new_story'):
                         try:
                             board=visual_plan(detected_transcript,len(audio)/32000)
                             board['transcript_origin']=detected_origin
