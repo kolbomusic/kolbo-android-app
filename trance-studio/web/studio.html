@@ -205,7 +205,9 @@ function youtubeId(url){
 }
 $('ytMusicSearchBtn').onclick=function(){
  var q=($('ytMusicSearch').value||'טראנס ישראלי בעברית').trim();
- window.open('https://www.youtube.com/results?search_query='+encodeURIComponent(q),'_blank','noopener,noreferrer');
+ var searchUrl='https://www.youtube.com/results?search_query='+encodeURIComponent(q);
+ if(window.KolboAndroid){window.location.assign(searchUrl)}
+ else{window.open(searchUrl,'_blank','noopener,noreferrer')}
 };
 $('ytMusicPreview').onclick=function(){
  var id=youtubeId($('ytMusicUrl').value);
