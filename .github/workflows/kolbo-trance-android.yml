@@ -12,6 +12,8 @@ on:
       - 'trance-studio/backend/live_video.py'
       - 'trance-studio/backend/ai_video.py'
       - 'trance-studio/backend/narrative_plan.py'
+      - 'trance-studio/backend/motion_quality.py'
+      - 'trance-studio/tests/test_motion_quality.py'
       - 'trance-studio/backend/client_ai_fallback.py'
       - 'trance-studio/web/studio-ai-fallback.js'
       - 'trance-studio/tests/test_narrative_plan.py'
