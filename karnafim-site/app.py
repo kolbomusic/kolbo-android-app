@@ -36,7 +36,11 @@ def security_hold():
    response=Response(integrate_html(document,scripts_allowed=False,toolbar_enabled=False),status=200,mimetype="text/html")
    response.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; img-src https://upload.wikimedia.org; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   else:
-   response=Response("אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה.",status=503,mimetype="text/plain")
+   # Previously active credential endpoints are fully retired while the site is under review.
+   # 410 (rather than temporary 503) explicitly tells crawlers that these forms are gone;
+   # no private content or credentials are served, even if an old bookmark is followed.
+   retired_credentials=(request.path in ("/login","/register","/password") or request.path.startswith("/auth/google/"))
+   response=Response(("עמוד הכניסה הוסר במסגרת טיפול באבטחת האתר. אין להזין כאן פרטי התחברות." if retired_credentials else "אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה."),status=(410 if retired_credentials else 503),mimetype="text/plain")
    response.headers["Content-Security-Policy"]="default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   response.headers["Cache-Control"]="no-store, max-age=0"
   response.headers["X-Robots-Tag"]=("index, follow" if response.status_code==200 else "noindex, nofollow")
@@ -51,8 +55,8 @@ def robots_txt():
  content="\n".join([
    "User-agent: *",
    "Allow: /",
-   "Disallow: /login",
-   "Disallow: /register",
+   # Login and registration have explicit 410 responses during security review.
+   # Do not disallow crawling these URLs: Google must be able to observe removal.
    "Disallow: /new-post",
    "Disallow: /my-posts",
    "Disallow: /chats",
@@ -91,6 +95,8 @@ def harden_responses(resp):
    data=resp.get_data(as_text=True)
    if 'name="google-site-verification"' not in data and "</head>" in data:
     resp.set_data(data.replace("</head>",'<meta name="google-site-verification" content="'+token+'"></head>',1))
+ if request.path in ("/login","/register","/password") or request.path.startswith("/auth/google/"):
+  resp.headers.setdefault("X-Robots-Tag","noindex, nofollow")
  resp.headers.setdefault("X-Content-Type-Options","nosniff")
  resp.headers.setdefault("X-Frame-Options","DENY")
  resp.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
