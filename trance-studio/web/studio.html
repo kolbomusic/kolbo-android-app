@@ -60,7 +60,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <small id="aiVideoPrivacy">אם מסמנים: הטקסט שהמנוע זיהה מההקלטה נשלח לשירות AI ציבורי ב־Hugging Face. קובץ הקול עצמו אינו נשלח לשם. הווידאו עשוי להיות קצר, לחזור על עצמו או לא לדייק בכל האירועים; השירות החינמי כפוף לתורים ולמכסות. בלי סימון, המערכת משתמשת רק בצילומים קיימים בעלי רישיון.</small>
 </section>
 <section class="panel"><h2>02 / סאונד מצחיק, מסודר ומקצועי</h2>
-<p class="hint">קול הדיבור נשאר ברור. האפקטים נבנים מתוך המילים והפסקות הדיבור, עם מוזיקת טראנס בהרמוניה אחידה. בלי להוסיף צלילים אקראיים שאינם קשורים לסיפור.</p>
+<p class="hint">המיקס מסודר סביב הקול המקורי: המלודיה מגיבה להפסקות ולמשפטים, האפקטים מתוזמנים לפי הפסקות אמיתיות והסיפור שזוהה. אין הבטחה לזיהוי כל מילה במדויק.</p>
 <label for="creativePreset">איך יישמע המיקס?</label>
 <select id="creativePreset">
 <option value="balanced" selected>מאוזן ומצחיק — מומלץ</option>
@@ -113,8 +113,8 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <details class="advanced"><summary>הגדרות מוזיקה מתקדמות (לא חובה)</summary>
 <div class="grid">
 <div><label for="style">סוג הטראנס</label><select id="style">
-<option value="mixed">מיקס חכם — שילוב כל הסגנונות</option>
-<option value="israeli" selected>ישראלי מקורי — טראנס עם גוון מזרחי, עוד, חליל ותוף יד</option>
+<option value="mixed" selected>מיקס DJ דינמי — המלודיה מגיבה לדיבור</option>
+<option value="israeli">ישראלי מקורי — טראנס עם גוון מזרחי, עוד, חליל ותוף יד</option>
 <option value="melodic">טראנס מלודי</option><option value="psy">פסיי טראנס</option>
 <option value="progressive">פרוגרסיב</option><option value="goa">גואה טראנס</option>
 <option value="acid">אסיד טראנס</option><option value="uplifting">אפליפטינג</option>
@@ -158,7 +158,11 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </section>
 <section class="panel" id="result"><h2 id="resultTitle">✓ ההפקה מוכנה!</h2>
 <div id="videoNotice" role="alert" hidden></div>
-<div class="actions"><button type="button" id="retryVideo" class="secondary" hidden>נסה שוב ליצור סרטון AI בלבד — המיקס כבר מוכן</button><button type="button" id="fallbackIllustration" class="secondary" hidden>נסה ליצור MP4 מצילומים מתאימים לדיבור (ללא AI)</button></div>
+<div class="actions"><button type="button" id="retryVideo" class="secondary" hidden>נסה שוב ליצור סרטון AI — בלי ליצור מחדש את המיקס</button></div>
+<details class="advanced" id="videoAlternatives" hidden><summary>פתרון חלופי שאינו יוצר וידאו AI</summary>
+<p class="hint">אפשר להכין סרטון מצילומים חופשיים של אירועים שזוהו, אם קיימים. זה אינו וידאו AI חדש ולא בהכרח יתאים לכל הדיבור.</p>
+<button type="button" id="fallbackIllustration" class="secondary" hidden>חפש צילומים מתאימים לדיבור</button>
+</details>
 <div id="videoResult" hidden>
 <label for="videoPlayer">סרטון שנוצר לפי התוכן שזוהה בהקלטה</label>
 <video id="videoPlayer" controls playsinline preload="metadata" style="width:100%;max-height:620px;border-radius:14px;background:#000"></video>
@@ -544,7 +548,7 @@ if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד א
 if(resultUrl)URL.revokeObjectURL(resultUrl);
 if(voiceUrl)URL.revokeObjectURL(voiceUrl);
 if(originalUrl)URL.revokeObjectURL(originalUrl);
-videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;$('retryVideo').hidden=true;$('fallbackIllustration').hidden=true;
+videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;$('retryVideo').hidden=true;$('fallbackIllustration').hidden=true;$('videoAlternatives').hidden=true;
 resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);resultServerUrl=j.download_url;
 if(j.voice_url){
   var voiceResponse=await fetch(j.voice_url,{credentials:'same-origin'});
@@ -630,9 +634,11 @@ if(wantsVideo&&!j.video_url){
  if($('video_strategy').value==='new_story'){
   var illustrated=$('fallbackIllustration');
   illustrated.hidden=false;
+  $('videoAlternatives').hidden=false;
   illustrated.onclick=function(){
    if(active)return;
    illustrated.hidden=true;
+   $('videoAlternatives').hidden=true;
    $('video_strategy').value='illustrated_story';
    explainVideoStrategy();
    message('מנסה המחשה מצולמת נפרדת מהמקור, ללא יצירת סצנות AI.');

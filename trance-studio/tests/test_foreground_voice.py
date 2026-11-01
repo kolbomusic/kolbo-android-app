@@ -91,6 +91,39 @@ class ForegroundVoiceTests(unittest.TestCase):
         np.testing.assert_array_equal(iv,mv)
         self.assertGreater(float(np.sqrt(np.mean(iv*iv))),.01)
 
+    def test_dj_score_responds_to_recorded_words_and_leaves_gap_for_music(self):
+        sr=self.sr
+        voice=np.zeros(sr*4,dtype=np.float32)
+        for start,end in ((.5,1.4),(2.4,3.2)):
+            at=int(start*sr);stop=int(end*sr)
+            t=np.arange(stop-at)/sr
+            voice[at:stop]=.21*np.sin(2*np.pi*227*t)
+        arranged=[(voice,np.zeros(len(voice),np.float32),
+                   [(0,len(voice),0,len(voice))])]
+        activity,stings=e.speech_aware_music_map(arranged,sr,145,10)
+        intro=4*60/145
+        def energy(at):
+            idx=int((at+intro)/.10)
+            return float(activity[idx])
+        self.assertGreater(energy(.85),.40,
+            'The lead must yield when the original words are audible')
+        self.assertLess(energy(1.92),.04,
+            'Actual gaps must make room for short melodic replies')
+        self.assertGreater(energy(2.75),.40)
+        self.assertEqual(stings,[])
+
+    def test_dj_score_punchline_cuts_come_only_from_measured_fx_insert(self):
+        sr=self.sr
+        voice=np.zeros(sr*3,dtype=np.float32)
+        mask=np.zeros_like(voice)
+        mask[int(sr*1.8):int(sr*2.3)]=1.
+        activity,stings=e.speech_aware_music_map(
+            [(voice,mask,[(0,len(voice),0,len(voice))])],
+            sr,145,10)
+        self.assertLess(float(np.max(activity)),.001)
+        self.assertEqual(len(stings),1)
+        self.assertAlmostEqual(stings[0],4*60/145+1.8,places=2)
+
     def test_source_entirely_preserved_and_fx_never_overlaid(self):
         x=self.voice(16)
         y,fx,spans=e.arranged_vocal_track(x,self.sr,145,'auto',3,1.2,np.random.default_rng(12))

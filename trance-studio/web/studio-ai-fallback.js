@@ -18,6 +18,21 @@ var MAX_SHOTS=3;
 var HEBREW=/[\u0590-\u05ff]/;
 
 function fail(msg){return new Error(msg)}
+function safeProviderFailure(detail){
+  // Never forward Gradio's original error body: it might echo user text.
+  var raw=String(detail||'').toLowerCase();
+  var error;
+  if(/quota|gpu limit|gpu time|rate.limit|usage limit|too many requests|zerogpu|credits/.test(raw)){
+    error=fail('מכסת GPU חינמית מוצתה או הוגבלה. אפשר לנסות יצירת וידאו בלבד לאחר חידוש המכסה.');
+    error.providerQuota=true;
+  }else if(/busy|overload|capacity|temporarily unavailable|allocation|no gpu|queue full/.test(raw)){
+    error=fail('שרת הווידאו עמוס ולא הקצה GPU כעת.');
+    error.providerTransient=true;
+  }else{
+    error=fail('מנוע הווידאו לא הצליח להפיק קליפ מהבקשה.');
+  }
+  return error;
+}
 function safeUrl(raw,host){
   var u;
   try{u=new URL(String(raw))}catch(e){throw fail('השירות החיצוני החזיר כתובת סרטון לא תקינה')}
@@ -36,7 +51,21 @@ async function getResponse(url,options,ms){
   var response=await withTimeout(ms,function(signal){
     return fetch(url,Object.assign({mode:'cors',credentials:'omit',signal:signal},options||{}));
   });
-  if(!response.ok)throw fail('השירות החינמי עמוס או החזיר שגיאה ('+response.status+')');
+  if(!response.ok){
+    var error;
+    if(response.status===429){
+      error=fail('שירות הווידאו הגביל את מכסת הבקשות (429).');
+      error.providerQuota=true;
+    }else if([502,503,504].includes(response.status)){
+      error=fail('שרת הווידאו עמוס או אינו זמין זמנית ('+response.status+').');
+      error.providerTransient=true;
+    }else if(response.status===401||response.status===403){
+      error=fail('מנוע הווידאו דורש הרשאה שאינה זמינה במצב החינמי.');
+    }else{
+      error=fail('שירות הווידאו החזיר שגיאה ('+response.status+').');
+    }
+    throw error;
+  }
   return response;
 }
 async function readTextWithDeadline(url,ms){
@@ -70,7 +99,15 @@ function parseEventStream(text,host){
     var d=blocks[i].match(/(?:^|\n)data:\s*([^\r\n]+)/);
     if(!e||!d)continue;
     var type=e[1].trim();
-    if(type==='error')throw fail('מנוע ה־AI החינמי אינו יכול לבצע כעת את הבקשה');
+    if(type==='error'){
+      var detail='';
+      try{
+        var payload=JSON.parse(d[1]);
+        detail=(payload&&typeof payload==='object')?
+          String(payload.error||payload.message||payload.detail||''):String(payload);
+      }catch(ex){detail=d[1]}
+      throw safeProviderFailure(detail);
+    }
     if(type!=='complete')continue;
     var data;
     try{data=JSON.parse(d[1])}catch(ex){throw fail('השרת החזיר תשובת וידאו פגומה')}
@@ -168,22 +205,41 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
   var prompts=await getPlan(jobId,passedPrompt,passedScenes);
   var blobs=[];
   for(var i=0;i<prompts.length;i++){
-    var clip=null;
+    var clip=null, failures=[];
     for(var p=0;p<MODELS.length;p++){
       try{
         onStage('יוצר סצנה '+(i+1)+' מתוך '+prompts.length+' — '+MODELS[p].id);
         clip=await oneClip(MODELS[p],prompts[i],onStage);
         break;
       }catch(error){
-        // A free community model may be paused/limited. Try the other model.
-        // Never log or display the original transcript in error messages.
-        onStage('המנוע הראשון לא השלים סצנה; מנסה מנוע חינמי חלופי...');
+        // Never retry quota exhaustion: retries burn the shared quota.
+        // Retry once, briefly, only when the server itself is temporarily busy.
+        if(error&&error.providerTransient){
+          onStage('השרת החינמי עמוס. ממתין רגע ומנסה פעם נוספת...');
+          await new Promise(function(resolve){setTimeout(resolve,5000)});
+          try{
+            clip=await oneClip(MODELS[p],prompts[i],onStage);
+            break;
+          }catch(retryError){error=retryError}
+        }
+        failures.push(error);
+        onStage('הסצנה לא הושלמה במנוע '+MODELS[p].id+'; בודק מנוע חלופי...');
       }
     }
     if(!clip)break;
     blobs.push(clip);
   }
-  if(!blobs.length)throw fail('שני מנועי הווידאו החינמיים אינם זמינים כרגע');
+  if(!blobs.length){
+    var exhausted=failures.some(function(e){return !!(e&&e.providerQuota)});
+    var blocked=failures.length>0&&failures.every(function(e){
+      return /הרשאה|דורש/.test(String(e&&e.message||''));
+    });
+    throw fail(exhausted?
+      'מכסת ה־GPU החינמית או מכסת הבקשות הסתיימה. לא הופק MP4; המיקס נשמר ואפשר לנסות יצירת וידאו בלבד מאוחר יותר.':
+      blocked?
+      'מנועי הווידאו אינם מאפשרים כרגע שימוש אנונימי חינמי. לא הופק MP4; המיקס נשמר.':
+      'מנועי הווידאו הציבוריים לא הצליחו לייצר קליפ אמיתי. המיקס נשמר; אפשר לנסות יצירת וידאו בלבד מאוחר יותר.');
+  }
   onStage('מחבר את סצנות ה־AI לקול ולמיקס המקורי...');
   var form=new FormData();
   blobs.forEach(function(blob,i){
@@ -207,5 +263,5 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
   return answer;
 }
 window.KolboAIFallback={generate:generate,
-  version:'1.15.0',isDirectBrowserMode:true};
+  version:'1.16.0',isDirectBrowserMode:true};
 })();

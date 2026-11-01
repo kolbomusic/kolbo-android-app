@@ -39,6 +39,48 @@ class AIVideoUnavailable(RuntimeError):
     """No original generative clip can be produced within the free quota."""
 
 
+def _public_provider_error(payload):
+    """Translate external Gradio errors to non-sensitive, actionable Hebrew."""
+    try:
+        data=json.loads(payload)
+    except (TypeError,ValueError):
+        data={}
+    if isinstance(data, dict):
+        detail=str(data.get("error") or data.get("message") or data.get("detail") or "")
+    else:
+        detail=str(data)[:512] if isinstance(data,str) else ""
+    lower=detail.lower()
+    if any(token in lower for token in
+           ("quota", "gpu limit", "gpu time", "rate limit", "rate-limit",
+            "too many requests", "maximum usage", "usage limit", "credits", "zerogpu")):
+        return AIVideoUnavailable(
+            "מכסת זמן ה־GPU החינמית הסתיימה או נחסמה זמנית. המיקס נשמר; "
+            "אפשר לנסות יצירת וידאו בלבד לאחר חידוש המכסה.")
+    if any(token in lower for token in
+           ("busy", "overload", "capacity", "temporarily unavailable",
+            "allocation", "no gpu", "queue full")):
+        return AIVideoUnavailable(
+            "שרת הווידאו החינמי עמוס כעת ולא הקצה GPU. המיקס נשמר.")
+    if any(token in lower for token in ("memory", "cuda", "out of memory", "oom")):
+        return AIVideoUnavailable(
+            "מנוע הווידאו נתקל במחסור בזיכרון GPU; לא נוצר קובץ.")
+    return AIVideoUnavailable(
+        "מנוע הווידאו החינמי החזיר כשל עיבוד; לא נוצר קובץ.")
+
+def _public_http_error(exc):
+    if exc.code==429:
+        return AIVideoUnavailable(
+            "מכסת הבקשות של שירות הווידאו החינמי הוגבלה (429). המיקס נשמר.")
+    if exc.code in (502,503,504):
+        return AIVideoUnavailable(
+            "שירות הווידאו החיצוני אינו זמין זמנית (שרת עמוס). המיקס נשמר.")
+    if exc.code in (401,403):
+        return AIVideoUnavailable(
+            "מנוע הווידאו דורש הרשאה או חוסם גישה אנונימית; לא נוצר סרטון.")
+    return AIVideoUnavailable(
+        "שירות יצירת הווידאו החזיר שגיאת HTTP; לא נוצר סרטון.")
+
+
 def cinematic_prompt(transcript, max_chars=980):
     """Describe the ACTUAL recognized words, never fabricate missing dialogue."""
     clean = re.sub(r"[\x00-\x1f\x7f]", " ", str(transcript or ""))
@@ -132,12 +174,14 @@ def _request_video_generation(prompt, *, opener=urllib.request.urlopen,
                     event = line.split(":",1)[1].strip()
                 elif line.startswith("data:"):
                     if event=="error":
-                        raise AIVideoUnavailable("שירות הווידאו החינמי דחה את הבקשה")
+                        raise _public_provider_error(line.split(":",1)[1])
                     if event=="complete":
                         return _video_result_url(json.loads(line.split(":",1)[1]))
         raise AIVideoUnavailable("שירות הווידאו לא סיים את יצירת הסרטון")
     except AIVideoUnavailable:
         raise
+    except urllib.error.HTTPError as exc:
+        raise _public_http_error(exc) from exc
     except (TimeoutError, OSError, ValueError, urllib.error.URLError,
             json.JSONDecodeError) as exc:
         raise AIVideoUnavailable(
@@ -191,7 +235,7 @@ def _request_ltx25_generation(prompt, *, opener=urllib.request.urlopen,
                     event_type=line.split(":",1)[1].strip()
                 elif line.startswith("data:"):
                     if event_type=="error":
-                        raise AIVideoUnavailable("גם מנוע הווידאו השני אינו זמין כעת")
+                        raise _public_provider_error(line.split(":",1)[1])
                     if event_type=="complete":
                         return _video_result_url(
                             json.loads(line.split(":",1)[1]),
@@ -199,6 +243,8 @@ def _request_ltx25_generation(prompt, *, opener=urllib.request.urlopen,
         raise AIVideoUnavailable("מנוע הווידאו השני לא השלים את הסרטון")
     except AIVideoUnavailable:
         raise
+    except urllib.error.HTTPError as exc:
+        raise _public_http_error(exc) from exc
     except (TimeoutError,OSError,ValueError,urllib.error.URLError,
             json.JSONDecodeError) as exc:
         raise AIVideoUnavailable("מנוע הווידאו השני אינו זמין או מוגבל כעת") from exc
