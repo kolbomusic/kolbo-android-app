@@ -96,7 +96,7 @@ def robots_txt():
 @app.route("/sitemap.xml")
 def public_sitemap():
  from memorial_photos import PEOPLE
- paths=["/","/about","/privacy","/safety","/archive","/memorials",
+ paths=["/","/about","/privacy","/safety","/status","/archive","/memorials",
         "/photos","/help","/accessibility","/terms"]
  paths.extend("/source/"+str(n) for n in range(1,15))
  paths.extend("/memorial/"+p["slug"] for p in PEOPLE)
