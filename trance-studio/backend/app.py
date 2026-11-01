@@ -454,11 +454,18 @@ def create_app(config=None):
             if job.get('ai_client_upload_attempts',0)>=3:
                 return jsonify(error='הסתיימה מכסת ניסיונות שילוב הווידאו למשימה'),429
             job['ai_client_busy']=True
-            job['ai_client_upload_attempts']=job.get('ai_client_upload_attempts',0)+1
         if not admission.acquire(blocking=False):
+            # A busy server is NOT a failed phone upload. Do not consume a
+            # limited video-finalization attempt before any bytes were read.
             with lock:
                 if job_id in jobs:jobs[job_id]['ai_client_busy']=False
-            return jsonify(error='השרת עסוק כרגע, ניתן לנסות שוב'),429
+            response=jsonify(error='השרת עסוק כרגע; קטעי הווידאו שלך לא אבדו, אפשר לנסות שוב')
+            response.headers['Retry-After']='6'
+            return response,429
+        with lock:
+            if job_id in jobs:
+                jobs[job_id]['ai_client_upload_attempts']=(
+                    jobs[job_id].get('ai_client_upload_attempts',0)+1)
         work_dir=root/job_id/'mobile-ai-upload'
         try:
             from client_ai_fallback import (combine_mobile_ai_clips,
