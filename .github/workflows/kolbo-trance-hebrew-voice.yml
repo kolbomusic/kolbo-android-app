@@ -4,6 +4,9 @@ on:
     branches: [kolbo-trance-hebrew-voice-acceptance-20261101]
     paths:
       - 'trance-studio/tests/ci_hebrew_voice.py'
+      - 'trance-studio/backend/live_video.py'
+      - 'trance-studio/tests/test_live_video.py'
+      - 'trance-studio/backend/source_asr.py'
       - '.github/workflows/kolbo-trance-hebrew-voice.yml'
   workflow_dispatch:
 jobs:
