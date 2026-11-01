@@ -1,0 +1,45 @@
+name: Kolbo phone-origin free AI video end-to-end safety and MP4 mux
+on:
+  push:
+    branches: [kolbo-trance-phone-ai-video-fallback-20261101,kolbo-trance-studio-20261031]
+    paths:
+      - 'trance-studio/backend/client_ai_fallback.py'
+      - 'trance-studio/backend/app.py'
+      - 'trance-studio/tests/test_mobile_ai_fallback.py'
+      - 'trance-studio/web/studio-ai-fallback.js'
+      - 'trance-studio/web/studio.html'
+      - '.github/workflows/kolbo-trance-phone-ai.yml'
+  workflow_dispatch:
+jobs:
+  all-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install local-only video/audio test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -r trance-studio/backend/requirements.txt
+      - name: Check Python and both Android browser scripts
+        run: |
+          python -m compileall -q trance-studio/backend trance-studio/tests
+          node --check trance-studio/web/studio-ai-fallback.js
+          node --check trance-studio/web/studio-asr-worker.js
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('trance-studio/web/studio.html').read_text('utf-8')
+          assert '<script src="/studio-ai-fallback.js"></script>' in s
+          assert "KolboAIFallback.generate(data.id,message)" in s
+          assert "client_ai_fallback_available" in s
+          assert "'ai_video_consent'" in s
+          j=s.rsplit('<script>',1)[1].split('</script>',1)[0]
+          Path('/tmp/kolbo-phone-ui.js').write_text(j,'utf-8')
+          print('CLIENT_AI_CONSENT_CORS_UPLOAD_UI_INTEGRATED')
+          PY
+          node --check /tmp/kolbo-phone-ui.js
+      - name: Run all production safety and phone AI video acceptance tests
+        run: python -m unittest discover -s trance-studio/tests -p 'test_*.py' -v
