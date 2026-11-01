@@ -1,9 +1,10 @@
 name: Kolbo Trance Hebrew spoken OPUS-to-video acceptance
 on:
   push:
-    branches: [kolbo-trance-studio-20261031]
+    branches: [kolbo-trance-studio-20261031, kolbo-trance-android-v22-20261101]
     paths:
       - 'trance-studio/tests/ci_hebrew_voice.py'
+      - 'trance-studio/backend/live_video.py'
       - 'trance-studio/backend/live_video.py'
       - 'trance-studio/tests/test_live_video.py'
       - 'trance-studio/backend/source_asr.py'
@@ -33,10 +34,11 @@ jobs:
           ffprobe -v error -show_entries stream=codec_name -of default=noprint_wrappers=1 /tmp/kolbo-hebrew-voice.opus
       - name: Build real Docker image with pinned PyAV and Whisper base
         run: docker build -t kolbo-trance:hebrew-spoken trance-studio
-      - name: Decipher actual Hebrew speech from OPUS within free server limits
+      - name: Decode Hebrew speech and produce AUTHENTIC moving MP4 within free server limits
         run: |
           docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 \
             -v /tmp/kolbo-hebrew-voice.opus:/tmp/kolbo-hebrew-voice.opus:ro \
+            -v /tmp/kolbo-hebrew-synthetic.mp3:/tmp/kolbo-hebrew-synthetic.mp3:ro \
             -v "$PWD/trance-studio/tests:/app/tests:ro" \
             -e PYTHONPATH=/app/backend --entrypoint python kolbo-trance:hebrew-spoken /app/tests/ci_hebrew_voice.py
       - name: Ensure original regression suite still passes
