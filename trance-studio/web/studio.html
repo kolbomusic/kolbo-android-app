@@ -210,9 +210,9 @@ try{
 if(wantsVideo){
  message('מזהה אוטומטית את הדיבור — בלי להציג מילים או לבקש אישור...');
  try{recognized=await recognizeBeforeVideo()}
- catch(error){videoAllowed=false;videoReason='זיהוי הדיבור לא היה אמין: '+(error.message||'שגיאת תמלול');}
+ catch(error){videoReason='התמלול במכשיר לא הצליח; מנסה אוטומטית פענוח נוסף מקובץ המקור בשרת.';}
 }
-message('מעבד את קובץ ההקלטה המקורי'+(videoAllowed?' ומזהה פעולות לסרטון':'')+'...');
+message('מעבד את קובץ ההקלטה המקורי'+(wantsVideo?' ומכין סצנות וידאו לפי הדיבור':'')+'...');
 var form=new FormData();
 files.forEach(function(f){form.append('audio',f,f.name)});
 var hashes=[];
@@ -223,10 +223,10 @@ for(var fileIndex=0;fileIndex<files.length;fileIndex++){
 if(hashes.length===files.length)form.set('source_hashes',hashes.join(','));
 form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
-form.set('make_video',videoAllowed?'on':'off');
+form.set('make_video',wantsVideo?'on':'off');
 form.set('video_requested',wantsVideo?'on':'off');
-form.set('transcription_failed',wantsVideo&&!videoAllowed?'on':'off');
-form.set('transcript',videoAllowed?recognized:'');
+form.set('transcription_failed',wantsVideo&&!verifyTranscript(recognized)?'on':'off');
+form.set('transcript',verifyTranscript(recognized)?recognized:'');
 form.set('transcript_origin','auto');
 var variation=$('variation').value;
 form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99999)):variation);
@@ -254,7 +254,8 @@ if(j.voice_url){
 }
 if(files.length){originalUrl=URL.createObjectURL(files[0]);$('originalPreview').src=originalUrl;}
 if(j.video_url){
- // Keep the MP4 as a streaming URL: no need to load a large file into RAM
+  videoReason='';
+  // Keep the MP4 as a streaming URL: no need to load a large file into RAM
  // just to display the playback controls on Android.
  videoServerUrl=j.video_url;
  videoUrl=j.video_preview_url||j.video_url;
@@ -283,8 +284,7 @@ if(j.video_url){
  }
 }
 if(j.video_status==='error'||j.video_status==='unavailable'){
- videoReason=j.storyboard_source==='automatic_transcription_failed'&&videoReason?
-   videoReason:(j.video_error||videoReason||'לא נמצאו קטעי וידאו מתאימים.');
+ videoReason=j.video_error||videoReason||'לא נמצאו קטעי וידאו מתאימים.';
 }
 if(wantsVideo&&!j.video_url){
  $('resultTitle').textContent='המיקס מוכן — לא הופק סרטון';

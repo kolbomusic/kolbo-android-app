@@ -52,7 +52,7 @@ class ProductionStoryTests(unittest.TestCase):
             self.assertEqual(state['storyboard_source'],'original_asr_failed')
             self.assertEqual(state['visual_coverage'],'none')
             self.assertNotIn('video_url',state)
-            self.assertIn('לא ניתן לתמלל',state['video_error'])
+            self.assertIn('תמלול',state['video_error'])
             self.assertEqual(client.get(state['download_url']).status_code,200)
 
     def test_original_source_fingerprint_detects_mismatched_upload(self):
@@ -78,13 +78,26 @@ class ProductionStoryTests(unittest.TestCase):
             self.assertEqual(response.status_code,202,response.get_json())
 
     def test_no_video_without_original_speech_transcript(self):
+        # The request must be accepted first, and a second original-file
+        # transcription attempt must run before concluding no grounded MP4.
         with tempfile.TemporaryDirectory() as directory:
             app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test-only'})
             client=app.test_client()
-            response=client.post('/api/jobs',data={'audio':(self.wave(),'source.wav'),
-                'make_video':'on','transcript':''})
-            self.assertEqual(response.status_code,422)
-            self.assertEqual(response.get_json()['code'],'TRANSCRIPT_REQUIRED')
+            with patch('source_asr.transcribe_original_files',
+                       side_effect=RuntimeError('both ASR attempts unavailable')) as asr:
+                response=client.post('/api/jobs',data={'audio':(self.wave(),'source.wav'),
+                    'make_video':'on','transcript':''})
+                self.assertEqual(response.status_code,202,response.get_json())
+                state=None
+                for _ in range(140):
+                    state=client.get(response.get_json()['status_url']).get_json()
+                    if state.get('state') in ('done','error'):break
+                    time.sleep(.25)
+                self.assertTrue(asr.called)
+            self.assertEqual(state['state'],'done',state)
+            self.assertEqual(state['video_status'],'unavailable',state)
+            self.assertNotIn('video_url',state)
+            self.assertIn('תמלול',state['video_error'])
 
     def test_no_unrelated_video_when_footage_unavailable_but_audio_ready(self):
         with tempfile.TemporaryDirectory() as directory:

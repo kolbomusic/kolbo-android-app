@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - kolbo-trance-studio-20261031
+      - kolbo-trance-story-recovery-20261101
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'
@@ -35,7 +36,8 @@ jobs:
           assert "recognizeBeforeVideo" in s and "transcript_origin" in s
           assert "studio-asr-worker.js" in s
           assert "recognitionFallback" not in s and "transcriptDetails" not in s
-          assert "videoAllowed?recognized" in s
+          assert "form.set('make_video',wantsVideo?'on':'off')" in s
+          assert "verifyTranscript(recognized)?recognized" in s
           assert "וידאו אמיתי" in s
           worker=Path('trance-studio/web/studio-asr-worker.js').read_text(encoding='utf-8')
           assert "onnx-community/whisper-tiny" in worker
