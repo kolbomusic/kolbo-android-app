@@ -1,9 +1,13 @@
 name: Kolbo original Hebrew narration to free AI-motion video
 on:
   push:
-    branches: [kolbo-trance-generative-scenes-20261101, kolbo-trance-ltx25-free-provider-20261101, kolbo-trance-ai-second-provider-retry-20261101, kolbo-trance-studio-20261031]
+    branches: [kolbo-trance-generative-scenes-20261101, kolbo-trance-ltx25-free-provider-20261101, kolbo-trance-ai-second-provider-retry-20261101, kolbo-trance-manual-create-precise-scenes-20261101, kolbo-trance-studio-20261031]
     paths:
       - 'trance-studio/backend/ai_video.py'
+      - 'trance-studio/backend/narrative_plan.py'
+      - 'trance-studio/backend/motion_quality.py'
+      - 'trance-studio/tests/test_motion_quality.py'
+      - 'trance-studio/tests/test_narrative_plan.py'
       - 'trance-studio/backend/app.py'
       - 'trance-studio/tests/test_ai_video.py'
       - 'trance-studio/tests/test_animation.py'
@@ -31,7 +35,7 @@ jobs:
           p=Path('trance-studio/web/studio.html').read_text('utf-8')
           assert 'id="ai_video_consent"' in p
           assert 'form.set(\'ai_video_consent\'' in p
-          assert 'video_mode===\'ai_generated_experimental\'' in p
+          assert "indexOf('ai_generated')===0" in p
           script=p.rsplit('<script>',1)[1].split('</script>',1)[0]
           Path('/tmp/kolbo-ai-video.js').write_text(script,encoding='utf-8')
           print('AI_PRIVACY_CONSENT_AND_ANDROID_CLIENT_CHECKS_PASS')

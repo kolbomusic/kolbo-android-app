@@ -1,11 +1,16 @@
 name: Kolbo phone-origin free AI video end-to-end safety and MP4 mux
 on:
   push:
-    branches: [kolbo-trance-phone-ai-bytes-merge-20261101,kolbo-trance-studio-20261031]
+    branches: [kolbo-trance-phone-ai-bytes-merge-20261101,kolbo-trance-manual-create-precise-scenes-20261101,kolbo-trance-studio-20261031]
     paths:
       - 'trance-studio/backend/client_ai_fallback.py'
+      - 'trance-studio/backend/narrative_plan.py'
+      - 'trance-studio/backend/motion_quality.py'
+      - 'trance-studio/tests/test_motion_quality.py'
       - 'trance-studio/backend/app.py'
       - 'trance-studio/tests/test_mobile_ai_fallback.py'
+      - 'trance-studio/tests/test_narrative_plan.py'
+      - 'trance-studio/tests/test_manual_share.js'
       - 'trance-studio/tests/live_phone_ai_e2e.py'
       - '.github/workflows/kolbo-trance-live-phone-ai.yml'
       - 'trance-studio/web/studio-ai-fallback.js'
@@ -35,7 +40,7 @@ jobs:
           from pathlib import Path
           s=Path('trance-studio/web/studio.html').read_text('utf-8')
           assert '<script src="/studio-ai-fallback.js"></script>' in s
-          assert "KolboAIFallback.generate(jobId,message,prompt)" in s
+          assert "KolboAIFallback.generate(jobId,message,prompt,window.KolboCurrentAIScenes||[])" in s
           assert "client_ai_prompt" in s
           assert "'ai_video_consent'" in s
           j=s.rsplit('<script>',1)[1].split('</script>',1)[0]
@@ -43,5 +48,7 @@ jobs:
           print('CLIENT_AI_CONSENT_CORS_UPLOAD_UI_INTEGRATED')
           PY
           node --check /tmp/kolbo-phone-ui.js
+      - name: Verify manual Create by simulating a WhatsApp share in a JavaScript VM
+        run: node trance-studio/tests/test_manual_share.js
       - name: Run all production safety and phone AI video acceptance tests
         run: python -m unittest discover -s trance-studio/tests -p 'test_*.py' -v

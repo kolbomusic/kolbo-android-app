@@ -12,11 +12,13 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+import math
 
 from live_video import _duration, _video_profile, _make_segment, UnavailableVideo
+from motion_quality import require_visible_motion, NoVisibleMotion
 
 MAX_CLIP_BYTES=10*1024*1024
-MAX_CLIPS=2
+MAX_CLIPS=3
 
 
 class MobileClipError(ValueError):
@@ -41,18 +43,22 @@ def validate_mp4_clip(path):
         raise MobileClipError("הווידאו אינו בפורמט נתמך")
     if not .67<=length<=12.5:
         raise MobileClipError("קטע הווידאו חייב להיות בין שנייה ל־12 שניות")
+    try:
+        require_visible_motion(path)
+    except NoVisibleMotion as exc:
+        raise MobileClipError(str(exc)) from exc
     return length
 
 
-def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir):
-    """Mux at most two genuine moving AI clips + the ENTIRE existing MP3.
+def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,weights=None):
+    """Mux at most three genuine moving AI clips + the ENTIRE existing MP3.
 
     Inputs are server-written MP4 files uploaded as bytes, NOT external URLs.
     The output is Android-compatible H264 360x640 + AAC 160k with a single
     bounded encoding pass per small source excerpt.
     """
     if not 1<=len(paths)<=MAX_CLIPS:
-        raise MobileClipError("יש לבחור בין קטע וידאו אחד לשניים")
+        raise MobileClipError("יש לבחור בין קטע וידאו אחד לשלושה")
     work=Path(work_dir)
     work.mkdir(parents=True,exist_ok=True,mode=0o700)
     output=Path(output_mp4)
@@ -63,13 +69,24 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir):
         raise MobileClipError("קובץ המיקס המקורי אינו זמין") from None
     if not 1<=duration<=360:
         raise MobileClipError("משך המיקס המקורי אינו תקין")
-    # Preserve spoken order by allocating successive timeslices evenly.
-    # This is approximate and is clearly labelled in the UI.
+    # Preserve spoken order and use original narration word counts for
+    # relative screen time, not an arbitrary 50/50 cut. We cannot infer exact
+    # vocal positions inside the remixed audio; still label as approximate.
+    if weights is None:
+        weights=[1.0]*len(paths)
+    if (len(weights)!=len(paths) or any(
+            isinstance(w,bool) or not isinstance(w,(float,int)) or
+            not math.isfinite(float(w)) or not 0.1<=float(w)<=400
+            for w in weights)):
+        raise MobileClipError("משקל התזמון של סצנות הווידאו אינו תקין")
+    total=float(sum(weights))
+    allocations=[duration*float(w)/total for w in weights]
+    if min(allocations)<.7:
+        raise MobileClipError("אורך אחת מסצנות הווידאו קצר מדי")
     parts=[]
     try:
         for i,path in enumerate(paths):
-            length=duration/len(paths) if i<len(paths)-1 else duration-sum(
-                duration/len(paths) for _ in parts)
+            length=allocations[i] if i<len(paths)-1 else duration-sum(allocations[:-1])
             segment=work/f"mobile-scene-{i}.mp4"
             _make_segment(path,segment,length)
             parts.append(segment)
@@ -108,12 +125,13 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir):
         "ai_clips_generated":len(paths),
         "audio_seconds":round(duration,2),
         "ai_clip_seconds":round(sum(seconds),2),
-        "repeated_ai_shot":any(duration/len(paths)>n+.5 for n in seconds),
+        "repeated_ai_shot":any(allocations[i]>n+.5 for i,n in enumerate(seconds)),
         "sources":[],
+        "pacing_basis":"original_transcript_spoken_word_counts",
         "scenes":[
             {"action":"original_ai_generated_motion",
-             "start":round(i*duration/len(paths),2),
-             "end":round((i+1)*duration/len(paths),2),
+             "start":round(sum(allocations[:i]),2),
+             "end":round(sum(allocations[:i+1]),2),
              "basis":"consented_browser_text_to_video",
              "original_motion_seconds":round(seconds[i],2)}
             for i in range(len(paths))

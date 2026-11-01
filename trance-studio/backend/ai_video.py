@@ -20,6 +20,8 @@ import urllib.request
 from pathlib import Path
 
 from live_video import _duration, _make_segment, _video_profile, visual_plan, UnavailableVideo
+from narrative_plan import narrative_beats, scene_prompt
+from motion_quality import require_visible_motion, NoVisibleMotion
 
 SPACE = "https://lightricks-ltx-video-distilled.hf.space"
 SPACE_HOST = "lightricks-ltx-video-distilled.hf.space"
@@ -235,6 +237,10 @@ def _download_public_video(url, destination, *, opener=urllib.request.urlopen):
         seconds = _duration(destination)
         if not codec or not width or not height or not 0.6 <= seconds <= 12:
             raise AIVideoUnavailable("לא התקבל סרטון נע תקין")
+        try:
+            require_visible_motion(destination)
+        except NoVisibleMotion as exc:
+            raise AIVideoUnavailable(str(exc)) from exc
         return seconds
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         Path(destination).unlink(missing_ok=True)
@@ -242,26 +248,12 @@ def _download_public_video(url, destination, *, opener=urllib.request.urlopen):
 
 
 def _narrative_shots(transcript):
-    """Keep the spoken sequence and split at most two coherent visual moments.
+    """Sequential coherent clauses, up to three new AI shots in spoken order.
 
-    Two real AI-generated shots are more useful than looping one unrelated
-    second repeatedly. A ZeroGPU free visitor cannot request unlimited shots.
+    Unlike the old equal-half split, this never truncates the middle of a
+    sentence or drops its final action. It retains original Hebrew words.
     """
-    text=re.sub(r"\s+"," ",str(transcript or "")).strip()
-    clauses=[v.strip(" .,!;:") for v in re.split(
-        r"(?<=[.!?;,])\s+|\b(?:ואז|לאחר מכן|ואחר כך|אחר כך|פתאום)\b",text)
-        if len(HEBREW.findall(v))>=2]
-    if len(clauses)<2 and len(text.split())>=16:
-        words=text.split()
-        half=max(2,len(words)//2)
-        clauses=[" ".join(words[:half])," ".join(words[half:])]
-    if not clauses:
-        clauses=[text]
-    if len(clauses)<=2:
-        return clauses
-    cut=max(1,len(clauses)//2)
-    return [" ".join(clauses[:cut])," ".join(clauses[cut:])]
-
+    return [beat.spoken_text for beat in narrative_beats(transcript)]
 
 def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                       *, progress=None, generator=_request_video_generation,
@@ -272,7 +264,8 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
     are attempted within the public ZeroGPU quota; if the second fails, use
     the first and clearly report an incomplete visual recreation.
     """
-    shots = _narrative_shots(transcript)
+    beats=narrative_beats(transcript)
+    shots=[beat.spoken_text for beat in beats]
     output_mp4=Path(output_mp4)
     work=Path(work_dir);work.mkdir(parents=True,exist_ok=True)
     audio_length=_duration(audio_mp3)
@@ -280,12 +273,15 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
         raise AIVideoUnavailable("משך המיקס אינו תקין")
     prepared=[]
     failure=None
-    for index, words in enumerate(shots):
+    for index, beat in enumerate(beats):
+        words=beat.spoken_text
         if progress:
             progress(88+index*3,"מייצר סצנת AI חדשה " + str(index+1) +
                      " מתוך " + str(len(shots)))
         try:
-            prompt=cinematic_prompt(words)
+            # Ground each shot to its own original Hebrew clause plus its
+            # explicitly detected physical actors/verbs, never generic stock.
+            prompt=scene_prompt(beat)
             try:
                 url=generator(prompt)
             except AIVideoUnavailable:
@@ -375,6 +371,8 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
         "ai_clip_seconds":round(sum(item[2] for item in prepared),2),
         "ai_clips_generated":len(prepared),
         "ai_clips_requested":len(shots),
+        "story_beats_total":len(shots),
+        "scene_generation_quality":"approximate_not_verified",
         "audio_seconds":round(audio_length,2),
         "repeated_ai_shot":any(
             sources[i]["end"]-sources[i]["start"]>shot[2]+.5
