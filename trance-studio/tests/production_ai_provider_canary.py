@@ -8,9 +8,10 @@ import json,pathlib,subprocess,sys,time,urllib.request,urllib.error
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
 from ai_video import _request_video_generation,_request_ltx25_generation,_download_public_video,AIVideoUnavailable
-prompt=("A real handheld video of a bright red tennis ball bouncing twice "
-        "on a plain table in daylight, continuous clear physical motion, "
-        "no words or text.")
+from narrative_plan import narrative_beats,scene_prompt
+# Use the EXACT kind of mixed English+Hebrew scene prompt submitted by the
+# Kolbo server, not a conveniently short English-only proof.
+prompt=scene_prompt(narrative_beats("האיש רוקד במהירות על הבמה וכולם צוחקים.")[0])
 def public_error_diagnostic(provider):
     """Only synthetic canary prompt; no user text is transmitted or printed."""
     if provider=='distilled':
