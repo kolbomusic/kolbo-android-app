@@ -24,6 +24,9 @@ from live_video import _duration, _make_segment, _video_profile, visual_plan, Un
 SPACE = "https://lightricks-ltx-video-distilled.hf.space"
 SPACE_HOST = "lightricks-ltx-video-distilled.hf.space"
 SPACE_PAGE = "https://huggingface.co/spaces/Lightricks/ltx-video-distilled"
+SECONDARY_SPACE = "https://lightricks-ltx-2-5.hf.space"
+SECONDARY_HOST = "lightricks-ltx-2-5.hf.space"
+SECONDARY_PAGE = "https://huggingface.co/spaces/Lightricks/LTX-2.5"
 CALL_PATH = "/gradio_api/call/text_to_video"
 MAX_OUTPUT_BYTES = 18 * 1024 * 1024
 MAX_WAIT_SECONDS = 210
@@ -64,7 +67,7 @@ def cinematic_prompt(transcript, max_chars=980):
     )[:1800]
 
 
-def _video_result_url(data):
+def _video_result_url(data, *, expected_host=SPACE_HOST):
     """Decode a Gradio Video FileData result without accepting arbitrary URLs."""
     if not isinstance(data, list) or not data:
         raise AIVideoUnavailable("שירות יצירת הווידאו לא החזיר קובץ")
@@ -76,13 +79,13 @@ def _video_result_url(data):
         if not url:
             path = str(item.get("path") or "")
             if path.startswith("/tmp/gradio/") and len(path) < 512:
-                url = SPACE + "/gradio_api/file=" + urllib.parse.quote(path)
+                url = "https://" + expected_host + "/gradio_api/file=" + urllib.parse.quote(path)
     elif isinstance(item, str):
         url = item
     else:
         url = ""
     parsed = urllib.parse.urlsplit(url)
-    if (parsed.scheme != "https" or parsed.hostname != SPACE_HOST or
+    if (parsed.scheme != "https" or parsed.hostname != expected_host or
         parsed.username or parsed.password or parsed.port not in (None,443) or
         not parsed.path.startswith("/gradio_api/file=")):
         raise AIVideoUnavailable("כתובת קובץ הווידאו אינה ממקור מאומת")
@@ -140,10 +143,72 @@ def _request_video_generation(prompt, *, opener=urllib.request.urlopen,
         ) from exc
 
 
+def _request_ltx25_generation(prompt, *, opener=urllib.request.urlopen,
+                              duration=2.0, max_wait=MAX_WAIT_SECONDS):
+    """Second *verified* public ZeroGPU video generation engine.
+
+    LTX 2.5 accepts a named JSON object, NOT the older positional Gradio
+    data array used by the distilled space. Both public endpoints were
+    independently checked with a real generated 1s video in GitHub Actions.
+    """
+    payload={
+        "prompt":str(prompt)[:1800],
+        "image_path":None,
+        "height":512,
+        "width":768,
+        "duration_s":min(3.0,max(1.0,float(duration))),
+        "seed":42,
+        "decoder":"conv",
+        "auto_len":False,
+        "randomize_seed":False,
+        "do_enhance":False,
+    }
+    req=urllib.request.Request(
+        SECONDARY_SPACE+"/gradio_api/call/v2/run",
+        data=json.dumps(payload,ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type":"application/json",
+                 "User-Agent":"KolboTranceStudio/2.4"})
+    try:
+        with opener(req,timeout=25) as response:
+            event=json.loads(response.read(16000))
+        event_id=str(event.get("event_id") or "")
+        if not re.fullmatch(r"[a-f0-9]{24,80}",event_id):
+            raise AIVideoUnavailable("מנוע הווידאו השני לא החזיר משימה תקינה")
+        request=urllib.request.Request(
+            SECONDARY_SPACE+"/gradio_api/call/run/"+event_id,
+            headers={"Accept":"text/event-stream",
+                     "User-Agent":"KolboTranceStudio/2.4"})
+        began=time.monotonic()
+        with opener(request,timeout=min(190,int(max_wait))) as response:
+            event_type=""
+            for raw in response:
+                if time.monotonic()-began>max_wait:
+                    raise AIVideoUnavailable("הבקשה למנוע הווידאו השני נמשכה זמן רב מדי")
+                line=raw.decode("utf-8",errors="replace").strip()
+                if line.startswith("event:"):
+                    event_type=line.split(":",1)[1].strip()
+                elif line.startswith("data:"):
+                    if event_type=="error":
+                        raise AIVideoUnavailable("גם מנוע הווידאו השני אינו זמין כעת")
+                    if event_type=="complete":
+                        return _video_result_url(
+                            json.loads(line.split(":",1)[1]),
+                            expected_host=SECONDARY_HOST)
+        raise AIVideoUnavailable("מנוע הווידאו השני לא השלים את הסרטון")
+    except AIVideoUnavailable:
+        raise
+    except (TimeoutError,OSError,ValueError,urllib.error.URLError,
+            json.JSONDecodeError) as exc:
+        raise AIVideoUnavailable("מנוע הווידאו השני אינו זמין או מוגבל כעת") from exc
+
+
 def _download_public_video(url, destination, *, opener=urllib.request.urlopen):
     # Only fetch the single trusted Gradio host. Never let the remote output
     # trigger a request to internal addresses (SSRF).
-    if _video_result_url([{"video":{"url":url}}]) != url:
+    parsed=urllib.parse.urlsplit(url)
+    if parsed.hostname not in (SPACE_HOST,SECONDARY_HOST):
+        raise AIVideoUnavailable("מקור הסרטון אינו מאומת")
+    if _video_result_url([{"video":{"url":url}}],expected_host=parsed.hostname) != url:
         raise AIVideoUnavailable("מקור הסרטון אינו מאומת")
     # Refuse redirects, which could otherwise lead to internal or unsafe URLs.
     class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -226,10 +291,12 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
             except AIVideoUnavailable:
                 if generator is not _request_video_generation:
                     raise
-                # The free shared GPU sometimes rejects a 2-second request
-                # while accepting a 1-second request. One bounded retry;
-                # never subscribe, pay, or invent a completed video.
-                url=generator(prompt,duration=1.0)
+                # Two verified free video Spaces, then a shorter original
+                # request. No credit card, paid API key or private audio.
+                try:
+                    url=_request_ltx25_generation(prompt,duration=2.0)
+                except AIVideoUnavailable:
+                    url=generator(prompt,duration=1.0)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             prepared.append((words,raw,seconds))
@@ -309,5 +376,5 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
             for i,shot in enumerate(prepared)),
         "sources":[],
         "scenes":sources,
-        "provider":SPACE_PAGE,
+        "provider":SPACE_PAGE+" | "+SECONDARY_PAGE,
     }
