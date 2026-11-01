@@ -32,11 +32,9 @@ class ComicStingsTests(unittest.TestCase):
         active=np.zeros(len(bed),dtype=np.float32)
         active[sr:sr+int(.35*sr)]=1.
         fallback=add_comic_stings(bed,active,sr,145,lambda p:None)
-        # Keywords can be absent in real WhatsApp speech. Still give an
-        # acoustic comic accent at a selected existing voice-FX pause.
-        self.assertGreater(float(np.max(np.abs(fallback-bed))),.07)
-        np.testing.assert_array_equal(fallback[:sr],bed[:sr])
-        np.testing.assert_array_equal(fallback[sr+int(.35*sr):],bed[sr+int(.35*sr):])
+        # No Hebrew story event means no unrelated synthetic noises.
+        # The independent, processed voice hook supplies the humor.
+        np.testing.assert_array_equal(fallback,bed)
         np.testing.assert_array_equal(
             add_comic_stings(bed,np.zeros(len(bed)),sr,145,
                              lambda p:'monster'),bed)
