@@ -1,7 +1,7 @@
 name: Kolbo original Hebrew narration to free AI-motion video
 on:
   push:
-    branches: [kolbo-trance-generative-scenes-20261101, kolbo-trance-ltx25-free-provider-20261101, kolbo-trance-studio-20261031]
+    branches: [kolbo-trance-generative-scenes-20261101, kolbo-trance-ltx25-free-provider-20261101, kolbo-trance-ai-second-provider-retry-20261101, kolbo-trance-studio-20261031]
     paths:
       - 'trance-studio/backend/ai_video.py'
       - 'trance-studio/backend/app.py'
