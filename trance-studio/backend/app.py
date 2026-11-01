@@ -89,6 +89,21 @@ def create_app(config=None):
                           'video_error':'נוסו תמלול במכשיר ובשרת, אך לא זוהו מילים מספיק אמינות מההקלטה המקורית. '+asr_recovery_error,
                           'storyboard_source':'original_asr_failed',
                           'visual_coverage':'none'}
+                    # Video uploads remain usable even when ASR fails:
+                    # reuse ONLY the owner's real moving input footage.
+                    # Audio-only files remain audio-only, never fake an MP4.
+                    try:
+                        from source_video_fallback import compose_original_video_with_mix
+                        original_recovery=compose_original_video_with_mix(
+                            paths,root/job_id/'mix.mp3',root/job_id/'story.mp4',
+                            root/job_id/'original-video')
+                        meta={**original_recovery,
+                              'storyboard_source':'original_shared_video',
+                              'transcript_origin':'unavailable',
+                              'visual_beats':1}
+                    except (UnavailableVideo,OSError,ValueError,
+                            subprocess.SubprocessError):
+                        pass
                 else:
                     ai_generation_error=''
                     if options.get('ai_video_consent'):
