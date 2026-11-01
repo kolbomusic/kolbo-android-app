@@ -156,14 +156,35 @@ def create_app(config=None):
                                       if board.get('visual_coverage')=='partial'
                                       else 'הצילומים נבחרו לפי האירועים שזוהו בדיבור המקורי.')}
                         except UnavailableVideo as err:
-                            # Job diagnostics without storing user speech, audio, or file names.
-                            app.logger.warning('Grounded MP4 unavailable: asr=%s, cause=%s',
-                                               detected_origin, str(err)[:180])
-                            (root/job_id/'story.mp4').unlink(missing_ok=True)
-                            meta={'video_status':'unavailable',
-                                  'video_error':(str(err) + ((' בנוסף, ניסיון וידאו AI נכשל: '+ai_generation_error) if ai_generation_error else ''))[:350],
-                                  'storyboard_source':'no_grounded_story',
-                                  'visual_coverage':'none'}
+                            # If the WhatsApp original was VIDEO (not an
+                            # audio-only recording), the real original moving
+                            # frames offer a deterministic, private last
+                            # resort. Never invent footage or imply this is
+                            # an AI reconstruction of what was spoken.
+                            recovered=None
+                            try:
+                                from source_video_fallback import compose_original_video_with_mix
+                                recovered=compose_original_video_with_mix(
+                                    paths,root/job_id/'mix.mp3',
+                                    root/job_id/'story.mp4',root/job_id/'original-video')
+                            except (UnavailableVideo,OSError,ValueError,
+                                    subprocess.SubprocessError):
+                                pass
+                            if recovered is not None:
+                                meta={**recovered,
+                                      'storyboard_source':'original_shared_video',
+                                      'transcript_origin':detected_origin,
+                                      'visual_beats':1}
+                            else:
+                                # Diagnostics exclude private speech, audio and
+                                # file names; preserve the successfully made MP3.
+                                app.logger.warning('Grounded MP4 unavailable: asr=%s, cause=%s',
+                                                   detected_origin, str(err)[:180])
+                                (root/job_id/'story.mp4').unlink(missing_ok=True)
+                                meta={'video_status':'unavailable',
+                                      'video_error':(str(err) + ((' בנוסף, ניסיון וידאו AI נכשל: '+ai_generation_error) if ai_generation_error else ''))[:350],
+                                      'storyboard_source':'no_grounded_story',
+                                      'visual_coverage':'none'}
                         except (OSError,RuntimeError,ValueError,subprocess.SubprocessError):
                             app.logger.exception('Grounded live footage export failed')
                             (root/job_id/'story.mp4').unlink(missing_ok=True)
