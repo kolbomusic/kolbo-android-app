@@ -1,10 +1,15 @@
-import os,re,secrets,hashlib,hmac,html
+import os,re,secrets,hashlib,hmac,html,base64
 from datetime import datetime, timedelta
 from flask import Flask,request,redirect,session,render_template_string,abort,Response
 import psycopg
 from psycopg.rows import dict_row
-from accessibility_ui import integrate_html, accessibility_statement_body
+from accessibility_ui import integrate_html, accessibility_statement_body, JS as TRUSTED_ACCESSIBILITY_JS
 from google_identity import enabled as google_ready, install_google_login, auth_mode as google_auth_mode, gis_button_html
+
+# Pin a CSP hash for our trusted inline accessibility helper. Never compute
+# hashes from arbitrary rendered HTML: that could whitelist injected scripts.
+_A11Y_JS_BODY=TRUSTED_ACCESSIBILITY_JS.partition(">")[2].rpartition("</script>")[0]
+_A11Y_JS_SHA256=base64.b64encode(hashlib.sha256(_A11Y_JS_BODY.encode("utf-8")).digest()).decode("ascii")
 
 app=Flask(__name__)
 app.secret_key=os.environ['SECRET_KEY']
@@ -127,7 +132,7 @@ def harden_responses(resp):
  if request.path in ("/login", "/register") and not READ_ONLY_BOOT and google_ready() and google_auth_mode()=="gis":
   resp.headers["Content-Security-Policy"]=(
    "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; "
-   "form-action 'self'; script-src https://accounts.google.com/gsi/client; "
+   "form-action 'self'; script-src 'sha256-" + _A11Y_JS_SHA256 + "' https://accounts.google.com/gsi/client; "
    "frame-src https://accounts.google.com/gsi/; "
    "connect-src https://accounts.google.com/gsi/; "
    "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; "
