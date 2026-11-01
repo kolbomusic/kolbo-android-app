@@ -71,7 +71,7 @@ def create_app(config=None):
                     asr_recovery_error=str(exc)[:180]
                     app.logger.exception('Original-file ASR failed; keeping the requested audio job alive')
             clips=[load_audio(p) for p in paths]
-            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes')}
+            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent')}
             audio,vocal=render_mix(clips,**audio_options,return_voice=True,
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             export_mp3(audio,root/job_id/'mix.mp3')
@@ -86,54 +86,91 @@ def create_app(config=None):
                           'storyboard_source':'original_asr_failed',
                           'visual_coverage':'none'}
                 else:
-                    try:
-                        board=visual_plan(detected_transcript,len(audio)/32000)
-                        board['transcript_origin']=detected_origin
-                        board['transcript_complete']=transcript_complete
-                        # A clip must depict every uttered event; do not hide
-                        # unsupported sentences beneath footage from another
-                        # sentence. Never swap to a waveform or cartoons.
-                        # Continue preparing source footage even if there are
-                        # unmatched phrases. Real video may still illustrate
-                        # recognized scenes; coverage must be openly partial.
-                        board=align_storyboard_to_vocal(board,vocal,sr=32000)
-                        video_path=root/job_id/'story.mp4'
-                        sources=export_live_story(root/job_id/'mix.mp3',video_path,
-                            board,root/job_id/'footage',
-                            progress=lambda p,label:update(job_id,percent=p,label=label))
-                        board['sources']=[{'action':item['action'],
-                                          'page':item['page'],
-                                          'license':item['license']} for item in sources]
-                        (root/job_id/'storyboard.json').write_text(
-                            json.dumps(board,ensure_ascii=False),encoding='utf-8')
-                        meta={'video_status':'done','video_mode':'matched_footage',
-                              'storyboard_source':board['source'],
-                              'transcript_origin':board['transcript_origin'],
-                               'transcript_complete':board['transcript_complete'],
-                              'visual_coverage':board.get('visual_coverage','partial'),
-                              'visual_beats':len(sources),
-                              'unmatched_clauses':board.get('unmatched_clauses',0),
-                              'video_note':(
-                                  'זהו סרטון מצולם של אירועים שזוהו בהקלטה. '
-                                  'בחלק מהמשפטים לא נמצאה המחשה מדויקת.'
-                                  if board.get('visual_coverage')=='partial'
-                                  else 'הצילומים נבחרו לפי האירועים שזוהו בדיבור המקורי.')}
-                    except UnavailableVideo as err:
-                        # Job diagnostics without storing user speech, audio, or file names.
-                        app.logger.warning('Grounded MP4 unavailable: asr=%s, cause=%s',
-                                           detected_origin, str(err)[:180])
-                        (root/job_id/'story.mp4').unlink(missing_ok=True)
-                        meta={'video_status':'unavailable',
-                              'video_error':str(err)[:250],
-                              'storyboard_source':'no_grounded_story',
-                              'visual_coverage':'none'}
-                    except (OSError,RuntimeError,ValueError,subprocess.SubprocessError):
-                        app.logger.exception('Grounded live footage export failed')
-                        (root/job_id/'story.mp4').unlink(missing_ok=True)
-                        meta={'video_status':'error',
-                              'video_error':'לא ניתן לייצר סרטון שממחיש את המילים במדויק. המיקס נשמר, ולא ייוצר סרטון גלי קול.',
-                              'storyboard_source':'no_grounded_story',
-                              'visual_coverage':'none'}
+                    ai_generation_error=''
+                    if options.get('ai_video_consent'):
+                        # Explicit one-tap consent: a community ZeroGPU Space
+                        # receives only recognized TEXT, never private audio.
+                        try:
+                            from ai_video import generate_ai_story, AIVideoUnavailable
+                            board=generate_ai_story(
+                                detected_transcript,root/job_id/'mix.mp3',
+                                root/job_id/'story.mp4',root/job_id/'generated',
+                                progress=lambda p,label:update(job_id,percent=p,label=label))
+                            board['transcript_origin']=detected_origin
+                            (root/job_id/'storyboard.json').write_text(
+                                json.dumps(board,ensure_ascii=False),encoding='utf-8')
+                            meta={'video_status':'done',
+                                  'video_mode':'ai_generated_experimental',
+                                  'storyboard_source':board['source'],
+                                  'transcript_origin':detected_origin,
+                                  'transcript_complete':transcript_complete,
+                                  'visual_coverage':'approximate',
+                                  'visual_beats':board.get('ai_clips_generated',1),
+                                  'ai_clip_seconds':board['ai_clip_seconds'],
+                                  'ai_clips_generated':board.get('ai_clips_generated',1),
+                                  'video_note':(
+                                      'הקטע נוצר באמצעות AI מתוך תמלול ההקלטה. '
+                                      'זו המחשה משוערת, לא שחזור מדויק של כל משפט. '
+                                      'סצנות AI קצרות עשויות לחזור לאורך המיקס; '
+                                      'השירות החינמי מוגבל.')}
+                        except AIVideoUnavailable as err:
+                            ai_generation_error=str(err)[:180]
+                            app.logger.warning('Free AI video unavailable: %s',
+                                               type(err).__name__)
+                            (root/job_id/'story.mp4').unlink(missing_ok=True)
+                        except Exception:
+                            ai_generation_error='שירות יצירת הווידאו הניסיוני לא הצליח'
+                            app.logger.exception('Experimental AI video failed')
+                            (root/job_id/'story.mp4').unlink(missing_ok=True)
+                    if meta.get('video_status')!='done':
+                        try:
+                            board=visual_plan(detected_transcript,len(audio)/32000)
+                            board['transcript_origin']=detected_origin
+                            board['transcript_complete']=transcript_complete
+                            # A clip must depict every uttered event; do not hide
+                            # unsupported sentences beneath footage from another
+                            # sentence. Never swap to a waveform or cartoons.
+                            # Continue preparing source footage even if there are
+                            # unmatched phrases. Real video may still illustrate
+                            # recognized scenes; coverage must be openly partial.
+                            board=align_storyboard_to_vocal(board,vocal,sr=32000)
+                            video_path=root/job_id/'story.mp4'
+                            sources=export_live_story(root/job_id/'mix.mp3',video_path,
+                                board,root/job_id/'footage',
+                                progress=lambda p,label:update(job_id,percent=p,label=label))
+                            board['sources']=[{'action':item['action'],
+                                              'page':item['page'],
+                                              'license':item['license']} for item in sources]
+                            (root/job_id/'storyboard.json').write_text(
+                                json.dumps(board,ensure_ascii=False),encoding='utf-8')
+                            meta={'video_status':'done','video_mode':'matched_footage',
+                                  'storyboard_source':board['source'],
+                                  'transcript_origin':board['transcript_origin'],
+                                   'transcript_complete':board['transcript_complete'],
+                                  'visual_coverage':board.get('visual_coverage','partial'),
+                                  'visual_beats':len(sources),
+                                  'unmatched_clauses':board.get('unmatched_clauses',0),
+                                  'video_note':(
+                                      'זהו סרטון מצולם של אירועים שזוהו בהקלטה. '
+                                      'בחלק מהמשפטים לא נמצאה המחשה מדויקת.'
+                                      if board.get('visual_coverage')=='partial'
+                                      else 'הצילומים נבחרו לפי האירועים שזוהו בדיבור המקורי.')}
+                        except UnavailableVideo as err:
+                            # Job diagnostics without storing user speech, audio, or file names.
+                            app.logger.warning('Grounded MP4 unavailable: asr=%s, cause=%s',
+                                               detected_origin, str(err)[:180])
+                            (root/job_id/'story.mp4').unlink(missing_ok=True)
+                            meta={'video_status':'unavailable',
+                                  'video_error':(str(err) + ((' בנוסף, ניסיון וידאו AI נכשל: '+ai_generation_error) if ai_generation_error else ''))[:350],
+                                  'storyboard_source':'no_grounded_story',
+                                  'visual_coverage':'none'}
+                        except (OSError,RuntimeError,ValueError,subprocess.SubprocessError):
+                            app.logger.exception('Grounded live footage export failed')
+                            (root/job_id/'story.mp4').unlink(missing_ok=True)
+                            meta={'video_status':'error',
+                                  'video_error':'לא ניתן לייצר סרטון שממחיש את המילים במדויק. המיקס נשמר, ולא ייוצר סרטון גלי קול.',
+                                  'storyboard_source':'no_grounded_story',
+                                  'visual_coverage':'none'}
             update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             app.logger.exception('Kolbo audio/video worker error')
@@ -182,7 +219,7 @@ def create_app(config=None):
         files=request.files.getlist('audio')
         if not 1<=len(files)<=4:return jsonify(error='יש לבחור בין הקלטה אחת לארבע הקלטות'),400
         try:
-            bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','off')=='on';video_requested=request.form.get('video_requested','on' if make_video else 'off')=='on';transcription_failed=request.form.get('transcription_failed','off')=='on';transcript=request.form.get('transcript','')[:4000].strip();transcript_origin=request.form.get('transcript_origin','manual');source_hashes=request.form.get('source_hashes','')
+            bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','off')=='on';video_requested=request.form.get('video_requested','on' if make_video else 'off')=='on';transcription_failed=request.form.get('transcription_failed','off')=='on';transcript=request.form.get('transcript','')[:4000].strip();transcript_origin=request.form.get('transcript_origin','manual');source_hashes=request.form.get('source_hashes','');ai_video_consent=request.form.get('ai_video_consent','off')=='on'
             if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','helium','monster','yo_yo','comic_roll','rewind','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5:raise ValueError()
         except (ValueError,TypeError):return jsonify(error='הגדרות המיקס אינן תקינות'),400
         # Never reject the upload before trying original-file server ASR.
@@ -217,7 +254,7 @@ def create_app(config=None):
             admission.release();shutil.rmtree(directory,ignore_errors=True)
             return jsonify(error='לא ניתן לקרוא את הקובץ המקורי'),400
         with lock:jobs[job_id]={'state':'queued','percent':0,'label':'ממתין לעיבוד','created':time.time(),'seconds':seconds,'bpm':bpm}
-        executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'video_requested':video_requested,'transcription_failed':transcription_failed,'transcript':transcript,'transcript_origin':transcript_origin,'source_hashes':source_hashes})
+        executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'video_requested':video_requested,'transcription_failed':transcription_failed,'transcript':transcript,'transcript_origin':transcript_origin,'source_hashes':source_hashes,'ai_video_consent':ai_video_consent and video_requested})
         return jsonify(id=job_id,status_url='/api/jobs/'+job_id),202
 
     @app.get('/api/jobs/<job_id>')

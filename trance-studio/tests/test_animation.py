@@ -154,6 +154,62 @@ class ProductionStoryTests(unittest.TestCase):
             self.assertIn('חלק מהמשפטים',state['video_note'])
             self.assertEqual(client.get(state['download_url']).status_code,200)
 
+    def test_personal_transcript_never_leaves_own_server_without_ai_consent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test'})
+            client=app.test_client()
+            with patch('ai_video.generate_ai_story') as ai:
+                response=client.post('/api/jobs',data={
+                    'audio':(self.wave(),'source.wav'),'make_video':'on',
+                    'video_requested':'on','ai_video_consent':'off',
+                    'transcript':'הלילה סיפרתי סיפור ארוך לאחותי.',
+                    'transcript_origin':'auto','seconds':'30'})
+                self.assertEqual(response.status_code,202,response.get_json())
+                state={}
+                for _ in range(140):
+                    state=client.get(response.get_json()['status_url']).get_json()
+                    if state.get('state') in ('done','error'):
+                        break
+                    time.sleep(.25)
+                self.assertEqual(state['state'],'done',state)
+                ai.assert_not_called()
+                self.assertEqual(state['video_status'],'unavailable',state)
+                self.assertIn('download_url',state)
+
+    def test_opted_in_narration_generates_ai_video_without_any_user_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app=create_app({'TESTING':True,'JOB_DIR':directory,'API_TOKEN':'test'})
+            client=app.test_client()
+            def fake_ai(words,audio,movie,folder,progress):
+                self.assertIn('הכוס נשברה',words)
+                pathlib.Path(movie).write_bytes(b'0000ftypisom'+b'0'*2000)
+                return {'source':'generated_from_original_hebrew_transcript',
+                        'video_mode':'ai_generated_experimental',
+                        'ai_clips_generated':2,'ai_clip_seconds':3.9,
+                        'visual_coverage':'approximate','sources':[],
+                        'scenes':[{'action':'ai_generated_narrative'}]}
+            with patch('ai_video.generate_ai_story',side_effect=fake_ai) as gen:
+                response=client.post('/api/jobs',data={
+                    'audio':(self.wave(),'source.wav'),'make_video':'on',
+                    'video_requested':'on','ai_video_consent':'on',
+                    'transcript':'האיש אמר שהכוס נשברה מול החלון.',
+                    'transcript_origin':'auto','seconds':'30'})
+                self.assertEqual(response.status_code,202,response.get_json())
+                state={}
+                for _ in range(140):
+                    state=client.get(response.get_json()['status_url']).get_json()
+                    if state.get('state') in ('done','error'):
+                        break
+                    time.sleep(.25)
+                self.assertEqual(state['state'],'done',state)
+                self.assertTrue(gen.called)
+                self.assertEqual(state['video_status'],'done',state)
+                self.assertEqual(state['video_mode'],'ai_generated_experimental',state)
+                self.assertEqual(state['visual_coverage'],'approximate',state)
+                self.assertEqual(state['visual_beats'],2,state)
+                self.assertIn('video_url',state)
+                self.assertEqual(client.get(state['download_url']).status_code,200)
+
     def test_dense_speech_alignment_never_overflows_video_length(self):
         sr=8000
         duration=2.4

@@ -43,12 +43,14 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </style>
 </head>
 <body><main>
-<header><div class="brand">≋ KOLBO / TRANCE STORY</div><h1>ההקלטה שלך.<br><span>טראנס מצחיק וסרטון אמיתי.</span></h1><p>שיתוף ישיר מ־WhatsApp, זיהוי דיבור עברי ושילוב צילומי וידאו לפי הסיפור שבהקלטה. בלי כתוביות ובלי גלי קול.</p><div id="nativeStatus" hidden>● גרסת Android 2.2 · יצירה אוטומטית בשיתוף</div></header>
+<header><div class="brand">≋ KOLBO / TRANCE STORY</div><h1>ההקלטה שלך.<br><span>טראנס מצחיק וסרטון אמיתי.</span></h1><p>שיתוף ישיר מ־WhatsApp, פענוח עברית ויצירת סרטון מהסיפור. אפשר להשתמש בצילומים קיימים או לנסות יצירת סצנה חדשה באמצעות AI. בלי גלי קול במקום סרטון.</p><div id="nativeStatus" hidden>● גרסת Android 2.2 · יצירה אוטומטית בשיתוף</div></header>
 <section class="panel"><h2>01 / ההקלטות שלך</h2>
 <label for="audio">הוסף עד 4 הודעות קוליות</label><input id="audio" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div>
 <p class="quickNote">באנדרואיד: לוחצים <b>שיתוף</b> בהודעה קולית ב־WhatsApp ובוחרים Kolbo Trance Story. היצירה מתחילה לבד, ללא הזנת מילים ואישורים.</p>
-<label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>הפק גם סרטון וידאו אמיתי לפי הדיבור (MP4)</span></label>
+<label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>הפק גם סרטון וידאו לפי מה שנאמר (MP4)</span></label>
+<label class="videoToggle" for="ai_video_consent"><input id="ai_video_consent" type="checkbox"> <span>נסה גם ליצור סצנה חדשה באמצעות AI לפי הדיבור — ניסיוני וחינמי</span></label>
+<small id="aiVideoPrivacy">אם מסמנים: הטקסט שהמנוע זיהה מההקלטה נשלח לשירות AI ציבורי ב־Hugging Face. קובץ הקול עצמו אינו נשלח לשם. הווידאו עשוי להיות קצר, לחזור על עצמו או לא לדייק בכל האירועים; השירות החינמי כפוף לתורים ולמכסות. בלי סימון, המערכת משתמשת רק בצילומים קיימים בעלי רישיון.</small>
 </section>
 <section class="panel"><h2>02 / האפקטים על הקול שלך</h2>
 <label for="humor">אפקטים על קול ההקלטה מ־WhatsApp (לא על המוזיקה)</label><select id="humor">
@@ -124,7 +126,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <section class="panel" id="result"><h2 id="resultTitle">✓ ההפקה מוכנה!</h2>
 <div id="videoNotice" role="alert" hidden></div>
 <div id="videoResult" hidden>
-<label for="videoPlayer">וידאו אמיתי שמותאם לפעולות שנאמרו</label>
+<label for="videoPlayer">סרטון שנוצר לפי התוכן שזוהה בהקלטה</label>
 <video id="videoPlayer" controls playsinline preload="metadata" style="width:100%;max-height:620px;border-radius:14px;background:#000"></video>
 <div class="actions"><button id="downloadVideo">הורדת MP4</button><button id="shareVideo" class="secondary">שיתוף סרטון ל־WhatsApp</button></div>
 <div id="storyboardInfo" class="hint"></div>
@@ -146,6 +148,11 @@ var $=function(id){return document.getElementById(id)};
 var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null,voiceUrl='',originalUrl='',videoUrl='',videoServerUrl='',videoBlob=null;
 var active=false;
 if(window.KolboAndroid){$('nativeStatus').hidden=false;$('install').hidden=true;}
+try{$('ai_video_consent').checked=localStorage.getItem('kolbo_trance_ai_video_consent_v1')==='yes'}catch(e){}
+$('ai_video_consent').addEventListener('change',function(){
+ try{localStorage.setItem('kolbo_trance_ai_video_consent_v1',this.checked?'yes':'no')}catch(e){}
+});
+
 function markStage(stage){
  var names=['upload','recognize','mix','video'],index=names.indexOf(stage);
  document.querySelectorAll('#stages [data-step]').forEach(function(chip,i){
@@ -258,6 +265,7 @@ form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
 form.set('make_video',wantsVideo?'on':'off');
 form.set('video_requested',wantsVideo?'on':'off');
+form.set('ai_video_consent',wantsVideo&&$('ai_video_consent').checked?'on':'off');
 form.set('transcription_failed',wantsVideo&&!verifyTranscript(recognized)?'on':'off');
 form.set('transcript',verifyTranscript(recognized)?recognized:'');
 form.set('transcript_origin','auto');
@@ -297,9 +305,13 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent=j.visual_coverage==='partial'?
+ $('storyboardInfo').textContent=j.video_mode==='ai_generated_experimental'?
+   'סצנה חדשה נוצרה באמצעות AI לפי התמלול. זו המחשה משוערת: קטע קצר עשוי לחזור לאורך המיקס, ולא כל פרט בהקלטה בהכרח מוצג.' :
+   (j.visual_coverage==='partial'?
    'נמצא צילום מתאים לחלק מהמשפטים בלבד. המיקס המקורי נשמר לכל אורכו. הסצנות האחרות עדיין לא הומחשו במדויק.':
-   'צילום וידאו נע שנבחר לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול או ציורים.';
+   'צילום וידאו נע שנבחר לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול או ציורים.');
+ $('videoPlayer').setAttribute('aria-label',j.video_mode==='ai_generated_experimental'?
+   'סרטון AI ניסיוני שנוצר מן הסיפור':'סרטון מצולם מתוך הפעולות שזוהו');
  if(j.storyboard_url){
   try{
    var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
@@ -328,8 +340,8 @@ if(wantsVideo&&!j.video_url){
  $('videoNotice').hidden=false;
 }else{
  $('resultTitle').textContent=j.video_url?'✓ סרטון ומיקס מוכנים':'✓ המיקס מוכן';
- if(j.video_url&&j.visual_coverage==='partial'){
-  $('videoNotice').textContent=j.video_note||'חלק מהסצנות אינן תואמות באופן מלא למילים שנאמרו. סרטון זה הוא המחשה חלקית בלבד.';
+ if(j.video_url&&(j.visual_coverage==='partial'||j.visual_coverage==='approximate')){
+  $('videoNotice').textContent=j.video_note||'הסרטון הוא המחשה חלקית בלבד, ולא שחזור מדויק של כל הסיפור שנאמר.';
   $('videoNotice').hidden=false;
  }
 }
