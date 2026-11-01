@@ -16,6 +16,7 @@ from test_google_gis import CLIENT, create_token, Response as FakeGoogleJWKS
 
 BASE = "https://karnafim-community-46.onrender.com"
 operations = []
+member_approval = {"approved": True}
 
 
 class FakeCursor:
@@ -38,7 +39,7 @@ class FakeCursor:
         if self.query.startswith("SELECT * FROM members WHERE id="):
             return [{
                 "id": 42, "name": "בדיקת מערכת", "email": "existing@gmail.com",
-                "approved": True, "visible": False, "nickname": "",
+                "approved": member_approval["approved"], "visible": False, "nickname": "",
                 "company": "ב", "role": "", "about": "",
                 "service_start": "", "service_end": "",
                 "facebook_url": "", "instagram_url": "", "linkedin_url": ""
@@ -110,7 +111,19 @@ def run():
                     assert not any(q.startswith(("UPDATE members","INSERT INTO members"))
                                    for q,_ in operations), "Sign-in unexpectedly mutated member approval"
                     assert client.get("/find", base_url=BASE).status_code == 410
-                    print("PASS real Flask GIS route, secure session, private profile, approved directory, retired search")
+                    # Re-check authorization on every request, not merely at
+                    # login. An authenticated but unapproved member must not
+                    # gain access to the private feed, chats, files or uploads.
+                    member_approval["approved"] = False
+                    pending_dir = client.get("/directory", base_url=BASE)
+                    assert pending_dir.status_code == 200
+                    assert "ממתין לאישור" in pending_dir.get_data(as_text=True)
+                    for private_route in ("/chats", "/new-post", "/community-media/1"):
+                        denied = client.get(private_route, base_url=BASE)
+                        assert denied.status_code == 403, (private_route, denied.status_code)
+                    member_approval["approved"] = True
+                    assert client.get("/directory", base_url=BASE).status_code == 200
+                    print("PASS real Flask GIS routes, approved/unapproved access, private member data and retired search")
     assert all("fake/no-real-connection" not in q for q,_ in operations)
 
 
