@@ -172,15 +172,18 @@ public final class MainActivity extends Activity {
                 return true;
             }
             @Override public void onProgressChanged(WebView view,int progress){
-                if(!pageLoadFailed)loading.setVisibility(progress>=100?View.GONE:View.VISIBLE);
+                if(!pageReady&&!pageLoadFailed)loading.setVisibility(View.VISIBLE);
             }
         });
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView view,String url,Bitmap favicon){
                 pageLoadFailed=false;
+                pageReady=false;
                 offlinePanel.setVisibility(View.GONE);
-                webView.setVisibility(View.VISIBLE);
+                startupPanel.setVisibility(View.VISIBLE);
+                startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
                 loading.setVisibility(View.VISIBLE);
+                webView.setVisibility(View.VISIBLE);
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
                 Uri u=request.getUrl();
