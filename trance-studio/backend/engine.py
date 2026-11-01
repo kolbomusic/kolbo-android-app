@@ -811,7 +811,9 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # Original cartoon punctuation is audible only at selected existing
     # FX cuts. Foley never replaces words, is independent of YouTube,
     # and is disabled with the user's humour-off setting.
-    if humor=='auto' and transcript_hint:
+    if humor=='auto':
+        # Still produce music-led accents when Hebrew ASR is unavailable.
+        # Explicit story cues override a prosodic/acoustic fallback.
         from comic_stingers import add_comic_stings
         # The score contains intro/outro padding. Locate the actual
         # performed voice span before approximately mapping spoken Hebrew
