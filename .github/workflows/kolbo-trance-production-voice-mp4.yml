@@ -24,5 +24,21 @@ jobs:
           gTTS('כולם רוקדים במסיבה. החמור נוער בקול חזק.',lang='iw').save('/tmp/kolbo-production-hebrew.mp3')
           PY
           ffmpeg -nostdin -loglevel error -y -i /tmp/kolbo-production-hebrew.mp3 -c:a libopus -ar 48000 -ac 1 -b:a 28k /tmp/kolbo-production-hebrew.opus
+      - name: Diagnose synthetic voice with the exact production ASR Docker image
+        run: |
+          docker build -t kolbo-trance:production-diag trance-studio
+          docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 -e PYTHONPATH=/app/backend \
+            -v /tmp/kolbo-production-hebrew.opus:/tmp/kolbo-production-hebrew.opus:ro \
+            --entrypoint python kolbo-trance:production-diag -c "
+          from source_asr import transcribe_original_files
+          from live_video import visual_plan,UnavailableVideo
+          words,complete=transcribe_original_files(['/tmp/kolbo-production-hebrew.opus'])
+          print('DIAGNOSTIC_ACTUAL_HEBREW_TRANSCRIPTION',repr(words),'complete=',complete,flush=True)
+          try:
+            board=visual_plan(words,30)
+            print('DIAGNOSTIC_ACTUAL_SCENE_PLAN',[(s['action'],s['basis']) for s in board['scenes']],flush=True)
+          except UnavailableVideo as e:
+            print('DIAGNOSTIC_NO_MATCHED_SCENES',str(e),flush=True)
+          "
       - name: Submit original OPUS to deployed Render, recognize Hebrew automatically, verify actual MP4
         run: python trance-studio/tests/production_hebrew_voice_mp4.py
