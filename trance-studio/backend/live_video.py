@@ -343,7 +343,7 @@ MEDIA_SEARCH_ALIASES={
     "person cooking": ("person cooking", "people cooking"),
     "people hugging": ("people hugging", "hugging people"),
     "people dancing": ("people dancing", "dancing people"),
-    "car": ("car", "moving car"),
+    # A car-only ASR match must still lead to a moving modern road scene.\n    # Avoid generic car search: it surfaced archival title cards and Carina.\n    "car": ("moving car", "car moving", "driving car", "car driving"),
     "truck": ("truck", "moving truck", "lorry"),
     "dog": ("dog", "moving dog"),
     "donkey": ("donkey", "walking donkey"),
