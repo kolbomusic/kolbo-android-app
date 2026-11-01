@@ -1,0 +1,44 @@
+name: Diagnose public AI rejection for raw vs corrected Hebrew speech
+on:
+  push:
+    branches: [kolbo-trance-prompt-diagnostic-20261101]
+    paths: ['.github/workflows/kolbo-trance-raw-hebrew-prompt-diagnostics.yml']
+  workflow_dispatch:
+jobs:
+  prompts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare rejected synthetic ASR phrase to corrected scene text across both free Spaces
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.error,time
+          raw='יש זורק קוס זחוכית על הרצפה'
+          fixed='איש זורק כוס זכוכית על הרצפה'
+          stem='Photorealistic cinematic live-action moving video. Show the actual physical events narrated below in chronological order, realistic moving subjects, natural camera motion and reactions. Do not invent different events or change the actors. No written words, captions, titles, waveforms, animation, still images or illustrations. The narration is in HEBREW. Interpret its meaning and depict it: '
+          tests=[('raw_synthetic_asr',stem+raw),('corrected_words',stem+fixed),('short_sensible_english','A person drops a glass cup onto the ground in daylight, the glass breaks. Realistic live action, continuous moving footage.')]
+          for name,prompt in tests:
+            print('PROMPT_TEST',name,flush=True)
+            for space,path,d in [
+                ('ltx_distilled','https://lightricks-ltx-video-distilled.hf.space/gradio_api/call/text_to_video',{'data':[prompt,'blurry, deformed, text, captions, watermark, anime, illustration','','',704,512,'text-to-video',2.0,9,42,True,1.0,True]}),
+                ('ltx25','https://lightricks-ltx-2-5.hf.space/gradio_api/call/v2/run',{'prompt':prompt,'image_path':None,'height':512,'width':768,'duration_s':1.0,'seed':42,'decoder':'conv','auto_len':False,'randomize_seed':False,'do_enhance':False}),
+            ]:
+              try:
+                req=urllib.request.Request(path,data=json.dumps(d,ensure_ascii=False).encode(),headers={'Content-Type':'application/json','User-Agent':'KolboTranceStudio/2.4'})
+                with urllib.request.urlopen(req,timeout=22) as resp:
+                  event=json.load(resp)
+                uid=event['event_id']
+                print('PROMPT_SUBMIT',name,space,uid,flush=True)
+                url=('https://lightricks-ltx-2-5.hf.space/gradio_api/call/run/' if space=='ltx25' else 'https://lightricks-ltx-video-distilled.hf.space/gradio_api/call/text_to_video/')+uid
+                with urllib.request.urlopen(url,timeout=155) as resp:
+                  typ=''
+                  for rawline in resp:
+                    line=rawline.decode('utf-8',errors='replace').strip()
+                    if line.startswith('event:'):typ=line[6:].strip()
+                    if line.startswith('data:') and typ in ('complete','error'):
+                      print('PROMPT_OUTCOME',name,space,typ,line[:800],flush=True)
+                      break
+              except Exception as err:
+                print('PROMPT_FAIL',name,space,type(err).__name__,str(err)[:380],flush=True)
+          PY
