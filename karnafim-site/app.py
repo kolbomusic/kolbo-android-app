@@ -48,8 +48,21 @@ def security_hold():
    # 410 (rather than temporary 503) explicitly tells crawlers that these forms are gone;
    # no private content or credentials are served, even if an old bookmark is followed.
    retired_credentials=(request.path in ("/login","/register","/password","/find") or request.path.startswith("/auth/google/"))
-   message=("שירות איתור החברים הוסר זמנית בעקבות בדיקת אבטחת האתר. לא נאספים כאן פרטים אישיים." if request.path=="/find" else "עמוד הכניסה הוסר במסגרת טיפול באבטחת האתר. אין להזין כאן פרטי התחברות." if retired_credentials else "אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה.")
-   response=Response(message,status=(410 if retired_credentials else 503),mimetype="text/plain")
+   private_exact=request.path in (
+    "/new-post","/my-posts","/chats","/feed","/invite","/profile",
+    "/directory","/admin","/community/moderation","/discover",
+    "/memories","/inbox","/delete-account","/accessibility/report",
+    "/logout","/admin/memory"
+   )
+   private_prefix=request.path.startswith((
+    "/chat/","/contact/","/community-media/","/post/","/admin/",
+    "/community/"
+   ))
+   # Unknown/spam URL probes should return 404 (not temporary 503);
+   # removed login/find routes use 410; known private routes stay locked.
+   status=410 if retired_credentials else 503 if (private_exact or private_prefix or request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/status","/photos","/accessibility","/help","/terms")) else 404
+   message=("שירות איתור החברים הוסר זמנית בעקבות בדיקת אבטחת האתר. לא נאספים כאן פרטים אישיים." if request.path=="/find" else "עמוד הכניסה הוסר במסגרת טיפול באבטחת האתר. אין להזין כאן פרטי התחברות." if retired_credentials else "אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה." if status==503 else "הכתובת המבוקשת אינה קיימת.")
+   response=Response(message,status=status,mimetype="text/plain")
    response.headers["Content-Security-Policy"]="default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   response.headers["Cache-Control"]="no-store, max-age=0"
   response.headers["X-Robots-Tag"]=("index, follow" if response.status_code==200 else "noindex, nofollow")
