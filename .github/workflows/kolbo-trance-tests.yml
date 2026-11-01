@@ -12,6 +12,7 @@ on:
       - kolbo-trance-release-audio-242-20261101
       - kolbo-trance-restart-recovery-20261101
       - kolbo-trance-provider-failure-diagnostics-20261101
+      - kolbo-trance-share-no-reload-244-20261102
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'
@@ -60,7 +61,9 @@ jobs:
         run: |
           python -c "import json,pathlib;d=json.loads(pathlib.Path('trance-studio/web/studio.webmanifest').read_text());assert d['share_target']['method']=='POST';assert d['share_target']['params']['files'][0]['name']=='audio'"
       - name: Confirm WhatsApp sharing never auto-runs anything
-        run: node trance-studio/tests/test_manual_share.js
+        run: |
+          node trance-studio/tests/test_manual_share.js
+          node trance-studio/tests/test_native_share_resume.js
       - name: Verify limited Render restart recovery without automated WhatsApp creation
         run: node trance-studio/tests/test_restart_recovery.js
       - name: Validate licensed music and story-only YouTube UI
