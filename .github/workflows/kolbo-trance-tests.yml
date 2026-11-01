@@ -10,6 +10,7 @@ on:
       - kolbo-trance-manual-create-precise-scenes-20261101
       - kolbo-trance-audio-coherence-20261101
       - kolbo-trance-release-audio-242-20261101
+      - kolbo-trance-restart-recovery-20261101
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'
@@ -59,6 +60,8 @@ jobs:
           python -c "import json,pathlib;d=json.loads(pathlib.Path('trance-studio/web/studio.webmanifest').read_text());assert d['share_target']['method']=='POST';assert d['share_target']['params']['files'][0]['name']=='audio'"
       - name: Confirm WhatsApp sharing never auto-runs anything
         run: node trance-studio/tests/test_manual_share.js
+      - name: Verify limited Render restart recovery without automated WhatsApp creation
+        run: node trance-studio/tests/test_restart_recovery.js
       - name: Validate licensed music and story-only YouTube UI
         run: node trance-studio/tests/test_video_music_ui.js
       - name: Verify Android and PWA direct WhatsApp video share limits
