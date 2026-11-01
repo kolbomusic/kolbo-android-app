@@ -141,6 +141,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <div class="actions"><button id="download">הורדת MP3</button><button id="share" class="secondary">שיתוף ל־WhatsApp ולאפליקציות</button></div></section>
 <div class="foot">KOLBO TRANCE STUDIO · ללא מנוי · לשימוש אישי · עיבוד בענן · שמירת הקובץ עד שעה</div>
 </main>
+<script src="/studio-ai-fallback.js"></script>
 <script>
 (function(){
 'use strict';
@@ -297,6 +298,23 @@ if(j.voice_url){
   if(voiceResponse.ok){voiceUrl=URL.createObjectURL(await voiceResponse.blob());$('voicePreview').src=voiceUrl;}
 }
 if(files.length){originalUrl=URL.createObjectURL(files[0]);$('originalPreview').src=originalUrl;}
+if(wantsVideo&&!j.video_url&&$('ai_video_consent').checked&&
+   j.client_ai_fallback_available&&window.KolboAIFallback){
+  // The Render Free egress IP can be rejected by community GPU providers.
+  // The phone's own network can call the same FREE public CORS-enabled APIs.
+  // Only consented recognized Hebrew text leaves our server. The original
+  // WhatsApp voice NEVER goes to either AI model. MP3 stays intact.
+  try{
+    markStage('video');
+    message('מנסה יצירת וידאו AI ישירות דרך הרשת של הטלפון...');
+    var clientMovie=await window.KolboAIFallback.generate(data.id,message);
+    j=Object.assign({},j,clientMovie);
+    videoReason='';
+  }catch(clientErr){
+    videoReason='גם מסלול היצירה דרך הטלפון לא הסתיים: '+
+      (clientErr&&clientErr.message?clientErr.message:'השירות החינמי אינו זמין');
+  }
+}
 if(j.video_url){
   videoReason='';
   // Keep the MP4 as a streaming URL: no need to load a large file into RAM
@@ -305,12 +323,12 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent=j.video_mode==='ai_generated_experimental'?
+ $('storyboardInfo').textContent=String(j.video_mode||'').indexOf('ai_generated')===0?
    'סצנה חדשה נוצרה באמצעות AI לפי התמלול. זו המחשה משוערת: קטע קצר עשוי לחזור לאורך המיקס, ולא כל פרט בהקלטה בהכרח מוצג.' :
    (j.visual_coverage==='partial'?
    'נמצא צילום מתאים לחלק מהמשפטים בלבד. המיקס המקורי נשמר לכל אורכו. הסצנות האחרות עדיין לא הומחשו במדויק.':
    'צילום וידאו נע שנבחר לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול או ציורים.');
- $('videoPlayer').setAttribute('aria-label',j.video_mode==='ai_generated_experimental'?
+ $('videoPlayer').setAttribute('aria-label',String(j.video_mode||'').indexOf('ai_generated')===0?
    'סרטון AI ניסיוני שנוצר מן הסיפור':'סרטון מצולם מתוך הפעולות שזוהו');
  if(j.storyboard_url){
   try{
