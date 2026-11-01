@@ -368,9 +368,39 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
 })();
 </script>"""
 
+    # The free Render host can sleep during long drafting sessions. Keep text in
+    # tab-local sessionStorage, never store attachments or credentials in the browser.
+    DRAFT_JS = """<script>
+(function(){
+ const form=document.querySelector('form[action="/new-post"],form[enctype="multipart/form-data"]');
+ if(!form || !form.querySelector('[name="post_type"]'))return;
+ const key='karnafim-post-draft-v1';
+ const fields=['post_type','title','body','year','event_date','event_place'];
+ const status=document.getElementById('draft-note');
+ function data(){const d={};fields.forEach(n=>{const f=form.elements.namedItem(n);if(f)d[n]=f.value});return d}
+ function save(){
+   try{sessionStorage.setItem(key,JSON.stringify(data()));if(status)status.textContent='✓ טיוטת הטקסט נשמרה בלשונית זו בלבד. יש לבחור מחדש קבצים לאחר טעינת העמוד.'}catch(_){}
+ }
+ try{
+   const old=JSON.parse(sessionStorage.getItem(key)||'null');
+   if(old && typeof old==='object'){
+     let count=0;fields.forEach(n=>{const f=form.elements.namedItem(n);if(f && !f.value && typeof old[n]==='string' && old[n].length<5000){f.value=old[n];count++}});
+     if(count && status)status.textContent='שוחזרה טיוטת טקסט מהלשונית הזו. אם נבחרו קבצים, יש לצרף אותם מחדש.';
+   }
+ }catch(_){}
+ form.addEventListener('input',save);
+ form.addEventListener('change',save);
+ window.addEventListener('pagehide',save);
+})();
+</script>"""
+
     @app.route("/new-post",methods=["GET","POST"])
     def new_post():
-        u=approved()
+        u=me()
+        if not u:
+            return redirect("/login?next=/new-post",code=303)
+        if not u["approved"]:
+            return page("ממתינים לאישור חברות",'<div class="note" role="status"><h1>החשבון ממתין לאישור</h1><p>מנהל קהילת הקרנפים צריך לאשר את החברות לפני פרסום תמונות, אירועים וסיפורים.</p><a href="/archive">אפשר לצפות בינתיים בארכיון</a></div>'),403
         if request.method=="POST":
             guard()
             if request.form.get("rights")!="on":abort(400)
@@ -434,8 +464,9 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             +'<label><input type="checkbox" name="rights" style="width:auto;display:inline" required> אני מאשר שיש לי זכויות והרשאה לשתף את החומרים, ושלא כללתי פרטים אישיים של אחרים ללא הסכמתם.</label>'
             +'<label><input type="checkbox" name="ai_consent" style="width:auto;display:inline" required> אני מסכים להעברת התוכן והקבצים לשירות Google Gemini לצורך ביקורת AI אוטומטית, ככל שהשירות מחובר. בשכבת השימוש החינמית Google עשויה להשתמש בתוכן לשיפור שירותיה. תוכן שלא עובר בדיקה יישמר פרטי ולא יפורסם אוטומטית.</label>'
             +'<p class="muted">בדיקה חכמה: '+("מחוברת — תוכן בסיכון נמוך עשוי להתפרסם מיד" if configured() else "טרם חובר מנוע AI; כל פרסום יישאר פרטי עד לבדיקה")+'</p>'
+            +'<p id="draft-note" class="muted" role="status" aria-live="polite">טקסט הטיוטה נשמר בלשונית זו כדי לצמצם אובדן מידע במקרה שהשרת מתעורר מחדש. קבצים לא נשמרים בטיוטה.</p>'
             +'<button type="submit">שליחת הפרסום לביקורת אוטומטית</button></form>')
-        return page("הוספת סיפור, תמונות או אירוע",b+UPLOAD_JS+RECORD_JS)
+        return page("הוספת סיפור, תמונות או אירוע",b+UPLOAD_JS+RECORD_JS+DRAFT_JS)
 
     def retry_ai_queue():
         """Best-effort single-item retry for earlier provider outages.
@@ -470,6 +501,8 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         retry_ai_queue()
         rows=sql("SELECT id,title,body,post_type,story_year,event_date,event_place,approved,ai_status,ai_reason,created_at FROM community_posts WHERE author_id=%s ORDER BY created_at DESC LIMIT 100",(u["id"],),True)
         b='<h1>📝 הפרסומים שלי</h1><p>תמונות, אירועים וסיפורים ששלחת. עד שהמנהל מאשר אותם, רק אתה והמנהל יכולים לראות את התוכן.</p>'
+        if request.args.get("submitted") in ("1",) or request.args.get("auto")=="1":
+            b+='<script>try{sessionStorage.removeItem("karnafim-post-draft-v1")}catch(_){}</script>'
         if request.args.get("submitted")=="1":b+='<div class="note" role="status">✓ הפרסום נשמר במצב פרטי. ביקורת ה־AI לא אישרה פרסום אוטומטי.</div>'
         if request.args.get("auto")=="1":b+='<div class="note" role="status">✓ הפרסום אושר בביקורת אוטומטית והופיע בציר הזמן של החברים.</div>'
         b+='<div class="actions"><a class="cta" href="/new-post">➕ פרסום חדש</a><a class="cta" href="/feed">לציר הזמן</a></div>'
