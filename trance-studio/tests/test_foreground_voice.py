@@ -57,6 +57,27 @@ class ForegroundVoiceTests(unittest.TestCase):
         for _,_,start,end in spans:
             self.assertTrue(np.all(mask[start:end]==0))
 
+    def test_dramatic_voice_effect_lasts_musical_beats_not_truncated_600ms(self):
+        x=self.voice(16)
+        y,mask,spans=e.arranged_vocal_track(
+            x,self.sr,145,'monster',3,1.15,np.random.default_rng(18))
+        # The previous implementation cut ALL effects to 1.55 beats
+        # (~641ms at BPM 145), even when a 2-beat stretch was needed.
+        durations=[]
+        inside=False
+        for i,val in enumerate(mask):
+            if val>.5 and not inside:
+                start=i;inside=True
+            if inside and (val<=.5 or i==len(mask)-1):
+                durations.append((i-start)/self.sr)
+                inside=False
+        self.assertTrue(durations)
+        self.assertGreater(max(durations),.70)
+        self.assertLess(max(durations),1.15)
+        np.testing.assert_array_equal(
+            np.concatenate([y[a:b] for _,_,a,b in spans]),x)
+        self.assertTrue(np.isfinite(y).all())
+
     def test_source_entirely_preserved_and_fx_never_overlaid(self):
         x=self.voice(16)
         y,fx,spans=e.arranged_vocal_track(x,self.sr,145,'auto',3,1.2,np.random.default_rng(12))
