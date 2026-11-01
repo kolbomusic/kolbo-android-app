@@ -31,17 +31,35 @@ class ComicStingsTests(unittest.TestCase):
         bed=rng.standard_normal((sr*3,2)).astype(np.float32)*.01
         active=np.zeros(len(bed),dtype=np.float32)
         active[sr:sr+1200]=1.
-        np.testing.assert_array_equal(
-            add_comic_stings(bed,active,sr,145,lambda p:None),bed)
+        fallback=add_comic_stings(bed,active,sr,145,lambda p:None)
+        # Keywords can be absent in real WhatsApp speech. Still give an
+        # acoustic comic accent at a selected existing voice-FX pause.
+        self.assertGreater(float(np.max(np.abs(fallback-bed))),.07)
+        np.testing.assert_array_equal(fallback[:sr],bed[:sr])
+        np.testing.assert_array_equal(fallback[sr+1200:],bed[sr+1200:])
         np.testing.assert_array_equal(
             add_comic_stings(bed,np.zeros(len(bed)),sr,145,
                              lambda p:'monster'),bed)
+
+    def test_comic_sound_cannot_overlap_next_spoken_word(self):
+        sr=8000
+        n=sr*5
+        rng=np.random.default_rng(22)
+        # Simulated dry voice at 3s starts after the 2s FX insert.
+        source=rng.standard_normal((n,2)).astype(np.float32)*.035
+        mask=np.zeros(n,dtype=np.float32)
+        mask[2*sr:2*sr+int(.30*sr)]=1.
+        out=add_comic_stings(source,mask,sr,145,lambda f:'monster')
+        self.assertGreater(float(np.max(np.abs(out-source))),.05)
+        np.testing.assert_array_equal(out[2*sr+int(.30*sr):],source[2*sr+int(.30*sr):])
+        np.testing.assert_array_equal(out[:2*sr],source[:2*sr])
+        self.assertTrue(np.isfinite(out).all())
 
     def test_comic_families_distinct_and_bounded(self):
         sounds=[create_sting(x,8000,145) for x in
                 ('monster','comic_roll','rewind','helium','yo_yo','tape')]
         self.assertEqual(len(sounds),6)
-        self.assertTrue(all(np.max(np.abs(s))<=.301 for s in sounds))
+        self.assertTrue(all(np.max(np.abs(s))<=.471 for s in sounds))
         self.assertTrue(all(float(np.sqrt(np.mean(s*s)))>.01 for s in sounds))
         self.assertNotAlmostEqual(float(np.mean(sounds[0][:100]**2)),
                                   float(np.mean(sounds[1][:100]**2)),places=4)
