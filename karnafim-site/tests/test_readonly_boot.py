@@ -47,5 +47,32 @@ assert "Disallow: /login" not in client.get('/robots.txt').get_data(as_text=True
         self.assertEqual(0, result.returncode, result.stdout + "\n" + result.stderr)
 
 
+    def test_maintenance_off_cannot_bypass_the_security_release_lock(self):
+        # A single wrong Render environment edit must not start the database
+        # or expose member endpoints while Google marks the host unsafe.
+        env = os.environ.copy()
+        env["SECRET_KEY"] = "readonly-boot-test-only-not-a-production-key"
+        env["KARNAFIM_MAINTENANCE"] = "0"
+        env["KARNAFIM_SAFETY_RELEASE_APPROVED"] = "0"
+        env.pop("DATABASE_URL", None)
+        code = """
+import app as site
+assert site.READ_ONLY_BOOT
+assert site.SAFETY_RELEASE_APPROVED is False
+client = site.app.test_client()
+assert client.get('/health').json['access'] == 'read_only'
+for route in ('/login', '/register', '/auth/google/start', '/find'):
+    assert client.get(route).status_code == 410
+for route in ('/new-post', '/directory', '/chats', '/admin'):
+    assert client.get(route).status_code == 503
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=str(SITE_DIR), env=env, text=True, capture_output=True, timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + "\\n" + result.stderr)
+
+
+
 if __name__ == "__main__":
     unittest.main()
