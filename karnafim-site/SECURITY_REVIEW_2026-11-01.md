@@ -61,3 +61,11 @@ https://safebrowsing.google.com/safebrowsing/report_error/?hl=en
 - המסך האדום ב-Chrome הוא עדות לסיווג סכנה פעיל מבחינת המשתמש; `HTTP 200`, `robots.txt`, `sitemap.xml` או הוספה לאינדקס **אינם** ראיה להסרתו.
 - בירור הסיווג המדויק מחייב גישה ל-`Security Issues` של נכס האתר ב-Google Search Console או כלי דפדפן מחובר שמאפשר את בדיקת התלונה של Safe Browsing; אין לאמת בעלות באמצעות נתונים מומצאים.
 - אין להגיש בקשת ״סיווג שגוי״ בטענה שנשללה פריצה או דיוג לפני ביסוס זאת בבדיקה מספקת.
+
+## דיווח מאומת ל־Google Safe Browsing — 1.11.2026
+
+- דוח הציבורי של Google Transparency Report מציג **Some pages on this site are unsafe** עבור דומיין האתר. סיווג הסיכון: ניסיון להונות מבקרים למסור פרטים אישיים או להוריד תוכנה. גם בדיקות /find, /login, /register ו-/ הציגו סיווג unsafe; אין להסיק שכל הנתיבים עצמם כוללים תוכן פוגעני.
+- לאחר בדיקות התשתית והגבלת הפעולות האישיות, הוגש דרך טופס Google Safe Browsing /report_error דיווח עבור `https://karnafim-community-46.onrender.com/` (סוג: This page is safe), עם הסבר עובדתי על מצב הקריאה בלבד ועל היעדר ממצאים חשודים בבדיקות שבוצעו. Google אישרה **Status of submission: Submission was successful**.
+- שדה ההסבר של Google הוגבל ל־800 תווים והטקסט נקטע; אין לייחס למשתמש הגשת טקסט מלא.
+- אישור קבלת הטופס **אינו** אישור ניקוי, אישור בטיחות או ביטול האזהרה. יש להמתין לשינוי מאומת ב־Transparency Report/Chrome, להשלים בדיקות קוד ותוכן ולשמור על KARNAFIM_MAINTENANCE=1.
+- תיעוד הריצה בדפדפן האוטומטי: https://agent.tinyfish.ai/runs/f3d61c7a-5155-4c58-bba8-c54a701d2368
