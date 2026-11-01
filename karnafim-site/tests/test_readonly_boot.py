@@ -23,6 +23,13 @@ for path in ('/', '/health', '/terms', '/archive', '/source/1', '/memorial/yehon
     result = client.get(path)
     assert result.status_code == 200, (path, result.status_code, result.get_data(as_text=True)[:150])
 assert client.get('/health').json['access'] == 'read_only'
+status = client.get('/status')
+assert status.status_code == 200
+status_html = status.get_data(as_text=True)
+assert 'נוצרו פרויקט Google Cloud ולקוח OAuth ייעודי' in status_html
+assert 'Client Secret' in status_html
+assert 'התחברות Google עדיין אינה פעילה' in status_html
+assert 'הגדרת OAuth ובדיקת תפקוד מלאה' not in status_html
 for path in ('/login', '/register', '/auth/google/start', '/password', '/find'):
     assert client.get(path).status_code == 410, path
 for path in ('/new-post', '/admin', '/chats', '/profile'):
