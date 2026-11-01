@@ -26,6 +26,37 @@ class ForegroundVoiceTests(unittest.TestCase):
         self.assertEqual(e._vocal_hook_quality(np.zeros(len(t)),sr),0.)
         self.assertGreater(score_voice,0.015)
 
+    def test_original_hebrew_content_guides_comedy_fx_in_auto_mode(self):
+        self.assertEqual(e._semantic_comedy_cue('החמור נוער בחוזקה.',.5),
+                         'monster')
+        self.assertEqual(e._semantic_comedy_cue('כולם צוחקים בקול.',.5),
+                         'comic_roll')
+        self.assertEqual(e._semantic_comedy_cue('ואז האיש נפל.',.5),
+                         'rewind')
+        self.assertEqual(e._semantic_comedy_cue('התינוק בוכה.',.5),
+                         'helium')
+        self.assertEqual(e._semantic_comedy_cue('כולם רוקדים.',.5),
+                         'yo_yo')
+        self.assertIsNone(e._semantic_comedy_cue('הוא לא צוחק.',.5))
+        self.assertIsNone(e._semantic_comedy_cue('אנחנו נדבר מחר.',.5))
+        # Different clauses select different punchlines in chronological
+        # order, but the FX is still placed only at physical pauses.
+        script='החמור נוער בחוזקה. כולם צוחקים. ואז האיש נפל.'
+        self.assertEqual(e._semantic_comedy_cue(script,.12),'monster')
+        self.assertEqual(e._semantic_comedy_cue(script,.48),'comic_roll')
+        self.assertEqual(e._semantic_comedy_cue(script,.95),'rewind')
+
+    def test_auto_comedy_remains_non_destructive_with_hebrew_story_hint(self):
+        x=self.voice(16)
+        y,mask,spans=e.arranged_vocal_track(
+            x,self.sr,145,'auto',3,1.2,np.random.default_rng(12),
+            transcript_hint='החמור נוער. כולם צוחקים. ואז האיש נפל.')
+        reconstructed=np.concatenate([y[a:b] for _,_,a,b in spans])
+        np.testing.assert_array_equal(reconstructed,x)
+        self.assertTrue(np.any(mask>.5))
+        for _,_,start,end in spans:
+            self.assertTrue(np.all(mask[start:end]==0))
+
     def test_source_entirely_preserved_and_fx_never_overlaid(self):
         x=self.voice(16)
         y,fx,spans=e.arranged_vocal_track(x,self.sr,145,'auto',3,1.2,np.random.default_rng(12))
