@@ -784,9 +784,18 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # and is disabled with the user's humour-off setting.
     if humor=='auto' and transcript_hint:
         from comic_stingers import add_comic_stings
+        # The score contains intro/outro padding. Locate the actual
+        # performed voice span before approximately mapping spoken Hebrew
+        # clauses to comic events. Never pretend this is word alignment.
+        active_voice=np.flatnonzero(np.abs(vocal)>.009)
+        first=int(active_voice[0]) if len(active_voice) else 0
+        last=int(active_voice[-1]) if len(active_voice) else len(vocal)-1
+        span=max(1,last-first)
         music=add_comic_stings(
             music,fx_highlight,sr,bpm,
-            lambda fraction:_semantic_comedy_cue(transcript_hint,fraction))
+            lambda fraction:_semantic_comedy_cue(
+                transcript_hint,max(0.,min(.999,
+                    ((fraction*len(vocal))-first)/span))))
     # Keep the voice solo clean, including in the reserved FX slots.
     # Echo and other delayed copies previously collided with the next line.
     # Conservative master gain / limiter: no global overdrive or loudness pumping.
