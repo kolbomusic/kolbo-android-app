@@ -84,7 +84,7 @@ print('LICENSED_MUSIC_REAL_MP3_AND_MP4_PASS',
 # a free provider to report unavailable, but not to pass the old video as new.
 b=submit('new_story',False)
 assert b['state']=='done',b
-assert b['video_mode']!='original_input_video',b
+assert b.get('video_mode')!='original_input_video',b
 assert b.get('storyboard_source')!='original_shared_video',b
 print('NEW_STORY_NEVER_REUSES_ORIGINAL_VIDEO_PASS',
       {'status':b.get('video_status'),
