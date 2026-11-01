@@ -415,7 +415,11 @@ if(wantsVideo&&!j.video_url&&$('ai_video_consent').checked&&j.client_ai_prompt){
   Object.assign(j,fromPhone);
   videoReason='';
  }catch(deviceError){
-  videoReason=(deviceError&&deviceError.message)||'שירות הווידאו החינמי אינו זמין';
+  // Report BOTH blockers. Previous UI displayed only the two failed
+  // free AI engines and hid the underlying lack of matching action footage.
+  var aiFailure=(deviceError&&deviceError.message)||'שירות הווידאו החינמי אינו זמין';
+  var archiveFailure=String(j.video_error||'').trim();
+  videoReason=(archiveFailure?archiveFailure+' ':'')+'גם ניסיון וידאו AI בטלפון נכשל: '+aiFailure;
  }
 }
 if(j.video_url){
