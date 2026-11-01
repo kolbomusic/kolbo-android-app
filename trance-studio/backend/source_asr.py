@@ -1,13 +1,14 @@
-"""Best-effort Hebrew ASR from the ORIGINAL uploaded media (never the remix).
+"""Grounded Hebrew ASR of original uploads on the small free CPU worker.
 
-A browser may lack OPUS decoding, enough RAM for Whisper WASM, or reliable
-CDN access.  The server retries on the original uploaded file.  This is not
-forced alignment and an ASR result must never be described as verified speech.
+Never use the remix for speech recognition, never invent transcript text.
+The preloaded multilingual base model is preferable to tiny for Hebrew; on
+short WhatsApp messages VAD can discard speech, hence bounded retries.
 """
 from __future__ import annotations
 
 import os
 import re
+import subprocess
 import threading
 from pathlib import Path
 
@@ -17,12 +18,12 @@ _MODEL = None
 
 
 class SourceTranscriptionUnavailable(RuntimeError):
-    """Neither a grounded transcript nor a usable ASR worker is available."""
+    """Original recordings did not yield credible Hebrew speech."""
 
 
 def _valid_utterance(text: str) -> bool:
-    words = str(text or "").strip().split()
-    return len(words) >= 2 and len(HEBREW.findall(text)) >= 3 and len(set(words)) >= 2
+    words = re.findall(r"[\u05d0-\u05ea]{2,}", str(text or ""))
+    return len(words) >= 2 and len(set(words)) >= 2 and len(HEBREW.findall(text)) >= 3
 
 
 def _get_model():
@@ -33,54 +34,123 @@ def _get_model():
                 from faster_whisper import WhisperModel
             except ImportError as exc:
                 raise SourceTranscriptionUnavailable("מנוע התמלול בשרת אינו מותקן") from exc
-            # Tiny is an intentionally bounded CPU fallback for the free server;
-            # the browser attempts the more accurate base model first.
-            model_name = os.getenv("KOLBO_ASR_MODEL", "tiny")
+            # Prefer the build-bundled model; avoid a first-request network fetch.
+            model_name = os.getenv("KOLBO_ASR_MODEL", "base")
             if model_name not in {"tiny", "base", "small"}:
-                model_name = "tiny"
+                model_name = "base"
             preloaded = os.getenv("KOLBO_ASR_DIR", "").strip()
             if preloaded and (Path(preloaded) / "model.bin").is_file():
                 model_name = preloaded
             try:
                 _MODEL = WhisperModel(
                     model_name, device="cpu", compute_type="int8",
-                    cpu_threads=2, num_workers=1,
+                    cpu_threads=1, num_workers=1,
                 )
             except Exception as exc:
                 raise SourceTranscriptionUnavailable("לא ניתן לטעון את מודל זיהוי הדיבור") from exc
     return _MODEL
 
 
-def transcribe_original_files(paths, progress=None):
-    """Return (text, completed) after genuine file-level transcription.
+def _recognize(model, path, *, use_vad):
+    # No prompting with specific actors or events: this could hallucinate
+    # the user's intended movie instead of recognizing the actual recording.
+    options = {
+        "language": "he", "task": "transcribe", "beam_size": 5,
+        "temperature": 0, "vad_filter": use_vad,
+        "condition_on_previous_text": False,
+        "hallucination_silence_threshold": 1.5,
+        "no_speech_threshold": 0.55,
+    }
+    if use_vad:
+        # Default VAD can discard a whole 1-3 second WhatsApp utterance.
+        options["vad_parameters"] = {
+            "min_silence_duration_ms": 300, "speech_pad_ms": 300,
+        }
+    segments, _info = model.transcribe(str(path), **options)
+    recognized = []
+    for segment in segments:
+        utterance = str(getattr(segment, "text", "") or "").strip()
+        if not utterance:
+            continue
+        # Missing metadata on test doubles or older versions is fine; do not
+        # accept explicitly low-confidence or probable silence as a fact.
+        logprob = getattr(segment, "avg_logprob", None)
+        silence = getattr(segment, "no_speech_prob", None)
+        if logprob is not None and float(logprob) < -1.2:
+            continue
+        if silence is not None and float(silence) > 0.80:
+            continue
+        recognized.append(utterance)
+    return " ".join(recognized).strip()
 
-    completed=False means one or more original recordings were undecipherable;
-    successful parts may still produce grounded visual beats. No invented text.
+
+def _clean_voice(path):
+    """Produce a temporary normalized 16k source WAV for one last ASR pass.
+
+    The input is ALWAYS the WhatsApp original, never voice-only remix or DJ
+    audio. This retry helps with muffled, low-volume and OPUS voice messages.
+    """
+    src = Path(path)
+    dest = src.with_name(src.stem + "-asr-normalized.wav")
+    command = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-i", str(src), "-vn", "-ac", "1", "-ar", "16000",
+        "-af", "highpass=f=90,lowpass=f=7000,"
+               "acompressor=threshold=0.05:ratio=2.5:attack=5:release=80,"
+               "alimiter=limit=0.96",
+        "-f", "wav", str(dest),
+    ]
+    try:
+        subprocess.run(command, check=True, timeout=25, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+        if not dest.is_file() or dest.stat().st_size < 8000:
+            raise ValueError("Normalized audio was empty")
+        return dest
+    except (OSError, ValueError, subprocess.SubprocessError):
+        dest.unlink(missing_ok=True)
+        return None
+
+
+def transcribe_original_files(paths, progress=None):
+    """Return (recognized words, complete) from the ORIGINAL audio only.
+
+    Each source gets a VAD pass, then a no-VAD pass if necessary, and a
+    normalized-input retry if neither found credible Hebrew text. Unsupported
+    material remains unrecognized; no fabricated words are added.
     """
     model = _get_model()
     transcripts = []
     completed = True
     for index, path in enumerate(paths):
         if progress:
-            progress("מפענח הקלטת מקור "+str(index + 1)+" מתוך "+str(len(paths)))
-        try:
-            # PyAV used by faster-whisper can read OPUS/OGG/M4A/MP4. No
-            # resynthesized voice, background music, or guessed words are fed in.
-            segments, _info = model.transcribe(
-                str(path), language="he", task="transcribe", beam_size=3,
-                vad_filter=True, condition_on_previous_text=False,
-                hallucination_silence_threshold=1.5,
-            )
-            utterance = " ".join(str(s.text or "").strip() for s in segments).strip()
-            if not _valid_utterance(utterance):
-                completed = False
-                continue
+            progress("מזהה דיבור בעברית מהקלטה " + str(index + 1) +
+                     " מתוך " + str(len(paths)))
+        utterance = ""
+        for use_vad in (True, False):
+            try:
+                utterance = _recognize(model, path, use_vad=use_vad)
+                if _valid_utterance(utterance):
+                    break
+            except (OSError, RuntimeError, ValueError):
+                pass
+        if not _valid_utterance(utterance):
+            if progress:
+                progress("משפר את הצלילות ומנסה לזהות שוב דיבור מהמקור")
+            normalized = _clean_voice(path)
+            if normalized:
+                try:
+                    utterance = _recognize(model, normalized, use_vad=False)
+                except (OSError, RuntimeError, ValueError):
+                    utterance = ""
+                finally:
+                    normalized.unlink(missing_ok=True)
+        if _valid_utterance(utterance):
             transcripts.append(utterance)
-        except Exception:
+        else:
             completed = False
-    text = ". ".join(transcripts)[:4000]
-    if not _valid_utterance(text):
+    result = ". ".join(transcripts)[:4000]
+    if not _valid_utterance(result):
         raise SourceTranscriptionUnavailable(
-            "התמלול במכשיר ובשרת לא הצליח לזהות דיבור ברור מתוך קובצי המקור"
+            "לא זוהה דיבור עברי אמין מההקלטות גם לאחר ניסיונות פענוח נוספים"
         )
-    return text, completed
+    return result, completed
