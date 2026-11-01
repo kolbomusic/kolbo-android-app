@@ -1,0 +1,32 @@
+name: Kolbo LIVE 30s AI movie from voice-only Hebrew audio
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - '.github/workflows/kolbo-trance-ai-from-voice-proof.yml'
+      - 'trance-studio/tests/live_ai_story_from_audio_proof.py'
+  workflow_dispatch:
+jobs:
+  full-ai-production:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 11
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare purely synthetic voice-only Opus source
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -nostdin -v error -y -f lavfi \
+            -i 'sine=frequency=230:sample_rate=48000:duration=6' \
+            -af 'volume=0.22' -ar 48000 -ac 1 \
+            -c:a libopus -b:a 48k /tmp/kolbo-fake-whatsapp.opus
+          test -s /tmp/kolbo-fake-whatsapp.opus
+      - name: Produce and decode ACTUAL independently generated video
+        run: python trance-studio/tests/live_ai_story_from_audio_proof.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-30s-AI-From-Hebrew-Voice-Actual-MP4
+          path: /tmp/kolbo-full-new-ai-story-live.mp4
+          if-no-files-found: ignore
+          retention-days: 7
