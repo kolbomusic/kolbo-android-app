@@ -34,6 +34,10 @@ for path in ('/login', '/register', '/auth/google/start', '/password', '/find'):
     assert client.get(path).status_code == 410, path
 for path in ('/new-post', '/admin', '/chats', '/profile'):
     assert client.get(path).status_code == 503, path
+for path in ('/.env', '/wp-admin', '/fake-login-collector', '/unknown-path'):
+    response = client.get(path)
+    assert response.status_code == 404, (path, response.status_code)
+    assert 'noindex' in response.headers.get('X-Robots-Tag', ''), path
 assert "Disallow: /login" not in client.get('/robots.txt').get_data(as_text=True)
 """
         result = subprocess.run(
