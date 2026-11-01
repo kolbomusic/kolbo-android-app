@@ -1,0 +1,36 @@
+name: Probe free public text-to-video generation API
+on:
+  push:
+    branches: [kolbo-trance-generative-scenes-20261101]
+    paths: ['.github/workflows/kolbo-trance-generative-probe.yml']
+  workflow_dispatch:
+jobs:
+  inspect-public-space:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect free LTX Space API without spending GPU credits
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.error
+          sites=[
+            'https://lightricks-ltx-2-5.hf.space/gradio_api/openapi.json',
+            'https://lightricks-ltx-2-5.hf.space/config'
+          ]
+          for u in sites:
+            try:
+              request=urllib.request.Request(u,headers={'User-Agent':'KolboTranceStudio/2.3'})
+              with urllib.request.urlopen(request,timeout=24) as res:
+                data=res.read(1200000)
+                doc=json.loads(data)
+                print('LTX_PUBLIC_STATUS',res.status,'url=',u,'keys=',list(doc)[:20],flush=True)
+                if 'openapi' in u:
+                  for path,v in doc.get('paths',{}).items():
+                    if 'run' in path or 'predict' in path or 'generate' in path:
+                      print('LTX_PUBLIC_API_PATH',path,'POST?',bool(v.get('post')),'details',json.dumps(v.get('post',{}).get('requestBody',{}),ensure_ascii=False)[:800],flush=True)
+                else:
+                  print('LTX_DEPENDENCIES',[(d.get('api_name'),d.get('inputs'),d.get('outputs')) for d in doc.get('dependencies',[]) if d.get('api_name')][:8],flush=True)
+            except Exception as e:
+              print('LTX_PUBLIC_FAILED',type(e).__name__,str(e)[:350],flush=True)
+          PY
