@@ -458,8 +458,18 @@ form.set('transcript_origin','auto');
 var variation=$('variation').value;
 form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99999)):variation);
 form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('fx_gain',String(Number($('fx_gain').value)/100));form.set('voice_level',String(Number($('voice').value)/100));
-var r=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
-var data=await r.json();if(!r.ok)throw new Error(data.error||'לא ניתן לשלוח את ההקלטה');
+// A single user click owns at most three bounded upload attempts.
+ // When Render is legitimately busy, do not make them repeat the whole
+ // WhatsApp share, and never start several distinct video jobs at once.
+ var r,data;
+ for(var busyAttempt=0;busyAttempt<3;busyAttempt++){
+  r=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
+  data=await r.json().catch(function(){return {error:'השרת לא החזיר תשובה תקינה'}});
+  if(r.status!==429||busyAttempt===2)break;
+  message('שרת העיבוד עסוק. נשמר הקובץ שבחרת; מנסה שוב ללא יצירה כפולה...');
+  await pause(busyAttempt===0?6000:12000);
+ }
+ if(!r.ok)throw new Error(data.error||'לא ניתן לשלוח את ההקלטה');
 for(var attempt=0;attempt<600;attempt++){
 await pause(1000);
 var statusResponse=await fetch(data.status_url,{credentials:'same-origin'});
