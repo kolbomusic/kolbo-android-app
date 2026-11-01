@@ -15,6 +15,7 @@ from pathlib import Path
 import math
 
 from live_video import _duration, _video_profile, _make_segment, UnavailableVideo
+from motion_quality import require_visible_motion, NoVisibleMotion
 
 MAX_CLIP_BYTES=10*1024*1024
 MAX_CLIPS=3
@@ -42,6 +43,10 @@ def validate_mp4_clip(path):
         raise MobileClipError("הווידאו אינו בפורמט נתמך")
     if not .67<=length<=12.5:
         raise MobileClipError("קטע הווידאו חייב להיות בין שנייה ל־12 שניות")
+    try:
+        require_visible_motion(path)
+    except NoVisibleMotion as exc:
+        raise MobileClipError(str(exc)) from exc
     return length
 
 
