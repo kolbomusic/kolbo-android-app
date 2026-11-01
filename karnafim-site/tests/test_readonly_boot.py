@@ -39,6 +39,7 @@ for path in ('/.env', '/wp-admin', '/fake-login-collector', '/unknown-path'):
     assert response.status_code == 404, (path, response.status_code)
     assert 'noindex' in response.headers.get('X-Robots-Tag', ''), path
 assert "Disallow: /login" not in client.get('/robots.txt').get_data(as_text=True)
+assert 'https://karnafim-community-46.onrender.com/status' in client.get('/sitemap.xml').get_data(as_text=True)
 # Public content is inert: no credential form, scripts or third-party JS.
 for path in ('/', '/about', '/privacy', '/status', '/safety', '/terms'):
     result = client.get(path)
