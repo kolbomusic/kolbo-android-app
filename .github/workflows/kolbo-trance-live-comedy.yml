@@ -1,0 +1,36 @@
+name: Kolbo LIVE original Israeli comic-trance master proof
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - '.github/workflows/kolbo-trance-live-comedy.yml'
+      - 'trance-studio/tests/live_israeli_comedy_proof.py'
+  workflow_dispatch:
+jobs:
+  live-original-comedy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create a fully original synthetic Hebrew-like voice test sample
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -nostdin -v error -y \
+            -f lavfi -i 'sine=frequency=230:sample_rate=32000:duration=3' \
+            -f lavfi -i 'sine=frequency=340:sample_rate=32000:duration=3' \
+            -filter_complex '[0:a]volume=0.4,adelay=500|500[a];[1:a]volume=0.25,adelay=4600|4600[b];[a][b]amix=inputs=2:duration=longest' \
+            -ac 1 -ar 32000 -c:a libopus -b:a 64k \
+            /tmp/kolbo-synthetic-voice.opus
+          test -s /tmp/kolbo-synthetic-voice.opus
+      - name: Verify live voice, stronger comic FX and original Israeli trance master
+        run: python trance-studio/tests/live_israeli_comedy_proof.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Israeli-Comedy-Live-Proof
+          path: |
+            /tmp/kolbo-comedy-israeli-auto.mp3
+            /tmp/kolbo-comedy-israeli-off.mp3
+          if-no-files-found: ignore
+          retention-days: 7
