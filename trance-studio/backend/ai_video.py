@@ -31,7 +31,7 @@ SECONDARY_HOST = "lightricks-ltx-2-5.hf.space"
 SECONDARY_PAGE = "https://huggingface.co/spaces/Lightricks/LTX-2.5"
 CALL_PATH = "/gradio_api/call/text_to_video"
 MAX_OUTPUT_BYTES = 18 * 1024 * 1024
-MAX_WAIT_SECONDS = 210
+MAX_WAIT_SECONDS = 72
 HEBREW = re.compile(r"[א-ת]{2,}")
 
 
@@ -282,22 +282,16 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
             # Ground each shot to its own original Hebrew clause plus its
             # explicitly detected physical actors/verbs, never generic stock.
             prompt=scene_prompt(beat)
-            try:
+            if generator is not _request_video_generation:
                 url=generator(prompt)
-            except AIVideoUnavailable:
-                if generator is not _request_video_generation:
-                    raise
-                # Two verified free video Spaces, then a shorter original
-                # request. No credit card, paid API key or private audio.
+            else:
+                # Two public services, one attempt each. Exhausted/shared
+                # ZeroGPU queues almost never recover from four immediate
+                # retries; avoid 10+ minutes of silence on Android.
                 try:
-                    url=_request_ltx25_generation(prompt,duration=2.0)
+                    url=_request_video_generation(prompt,duration=2.0,max_wait=72)
                 except AIVideoUnavailable:
-                    try:
-                        # LTX 2.5 was independently verified producing a
-                        # real 25-frame original motion clip at exactly 1s.
-                        url=_request_ltx25_generation(prompt,duration=1.0)
-                    except AIVideoUnavailable:
-                        url=generator(prompt,duration=1.0)
+                    url=_request_ltx25_generation(prompt,duration=1.0,max_wait=72)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             prepared.append((words,raw,seconds))
