@@ -86,6 +86,8 @@ from urllib.parse import unquote
 import re
 names=[unquote(s['page'].split('/wiki/',1)[-1]).lower().replace('_',' ')
        for s in sources]
+assert all('automobile parade' not in n and 'intertitle' not in n and 'title card' not in n
+           for n in names),('ARCHIVAL_OR_TITLE_CARD_SCENE',names)
 assert all('nebula' not in n and 'carina' not in n and 'cable car' not in n
            for n in names),("SEMANTICALLY_UNRELATED_SCENE",names)
 for source,name in zip(sources,names):
