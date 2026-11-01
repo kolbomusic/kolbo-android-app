@@ -184,7 +184,7 @@ def create_app(config=None):
                         except AIVideoUnavailable as err:
                             ai_generation_error=str(err)[:180]
                             app.logger.warning('Free AI video unavailable: %s',
-                                               type(err).__name__)
+                                               str(err)[:160])
                             (root/job_id/'story.mp4').unlink(missing_ok=True)
                         except Exception:
                             ai_generation_error='שירות יצירת הווידאו הניסיוני לא הצליח'
