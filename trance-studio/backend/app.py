@@ -86,7 +86,11 @@ def create_app(config=None):
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             if options.get('backing_music_path'):
                 from licensed_music import mix_licensed_backing
-                audio=mix_licensed_backing(options['backing_music_path'],vocal,32000)
+                audio=mix_licensed_backing(
+                    options['backing_music_path'],vocal,32000,
+                    transcript_hint=detected_transcript,
+                    bpm=options.get('bpm',145),
+                    humor=options.get('humor','auto'))
             export_mp3(audio,root/job_id/'mix.mp3')
             export_mp3(vocal,root/job_id/'voice.mp3')
             meta={'video_status':'disabled','storyboard_source':'not_requested'}
