@@ -115,22 +115,48 @@ def terms():
   '</article></div><p><a href="/privacy">למדיניות הפרטיות ←</a> · '
   '<a href="/safety">למצב האבטחה ←</a></p></section>')
 def status():
+ # Display live non-sensitive configuration, not stale claims about setup.
+ # Google Safe Browsing verdict is external: never pretend an env toggle is
+ # proof that Google's warning has been removed.
+ import os
+ from google_identity import configuration_checks, auth_mode
+ checks=configuration_checks()
+ mode=auth_mode()
+ client_ok=checks["valid_client_id"]
+ mode_ok=mode in ("gis","oauth")
+ mode_credentials=(mode=="gis" or (mode=="oauth" and checks["client_secret_present"]))
+ configured=checks["explicitly_enabled"] and client_ok and mode_ok and mode_credentials
+ maintenance_off=os.getenv("KARNAFIM_MAINTENANCE","1")=="0"
+ safety_approved=os.getenv("KARNAFIM_SAFETY_RELEASE_APPROVED","0")=="1"
+ def item(label,ok,detail=""):
+  return ('<li><strong>'+e(label)+': </strong>'+
+          ('הוגדר ✓' if ok else 'טרם הושלם ✗')+
+          (' — '+e(detail) if detail else '')+'</li>')
+ rows=''.join([
+  item("מזהה Google Client",client_ok,"המזהה עצמו אינו מוצג לציבור"),
+  item("מסלול התחברות תקין",mode_ok and mode_credentials,
+       "Google Identity Services" if mode=="gis" else
+       "OAuth דורש גם Client Secret" if mode=="oauth" else "מצב לא מוכר"),
+  item("דגל הפעלת Google",checks["explicitly_enabled"]),
+  item("אישור שחרור אבטחה",safety_approved,
+       "נדרש אישור מפורש רק אחרי בדיקת Google ומבחני אבטחה"),
+  item("יציאה ממצב תחזוקה",maintenance_off)])
+ state=("ההתחברות טרם נפתחה; לפחות תנאי הפעלה אחד חסר."
+        if not (configured and safety_approved and maintenance_off) else
+        "הגדרות ההפעלה מוכנות. נדרש עדיין אימות ידני של כניסה והסטטוס אצל Google.")
  return ('<section><h1>🔐 כניסה ואיתור חברים — מצב אבטחה</h1>'
-  '<div class="card"><h2>מצב התחברות Google והגישה לחברים</h2>'
-  '<p><strong>מה הושלם?</strong> נוצרו פרויקט Google Cloud ולקוח OAuth ייעודי '
-  'לאתר הקרנפים; מזהה הלקוח הוגדר בשרת. סיסמה מקומית אינה נדרשת לכניסה העתידית.</p>'
-  '<p><strong>ההכנה הטכנית:</strong> נבנה גם מסלול Google Identity Services '
-  'עם בדיקת חתימה בצד השרת, ללא צורך ב־Client Secret. '
-  'מסלול OAuth הקלאסי עדיין מחייב Client Secret אם ייבחר.</p>'
-  '<p><strong>מה עדיין חסר?</strong> אישור הסרת האזהרה מצד Google '
-  'ובדיקת כניסה אמיתית מקצה לקצה לאחר אישור האבטחה. '
-  'התחברות Google עדיין אינה פעילה באתר.</p>'
-  '<p><strong>מצב הגישה:</strong> בעקבות אזהרת Chrome אין כרגע להתחבר, '
-  'להירשם, לשלוח הודעות או להעלות קבצים. דפי המורשת הציבוריים פתוחים לצפייה בלבד. '
-  'אין לעקוף אזהרת אבטחה בדפדפן.</p>'
-  '<p>בעתיד Google תאמת את חשבון המשתמש, אך לא את שירותו הצבאי; '
-  'מנהל הקהילה יאשר חברות בנפרד. חשבונות קיימים נשמרו במסד הנתונים, '
-  'ולא נפתחו הרשאות ציבוריות חדשות.</p></div>'
+  '<div class="card"><h2>מצב Google Sign-In בפועל</h2>'
+  '<p>להלן בדיקות תצורה בזמן אמת מהשרת. אין כאן מזהי חשבון, סודות או נתוני חברים.</p>'
+  '<ul>'+rows+'</ul><p><strong>'+e(state)+'</strong></p>'
+  '<p>האתר נעול כרגע לקריאה בלבד בעקבות דיווח על אזהרת Chrome. '
+  'מצב Google Safe Browsing אינו מתעדכן אוטומטית מתוך דגלי התצורה, '
+  'ולא ניתן להסיק מתצורה תקינה ש־Google הסירה את האזהרה.</p>'
+  '<p>בדיקת הכניסה המעשית, ביקורת הרשאות החברים והפעלת פרסומים יתבצעו רק '
+  'לאחר השלמת בדיקת האבטחה.</p></div>'
+  '<div class="card"><h2>מה יקרה כשייפתח השירות?</h2>'
+  '<p>ההתחברות תתבצע באמצעות Google בלבד, ללא סיסמה מקומית. '
+  'Google תאמת את החשבון, ומנהל הקהילה יאשר בנפרד שייכות לפלוגה. '
+  'החברות והפרסומים לא יהיו פתוחים לציבור.</p></div>'
   '<p><a href="/safety">הסבר על מצב האבטחה ←</a> · '
   '<a href="/privacy">מידע על שמירת פרטים ←</a></p></section>')
 
