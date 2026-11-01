@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 
 ROOT=Path(__file__).resolve().parent
 URL="https://karnafim-community-46.onrender.com"
-VALID=["/","/accessibility","/photos","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
+VALID=["/","/about","/privacy","/safety","/help","/accessibility","/photos","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
 BLOCKED=["/login","/register","/profile","/password","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
 def fetch(path):
     try:
@@ -71,6 +71,11 @@ def live():
             ok=status==200 and landed.startswith(URL) and "<form" not in body.lower() and "<script" not in body.lower()
             if route=="/":ok=ok and "החברות נשארה" in body
             if route=="/accessibility":ok=ok and "הצהרת נגישות" in body and 'id="main-content"' in body
+            if route=="/about":ok=ok and "על קהילת הקרנפים" in body
+            if route=="/privacy":ok=ok and "פרטיות המידע באתר" in body
+            if route=="/safety":ok=ok and "מצב אבטחת אתר הקרנפים" in body
+            if route=="/help":ok=ok and "שאלות נפוצות" in body
+            if route=="/find":ok=ok and "איתור חברי הקרנפים" in body
             if route.startswith("/memorial/"):ok=ok and "לזכר" in body
             if route.startswith("/source/"):ok=ok and "מה ידוע מהתיעוד" in body
             if "form-action 'none'" not in headers.get("Content-Security-Policy",""):ok=False
