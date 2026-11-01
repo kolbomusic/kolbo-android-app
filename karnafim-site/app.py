@@ -18,7 +18,7 @@ DB=os.environ.get("DATABASE_URL","") if READ_ONLY_BOOT else os.environ["DATABASE
 def security_hold():
  if READ_ONLY_BOOT and request.path not in ("/health","/favicon.svg","/favicon.ico","/robots.txt","/sitemap.xml"):
   import re
-  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/status","/photos","/accessibility","/help") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
+  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/status","/photos","/accessibility","/help","/terms") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
   if request.method in ("GET","HEAD") and can_read:
    from pathlib import Path
    if request.path=="/accessibility":
@@ -79,7 +79,7 @@ def robots_txt():
 def public_sitemap():
  from memorial_photos import PEOPLE
  paths=["/","/about","/privacy","/safety","/archive","/memorials",
-        "/photos","/help","/accessibility"]
+        "/photos","/help","/accessibility","/terms"]
  paths.extend("/source/"+str(n) for n in range(1,15))
  paths.extend("/memorial/"+p["slug"] for p in PEOPLE)
  xml='<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -204,6 +204,11 @@ def favicon():
  return Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#19372c"/><path fill="#d8eaa2" d="M14 17h13v30h-7V24h-6zm17 0h13v30h-7V24h-6zm17 0h6v30h-6z"/><path d="M8 51h48" stroke="#d8eaa2" stroke-width="3" stroke-linecap="round"/></svg>',mimetype="image/svg+xml",headers={"Cache-Control":"public, max-age=604800","X-Content-Type-Options":"nosniff"})
 @app.route("/health")
 def health():return {"ok":True,"service":"karnafim","access":("read_only" if READ_ONLY_BOOT else "community")}
+@app.route("/terms")
+def terms_public():
+ from public_pages import render_page
+ return render_page("/terms")
+
 @app.route("/status")
 def public_status():
  available=google_ready()
