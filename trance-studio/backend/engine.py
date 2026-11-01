@@ -477,7 +477,9 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     final=len(x)
     if not chosen or (final-chosen[-1])/sr>=1.4:
         chosen.append(final)
-    max_extensions=min(8.0,max(.75,len(x)/sr*.17))
+    # Keep the whole narration intact; reserve up to 19% additional time
+    # (capped to 10s) for a few genuinely paced comic punchlines.
+    max_extensions=min(10.0,max(.85,len(x)/sr*.19))
     total_fx_seconds=0.
     pieces=[];masks=[];original_spans=[]
     position=0;offset=0
@@ -518,10 +520,10 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
         if source_rms<.008:
             continue
         if humor=='auto':
-            # Match a detected story beat to a vocal trick when possible.
-            # Unknown narration still uses musically varied safe presets.
+            # Explicit story cues win; never skip a real comic action for
+            # an arbitrary "every third event" fallback.
             cue=_semantic_comedy_cue(transcript_hint,cut/max(1,len(x)))
-            mode=cue if cue and index%3!=2 else mode_order[index%len(mode_order)]
+            mode=cue or mode_order[index%len(mode_order)]
         else:
             mode=(('helium','comic_roll','monster','yo_yo','rewind')[index%5]
                   if humor=='chaos' else humor)
@@ -531,10 +533,33 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
         # Phrase breaks use an intentionally short half/whole-beat fill.
         # The total effect overhead is bounded: a 30-second voice will not
         # be dragged out into minutes by repeated stretches and rewinds.
-        max_fx=min(remaining-.04,beat*({1:1.15,2:1.4,3:1.55}[density]))
+        # Musical length is planned BEFORE trimming: half, one, two or
+        # three beats according to the joke, source phrase and intensity.
+        # A two-beat monster/rewind punchline must not be shaved down to a
+        # generic 0.6-second insert just because BPM is high.
+        dramatic=mode in ('monster','rewind','tape','stretch','dj')
+        desired_beats=(
+            (1.0 if density==1 else 2.0) if dramatic
+            else (1.0 if density<=2 else 1.5))
+        if cut==final:
+            # One last longer cadence only at the END of the recording.
+            desired_beats=min(desired_beats,2.0)
+        max_fx=min(remaining-.04,beat*desired_beats)
         if max_fx<.18:
             continue
-        effect=np.asarray(effect[:max(1,int(max_fx*sr))],dtype=np.float32)
+        planned_samples=max(1,int(max_fx*sr))
+        # Speed-normalise an actual effect to a chosen beat duration
+        # without changing its final perceived pitch again.
+        # WSOLA avoids the crude "stretch then amputate" behaviour.
+        ratio=planned_samples/max(1,len(effect))
+        if .55<=ratio<=2.8:
+            effect=stretch_voice(effect,ratio,sr)
+        elif ratio>2.8:
+            effect=stretch_voice(effect,2.8,sr)
+            # Remaining room is NOT padded with silence or fake laughter.
+        else:
+            effect=effect[:planned_samples]
+        effect=np.asarray(effect[:planned_samples],dtype=np.float32)
         effect_rms=float(np.sqrt(np.mean(effect*effect)))
         if effect_rms<.0001:
             continue
@@ -544,7 +569,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
         effect=np.tanh(effect*gain*.9).astype(np.float32)
         # Longer micro-fades soften the end of a forcibly bounded fill
         # and avoid high-frequency clicks at the next spoken phrase.
-        fade=min(int(sr*.035),len(effect)//4)
+        fade=min(int(sr*.055),len(effect)//4)
         if fade:
             ramp=np.linspace(0.,1.,fade,endpoint=False,dtype=np.float32)
             effect[:fade]*=ramp
