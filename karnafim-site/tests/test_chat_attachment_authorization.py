@@ -23,6 +23,16 @@ def sql(query, params=(), fetch=False):
     return None
 
 def run():
+    # Malicious query strings must not crash private chat polling with 500.
+    assert community_portal.safe_chat_cursor("0") == 0
+    assert community_portal.safe_chat_cursor("9223372036854775807") == 9223372036854775807
+    for invalid in ("", "-1", "+1", "1a", "１２", "٩", "9223372036854775808", "9" * 10000):
+        try:
+            community_portal.safe_chat_cursor(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Invalid cursor unexpectedly accepted")
     app = Flask("media_permissions_unit_test")
     app.secret_key = "test-only"
     def member():
