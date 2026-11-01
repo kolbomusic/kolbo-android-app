@@ -1,0 +1,41 @@
+name: Kolbo PROOF real Hebrew voice to moving MP4
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths: ['.github/workflows/kolbo-trance-live-video-proof.yml']
+  workflow_dispatch:
+jobs:
+  live-video-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg and Hebrew TTS
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+      - name: Generate a NEW original fictional Hebrew voice recording
+        run: |
+          python - <<'PY'
+          from gtts import gTTS
+          # No private recording is used. Event is in the grounded-footage vocabulary.
+          text='גשם יורד חזק בחוץ. הגשם יורד על הכביש.'
+          gTTS(text,lang='iw',slow=False).save('/tmp/kolbo-production-hebrew.mp3')
+          PY
+          ffmpeg -hide_banner -nostdin -loglevel error -y -i /tmp/kolbo-production-hebrew.mp3 -c:a libopus -b:a 32k -ar 48000 -ac 1 /tmp/kolbo-production-hebrew.opus
+          test -s /tmp/kolbo-production-hebrew.opus
+      - name: PROVE real live service creates video, sound and licensed footage from Hebrew voice
+        run: |
+          python trance-studio/tests/production_hebrew_voice_mp4.py
+      - name: Publish actual verification MP4 for inspection, if created
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kolbo-LIVE-Video-Proof
+          path: /tmp/kolbo-production-voice-verified.mp4
+          if-no-files-found: ignore
+          retention-days: 7
