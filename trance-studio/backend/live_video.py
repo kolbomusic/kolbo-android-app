@@ -493,10 +493,11 @@ def _make_segment(src,output,length):
         raise UnavailableVideo("קטע המקור קצר מדי")
     _video_profile(src)  # A genuine moving video stream is required.
     short=Path(output).with_name("encoded-"+Path(output).name)
-    # Retain up to eight real moving seconds per licensed source clip.
-    # The old four-second limit caused obvious looping throughout a long remix.
-    # Still bound decoding/encoding for low-resource CPU workers.
-    source_duration=min(source_length,8.0,max(1.0,length))
+    # Prefer longer real-camera motion over repeating a 4-8 second fragment.
+    # Process at most 16s per selected scene to protect the 512MB free worker.
+    # If the user requests a short scene, encode only its required duration.
+    # Longer segments still loop when the licensed source is too short.
+    source_duration=min(source_length,16.0,max(1.0,length))
     command=[
         "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
         "-i",str(src),"-t",f"{source_duration:.3f}","-map","0:v:0","-an",
