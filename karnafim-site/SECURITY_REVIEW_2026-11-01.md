@@ -1,71 +1,55 @@
-# אתר הקרנפים / ברקן — תיק אבטחה ובדיקת מצב
-**תאריך:** 1 בנובמבר 2026  
-**נכס:** https://karnafim-community-46.onrender.com/  
-**אופי:** אתר קהילת ותיקים עצמאי, לא שירות רשמי של צה"ל.
+# אתר הקרנפים / ברקן — תיק אבטחה מאוחד ומעודכן
 
-## עובדות שנבדקו מתוך מערכות הפרויקט
+**עודכן:** 1 בנובמבר 2026  
+**אתר:** https://karnafim-community-46.onrender.com/  
+**ייעוד:** קהילת מורשת עצמאית של יוצאי פלוגה ב׳ (הקרנפים / ברקן), גדוד 46, חטיבה 401 — **אינה גוף צבאי או ממשלתי רשמי**.
 
-- Render אישר מצב `Live` לגרסת התחזוקה, שהושארה פעילה בעקבות מסך האזהרה של Google Chrome.
-- /find, /archive, /memorials, /photos ועמודי מקור/הנצחה ציבוריים מחזירים HTTP 200.
-- /login, /register, /new-post, /chats ונתיבים אישיים חסומים בזמן `KARNAFIM_MAINTENANCE=1` ומחזירים HTTP 503.
-- פלט בסיס הנתונים בעת הבדיקה: חשבון חבר אחד; 0 סיפורים, 0 קובצי חברים, 0 הודעות. אין להסיק מכך שלא קיימות חולשות תוכנה או רישומי גישה אחרים.
-- בבדיקת קובצי Flask והתצוגה הציבורית לא התגלו תגיות script שמורידות קוד חיצוני, iframe חיצוני, פקודות JavaScript eval, או טפסים שמגישים מידע ישירות לדומיין זר.
-- מצב התחזוקה מציב `Content-Security-Policy`, `X-Content-Type-Options: nosniff` ו-`Cache-Control: no-store`. ה-CSP במצב התחזוקה חוסם סקריפטים ומגביל תמונות ל-Wikimedia.
-- קוד התוכן כולל הצהרה שהיוזמה עצמאית; לא מתבצע אימות חברים מול צה"ל.
+## תוצאה מאומתת — Google עדיין לא ניקתה את הסיווג
 
-**חשוב:** בדיקות אלה אינן סריקת חדירה, אינן אישור של Google, ואינן מוכיחות שהאתר בטוח לפרסום פרטים אישיים.
+בבדיקה ישירה של סטטוס Google Safe Browsing עבור הדומיין הוחזר:
+`["sb.ssr",3,false,false,true,false,false,1793495678416,"karnafim-community-46.onrender.com",false]`
 
-## מה טרם אומת
+זהו סימון פעיל של האתר כלא בטוח; גם `/find` עדיין מופיע בסיווג השמור של Google אף שהכתובת עצמה מחזירה כיום `410 Gone`. חותמת הזמן שבתשובה היא חותמת המידע שבידי Google, **לא** זמן הבדיקה העדכני. המידע הציבורי אינו מציג רשימה מלאה של כתובות חשודות או ראיה מובהקת לסיבה המקורית.
 
-1. האם Google סיווגה את האתר כ-Social engineering, Phishing, Malware, Hacked content או כקטגוריה אחרת.
-2. אילו כתובות מדויקות הוגדרו כבעייתיות ומתי.
-3. האם אזהרת Chrome עדיין קיימת לכל המשתמשים וההקשרים.
-4. האם קיים סיכון שלא זוהה בתצורות הישנות של האתר בזמן שההרשמה הייתה פתוחה.
-5. בדיקות הרשמה ו-Google Sign-In, הודעות, פרסומים, מדיה ותורים מקצה לקצה, לאחר חידוש הפעילות.
+**אין להכריז שהאזהרה הוסרה רק משום שהשרת מחזיר HTTP 200, ש-GitHub CI עבר או שהוגשה בקשת סקירה.**
 
-## מסלול אימות חינמי ומדויק
+## בקשה לבחינה מחודשת והתקשרות עם תמיכה
 
-1. הוספת נכס מסוג **URL-prefix** ב-Google Search Console בכתובת זו בלבד:  
-   `https://karnafim-community-46.onrender.com/`
-2. בחירת אימות בעלות דרך HTML tag והעברת ערך ה-`content` של `google-site-verification` למנהל הפרויקט.
-3. בקוד האתר יש תשתית לתג בעלות דרך משתנה הסביבה `KARNAFIM_GSC_VERIFICATION`. אין להכניס לשם סיסמה או מפתח API. חובה לוודא תג בדף הראשי לפני לחיצה על Verify.
-4. לאחר אימות הבעלות: **Security issues**, פתיחת פירוט הבעיה ודוגמאות כתובות ה-URL, והערכת כל נתיב.
-5. תיקון בעיות מוכחות, סריקה חוזרת, ואז בקשת **Request Review** הכוללת סוג הבעיה, התיקונים ותוצאות הבדיקות. לא להגיש בקשה שלא עומדת בעובדות.
-6. לשמור על מצב התחזוקה עד לסיום בדיקת האבטחה, ולא לנסות לעקוף את Chrome.
+- דרך טופס Google Safe Browsing הרשמי הוגשה בקשה לבדיקה מחודשת של האתר, והיא התקבלה בציון `Submission was successful`. זהו אישור **קבלה** בלבד, לא אישור הסרת אזהרה. אין לשלוח שוב בקשות זהות לפני תשובה או ממצא חדש.
+- ל־Render נשלחו פנייה והבהרות בתיק התמיכה הקיים, כולל בקשה לבירור אנושי של דיווחי abuse והכתובות המדויקות. לא אומתה תשובת אדם שבדק את האתר.
+- המשתמש אינו מעוניין בפתיחת נכס Search Console. אין ליצור נכס בשמו או לכפות אימות; קיימת תשתית אופציונלית למטא־תג בעלות, אך לא הוגדר נכס פעיל.
 
-מסלול חלופי לסיווג שגוי, בהתאם להנחיות Google, לאחר בדיקת הסיווג:  
-https://safebrowsing.google.com/safebrowsing/report_error/?hl=en
+## תיקונים בפועל
 
-## קישורים רשמיים
+1. **מצב ציבורי מוגבל לצפייה:** האתר עולה ב־Flask ללא שימוש במסד הנתונים של החברים; דפי מורשת, הנצחה, הסברים ותנאי שימוש מוצגים לציבור בלי טפסים לסיסמאות.
+2. **כתובות שנמחקו:** `/find`, `/login`, `/register`, `/password` ונתיבי `/auth/google/*` מחזירים `410 Gone` והנחיית `noindex` בעת תקופת האבטחה. כתובת `/find` הוסרה גם מנתיבי החיפוש של הקהילה וממפת האתר.
+3. **מידע אישי חסום:** `/directory`, `/chats`, `/chat/<id>`, `/profile`, `/new-post`, `/community-media/<id>`, ממשקי ניהול ופרסום מחזירים `503` במצב התחזוקה, בלי לשלוף נתונים.
+4. **כתובות לא קיימות:** בקשות לנתיבים אקראיים מקבלות `404` ו־`noindex`, כדי להבדיל בינן לבין שירות מושבת.
+5. **הגנות HTTP:** CSP במצב צפייה בלבד עם `form-action 'none'`, ללא קוד JavaScript ציבורי, מניעת הטמעת האתר במסגרת, `nosniff`, HSTS ו־`no-store`.
+6. **נעילת שחרור משולשת:** כדי להחזיר את האזור הפרטי חייבים בו־זמנית `KARNAFIM_MAINTENANCE=0`, `KARNAFIM_SAFETY_RELEASE_APPROVED=1` והגדרת Google OIDC מאומתת. שינוי מקרי של משתנה אחד אינו פותח מידע אישי.
+7. **זהות והרשאות:** קיים פרויקט Google Cloud נפרד ולקוח OAuth מסוג Web עם כתובת callback ידועה. מזהה הלקוח הוגדר ב־Render. **Client Secret עדיין לא חובר; Google Sign-In לא נבדק מקצה לקצה ולא הופעל לציבור.**
+8. **קובצי חברים:** הרשאות המדיה נבדקות בצד השרת. המעלה רשאי לראות קובץ שלו, מנהל הקהילה יכול לבדוק קובץ שממתין לפרסום, וחבר אחר אינו יכול לפתוח מדיה לא מאושרת. קובצי תמונה עוברים בדיקת סוג, פענוח והסרת EXIF.
+9. **פרסום וביקורת:** בדיקות יחידה מבודדות מבטיחות שהרשאות פרסום, אישור או דחיית תוכן וקבלת הסכמה לא מחייבות גישה למשתמשים אמיתיים.
+10. **קישורים ומקורות:** קישורים פנימיים ומקורות היסטוריים נבדקים ב־CI. קישורים חיצוניים היסטוריים שהוסרו אינם מוצגים כקישורים עובדים. בודק הכתובות יודע לקודד נתיבי URL בעברית.
 
-- Google Security Issues Report: https://support.google.com/webmasters/answer/9044101
-- Google Verify Site Ownership: https://support.google.com/webmasters/answer/9008080
-- Google Dangerous Site Guidance: https://support.google.com/webmasters/answer/6347750
-- Google Safe Browsing: https://safebrowsing.google.com/
+ב־GitHub קיימות בדיקות אוטומטיות של אבטחת נתיבים, תרחישי פרסום ומדיה וביקורת קישורים. בגרסה `08e73bc1` כל שלוש הבדיקות סיימו בהצלחה; יש לוודא שגרסת הייצור תואמת את ה־commit האחרון לאחר כל שינוי נוסף.
 
-## כללי הפעלה עד לסגירה
+## מגבלה מוכרת של Render Free
 
-- אין להפעיל מחדש את `/login`, `/register`, `/new-post`, `/chats` או העלאת תמונות לפני האימות.
-- אין לחשוף קבצים פרטיים, נתוני חברים או כתובות של אנשים שלא נתנו הסכמה.
-- יש להבחין בין בדיקת `HTTP 200` לבין אישור בטיחות של Safe Browsing.
-- אין למחוק נתונים קיימים או להחליף סודות ללא צורך מבוסס וביקורת גיבויים.
+לפי [התיעוד הרשמי של Render](https://render.com/docs/free), השירות החינמי עובר להשהיה לאחר 15 דקות ללא תעבורה. בזמן השהיה, Render עצמה מחזירה ל־`/robots.txt` תגובת `Disallow: /` בלי להעיר את השירות. זה עשוי להקשות על סריקה, אך **אין ראיה שהוא גורם לסיווג phishing של Google**. אין לעקוף אזהרת Chrome או להעביר את האתר לדומיין חדש רק כדי להסתיר אותה.
 
-## עדכון טיפול עצמאי — 1.11.2026
+## מה עדיין מחייב אישור חיצוני או השלמה
 
-- Render service `srv-dbj5hs8u01pc73ehboug` נבדק: הפריסה האחרונה `dep-dbj8p1oae00c73dh7ng0` עלתה ל-`Live`.
-- חיבור GSC Wizard חסום בפועל עקב `payment_required`. לא בוצעה באמצעותו בדיקת Security Issues.
-- במפת האתר יש נתיבי מורשת ציבוריים; חשבונות משתמשים והעלאות נשארים במצב התחזוקה (`KARNAFIM_MAINTENANCE=1`).
-- פנייה רשמית נשלחה ל-`support@render.com` מחשבון Gmail המחובר בתאריך 1.11.2026; נושא: **Security review request: Chrome Safe Browsing warning on karnafim-community-46.onrender.com**. מזהה שיחה פנימי ב-Gmail `1a1949ac9ef2dc8e`.
-- הופעל מעקב יומי לתגובות Render ולשינויי סטטוס מהותיים, ללא פתיחת האתר לפעולות אישיות.
-- נבדק חיבור TinyFish: האפליקציה מסומנת כמותקנת, אך פעולות הדפדפן שלה אינן מופיעות ברשימת הכלים הזמינה בסשן זה. לכן לא בוצעה הגשה לטופס Google; אין לטעון שכן.
-- המסך האדום ב-Chrome הוא עדות לסיווג סכנה פעיל מבחינת המשתמש; `HTTP 200`, `robots.txt`, `sitemap.xml` או הוספה לאינדקס **אינם** ראיה להסרתו.
-- בירור הסיווג המדויק מחייב גישה ל-`Security Issues` של נכס האתר ב-Google Search Console או כלי דפדפן מחובר שמאפשר את בדיקת התלונה של Safe Browsing; אין לאמת בעלות באמצעות נתונים מומצאים.
-- אין להגיש בקשת ״סיווג שגוי״ בטענה שנשללה פריצה או דיוג לפני ביסוס זאת בבדיקה מספקת.
+- [ ] Google שינתה באופן מאומת את סטטוס Safe Browsing של **הדומיין המדויק**.
+- [ ] זוהו או נשללו כתובות/משאבים חשודים נוספים לפי דוח של Google או מענה אנושי של Render.
+- [ ] התקבל אישור אבטחה לפתיחת חשבונות.
+- [ ] `GOOGLE_CLIENT_SECRET` נשמר בצורה פרטית במשתני סביבה של Render, ללא פרסום בצ׳אט או GitHub.
+- [ ] בוצעה התחברות Google אמיתית, כולל אימות חתימות, state, nonce, issuer, audience ו־email_verified.
+- [ ] אומתו הרשאות החברים ונחשפו רק נתונים שחבר בחר לשתף, לאחר אישור מנהל.
+- [ ] כל בדיקות CI ומבחני האתר החי עברו ב־commit שהופעל ב־Render.
 
-## דיווח מאומת ל־Google Safe Browsing — 1.11.2026
+## נוסח תמציתי לאנליסט Google / Render
 
-- דוח הציבורי של Google Transparency Report מציג **Some pages on this site are unsafe** עבור דומיין האתר. סיווג הסיכון: ניסיון להונות מבקרים למסור פרטים אישיים או להוריד תוכנה. גם בדיקות /find, /login, /register ו-/ הציגו סיווג unsafe; אין להסיק שכל הנתיבים עצמם כוללים תוכן פוגעני.
-- לאחר בדיקות התשתית והגבלת הפעולות האישיות, הוגש דרך טופס Google Safe Browsing /report_error דיווח עבור `https://karnafim-community-46.onrender.com/` (סוג: This page is safe), עם הסבר עובדתי על מצב הקריאה בלבד ועל היעדר ממצאים חשודים בבדיקות שבוצעו. Google אישרה **Status of submission: Submission was successful**.
-- שדה ההסבר של Google הוגבל ל־800 תווים והטקסט נקטע; אין לייחס למשתמש הגשת טקסט מלא.
-- אישור קבלת הטופס **אינו** אישור ניקוי, אישור בטיחות או ביטול האזהרה. יש להמתין לשינוי מאומת ב־Transparency Report/Chrome, להשלים בדיקות קוד ותוכן ולשמור על KARNAFIM_MAINTENANCE=1.
-- תיעוד הריצה בדפדפן האוטומטי: https://agent.tinyfish.ai/runs/f3d61c7a-5155-4c58-bba8-c54a701d2368
+> This is an independently operated Israeli veterans' heritage community, not an official military or government sign-in portal. Former `/find`, local login, registration and Google OAuth endpoints are disabled (410/noindex). Member and media routes remain inaccessible in a database-independent read-only mode (503), with strict CSP disabling public forms and scripts. The latest CI security, publishing and link checks passed. Google Safe Browsing continues to flag the exact hostname, but no current offending URL has been provided by the public status interface. Please identify any exact URL or resource responsible for the classification and recrawl the remediated pages. No user password is collected by the public site.
+
+**כלל יסוד:** אין לפתוח חשבונות, לאסוף סיסמאות או לפרסם מידע אישי עד להסרת האזהרה ולבדיקות התחברות מלאות.
