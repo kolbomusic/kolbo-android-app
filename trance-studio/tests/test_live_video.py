@@ -264,6 +264,26 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(_matches_metadata('File:Moving car on highway.webm','car moving'))
         self.assertTrue(_matches_metadata('File:Lorry driving on road.webm','lorry driving'))
 
+    def test_car_search_requires_motion_not_generic_archival_footage(self):
+        from unittest.mock import patch
+        import live_video
+        recorded=[]
+        def fake_api(params):
+            recorded.append(params['gsrsearch'])
+            return {'query':{'pages':[]}}
+        with patch.object(live_video,'_json_api',side_effect=fake_api):
+            self.assertEqual(live_video.commons_candidates('car'),[])
+        self.assertEqual(recorded[:2],[
+            'filetype:video moving car',
+            'filetype:video car moving'])
+        self.assertNotIn('filetype:video car',recorded)
+        self.assertTrue(_matches_metadata(
+            'File:Porto Santo from a moving car.webm','moving car'))
+        self.assertFalse(_matches_metadata(
+            'File:Automobile parade.ogv','car'))
+        self.assertFalse(_matches_metadata(
+            'File:Tour of Carina Nebula.ogv','car'))
+
     def test_action_media_search_expands_grounded_alternates(self):
         from unittest.mock import patch
         import live_video
