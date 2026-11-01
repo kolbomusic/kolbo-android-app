@@ -334,7 +334,7 @@ class GroundedVideoTests(unittest.TestCase):
                 # rates. Old concat stream-copy silently corrupted scene 2.
                 freq=11 if 'source-0' in str(dest) else 19
                 width,height=(640,360) if freq==11 else (320,240)
-                codec='libvpx-vp9' if freq==11 else 'libx264'
+                codec='libvpx-vp9' if freq==11 else 'libvpx'
                 subprocess.run(['ffmpeg','-nostdin','-loglevel','error','-y',
                     '-f','lavfi','-i',f'testsrc=size={width}x{height}:rate={freq}:duration=3',
                     '-c:v',codec,'-b:v','160k',str(dest)],check=True,timeout=35)
