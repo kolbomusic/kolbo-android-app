@@ -249,9 +249,9 @@ def vintage_voice_fx(clip, mode, sr, bpm, rng):
     if mode=='chaos':
         mode=('dj','glitch','stretch','tape','pitch')[int(rng.integers(0,5))]
     if mode=='stretch':
-        cut=zero_crossing_cut(x,len(x)//2,sr)
-        grain=x[max(0,cut-int(.24*sr)):min(len(x),cut+int(.24*sr))]
-        y=np.concatenate([x[:cut],stretch_voice(grain,2.3,sr),x[cut:]])
+        # Stretch one clean copied sample moderately. The previous 2.3x
+        # mid-phoneme duplicate produced unnatural joins and drawn-out vowels.
+        y=stretch_voice(x,1.32,sr)
     elif mode=='tape':
         y=np.concatenate([x[:len(x)//2],tape_stop(x[len(x)//2:],sr,.65)])
     elif mode=='pitch':
