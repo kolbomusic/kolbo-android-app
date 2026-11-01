@@ -13,6 +13,7 @@ class ReadOnlyBootTests(unittest.TestCase):
         # Run in a fresh interpreter so earlier test imports cannot mask boot errors.
         env = os.environ.copy()
         env["KARNAFIM_MAINTENANCE"] = "1"
+        env["RENDER_GIT_COMMIT"] = "abcdef0123456789abcdef0123456789abcdef01"
         env["SECRET_KEY"] = "readonly-boot-test-only-not-a-production-key"
         env.pop("DATABASE_URL", None)
         code = """
@@ -23,6 +24,7 @@ for path in ('/', '/health', '/terms', '/archive', '/source/1', '/memorial/yehon
     result = client.get(path)
     assert result.status_code == 200, (path, result.status_code, result.get_data(as_text=True)[:150])
 assert client.get('/health').json['access'] == 'read_only'
+assert client.get('/health').json['revision'] == 'abcdef012345'
 status = client.get('/status')
 assert status.status_code == 200
 status_html = status.get_data(as_text=True)
@@ -32,6 +34,8 @@ assert 'אישור שחרור אבטחה' in status_html
 assert 'טרם הושלם' in status_html
 assert 'Google Safe Browsing' in status_html
 assert 'נוצרו פרויקט Google Cloud ולקוח OAuth ייעודי' not in status_html
+assert 'href="/status">התחברות</a>' not in status_html
+assert 'כניסה מושהית' in status_html
 for path in ('/login', '/register', '/auth/google/start', '/password', '/find'):
     assert client.get(path).status_code == 410, path
 for path in ('/new-post', '/admin', '/chats', '/profile'):
