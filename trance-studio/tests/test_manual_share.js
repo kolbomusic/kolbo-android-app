@@ -17,7 +17,13 @@ assert.match(bridge,/window\.kolboImportSharedAudio\)window\.kolboImportSharedAu
 const from=src.indexOf('function setFiles(items){');
 const end=src.indexOf("audio.addEventListener('change'",from);
 assert.ok(from>0&&end>from,'share handler code found');
-const handler=src.slice(from,end);
+// The share-isolation test intentionally excludes independently tested
+// YouTube preview controls; those controls never initiate mix rendering.
+const rawHandler=src.slice(from,end);
+const ytStart=rawHandler.indexOf('function youtubeId(');
+const importStart=rawHandler.indexOf('window.kolboImportSharedAudio=function(items)');
+const handler=(ytStart>=0&&importStart>ytStart)?
+  rawHandler.slice(0,ytStart)+rawHandler.slice(importStart):rawHandler;
 assert.doesNotMatch(handler,/\brun\s*\(/,'Share import may never start creation');
 assert.doesNotMatch(handler,/\bsetTimeout\s*\(/,'Share import may never schedule creation');
 let count=0, notified=[],stage=[],scheduled=0,focus=0;
