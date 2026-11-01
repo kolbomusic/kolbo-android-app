@@ -293,11 +293,11 @@ async function requestPhoneVideo(provider,prompt){
   return readGradioCompletion(await response.text(),provider.host);
  }finally{clearTimeout(timeout)}
 }
-async function completeAIVideoOnPhone(jobId,prompt){
+async function completeAIVideoOnPhone(jobId,prompt,prebuiltScenes){
  // Prefer the validated byte-upload route. A URL handed to Render can be
  // blocked by the GPU host even when the phone already downloaded the clip.
  if(window.KolboAIFallback){
-   return window.KolboAIFallback.generate(jobId,message,prompt);
+   return window.KolboAIFallback.generate(jobId,message,prompt,prebuiltScenes);
  }
  if(!/^[a-f0-9]{48}$/.test(String(jobId||''))||
     typeof prompt!=='string'||!prompt.trim())
@@ -394,7 +394,7 @@ $('resultTitle').textContent='המיקס מוכן — מנסה להפיק סצנ
 $('result').classList.add('visible');
 if(wantsVideo&&!j.video_url&&$('ai_video_consent').checked&&j.client_ai_prompt){
  try{
-  var fromPhone=await completeAIVideoOnPhone(data.id,j.client_ai_prompt);
+  var fromPhone=await completeAIVideoOnPhone(data.id,j.client_ai_prompt,j.client_ai_prompts);
   Object.assign(j,fromPhone);
   videoReason='';
  }catch(deviceError){
