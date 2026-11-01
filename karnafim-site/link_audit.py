@@ -19,6 +19,7 @@ from pathlib import Path
 BASE=Path(__file__).resolve().parent
 ORIGIN="https://karnafim-community-46.onrender.com"
 KNOWN_BAD_LABELS=("אין קישור ישיר לפרסום", "חיפוש הפרסום במקור", "הקישור הישיר לא נבדק")
+RETIRED_SOURCE_IDS={4,5,7,12}  # Legacy Yad Lashiryon article URLs confirmed 404 on 2026-11-01
 AGENT="KarnafimLinkAudit/1.0 (read-only; contact: site administrator)"
 MUST_HAVE={
     "/":"הקרנפים",
@@ -125,6 +126,14 @@ def main():
             item=sources[int(path.split("/")[-1])-1]
             direct=html.escape(item["url"],quote=True)
             ok=ok and (direct in document or item["url"] in document)
+            # A source name in visible text does not establish a functional link.
+            # Never restore the four verified dead article URLs as clickable hrefs.
+            if item["id"] in RETIRED_SOURCE_IDS:
+                ok=ok and 'href="'+direct+'"' not in document
+                ok=ok and 'https://www.yadlashiryon.com/archives' in document
+                ok=ok and "הקישור למאמר המקורי אינו פעיל" in document
+            else:
+                ok=ok and 'href="'+direct+'"' in document
             ok=ok and not any(bad in document for bad in KNOWN_BAD_LABELS)
         if path.startswith("/memorial/"):
             person=next(p for p in persons if path.endswith("/"+p["slug"]))
