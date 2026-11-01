@@ -197,6 +197,20 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC0'}}))
         self.assertTrue(_valid_license({'LicenseShortName':{'value':'CC BY-SA 2.0'}}))
 
+    def test_metadata_does_not_match_carina_to_car_or_train_to_rain(self):
+        # Reproduces a REAL failed production run which showed a tour of the
+        # Carina Nebula while the Hebrew audio mentioned a moving car.
+        self.assertFalse(_matches_metadata(
+            'File:Tour of Carina Nebula.ogv','car'))
+        self.assertFalse(_matches_metadata(
+            'File:A train arriving at station.webm','rain'))
+        self.assertFalse(_matches_metadata(
+            'File:Scarlet macaw flying.webm','car'))
+        self.assertTrue(_matches_metadata(
+            'File:Moving car in traffic.webm','car'))
+        self.assertTrue(_matches_metadata(
+            'File:Rain falling on street.webm','rain falling'))
+
     def test_real_action_footage_not_talk_about_the_action(self):
         # A prior live Wikimedia search matched an interview about self-driving
         # cars. This is NOT evidence that a car is driving in the clip.
