@@ -144,7 +144,7 @@ def memorial_detail(slug):
  return '<section><p><a href="/memorials">← לכל דפי הזיכרון</a></p><div class="year">נפל ביום '+e(p["date"])+'</div><h1>לזכר '+e(p["name"])+'</h1><div class="card"><p>'+e(p["unit"])+'</p><p>'+e(p["role"])+'</p><p>דף זיכרון אישי של הקהילה. גלריית התמונות עדיין אינה מכילה תמונות שאושרו לשימוש.</p><p><a href="'+e(p["official"])+'" target="_blank" rel="noopener noreferrer"><strong>לסיפור החיים המלא באתר יזכור הרשמי ↗</strong></a></p></div><div class="cards"><article class="card"><h3>📷 איתור תמונות</h3><p>חיפוש תמונות לפי שם האדם והיחידה במקורות פומביים.</p><a href="'+e(google)+'" target="_blank" rel="noopener noreferrer">פתיחת Google Images ↗</a></article><article class="card"><h3>🕯️ ארכיון ההנצחה</h3><p>חיפוש תמונות ומידע מאתר יזכור. פרסום תמונה באתר כפוף לאימות ולרישיון שימוש.</p><a href="'+e(izkor)+'" target="_blank" rel="noopener noreferrer">חיפוש ממוקד בתמונות יזכור ↗</a></article></div><div class="note">המנגנון להצעת תמונה, שיוך לגלריה ואישור מנהל נבנה אך אינו פתוח בעת בדיקת האבטחה. אין לזהות אדם על סמך דמיון פנים בלבד.</div></section>'
 
 def render_page(path):
- pages={"/archive":(archive,"ארכיון"),"/memorials":(memorials,"הנצחה"),"/find":(find,"איתור חברים"),"/status":(status,"מצב התחברות"),"/about":(about,"אודות"),"/privacy":(privacy,"פרטיות"),"/safety":(safety,"בטיחות"),"/help":(help_center,"עזרה")}
+ pages={"/archive":(archive,"ארכיון"),"/memorials":(memorials,"הנצחה"),"/status":(status,"מצב התחברות"),"/about":(about,"אודות"),"/privacy":(privacy,"פרטיות"),"/safety":(safety,"בטיחות"),"/help":(help_center,"עזרה")}
  if path in pages:
   fn,title=pages[path]
   return shell(NOTICE+fn()+'<p><a href="/">חזרה לעמוד הראשי ←</a></p>',title)
