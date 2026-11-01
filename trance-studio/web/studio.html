@@ -72,12 +72,12 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <option value="rewind">ריוורס — מילה קדימה ואחורה</option>
 <option value="chaos">מסיבה פרועה — יותר חיתוכים ואפקטים</option>
 <option value="off">ללא הומור — מוזיקה וקול בלבד</option></select>
-<label for="fx_intensity">תדירות קטעי הקול המעובדים — <output id="fxText">גבוהה</output></label>
-<input id="fx_intensity" type="range" min="1" max="3" value="3" step="1">
+<label for="fx_intensity">תדירות קטעי הקול המעובדים — <output id="fxText">רגילה — תזמון לפי משפטים</output></label>
+<input id="fx_intensity" type="range" min="1" max="3" value="2" step="1">
 <small>1 — מדי פעם · 2 — רגיל · 3 — כמה שיותר במהלך הדיבור</small>
-<label for="fx_gain">עוצמת האפקטים ביחס לקול המקורי — <output id="fxGainText">135%</output></label>
-<input id="fx_gain" type="range" min="55" max="170" value="135" step="5">
-<small>האפקטים מושמעים בנפרד ובעוצמה מורגשת. אין קול כפול בזמן משפט.</small>
+<label for="fx_gain">עוצמת האפקטים ביחס לקול המקורי — <output id="fxGainText">110%</output></label>
+<input id="fx_gain" type="range" min="55" max="170" value="110" step="5">
+<small>ברירת המחדל מאזנת את האפקטים עם הדיבור; במקום רצף עיוותים חזקים, המנוע בוחר רגעי הדגשה והשהיות בין משפטים.</small>
 <details class="advanced"><summary>הגדרות מוזיקה מתקדמות (לא חובה)</summary>
 <div class="grid">
 <div><label for="style">סוג הטראנס</label><select id="style">
@@ -184,7 +184,7 @@ window.kolboImportSharedAudio=function(items){
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
 $('voice').oninput=function(){$('voiceText').textContent=this.value+'%'};
-$('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'נמוכה','2':'רגילה','3':'גבוהה'})[this.value]};
+$('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'נמוכה','2':'רגילה — תזמון לפי משפטים','3':'גבוהה'})[this.value]};
 $('fx_gain').oninput=function(){$('fxGainText').textContent=this.value+'%'};
 function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
 function verifyTranscript(txt){
