@@ -457,7 +457,7 @@ if((j.video_status==='error'||j.video_status==='unavailable')&&!j.video_url){
 }
 if(wantsVideo&&!j.video_url){
  $('resultTitle').textContent='המיקס מוכן — לא הופק סרטון';
- $('videoNotice').textContent='סרטון MP4 לא נוצר. '+(videoReason||'לא אותר מקור וידאו מתאים לדיבור. המיקס זמין.');
+ $('videoNotice').textContent='סרטון MP4 לא נוצר. '+(videoReason||'לא אותר מקור וידאו מתאים לדיבור. המיקס זמין.')+(!$('ai_video_consent').checked?'\nכדי לנסות יצירת וידאו AI מקורית מתוך המילים, סמן למעלה את האפשרות הניסיונית לפני יצירה נוספת. ללא הסכמה ייבדקו רק צילומים קיימים.':'');
  $('videoNotice').hidden=false;
  // A user can explicitly retry a failed video generation without remixing
  // or uploading their original voice again. No automatic retry loop exists.
