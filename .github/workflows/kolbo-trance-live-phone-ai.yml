@@ -1,0 +1,46 @@
+name: Kolbo LIVE phone-network Hebrew speech to free AI-created MP4
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - 'trance-studio/tests/live_phone_ai_e2e.py'
+      - '.github/workflows/kolbo-trance-live-phone-ai.yml'
+  workflow_dispatch:
+jobs:
+  verified:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare synthetic original Hebrew WhatsApp-like OPUS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+          python - <<'PY'
+          from gtts import gTTS
+          text='איש זורק כוס זכוכית על הרצפה. הכוס נשברת לרסיסים.'
+          gTTS(text,lang='iw',slow=False).save('/tmp/kolbo-phone-ai-hebrew.mp3')
+          PY
+          ffmpeg -nostdin -loglevel error -y -i /tmp/kolbo-phone-ai-hebrew.mp3 -c:a libopus -b:a 24k -ar 48000 -ac 1 /tmp/kolbo-phone-ai-hebrew.opus
+      - name: Wait for the new production AI recovery API before creating a job
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request
+          for attempt in range(85):
+            try:
+              with urllib.request.urlopen('https://kolbo-trance-studio.onrender.com/health',timeout=15) as resp:
+                data=json.load(resp)
+              if data.get('version')=='1.14.0':
+                print('RENDER_PHONE_AI_SERVER_READY',data.get('version'),flush=True)
+                break
+            except Exception as e:
+              print('RENDER_PHONE_AI_NOT_READY',type(e).__name__,flush=True)
+            time.sleep(5)
+          else:
+            raise SystemExit('Render 1.14 was never deployed - no user speech job started')
+          PY
+      - name: Require original Hebrew voice to consented caller AI video MP4 and whole soundtrack
+        run: python trance-studio/tests/live_phone_ai_e2e.py
