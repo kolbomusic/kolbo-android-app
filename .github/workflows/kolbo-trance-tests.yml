@@ -57,5 +57,7 @@ jobs:
           python -c "import json,pathlib;d=json.loads(pathlib.Path('trance-studio/web/studio.webmanifest').read_text());assert d['share_target']['method']=='POST';assert d['share_target']['params']['files'][0]['name']=='audio'"
       - name: Confirm WhatsApp sharing never auto-runs anything
         run: node trance-studio/tests/test_manual_share.js
+      - name: Validate licensed music and story-only YouTube UI
+        run: node trance-studio/tests/test_video_music_ui.js
       - name: Run audio and API tests
         run: python -m unittest discover -s trance-studio/tests -v
