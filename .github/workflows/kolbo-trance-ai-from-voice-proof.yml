@@ -1,11 +1,11 @@
 name: Kolbo LIVE 30s AI movie from voice-only Hebrew audio
+# Live requests use a shared public ZeroGPU quota. Never kick off a swarm
+# of 30-second AI generation proofs on an ordinary source-code push.
 on:
-  push:
-    branches: [kolbo-trance-studio-20261031]
-    paths:
-      - '.github/workflows/kolbo-trance-ai-from-voice-proof.yml'
-      - 'trance-studio/tests/live_ai_story_from_audio_proof.py'
   workflow_dispatch:
+concurrency:
+  group: kolbo-trance-render-acceptance
+  cancel-in-progress: false
 jobs:
   full-ai-production:
     runs-on: ubuntu-24.04
