@@ -3,6 +3,13 @@ on:
   push:
     branches: [karnafim-veterans-portal-20261031]
   workflow_dispatch:
+permissions:
+  contents: read
+# Old commit-specific live checks become irrelevant when a newer commit lands.
+# Cancel them so one workflow tests the current branch head against Render.
+concurrency:
+  group: karnafim-security-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
