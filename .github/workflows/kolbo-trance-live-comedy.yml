@@ -20,7 +20,7 @@ jobs:
             -f lavfi -i 'sine=frequency=230:sample_rate=32000:duration=3' \
             -f lavfi -i 'sine=frequency=340:sample_rate=32000:duration=3' \
             -filter_complex '[0:a]volume=0.4,adelay=500|500[a];[1:a]volume=0.25,adelay=4600|4600[b];[a][b]amix=inputs=2:duration=longest' \
-            -ac 1 -ar 32000 -c:a libopus -b:a 64k \
+            -ac 1 -ar 48000 -c:a libopus -b:a 64k \
             /tmp/kolbo-synthetic-voice.opus
           test -s /tmp/kolbo-synthetic-voice.opus
       - name: Verify live voice, stronger comic FX and original Israeli trance master
