@@ -175,6 +175,26 @@ class ForegroundVoiceTests(unittest.TestCase):
         for _,_,start,end in spans3:
             self.assertTrue(np.all(mask3[start:end]==0))
 
+    def test_short_multi_phrase_voice_note_has_several_spaced_comic_hooks(self):
+        sr=self.sr
+        voice=np.zeros(sr*9,dtype=np.float32)
+        # A few true spoken phrases separated by silence; the algorithm
+        # must not fabricate word boundaries or overwrite original speech.
+        for start in (0.35,2.65,4.95,7.1):
+            a=int(start*sr);b=min(len(voice),a+int(1.45*sr))
+            t=np.arange(b-a)/sr
+            voice[a:b]=.27*np.sin(2*np.pi*235*t)
+        edited,mask,spans=e.arranged_vocal_track(
+            voice,sr,145,'auto',2,1.2,np.random.default_rng(33),
+            transcript_hint='החמור נוער. כולם צוחקים. אחר כך האיש נפל.')
+        starts=np.flatnonzero((mask[1:]>.5)&(mask[:-1]<=.5))
+        self.assertGreaterEqual(len(starts),2,
+            'Nine seconds of four phrases must not get only one closing sting')
+        np.testing.assert_array_equal(
+            np.concatenate([edited[a:b] for _,_,a,b in spans]),voice)
+        self.assertTrue(all(np.all(mask[o:e]==0) for _,_,o,e in spans))
+        self.assertLess(len(edited)-len(voice),sr*2.0)
+
     def test_short_message_also_gets_a_solo(self):
         x=self.voice(2)
         y,mask,spans=e.arranged_vocal_track(x,self.sr,145,'pitch',3,1.2,np.random.default_rng(5))
