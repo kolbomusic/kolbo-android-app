@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 ROOT = "https://karnafim-community-46.onrender.com"
 UA = "Mozilla/5.0 KarnafimLinkCheck/1.0"
 BASE = Path(__file__).resolve().parent
-PUBLIC = ("/", "/health", "/register", "/login", "/memories", "/discover", "/archive", "/find", "/feed", "/invite", "/favicon.svg", "/favicon.ico")
+PUBLIC = ("/", "/health", "/register", "/login", "/memories", "/discover", "/archive", "/feed", "/invite", "/favicon.svg", "/favicon.ico")
 PROTECTED = ("/chats", "/new-post", "/directory", "/profile", "/password", "/admin", "/community/moderation")
 def probe(url):
     try:
