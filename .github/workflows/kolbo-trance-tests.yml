@@ -5,6 +5,7 @@ on:
       - kolbo-trance-studio-20261031
       - kolbo-trance-asr-warm-cache-20261101
       - kolbo-trance-story-recovery-20261101
+      - kolbo-trance-fix-ai-ui-regression-20261101
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'
@@ -39,7 +40,9 @@ jobs:
           assert "recognitionFallback" not in s and "transcriptDetails" not in s
           assert "form.set('make_video',wantsVideo?'on':'off')" in s
           assert "verifyTranscript(recognized)?recognized" in s
-          assert "וידאו אמיתי" in s
+          assert 'id="ai_video_consent"' in s
+          assert "form.set('ai_video_consent'" in s
+          assert "שירות AI ציבורי" in s
           worker=Path('trance-studio/web/studio-asr-worker.js').read_text(encoding='utf-8')
           assert "onnx-community/whisper-tiny" in worker
           assert "itayinbar/whisper-he-12x2" not in worker

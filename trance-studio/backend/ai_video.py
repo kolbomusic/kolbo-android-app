@@ -90,9 +90,9 @@ def _video_result_url(data):
 
 
 def _request_video_generation(prompt, *, opener=urllib.request.urlopen,
-                              duration=5.0, max_wait=MAX_WAIT_SECONDS):
+                              duration=2.0, max_wait=MAX_WAIT_SECONDS):
     """Call the documented public Gradio queue API with a bounded SSE wait."""
-    duration = min(8.0, max(1.0, float(duration)))
+    duration = min(3.0, max(1.0, float(duration)))
     data = {
         "data": [
             prompt,
@@ -221,7 +221,15 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                      " מתוך " + str(len(shots)))
         try:
             prompt=cinematic_prompt(words)
-            url=generator(prompt)
+            try:
+                url=generator(prompt)
+            except AIVideoUnavailable:
+                if generator is not _request_video_generation:
+                    raise
+                # The free shared GPU sometimes rejects a 2-second request
+                # while accepting a 1-second request. One bounded retry;
+                # never subscribe, pay, or invent a completed video.
+                url=generator(prompt,duration=1.0)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             prepared.append((words,raw,seconds))

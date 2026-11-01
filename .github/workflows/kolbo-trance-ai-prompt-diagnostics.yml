@@ -1,0 +1,56 @@
+name: Diagnose why public free LTX refuses some Hebrew stories
+on:
+  push:
+    branches: [kolbo-trance-fix-ai-ui-regression-20261101]
+    paths: ['.github/workflows/kolbo-trance-ai-prompt-diagnostics.yml']
+  workflow_dispatch:
+jobs:
+  public-prompt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare safe English and mixed Hebrew prompts and report rejection code
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.error,time
+          base='https://lightricks-ltx-video-distilled.hf.space'
+          prompts=[
+            'Photorealistic scene, a happy man waves his hand in the park. Natural camera movement, no text.',
+            'Photorealistic scene. A man smiles and waves his hand. Hebrew context: האיש מנופף ביד. No written text.',
+          ]
+          for i,prompt in enumerate(prompts):
+            data={'data':[prompt,'blurry, text, watermark','','',704,512,'text-to-video',1.0,9,42,True,1.0,True]}
+            try:
+              req=urllib.request.Request(base+'/gradio_api/call/text_to_video',
+                    data=json.dumps(data,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'})
+              with urllib.request.urlopen(req,timeout=30) as r:event=json.load(r)
+              print('PROMPT_SUBMITTED',i,event,flush=True)
+              req=urllib.request.Request(base+'/gradio_api/call/text_to_video/'+event['event_id'])
+              with urllib.request.urlopen(req,timeout=140) as r:
+                eventname=''
+                for raw in r:
+                  line=raw.decode('utf-8','replace').strip()
+                  if line.startswith('event:'):eventname=line[6:].strip()
+                  if line.startswith('data:') and eventname in ('complete','error'):
+                    print('PROMPT_RESULT',i,eventname,line[:800],flush=True)
+                    break
+            except Exception as e:print('PROMPT_FAILED',i,type(e).__name__,str(e)[:300],flush=True)
+          PY
+      - name: Probe exact new Hebrew-story prompt at reduced 2s and 1s fallback
+        continue-on-error: true
+        run: |
+          PYTHONPATH=trance-studio/backend python - <<'PY'
+          import traceback
+          from ai_video import cinematic_prompt,_request_video_generation,AIVideoUnavailable
+          story='איש זורק כוס זכוכית על הרצפה. הכוס נשברת לרסיסים.'
+          prompt=cinematic_prompt(story)
+          print('ACTUAL_PROMPT_LENGTH',len(prompt),flush=True)
+          for seconds in (2.0,1.0):
+            try:
+              video=_request_video_generation(prompt,duration=seconds,max_wait=90)
+              print('ACTUAL_HEBREW_STORY_GENERATION_PASS',seconds,video[:115],flush=True)
+              break
+            except AIVideoUnavailable as e:
+              print('ACTUAL_HEBREW_STORY_UNAVAILABLE',seconds,str(e),flush=True)
+          PY
