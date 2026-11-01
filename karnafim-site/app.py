@@ -12,7 +12,7 @@ DB=os.environ["DATABASE_URL"]
 
 @app.before_request
 def security_hold():
- if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path not in ("/health","/favicon.svg","/favicon.ico"):
+ if os.environ.get("KARNAFIM_MAINTENANCE","1")=="1" and request.path not in ("/health","/favicon.svg","/favicon.ico","/robots.txt","/sitemap.xml"):
   import re
   can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/find","/status","/photos","/accessibility","/help") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
   if request.method in ("GET","HEAD") and can_read:
@@ -38,10 +38,47 @@ def security_hold():
    response=Response("אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה.",status=503,mimetype="text/plain")
    response.headers["Content-Security-Policy"]="default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   response.headers["Cache-Control"]="no-store, max-age=0"
-  response.headers["X-Robots-Tag"]="noindex, nofollow"
+  response.headers["X-Robots-Tag"]=("index, follow" if response.status_code==200 else "noindex, nofollow")
   response.headers["X-Content-Type-Options"]="nosniff"
   response.headers["Referrer-Policy"]="no-referrer"
   return response
+
+# Public crawl map for the temporary *read-only* site. Private routes remain
+# blocked at the application layer; robots.txt is not an access-control system.
+@app.route("/robots.txt")
+def robots_txt():
+ content="\n".join([
+   "User-agent: *",
+   "Allow: /",
+   "Disallow: /login",
+   "Disallow: /register",
+   "Disallow: /new-post",
+   "Disallow: /my-posts",
+   "Disallow: /chats",
+   "Disallow: /chat/",
+   "Disallow: /admin",
+   "Disallow: /profile",
+   "Disallow: /directory",
+   "Disallow: /community-media/",
+   "Disallow: /post/",
+   "Sitemap: https://karnafim-community-46.onrender.com/sitemap.xml",
+   ""
+ ])
+ return Response(content,mimetype="text/plain")
+
+@app.route("/sitemap.xml")
+def public_sitemap():
+ from memorial_photos import PEOPLE
+ paths=["/","/about","/privacy","/safety","/archive","/memorials",
+        "/find","/photos","/help","/accessibility"]
+ paths.extend("/source/"+str(n) for n in range(1,15))
+ paths.extend("/memorial/"+p["slug"] for p in PEOPLE)
+ xml='<?xml version="1.0" encoding="UTF-8"?>\n'
+ xml+='<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+ xml+="".join("<url><loc>https://karnafim-community-46.onrender.com"+
+              html.escape(path,quote=True)+"</loc></url>" for path in paths)
+ xml+="</urlset>"
+ return Response(xml,mimetype="application/xml")
 
 @app.after_request
 def harden_responses(resp):
