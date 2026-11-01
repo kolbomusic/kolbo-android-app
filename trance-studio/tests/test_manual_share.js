@@ -10,6 +10,8 @@ const bridge=fs.readFileSync('trance-studio/android/app/src/main/java/com/kolbom
 assert.match(src,/window\.kolboImportSharedAudio\s*=\s*function\(items\)/);
 assert.match(src,/\$\('generate'\)\.onclick\s*=\s*run;/);
 assert.match(src,/<button[^>]+id="generate"[^>]+disabled/);
+assert.match(src,/<button[^>]+id="retryVideo"[^>]+hidden/);
+assert.match(src,/retry\.onclick\s*=\s*async function\(\)/);
 assert.doesNotMatch(src,/if\(!active&&files\.length\)\s*setTimeout/);
 assert.match(bridge,/window\.kolboImportSharedAudio\)window\.kolboImportSharedAudio\(clips\)/);
 const from=src.indexOf('function setFiles(items){');
