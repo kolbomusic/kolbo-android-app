@@ -285,6 +285,8 @@ def _matches_metadata(title,query):
                "wrong side","wrong way", "on why ", "interview",
                "explaining", "explains why", "talking about",
                "presentation", "lecture", "speech about",
+               # A cable car is not an automobile when the transcript says car.
+               "cable car", "funicular",
                # Never insert distressing real news footage into a funny
                # music story merely because the title also mentions a car.
                "terrorist","shooting","fire into","hostage","murder",
@@ -293,7 +295,8 @@ def _matches_metadata(title,query):
     keywords=query.lower().split()
     # Preserve the actor and the action without depending on word order
     # or inflection ("braying donkey" is valid for "donkey braying").
-    aliases={"braying":("braying","bray","brays","brayed"),
+    aliases={"car":("car","cars","automobile","automobiles","vehicle","vehicles"),
+             "braying":("braying","bray","brays","brayed"),
              "driving":("driving","drives","drive"),
              "dancing":("dancing","dance","dances"),
              "falling":("falling","falls","fall"),
