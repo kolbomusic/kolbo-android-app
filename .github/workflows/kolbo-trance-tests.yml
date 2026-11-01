@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - kolbo-trance-studio-20261031
+      - kolbo-trance-story-recovery-20261101
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'
