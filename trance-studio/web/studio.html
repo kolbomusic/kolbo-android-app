@@ -426,13 +426,17 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent=(String(j.video_mode||'').indexOf('ai_generated')===0)?
-   'סצנות וידאו נוצרו באמצעות AI לפי התמלול. זו המחשה משוערת: קטעי וידאו קצרים עשויים לחזור לאורך המיקס.' :
+ $('storyboardInfo').textContent=j.video_mode==='original_input_video'?
+   'שולב סרטון המקור האמיתי ששיתפת עם המיקס החדש. זה איננו וידאו AI שנוצר מהמילים.' :
+   (String(j.video_mode||'').indexOf('ai_generated')===0?
+   'סצנות AI מתוך התמלול. זו המחשה משוערת: קטעי וידאו קצרים עשויים לחזור לאורך המיקס.' :
    (j.visual_coverage==='partial'?
-   'נמצא צילום מתאים לחלק מהמשפטים בלבד. המיקס המקורי נשמר לכל אורכו. הסצנות האחרות עדיין לא הומחשו במדויק.':
-   'צילום וידאו נע שנבחר לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול או ציורים.');
- $('videoPlayer').setAttribute('aria-label',(String(j.video_mode||'').indexOf('ai_generated')===0)?
-   'סרטון AI ניסיוני שנוצר מן הסיפור':'סרטון מצולם מתוך הפעולות שזוהו');
+   'נמצא צילום מתאים לחלק מהמשפטים בלבד. המיקס המקורי נשמר לכל אורכו. יתר המשפטים לא הומחשו במדויק.':
+   'צילום וידאו נע שנבחר לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול או ציורים.'));
+ $('videoPlayer').setAttribute('aria-label',j.video_mode==='original_input_video'?
+   'וידאו המקור ששיתפת עם מיקס קול חדש':
+   (String(j.video_mode||'').indexOf('ai_generated')===0?
+   'סרטון AI ניסיוני שנוצר מן הסיפור':'סרטון מצולם מתוך הפעולות שזוהו'));
  if(j.storyboard_url){
   try{
    var credits=await (await fetch(j.storyboard_url,{credentials:'same-origin'})).json();
