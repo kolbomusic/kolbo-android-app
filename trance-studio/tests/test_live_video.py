@@ -244,6 +244,10 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(_matches_metadata(
             'File:Moving car in traffic.webm','car'))
         self.assertTrue(_matches_metadata(
+            'File:Automobile parade.ogv','car'))
+        self.assertFalse(_matches_metadata(
+            'File:Cable Car Singapore.webm','car'))
+        self.assertTrue(_matches_metadata(
             'File:Rain falling on street.webm','rain falling'))
 
     def test_real_action_footage_not_talk_about_the_action(self):
