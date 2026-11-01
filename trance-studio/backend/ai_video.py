@@ -176,31 +176,102 @@ def _download_public_video(url, destination, *, opener=urllib.request.urlopen):
         raise AIVideoUnavailable("לא ניתן לאמת את הווידאו שנוצר") from exc
 
 
+def _narrative_shots(transcript):
+    """Keep the spoken sequence and split at most two coherent visual moments.
+
+    Two real AI-generated shots are more useful than looping one unrelated
+    second repeatedly. A ZeroGPU free visitor cannot request unlimited shots.
+    """
+    text=re.sub(r"\s+"," ",str(transcript or "")).strip()
+    clauses=[v.strip(" .,!;:") for v in re.split(
+        r"(?<=[.!?;,])\s+|\b(?:ואז|לאחר מכן|ואחר כך|אחר כך|פתאום)\b",text)
+        if len(HEBREW.findall(v))>=2]
+    if len(clauses)<2 and len(text.split())>=16:
+        words=text.split()
+        half=max(2,len(words)//2)
+        clauses=[" ".join(words[:half])," ".join(words[half:])]
+    if not clauses:
+        clauses=[text]
+    if len(clauses)<=2:
+        return clauses
+    cut=max(1,len(clauses)//2)
+    return [" ".join(clauses[:cut])," ".join(clauses[cut:])]
+
+
 def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                       *, progress=None, generator=_request_video_generation,
                       download=_download_public_video):
-    """Create one ORIGINAL AI shot and mux complete user soundtrack, no subtitles.
+    """Produce up to two original moving shots in spoken order with entire audio.
 
-    A free shared model cannot produce 35 unique seconds on demand. We loop
-    its short generated shot and explicitly report the repeated approximate
-    result, instead of falsely marking every spoken scene as matched.
+    Original narration is sent as text ONLY after the app opt-in. Two shots
+    are attempted within the public ZeroGPU quota; if the second fails, use
+    the first and clearly report an incomplete visual recreation.
     """
-    prompt = cinematic_prompt(transcript)
+    shots = _narrative_shots(transcript)
     output_mp4=Path(output_mp4)
     work=Path(work_dir);work.mkdir(parents=True,exist_ok=True)
-    if progress:progress(88,"מתאר את הסיפור המקורי למנוע וידאו AI")
-    url=generator(prompt)
-    if progress:progress(91,"מקבל את קטע הווידאו החדש שנוצר")
-    raw=work/"generated-original.mp4"
-    short_seconds=download(url,raw)
-    mix_seconds=_duration(audio_mp3)
-    if not 1<=mix_seconds<=360:
+    audio_length=_duration(audio_mp3)
+    if not 1<=audio_length<=360:
         raise AIVideoUnavailable("משך המיקס אינו תקין")
-    segment=work/"generated-loop.mp4"
-    _make_segment(raw,segment,mix_seconds)
-    if progress:progress(96,"משלב את הווידאו החדש עם המיקס המקורי")
+    prepared=[]
+    failure=None
+    for index, words in enumerate(shots):
+        if progress:
+            progress(88+index*3,"מייצר סצנת AI חדשה " + str(index+1) +
+                     " מתוך " + str(len(shots)))
+        try:
+            prompt=cinematic_prompt(words)
+            url=generator(prompt)
+            raw=work/f"generated-original-{index}.mp4"
+            seconds=download(url,raw)
+            prepared.append((words,raw,seconds))
+        except AIVideoUnavailable as exc:
+            failure=exc
+            # Subsequent requests to the same exhausted quota will not help.
+            break
+    if not prepared:
+        raise failure or AIVideoUnavailable("שירות יצירת הווידאו החינמי אינו זמין")
+    duration_seconds=sum(max(1,len(HEBREW.findall(clip[0])))
+                         for clip in prepared)
+    encoded=[]
+    sources=[]
+    for index,(words,raw,source_seconds) in enumerate(prepared):
+        spoken_weight=max(1,len(HEBREW.findall(words)))
+        allocated=audio_length*spoken_weight/duration_seconds
+        segment=work/f"generated-segment-{index}.mp4"
+        _make_segment(raw,segment,allocated)
+        encoded.append(segment)
+        sources.append({
+            "action":"ai_generated_narrative",
+            "start":round(audio_length*sum(
+                max(1,len(HEBREW.findall(x[0]))) for x in prepared[:index]) /
+                duration_seconds,2),
+            "end":round(audio_length*sum(
+                max(1,len(HEBREW.findall(x[0]))) for x in prepared[:index+1]) /
+                duration_seconds,2),
+            "basis":"experimental_text_to_video",
+            "original_motion_seconds":round(source_seconds,2)
+        })
+    if progress:
+        progress(95,"מחבר את סצנות ה־AI ומוסיף את כל המיקס המקורי")
+    if len(encoded)>1:
+        manifest=work/"generated-manifest.txt"
+        manifest.write_text("".join(
+            "file '"+segment.name+"'\n" for segment in encoded),
+            encoding="utf-8")
+        silent=work/"generated-silent.mp4"
+        try:
+            subprocess.run([
+                "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
+                "-f","concat","-safe","0","-i",str(manifest),
+                "-c","copy",str(silent)],cwd=work,capture_output=True,
+                check=True,timeout=50)
+        except (OSError,subprocess.SubprocessError) as exc:
+            raise AIVideoUnavailable("לא ניתן לחבר את סצנות הווידאו שנוצרו") from exc
+    else:
+        silent=encoded[0]
     args=["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
-          "-i",str(segment),"-i",str(audio_mp3),
+          "-i",str(silent),"-i",str(audio_mp3),
           "-map","0:v:0","-map","1:a:0","-c:v","copy",
           "-c:a","aac","-b:a","160k","-shortest",
           "-movflags","+faststart",str(output_mp4)]
@@ -211,6 +282,9 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
             raise AIVideoUnavailable("פורמט הסרטון אינו תואם לאנדרואיד")
         if output_mp4.stat().st_size<25000:
             raise AIVideoUnavailable("הווידאו שנוצר אינו תקין")
+        duration=_duration(output_mp4)
+        if duration<max(0.7,audio_length-0.5):
+            raise AIVideoUnavailable("משך הווידאו קצר מדי ביחס למיקס")
     except (OSError, subprocess.SubprocessError,ValueError) as exc:
         output_mp4.unlink(missing_ok=True)
         raise AIVideoUnavailable("שילוב הווידאו עם הטראנס נכשל") from exc
@@ -218,12 +292,14 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
         "source":"generated_from_original_hebrew_transcript",
         "video_mode":"ai_generated_experimental",
         "visual_coverage":"approximate",
-        "ai_clip_seconds":round(short_seconds,2),
-        "audio_seconds":round(mix_seconds,2),
-        "repeated_ai_shot":mix_seconds>short_seconds+0.5,
+        "ai_clip_seconds":round(sum(item[2] for item in prepared),2),
+        "ai_clips_generated":len(prepared),
+        "ai_clips_requested":len(shots),
+        "audio_seconds":round(audio_length,2),
+        "repeated_ai_shot":any(
+            sources[i]["end"]-sources[i]["start"]>shot[2]+.5
+            for i,shot in enumerate(prepared)),
         "sources":[],
-        "scenes":[{"action":"ai_generated_narrative",
-                   "start":0,"end":round(mix_seconds,2),
-                   "basis":"experimental_text_to_video"}],
+        "scenes":sources,
         "provider":SPACE_PAGE,
     }
