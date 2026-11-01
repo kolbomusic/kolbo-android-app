@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 ROOT=Path(__file__).resolve().parent
 URL="https://karnafim-community-46.onrender.com"
 VALID=["/","/about","/privacy","/safety","/help","/accessibility","/photos","/archive","/memorials","/find","/status"] + ["/source/"+str(i) for i in range(1,15)] + ["/memorial/"+s for s in ("yehonatan-sharabi","benaya-rein","uri-grossman","adam-goren","alexander-bunimovich")]
-BLOCKED=["/login","/register","/profile","/password","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
+BLOCKED=["/login","/register","/auth/google/start","/auth/google/callback","/auth/google/consent","/profile","/password","/chats","/new-post","/admin","/community/moderation","/invite","/feed","/directory"]
 def fetch(path):
     try:
         response=urlopen(Request(URL+path,headers={"User-Agent":"KarnafimSecurityAudit/1.0"}),timeout=18)
@@ -27,6 +27,9 @@ def static():
     assert "image/jpeg" in media and "Image.DecompressionBombError" in media
     h=(ROOT/"maintenance_public.html").read_text("utf-8")
     assert "<form" not in h.lower() and "<script" not in h.lower()
+    assert 'SESSION_COOKIE_NAME="karnafim_oidc_session"' in app
+    assert 'session.get("auth_method")!="google"' in app
+    assert 'install_google_login' in app
     print("STATIC: file syntax and security invariants OK")
 
 def live():
@@ -38,8 +41,10 @@ def live():
         for route in ("/","/photos","/archive","/memorials","/find","/status","/about","/privacy","/safety","/help","/accessibility","/accessibility/report","/login","/register","/feed","/invite"):
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.startswith(URL) and "text/html" in headers.get("Content-Type","")
-            if route in ("/login","/register","/accessibility/report"):
+            if route=="/accessibility/report":
                 ok=ok and '<form' in body and 'name="csrf"' in body
+            if route in ("/login","/register"):
+                ok=ok and 'type="password"' not in body and 'name="password"' not in body and 'Google' in body
             if route not in ("/favicon.svg",):
                 ok=ok and 'id="main-content"' in body and 'skip-to-content' in body
             print(("PASS" if ok else "FAIL"),route,"ACTIVE",status)
@@ -47,19 +52,23 @@ def live():
         # Publishing must guide logged-out users through login and then resume.
         status,headers,body,landed=fetch("/new-post")
         ok=(status==200 and "/login?next=/new-post" in landed and
-            'name="csrf"' in body and "כניסה לחשבון" in body)
+            'name="password"' not in body and "Google" in body)
         print(("PASS" if ok else "FAIL"),"/new-post","LOGIN_REQUIRED",status)
         if not ok:errors.append(("/new-post",status))
         for route,nextpage in (("/my-posts","/my-posts"),("/chats","/chats")):
             status,headers,body,landed=fetch(route)
-            ok=status==200 and "/login?next="+nextpage in landed and 'name="csrf"' in body
+            ok=status==200 and "/login?next="+nextpage in landed and 'name="password"' not in body
             print(("PASS" if ok else "FAIL"),route,"LOGIN_REQUIRED",status)
             if not ok:errors.append((route,status))
-        for route in ("/profile","/directory","/password"):
+        for route in ("/profile","/directory"):
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.rstrip("/")==URL+"/login"
             print(("PASS" if ok else "FAIL"),route,"REDIRECT_LOGIN",status)
             if not ok:errors.append((route,status))
+        status,headers,body,landed=fetch("/password")
+        ok=status==410 and 'name="password"' not in body
+        print(("PASS" if ok else "FAIL"),"/password","RETIRED",status)
+        if not ok:errors.append(("/password",status))
         for route in ("/admin","/community/moderation","/community-media/1"):
             status,headers,body,landed=fetch(route)
             ok=status==403
