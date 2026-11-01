@@ -4,7 +4,7 @@ from flask import Flask,request,redirect,session,render_template_string,abort,Re
 import psycopg
 from psycopg.rows import dict_row
 from accessibility_ui import integrate_html, accessibility_statement_body
-from google_identity import enabled as google_ready, install_google_login
+from google_identity import enabled as google_ready, install_google_login, auth_mode as google_auth_mode, gis_button_html
 
 app=Flask(__name__)
 app.secret_key=os.environ['SECRET_KEY']
@@ -124,7 +124,18 @@ def harden_responses(resp):
  resp.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
  resp.headers.setdefault("Cross-Origin-Resource-Policy","same-origin")
  resp.headers.setdefault("Permissions-Policy","camera=(), geolocation=(), microphone=(self)")
- resp.headers.setdefault("Content-Security-Policy","frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'")
+ if request.path in ("/login", "/register") and not READ_ONLY_BOOT and google_ready() and google_auth_mode()=="gis":
+  resp.headers["Content-Security-Policy"]=(
+   "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; "
+   "form-action 'self'; script-src https://accounts.google.com/gsi/client; "
+   "frame-src https://accounts.google.com/gsi/; "
+   "connect-src https://accounts.google.com/gsi/; "
+   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; "
+   "img-src 'self' data: https://accounts.google.com"
+  )
+  resp.headers["Cross-Origin-Opener-Policy"]="same-origin-allow-popups"
+ else:
+  resp.headers.setdefault("Content-Security-Policy","frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'")
  resp.headers.setdefault("Strict-Transport-Security","max-age=31536000")
  if resp.mimetype=="text/html":
   resp.headers.setdefault("Cache-Control","private, no-store, max-age=0")
@@ -340,8 +351,9 @@ def register():
   'לא נבקש ממך ליצור סיסמה חדשה באתר.</p>'
   '<p>Google אינה מאמתת שירות בפלוגה. אחרי ההתחברות תתבקש להסכים לשמירת פרטי הקשר '
   'ולאחר מכן להמתין לאישור מנהל הקהילה.</p>'
-  +('<a class="btn" href="/auth/google/start">המשך עם Google</a>'
-    if google_ready() else '<div class="note" role="status">ההצטרפות עדיין אינה פעילה עד לסיום בדיקת האבטחה והגדרת Google OAuth.</div>')
+  +(gis_button_html() if google_ready() and google_auth_mode()=="gis" else
+    '<a class="btn" href="/auth/google/start">המשך עם Google</a>' if google_ready() else
+    '<div class="note" role="status">ההצטרפות עדיין אינה פעילה עד לסיום בדיקת האבטחה והגדרת Google.</div>')
   +'</div><p>הקהילה עצמאית ואינה מייצגת את צה״ל או משרד הביטחון.</p>')
 
 @app.route("/login",methods=["GET","POST"])
@@ -357,8 +369,9 @@ def login():
   '<p>התחברות לחשבון Google המאומת שלך — אין צורך בסיסמה נוספת לאתר הקרנפים.</p>'
   '<p><strong>חשוב:</strong> אישור זהות Google אינו אישור חברות בפלוגת הקרנפים. '
   'הגישה למדריך, להודעות ולהעלאת תמונות מותנית באישור מנהל הקהילה.</p>'
-  +('<a class="btn" href="'+esc(href)+'">התחברות מאובטחת עם Google</a>'
-    if google_ready() else '<div class="note" role="status">הכניסה אינה פעילה כרגע. חסרה הפעלת Google OAuth ואישור בטיחות האתר.</div>')
+  +(gis_button_html() if google_ready() and google_auth_mode()=="gis" else
+    '<a class="btn" href="'+esc(href)+'">התחברות מאובטחת עם Google</a>' if google_ready() else
+    '<div class="note" role="status">הכניסה אינה פעילה כרגע. חסרה הפעלת Google ואישור בטיחות האתר.</div>')
   +'</div><p>לא נבקש סיסמת Google בתוך אתר זה.</p>')
 
 @app.route("/logout",methods=["GET","POST"])
