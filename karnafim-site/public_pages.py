@@ -34,9 +34,19 @@ def status():
 def source_detail(source_id):
  item=next((x for x in ARCHIVE if str(x["id"])==source_id),None)
  if item is None:return None
- domain="site:izkor.gov.il " if "יזכור" in item["source"] else ("site:yadlashiryon.com " if "שריון" in item["source"] else "")
- search="https://www.google.com/search?q="+quote(domain+item["title"])
- return '<section><p><a href="/archive">← לארכיון</a></p><div class="year">'+e(item["tag"])+' · '+e(item["year"] or "ללא תאריך")+'</div><h1>'+e(item["title"])+'</h1><div class="card"><h2>מה ידוע מהתיעוד?</h2><p>'+e(item["summary"])+'</p><p><strong>מקור התיעוד:</strong> '+e(item["source"])+'</p></div><div class="note"><h3>חיפוש המקור</h3><p>הקישור הישיר לא נבדק בהצלחה, ולכן איננו שולחים לעמוד שעלול להחזיר 404. ניתן לחפש את הפרסום באתר המקור. תוצאת החיפוש אינה הוכחה שהעמוד המקורי זמין.</p><a href="'+e(search)+'" target="_blank" rel="noopener noreferrer">חיפוש הפרסום בגוגל ↗</a></div></section>'
+ url=item["url"]
+ label="לקריאת העמוד המקורי המלא ↗" if item["id"] not in (5,7,12) else "לעמוד המקור והחומרים הזמינים ↗"
+ qualifier=("זהו רישום ספר מפורט, אך אינו כולל את כל 84 עמודי החוברת." if item["id"]==5 else
+           "הכתבה מכילה גם הפניות לקבצי מדיה חיצוניים. זמינותם אינה מובטחת." if item["id"] in (7,12) else
+           "העמוד המקורי מכיל תוכן מורחב, מעבר לתקציר המוצג כאן.")
+ return ('<section><p><a href="/archive">← חזרה לארכיון</a></p>'
+  '<div class="year">'+e(item["tag"])+' · '+e(item["year"] or "ללא תאריך")+'</div>'
+  '<h1>'+e(item["title"])+'</h1>'
+  '<div class="card"><h2>תמצית התיעוד</h2><p>'+e(item["summary"])+'</p>'
+  '<p><strong>המקור:</strong> '+e(item["source"])+'</p></div>'
+  '<div class="note"><h2>קריאת התוכן במקור</h2><p>'+e(qualifier)+'</p>'
+  '<p><a href="'+e(url)+'" target="_blank" rel="noopener noreferrer">'+e(label)+'</a></p>'
+  '<p>הקישור מוביל לכתובת המקור שנבדקה, ולא לדף חיפוש כללי בגוגל. תוכן של גורם חיצוני יכול להשתנות או להיעלם בהמשך.</p></div></section>')
 def memorial_detail(slug):
  p=next((p for p in PEOPLE if p["slug"]==slug),None)
  if p is None:return None
