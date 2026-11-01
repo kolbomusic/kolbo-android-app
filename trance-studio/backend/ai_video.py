@@ -102,7 +102,7 @@ def _request_video_generation(prompt, *, opener=urllib.request.urlopen,
         "data": [
             prompt,
             "blurry, deformed, text, captions, watermark, anime, illustration",
-            "", "", 704, 512, "text-to-video", duration,
+            None, None, 512, 704, "text-to-video", duration,
             9, 42, True, 1.0, True,
         ]
     }
