@@ -20,6 +20,7 @@ import urllib.request
 from pathlib import Path
 
 from live_video import _duration, _make_segment, _video_profile, visual_plan, UnavailableVideo
+from story_precision import plan_narration, scene_durations
 
 SPACE = "https://lightricks-ltx-video-distilled.hf.space"
 SPACE_HOST = "lightricks-ltx-video-distilled.hf.space"
@@ -37,7 +38,7 @@ class AIVideoUnavailable(RuntimeError):
     """No original generative clip can be produced within the free quota."""
 
 
-def cinematic_prompt(transcript, max_chars=980):
+def cinematic_prompt(transcript, max_chars=980, *, continuity=()):
     """Describe the ACTUAL recognized words, never fabricate missing dialogue."""
     clean = re.sub(r"[\x00-\x1f\x7f]", " ", str(transcript or ""))
     clean = re.sub(r"\s+", " ", clean).strip()[:max_chars]
@@ -62,6 +63,10 @@ def cinematic_prompt(transcript, max_chars=980):
         "Do not invent different events or change the actors. "
         "No written words, captions, titles, waveforms, animation, "
         "still images or illustrations. " + extra +
+        ("Continuity from previous shot, only if a pronoun actually refers " +
+         "to that already-mentioned character: " + ", ".join(continuity) +
+         ". Keep its appearance consistent; do NOT invent its actions or " +
+         "introduce it otherwise. " if continuity else "") +
         "The narration is in HEBREW. Interpret its meaning and depict it: " +
         clean
     )[:1800]
@@ -242,25 +247,25 @@ def _download_public_video(url, destination, *, opener=urllib.request.urlopen):
 
 
 def _narrative_shots(transcript):
-    """Keep the spoken sequence and split at most two coherent visual moments.
+    """Legacy string API, now based on intact chronological Hebrew clauses."""
+    return [shot["spoken"] for shot in plan_narration(transcript)]
 
-    Two real AI-generated shots are more useful than looping one unrelated
-    second repeatedly. A ZeroGPU free visitor cannot request unlimited shots.
+
+def build_ai_scene_plan(transcript):
+    """Ground each individual video prompt in a *specific* spoken event.
+
+    The generated text and weights have the same source, eliminating the
+    previous mismatch between one-shot backend and two-shot mobile parsing.
+    Only called after the original user explicitly consented to an AI service.
     """
-    text=re.sub(r"\s+"," ",str(transcript or "")).strip()
-    clauses=[v.strip(" .,!;:") for v in re.split(
-        r"(?<=[.!?;,])\s+|\b(?:ואז|לאחר מכן|ואחר כך|אחר כך|פתאום)\b",text)
-        if len(HEBREW.findall(v))>=2]
-    if len(clauses)<2 and len(text.split())>=16:
-        words=text.split()
-        half=max(2,len(words)//2)
-        clauses=[" ".join(words[:half])," ".join(words[half:])]
-    if not clauses:
-        clauses=[text]
-    if len(clauses)<=2:
-        return clauses
-    cut=max(1,len(clauses)//2)
-    return [" ".join(clauses[:cut])," ".join(clauses[cut:])]
+    scenes=plan_narration(transcript)
+    return [
+        {"spoken":scene["spoken"],"prompt":cinematic_prompt(
+            scene["spoken"],continuity=scene["continuity"]),
+         "weight":scene["weight"],
+         "continuity_from_original":bool(scene["continuity"])}
+        for scene in scenes
+    ]
 
 
 def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
@@ -272,7 +277,7 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
     are attempted within the public ZeroGPU quota; if the second fails, use
     the first and clearly report an incomplete visual recreation.
     """
-    shots = _narrative_shots(transcript)
+    shots = build_ai_scene_plan(transcript)
     output_mp4=Path(output_mp4)
     work=Path(work_dir);work.mkdir(parents=True,exist_ok=True)
     audio_length=_duration(audio_mp3)
@@ -280,12 +285,13 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
         raise AIVideoUnavailable("משך המיקס אינו תקין")
     prepared=[]
     failure=None
-    for index, words in enumerate(shots):
+    for index, shot in enumerate(shots):
+        words=shot["spoken"]
         if progress:
             progress(88+index*3,"מייצר סצנת AI חדשה " + str(index+1) +
                      " מתוך " + str(len(shots)))
         try:
-            prompt=cinematic_prompt(words)
+            prompt=shot["prompt"]
             try:
                 url=generator(prompt)
             except AIVideoUnavailable:
