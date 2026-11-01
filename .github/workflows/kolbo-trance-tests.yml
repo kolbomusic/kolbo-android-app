@@ -11,6 +11,7 @@ on:
       - kolbo-trance-audio-coherence-20261101
       - kolbo-trance-release-audio-242-20261101
       - kolbo-trance-restart-recovery-20261101
+      - kolbo-trance-provider-failure-diagnostics-20261101
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'
@@ -68,5 +69,7 @@ jobs:
         run: node trance-studio/tests/test_pwa_video_share.js
       - name: Verify free AI phone retry keeps MP4 without regenerating
         run: node trance-studio/tests/test_ai_phone_retry.js
+      - name: Verify public AI video errors are safe and actionable
+        run: node trance-studio/tests/test_provider_diagnostics.js
       - name: Run audio and API tests
         run: python -m unittest discover -s trance-studio/tests -v
