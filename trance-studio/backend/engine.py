@@ -495,7 +495,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     # random effect family at every pause. These neutral hooks always use
     # copies of the actual spoken syllable; contextual effects require
     # an explicit, non-negated Hebrew story cue.
-    neutral_hooks=('comic_roll','stretch')
+    neutral_hooks=('dj','stretch','comic_roll','pitch')
     last_story_cue=None
     last_story_cue_cut=-int(sr*20)
     for index,cut in enumerate(chosen):
@@ -584,6 +584,15 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
                          {1:.85,2:1.,3:1.12}[density]))
         # Smooth dynamics, never hard clip a loud source or the insert itself.
         effect=np.tanh(effect*gain*.9).astype(np.float32)
+        # Tight two-tap slapback gives copied words a small produced-room
+        # character instead of a harsh isolated synthesizer sound. All taps
+        # are INSIDE this dedicated FX gap and can never cover the next word.
+        slap=int(sr*.067)
+        if slap>0 and len(effect)>slap*3:
+            room=effect.copy()
+            room[slap:]+=.14*effect[:-slap]
+            room[slap*2:]+=.08*effect[:-slap*2]
+            effect=np.tanh(room*.96).astype(np.float32)
         # Longer micro-fades soften the end of a forcibly bounded fill
         # and avoid high-frequency clicks at the next spoken phrase.
         fade=min(int(sr*.055),len(effect)//4)
