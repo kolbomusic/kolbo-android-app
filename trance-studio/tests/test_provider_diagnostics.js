@@ -14,7 +14,10 @@ const context={
  fetch:async()=>({status:429,ok:false})
 };
 vm.createContext(context);
-vm.runInContext(src,context);
+const begin=src.indexOf('function fail(msg)');
+const end=src.indexOf('function requestPayload(',begin);
+assert.ok(begin>=0&&end>begin);
+vm.runInContext(src.slice(begin,end),context);
 function parse(text){
  return vm.runInContext('parseEventStream('+JSON.stringify(text)+',"lightricks-ltx-2-5.hf.space")',context);
 }
