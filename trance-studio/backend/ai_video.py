@@ -90,9 +90,9 @@ def _video_result_url(data):
 
 
 def _request_video_generation(prompt, *, opener=urllib.request.urlopen,
-                              duration=5.0, max_wait=MAX_WAIT_SECONDS):
+                              duration=2.0, max_wait=MAX_WAIT_SECONDS):
     """Call the documented public Gradio queue API with a bounded SSE wait."""
-    duration = min(8.0, max(1.0, float(duration)))
+    duration = min(3.0, max(1.0, float(duration)))
     data = {
         "data": [
             prompt,
