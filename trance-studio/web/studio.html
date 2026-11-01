@@ -45,9 +45,9 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <body><main>
 <header><div class="brand">≋ KOLBO / TRANCE STORY</div><h1>ההקלטה שלך.<br><span>טראנס מצחיק וסרטון אמיתי.</span></h1><p>שיתוף ישיר מ־WhatsApp, פענוח עברית ויצירת סרטון מהסיפור. אפשר להשתמש בצילומים קיימים או לנסות יצירת סצנה חדשה באמצעות AI. בלי גלי קול במקום סרטון.</p><div id="nativeStatus" hidden>● גרסת Android · שיתוף טוען קובץ בלבד</div></header>
 <section class="panel"><h2>01 / ההקלטות שלך</h2>
-<label for="audio">הוסף עד 4 הודעות קוליות</label><input id="audio" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac" multiple>
-<div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות ו־15MB לקובץ.</div>
-<p class="quickNote">באנדרואיד: משתפים הודעת קול מ־WhatsApp לאפליקציה, מוודאים שהקובץ מופיע כאן, ובוחרים הגדרות. <b>ההפקה מתחילה רק כשלוחצים על כפתור היצירה.</b></p>
+<label for="audio">הוסף עד 4 הקלטות קול או סרטוני WhatsApp</label><input id="audio" type="file" accept="audio/*,video/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac,.3gp,.3gpp,.mov" multiple>
+<div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות להקלטה · עד 15MB לקובץ שמע או 45MB לסרטון · עד 60MB לכל ההעלאה.</div>
+<p class="quickNote">באנדרואיד: משתפים הקלטת קול או סרטון מ־WhatsApp לאפליקציה, מוודאים שהקובץ מופיע כאן, ובוחרים הגדרות. <b>ההפקה מתחילה רק כשלוחצים על כפתור היצירה.</b></p>
 <label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>הפק גם סרטון וידאו לפי מה שנאמר (MP4)</span></label>
 <label class="videoToggle" for="ai_video_consent"><input id="ai_video_consent" type="checkbox"> <span>נסה גם ליצור סצנה חדשה באמצעות AI לפי הדיבור — ניסיוני וחינמי</span></label>
 <small id="aiVideoPrivacy">אם מסמנים: הטקסט שהמנוע זיהה מההקלטה נשלח לשירות AI ציבורי ב־Hugging Face. קובץ הקול עצמו אינו נשלח לשם. הווידאו עשוי להיות קצר, לחזור על עצמו או לא לדייק בכל האירועים; השירות החינמי כפוף לתורים ולמכסות. בלי סימון, המערכת משתמשת רק בצילומים קיימים בעלי רישיון.</small>
@@ -136,7 +136,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <audio controls id="player" preload="metadata"></audio>
 <label for="voicePreview">2. הקול שלך בלבד, עם האפקטים (ללא מוזיקת רקע)</label>
 <audio controls id="voicePreview" preload="metadata"></audio>
-<label for="originalPreview">3. ההקלטה המקורית מ־WhatsApp (הקובץ הראשון)</label>
+<label for="originalPreview">3. השמע מתוך הקובץ המקורי מ־WhatsApp (כולל סרטון)</label>
 <audio controls id="originalPreview" preload="metadata"></audio>
 <p id="summary" class="hint"></p>
 <div class="actions"><button id="download">הורדת MP3</button><button id="share" class="secondary">שיתוף ל־WhatsApp ולאפליקציות</button></div></section>
@@ -162,7 +162,8 @@ function markStage(stage){
  });
 }
 function message(txt){$('status').textContent=txt}
-function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות מהמכשיר או מתוך WhatsApp'}
+function isVideoFile(f){return /^video\//i.test(f.type)||/\.(mp4|webm|3gp|3gpp|mov)$/i.test(f.name)}
+function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+(isVideoFile(f)?'סרטון':'שמע')+' · '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות או סרטונים מהמכשיר או מתוך WhatsApp'}
 function setFiles(items){
  if(active){message('כבר מתבצעת יצירה. ההקלטה החדשה לא תחליף את ההקלטה שבתהליך.');return;}
  files=Array.from(items||[]).filter(Boolean).slice(0,4);
@@ -175,10 +176,10 @@ window.kolboImportSharedAudio=function(items){
  if(active){message('מתבצעת כבר יצירה. הקובץ החדש לא נוסף.');return;}
  setFiles(items);
  if(files.length){
-   message('התקבלו '+files.length+' קובצי שמע. בחר הגדרות ולחץ על ״צור סרטון ומיקס״ כדי להתחיל.');
+   message('התקבלו '+files.length+' קובצי WhatsApp (קול או וידאו). בחר הגדרות ולחץ על ״צור סרטון ומיקס״ כדי להתחיל.');
    markStage('idle');
    $('generate').focus();
- }else{message('לא התקבל קובץ שמע תקין.');}
+ }else{message('לא התקבל קובץ שמע או סרטון תקין.');}
 };
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
@@ -338,7 +339,8 @@ if(active)return;
 // run() is bound only to an explicit #generate button press. Sharing audio
 // never invokes this function or schedules background processing.
 if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
-if(files.some(function(f){return f.size>15*1048576||!f.size})){message('כל קובץ חייב להיות קטן מ־15MB ולא ריק.');return}
+if(files.some(function(f){return !f.size||f.size>(isVideoFile(f)?45:15)*1048576})){message('הגבלת גודל: עד 15MB להקלטה או 45MB לסרטון WhatsApp.');return}
+if(files.reduce(function(total,f){return total+f.size},0)>60*1048576){message('הקבצים גדולים מ־60MB יחד. יש לבחור פחות קבצים.');return}
 active=true;markStage('upload');$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
 $('result').classList.remove('visible');
 var wantsVideo=$('make_video').checked;
