@@ -5,6 +5,8 @@ on:
     paths:
       - 'trance-studio/backend/client_ai_fallback.py'
       - 'trance-studio/backend/narrative_plan.py'
+      - 'trance-studio/backend/motion_quality.py'
+      - 'trance-studio/tests/test_motion_quality.py'
       - 'trance-studio/backend/app.py'
       - 'trance-studio/tests/test_mobile_ai_fallback.py'
       - 'trance-studio/tests/test_narrative_plan.py'
