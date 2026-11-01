@@ -120,7 +120,10 @@ class ForegroundVoiceTests(unittest.TestCase):
         self.assertEqual(a.shape[0]>len(x),True)
         self.assertTrue(np.any(ma))
         self.assertTrue(np.any(mb))
-        self.assertGreater(float(abs(np.sqrt(np.mean(a*a))-np.sqrt(np.mean(b*b)))),.0003)
+        # Presets should sound different, not merely differ in loudness.
+        # Normalized professional inserts can share the same overall RMS.
+        n=min(len(a),len(b))
+        self.assertGreater(float(np.sqrt(np.mean((a[:n]-b[:n])**2))),.002)
 
     def test_stereo_mix_speech_still_covers_last_words(self):
         x=self.voice(10)
