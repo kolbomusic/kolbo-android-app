@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+from pathlib import Path
 
 HEBREW = re.compile(r"[\u0590-\u05ff]")
 _LOCK = threading.Lock()
@@ -37,6 +38,9 @@ def _get_model():
             model_name = os.getenv("KOLBO_ASR_MODEL", "tiny")
             if model_name not in {"tiny", "base", "small"}:
                 model_name = "tiny"
+            preloaded = os.getenv("KOLBO_ASR_DIR", "").strip()
+            if preloaded and (Path(preloaded) / "model.bin").is_file():
+                model_name = preloaded
             try:
                 _MODEL = WhisperModel(
                     model_name, device="cpu", compute_type="int8",
