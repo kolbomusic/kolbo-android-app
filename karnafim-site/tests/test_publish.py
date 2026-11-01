@@ -67,7 +67,10 @@ def test():
     client=app.test_client()
     resp=client.get("/new-post")
     assert resp.status_code==303 and "/login?next=/new-post" in resp.headers["Location"]
-    expect(403,client.get("/my-posts"))
+    unauthed=client.get("/my-posts")
+    assert unauthed.status_code==303 and "/login?next=/my-posts" in unauthed.headers["Location"]
+    unauthed_chat=client.get("/chats")
+    assert unauthed_chat.status_code==303 and "/login?next=/chats" in unauthed_chat.headers["Location"]
     with client.session_transaction() as sess:sess["uid"]=42
     expect(200,client.get("/new-post"),'name="attachments" multiple')
     expect(200,client.get("/my-posts"),"הפרסומים שלי")
