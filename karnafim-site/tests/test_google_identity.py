@@ -22,6 +22,8 @@ def main():
         dict(good,email_verified=False),
         dict(good,iss="https://unknown.example"),
         dict(good,aud="other-client"),
+        dict(good,azp="other-client"),
+        dict(good,aud=["sample-client-id.apps.googleusercontent.com","other"],azp="other-client"),
         dict(good,sub=""),
         dict(good,email="not-an-email"),
     ):
@@ -34,6 +36,21 @@ def main():
     assert not auth.authoritative_email("name@other.org","company.org")
     with patch.dict(os.environ,{},clear=True):
         assert not auth.enabled(),"OAuth must be opt-in and disabled by default"
+        assert auth.configuration_checks()["callback"] == "https://karnafim-community-46.onrender.com/auth/google/callback"
+    with patch.dict(os.environ,{
+        "KARNAFIM_GOOGLE_AUTH_ENABLED":"1",
+        "GOOGLE_CLIENT_ID":"1234567-sample.apps.googleusercontent.com",
+        "GOOGLE_CLIENT_SECRET":"test-only-secret-not-real",
+    },clear=True):
+        assert auth.enabled(),"Configured Google sign-in should pass readiness"
+    with patch.dict(os.environ,{
+        "KARNAFIM_GOOGLE_AUTH_ENABLED":"1",
+        "GOOGLE_CLIENT_ID":"not-a-real-client-id",
+        "GOOGLE_CLIENT_SECRET":"placeholder",
+    },clear=True):
+        assert not auth.enabled(),"Dummy OAuth credentials must never activate sign-in"
+    with patch.dict(os.environ,{},clear=True):
+        assert not auth.enabled(),"OAuth must stay disabled without credentials"
         app=Flask(__name__)
         app.secret_key="test-secret"
         def view(t,b):return b
