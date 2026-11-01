@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 import urllib.error
 from pathlib import Path
+from motion_quality import require_visible_motion, NoVisibleMotion
 
 COMMONS_API="https://commons.wikimedia.org/w/api.php"
 # Resource budget for the free worker, not a cap on spoken sentences.
@@ -544,11 +545,14 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
                     try:
                         download(item,source)
                         if _duration(source)>=.7:
+                            # A playable container may be a static photo;
+                            # only accept decoded REAL frame movement.
+                            require_visible_motion(source)
                             selected=item
                             match_level=("exact_action" if candidate_query==query
                                          else "explicit_subject_only")
                             break
-                    except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
+                    except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo,NoVisibleMotion):
                         continue
                 if selected is not None:
                     if (candidate_query==query and match_level=="exact_action"
