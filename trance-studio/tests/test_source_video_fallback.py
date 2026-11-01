@@ -1,5 +1,7 @@
 """Verify MP4 fallback uses only the user's genuine moving video input."""
-import json, pathlib, subprocess, sys, tempfile, unittest
+import io, json, pathlib, subprocess, sys, tempfile, unittest
+from unittest import mock
+import numpy as np
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
 from source_video_fallback import compose_original_video_with_mix
@@ -33,6 +35,47 @@ class OriginalMovingVideoTests(unittest.TestCase):
             self.assertEqual((video['codec_name'],video['width'],video['height']),
                              ('h264',360,640))
             self.assertGreater(result.stat().st_size,15000)
+
+    def test_backend_job_survives_asr_failure_using_original_video(self):
+        import app as server
+        import source_asr
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            movie=root/'uploaded.mp4'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i','testsrc=size=320x240:rate=12:duration=3',
+                '-c:v','libx264','-pix_fmt','yuv420p',str(movie)],
+                check=True,timeout=25)
+            with mock.patch.object(server,'ThreadPoolExecutor') as executor:
+                app=server.create_app({'TESTING':True,'JOB_DIR':str(root/'jobs'),
+                                       'API_TOKEN':'test-only'})
+                client=app.test_client()
+                response=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(movie.read_bytes()),'uploaded.mp4'),
+                    'make_video':'on','video_requested':'on',
+                    'transcript':'','transcript_origin':'auto',
+                    'seconds':'30'})
+                self.assertEqual(response.status_code,202,response.get_json())
+                worker=executor.return_value.submit.call_args.args
+                def export_fake_mp3(samples,path,sr=32000):
+                    subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                        '-f','lavfi','-i','sine=frequency=260:duration=5',
+                        '-c:a','libmp3lame',str(path)],check=True,timeout=25)
+                with (mock.patch.object(source_asr,'transcribe_original_files',
+                                        side_effect=RuntimeError('offline ASR')),
+                      mock.patch.object(server,'load_audio',
+                                        return_value=np.ones(160000,np.float32)*.01),
+                      mock.patch.object(server,'render_mix',
+                                        return_value=(np.zeros((160000,2),np.float32),
+                                                      np.zeros(160000,np.float32))),
+                      mock.patch.object(server,'export_mp3',side_effect=export_fake_mp3)):
+                    worker[0](*worker[1:])
+                status=client.get('/api/jobs/'+response.json['id']).json
+                self.assertEqual(status['state'],'done',status)
+                self.assertEqual(status['video_status'],'done',status)
+                self.assertEqual(status['video_mode'],'original_input_video')
+                self.assertEqual(status['storyboard_source'],'original_shared_video')
+                self.assertIn('/video',status['video_url'])
 
     def test_audio_only_does_not_invent_a_real_world_scene(self):
         with tempfile.TemporaryDirectory() as temp:
