@@ -122,6 +122,41 @@ class PhoneAIRecoveryTests(unittest.TestCase):
             self.assertNotIn('client_ai_prompt',completed)
             self.assertEqual(client.get(completed['download_url']).status_code,200)
 
+    def test_three_ordered_real_motion_scenes_follow_original_speech_weights(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder)
+            audio=root/'voice-and-trance.mp3'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                            '-f','lavfi','-i','sine=frequency=400:duration=9',
+                            '-c:a','libmp3lame',str(audio)],check=True)
+            frames=[]
+            for i,kind in enumerate(('testsrc','testsrc2','smptebars')):
+                p=root/f'original-ai-clip-{i}.mp4'
+                synthetic_clip(p,kind,seconds=2)
+                frames.append(p)
+            video=root/'story.mp4'
+            plan=combine_mobile_ai_clips(
+                frames,audio,video,root/'encode',weights=[1,2,3])
+            self.assertEqual(plan['ai_clips_generated'],3)
+            self.assertEqual(plan['pacing_basis'],'original_transcript_spoken_word_counts')
+            scenes=plan['scenes']
+            self.assertAlmostEqual(scenes[0]['end'],1.5,delta=.3)
+            self.assertAlmostEqual(scenes[1]['end'],4.5,delta=.3)
+            self.assertAlmostEqual(scenes[2]['end'],9.0,delta=.3)
+            self.assertEqual(scenes[-1]['start'],scenes[1]['end'])
+            probe=json.loads(subprocess.check_output([
+                'ffprobe','-v','error','-show_streams','-show_format',
+                '-of','json',str(video)]))
+            stream=next(x for x in probe['streams'] if x['codec_type']=='video')
+            self.assertEqual((stream['codec_name'],stream['width'],stream['height']),
+                             ('h264',360,640))
+            self.assertGreater(float(probe['format']['duration']),8.4)
+            subprocess.run(['ffmpeg','-v','error','-ss','6.5','-i',str(video),
+                            '-frames:v','1','-f','null','-'],check=True)
+            with self.assertRaises(MobileClipError):
+                combine_mobile_ai_clips(frames,audio,root/'bad.mp4',
+                    root/'invalid-weights',weights=[1,2,float('nan')])
+
     def test_rejects_fake_mp4_and_never_discards_audio(self):
         with tempfile.TemporaryDirectory() as folder:
             app=create_app({'TESTING':True,'JOB_DIR':folder,'API_TOKEN':'test'})
