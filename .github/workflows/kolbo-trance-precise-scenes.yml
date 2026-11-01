@@ -1,0 +1,49 @@
+name: Kolbo exact Hebrew narrative scene order, voice timing and manual share-to-create
+on:
+  push:
+    branches: [kolbo-trance-precise-narrative-timing-20261101,kolbo-trance-studio-20261031]
+    paths:
+      - 'trance-studio/backend/story_precision.py'
+      - 'trance-studio/backend/ai_video.py'
+      - 'trance-studio/backend/app.py'
+      - 'trance-studio/backend/client_ai_fallback.py'
+      - 'trance-studio/web/studio.html'
+      - 'trance-studio/web/studio-ai-fallback.js'
+      - 'trance-studio/tests/test_story_precision.py'
+      - '.github/workflows/kolbo-trance-precise-scenes.yml'
+  workflow_dispatch:
+jobs:
+  truthful-hebrew-scenes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install codecs and exact production dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -r trance-studio/backend/requirements.txt
+      - name: Validate Hebrew scene planner and Android WebView JavaScript
+        run: |
+          python -m compileall -q trance-studio/backend trance-studio/tests
+          node --check trance-studio/web/studio-ai-fallback.js
+          python - <<'PY'
+          from pathlib import Path
+          html=Path('trance-studio/web/studio.html').read_text('utf-8')
+          assert 'ההקלטה מ־WhatsApp נטענה' in html
+          assert 'קבצים משותפים נטענים בלבד' in html
+          assert 'if(!active&&files.length)setTimeout(function(){if(!active)run();},240)' not in html
+          assert "$('generate').onclick=run;" in html
+          assert 'window.kolboImportSharedAudio=function(items)' in html
+          assert 'completeAIVideoOnPhone(data.id,j.client_ai_prompt,j.client_ai_prompts)' in html
+          assert 'KolboAIFallback.generate(jobId,message,prompt,prebuiltScenes)' in html
+          script=html.rsplit('<script>',1)[1].split('</script>',1)[0]
+          Path('/tmp/kolbo-exact-scene-ui.js').write_text(script,encoding='utf-8')
+          print('WHATSAPP_IMPORT_IS_MANUAL_NO_GENERATION_UNTIL_BUTTON_CLICK_PASS')
+          PY
+          node --check /tmp/kolbo-exact-scene-ui.js
+      - name: Verify chronological source speech, continuity, vocal timing, 100+ regressions
+        run: python -m unittest discover -s trance-studio/tests -p 'test_*.py' -v
