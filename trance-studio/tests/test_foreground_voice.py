@@ -78,6 +78,19 @@ class ForegroundVoiceTests(unittest.TestCase):
             np.concatenate([y[a:b] for _,_,a,b in spans]),x)
         self.assertTrue(np.isfinite(y).all())
 
+    def test_original_israeli_sound_palette_is_distinct_and_preserves_voice(self):
+        x=self.voice(5)
+        args=dict(clips=[x],sample_rate=self.sr,seconds=30,bpm=145,
+                  melody='1',humor='off',mix_variation=26,return_voice=True)
+        israeli,iv=e.render_mix(style='israeli',**args)
+        mixed,mv=e.render_mix(style='mixed',**args)
+        self.assertEqual(israeli.shape,mixed.shape)
+        self.assertTrue(np.isfinite(israeli).all())
+        self.assertLessEqual(float(np.max(np.abs(israeli))),.97)
+        self.assertGreater(float(np.mean(np.abs(israeli-mixed))),.001)
+        np.testing.assert_array_equal(iv,mv)
+        self.assertGreater(float(np.sqrt(np.mean(iv*iv))),.01)
+
     def test_source_entirely_preserved_and_fx_never_overlaid(self):
         x=self.voice(16)
         y,fx,spans=e.arranged_vocal_track(x,self.sr,145,'auto',3,1.2,np.random.default_rng(12))
