@@ -2,9 +2,10 @@
 import os
 import sys
 import time
+import hmac
 from pathlib import Path
 from unittest.mock import patch
-from flask import Flask, session
+from flask import Flask, session, request, abort
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from authlib.jose import JsonWebKey, JsonWebToken
@@ -50,7 +51,12 @@ def run():
             if query.startswith("SELECT id FROM members WHERE google_sub"):
                 return [{"id": 42}]
             raise AssertionError("Unexpected database access")
-        google.install_google_login(app, sql, lambda t,b:b, lambda:None, lambda x:x, str)
+        def guard():
+            expected = session.get("csrf", "")
+            supplied = request.form.get("csrf", "")
+            if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+                abort(403)
+        google.install_google_login(app, sql, lambda t,b:b, guard, lambda x:x, str)
         @app.get("/login")
         def login():
             return google.gis_button_html()
