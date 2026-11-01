@@ -48,6 +48,12 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <label for="audio">הוסף עד 4 הקלטות קול או סרטוני WhatsApp</label><input id="audio" type="file" accept="audio/*,video/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac,.3gp,.3gpp,.mov" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות להקלטה · עד 15MB לקובץ שמע או 45MB לסרטון · עד 60MB לכל ההעלאה.</div>
 <p class="quickNote">באנדרואיד: משתפים הקלטת קול או סרטון מ־WhatsApp לאפליקציה, מוודאים שהקובץ מופיע כאן, ובוחרים הגדרות. <b>ההפקה מתחילה רק כשלוחצים על כפתור היצירה.</b></p>
+<label for="video_strategy">איזה סרטון ליצור?</label>
+<select id="video_strategy">
+<option value="new_story" selected>סרטון חדש מהסיפור שנאמר — לא להחזיר את הצילום המקורי</option>
+<option value="remix_original">קליפ חדש בעריכה של הסרטון ששלחתי (ללא המצאת אירועים)</option>
+</select>
+<small>ביצירה חדשה המערכת מחפשת סצנות המתאימות לדיבור או מנסה AI לאחר הסכמה. אם אין סצנה אמיתית זמינה, המערכת תאמר זאת ולא תחליף אותה בסרטון המקורי. עריכת מקור מיועדת לקובץ וידאו ולא להקלטת קול בלבד.</small>
 <label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>הפק גם סרטון וידאו לפי מה שנאמר (MP4)</span></label>
 <label class="videoToggle" for="ai_video_consent"><input id="ai_video_consent" type="checkbox"> <span>נסה גם ליצור סצנה חדשה באמצעות AI לפי הדיבור — ניסיוני וחינמי</span></label>
 <small id="aiVideoPrivacy">אם מסמנים: הטקסט שהמנוע זיהה מההקלטה נשלח לשירות AI ציבורי ב־Hugging Face. קובץ הקול עצמו אינו נשלח לשם. הווידאו עשוי להיות קצר, לחזור על עצמו או לא לדייק בכל האירועים; השירות החינמי כפוף לתורים ולמכסות. בלי סימון, המערכת משתמשת רק בצילומים קיימים בעלי רישיון.</small>
@@ -78,6 +84,20 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <label for="fx_gain">עוצמת האפקטים ביחס לקול המקורי — <output id="fxGainText">110%</output></label>
 <input id="fx_gain" type="range" min="55" max="170" value="110" step="5">
 <small>ברירת המחדל מאזנת את האפקטים עם הדיבור; במקום רצף עיוותים חזקים, המנוע בוחר רגעי הדגשה והשהיות בין משפטים.</small>
+<details class="advanced"><summary>בחירת מוזיקה ישראלית / עברית וחיבור קובץ מורשה</summary>
+<label for="ytMusicSearch">חיפוש מהיר ביוטיוב (ישראל / עברית)</label>
+<input id="ytMusicSearch" type="search" placeholder="למשל: טראנס ישראלי, רמיקס מצחיק, שירים בעברית">
+<div class="actions"><button type="button" id="ytMusicSearchBtn">חפש ב־YouTube</button>
+<a href="https://www.youtube.com/audiolibrary" target="_blank" rel="noopener noreferrer">ספריית מוזיקה חינמית של YouTube</a></div>
+<label for="ytMusicUrl">קישור לשיר ב־YouTube — תצוגה מקדימה בלבד</label>
+<input id="ytMusicUrl" type="url" placeholder="https://www.youtube.com/watch?v=...">
+<button type="button" id="ytMusicPreview">האזן לשיר בתוך האפליקציה</button>
+<div id="ytMusicFrame" hidden></div>
+<small>הנגינה מתוך YouTube היא לצורך בחירה בלבד; היא אינה מוקלטת, יורדת או מועתקת לקובץ התוצר. להפקה בחר קובץ ששייך לך או שיש לך רישיון מתאים לשימוש בו.</small>
+<label for="backingMusic">קובץ מוזיקה להפקה (MP3 / WAV / OGG / M4A, עד 15MB)</label>
+<input id="backingMusic" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,.mp3,.wav,.ogg,.m4a">
+<label><input type="checkbox" id="musicRights"> אני מאשר שיש לי זכויות או רישיון להשתמש בקובץ המוזיקה בתוצר</label>
+</details>
 <details class="advanced"><summary>הגדרות מוזיקה מתקדמות (לא חובה)</summary>
 <div class="grid">
 <div><label for="style">סוג הטראנס</label><select id="style">
@@ -170,6 +190,37 @@ function setFiles(items){
  syncFiles();
  $('generate').disabled=files.length===0;
 }
+function youtubeId(url){
+ try{
+  var u=new URL(String(url).trim());
+  var host=u.hostname.toLowerCase();
+  var id='';
+  if(host==='youtu.be'||host==='www.youtu.be')id=u.pathname.split('/')[1]||'';
+  else if(['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com','www.youtube-nocookie.com'].indexOf(host)>=0){
+    if(u.pathname==='/watch')id=u.searchParams.get('v')||'';
+    else if(/^\/(?:shorts|embed)\//.test(u.pathname))id=u.pathname.split('/')[2]||'';
+  }
+  return /^[A-Za-z0-9_-]{11}$/.test(id)?id:null;
+ }catch(e){return null}
+}
+$('ytMusicSearchBtn').onclick=function(){
+ var q=($('ytMusicSearch').value||'טראנס ישראלי בעברית').trim();
+ window.open('https://www.youtube.com/results?search_query='+encodeURIComponent(q),'_blank','noopener,noreferrer');
+};
+$('ytMusicPreview').onclick=function(){
+ var id=youtubeId($('ytMusicUrl').value);
+ if(!id){message('יש להדביק קישור תקין לסרטון YouTube.');return}
+ var box=$('ytMusicFrame');
+ box.textContent='';
+ var iframe=document.createElement('iframe');
+ iframe.src='https://www.youtube-nocookie.com/embed/'+id+'?playsinline=1';
+ iframe.title='תצוגה מקדימה של מוזיקה מתוך YouTube';
+ iframe.allow='encrypted-media; picture-in-picture; fullscreen';
+ iframe.referrerPolicy='strict-origin-when-cross-origin';
+ iframe.style.cssText='width:100%;min-height:240px;border:0;border-radius:12px;margin-top:12px';
+ box.appendChild(iframe);box.hidden=false;
+ message('זהו נגן תצוגה מקדימה בלבד. כדי לשלב את השיר בתוצר יש להעלות קובץ מורשה.');
+};
 window.kolboImportSharedAudio=function(items){
  // Sharing from WhatsApp ONLY imports bytes. No scheduling or starting processing.
  // User must explicitly press #generate after inspecting the chosen files.
@@ -370,6 +421,14 @@ for(var fileIndex=0;fileIndex<files.length;fileIndex++){
 if(hashes.length===files.length)form.set('source_hashes',hashes.join(','));
 form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
+form.set('video_strategy',$('video_strategy').value);
+var licensedMusic=$('backingMusic').files[0];
+if(licensedMusic){
+ if(!$('musicRights').checked){throw new Error('יש לאשר זכויות שימוש בקובץ המוזיקה לפני יצירת המיקס.')}
+ if(licensedMusic.size>15*1048576){throw new Error('קובץ המוזיקה גדול מ־15MB.')}
+ form.append('backing_music',licensedMusic,licensedMusic.name);
+ form.set('music_license_ack','on');
+}
 form.set('make_video',wantsVideo?'on':'off');
 form.set('video_requested',wantsVideo?'on':'off');
 form.set('ai_video_consent',wantsVideo&&$('ai_video_consent').checked?'on':'off');
