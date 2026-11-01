@@ -259,8 +259,63 @@ public final class MainActivity extends Activity {
             }
         });
         collectIncoming(getIntent());
-        webView.loadUrl(STUDIO);
+        beginLoad(false);
     }
+
+    private void beginLoad(boolean manuallyRequested){
+        if(manuallyRequested){
+            automaticRetries=0;
+            // Manual retry bypasses any cached error page from sleeping Render.
+            webView.clearCache(true);
+        }
+        final long current=++navigationId;
+        pageReady=false;
+        pageLoadFailed=false;
+        offlinePanel.setVisibility(View.GONE);
+        startupPanel.setVisibility(View.VISIBLE);
+        startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
+        loading.setVisibility(View.VISIBLE);
+        webView.setVisibility(View.VISIBLE);
+        webView.loadUrl(STUDIO+"?android=243&load="+current);
+        mainHandler.postDelayed(()->{
+            if(navigationId==current&&!pageReady&&!pageLoadFailed){
+                startupMessage.setText("שרת הענן החינמי מתעורר. ההקלטות שלך נשארות במכשיר...");
+            }
+        },15000);
+        mainHandler.postDelayed(()->{
+            if(navigationId==current&&!pageReady&&!pageLoadFailed){
+                recoverConnection("החיבור לשרת נמשך זמן רב מדי.");
+            }
+        },75000);
+    }
+
+    private void recoverConnection(String reason){
+        if(pageLoadFailed||pageReady)return;
+        pageLoadFailed=true;
+        if(automaticRetries<1){
+            automaticRetries++;
+            final long failedNavigation=navigationId;
+            startupPanel.setVisibility(View.VISIBLE);
+            startupMessage.setText(reason+" מנסה להתחבר פעם נוספת...");
+            mainHandler.postDelayed(()->{
+                if(navigationId==failedNavigation&&!pageReady)beginLoad(false);
+            },6500);
+        }else{
+            showOffline(reason);
+        }
+    }
+
+    private void showOffline(String reason){
+        pageLoadFailed=true;
+        pageReady=false;
+        ++navigationId; // ignore stale JS callbacks and old timeout tasks
+        loading.setVisibility(View.GONE);
+        startupPanel.setVisibility(View.GONE);
+        webView.setVisibility(View.GONE);
+        offlinePanel.setVisibility(View.VISIBLE);
+        startupMessage.setText(reason);
+    }
+
     private WebResourceResponse failStream(){
         return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",
                 Collections.singletonMap("Cache-Control","no-store"),
@@ -345,7 +400,7 @@ public final class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         collectIncoming(intent);
-        webView.loadUrl(STUDIO);
+        beginLoad(true);
     }
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
@@ -420,6 +475,7 @@ public final class MainActivity extends Activity {
         if(webView!=null&&webView.canGoBack())webView.goBack();else super.onBackPressed();
     }
     @Override protected void onDestroy(){
+        mainHandler.removeCallbacksAndMessages(null);
         if(webView!=null){webView.removeJavascriptInterface("KolboAndroid");webView.destroy();}
         io.shutdown();
         super.onDestroy();
