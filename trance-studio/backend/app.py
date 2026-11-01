@@ -119,6 +119,9 @@ def create_app(config=None):
                                   if board.get('visual_coverage')=='partial'
                                   else 'הצילומים נבחרו לפי האירועים שזוהו בדיבור המקורי.')}
                     except UnavailableVideo as err:
+                        # Job diagnostics without storing user speech, audio, or file names.
+                        app.logger.warning('Grounded MP4 unavailable: asr=%s, cause=%s',
+                                           detected_origin, str(err)[:180])
                         (root/job_id/'story.mp4').unlink(missing_ok=True)
                         meta={'video_status':'unavailable',
                               'video_error':str(err)[:250],
