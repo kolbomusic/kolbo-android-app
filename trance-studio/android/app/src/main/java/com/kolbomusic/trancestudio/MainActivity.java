@@ -54,7 +54,9 @@ public final class MainActivity extends Activity {
     private static final String SITE="https://"+HOST;
     private static final String STUDIO=SITE+"/studio";
     private static final int PICK_AUDIO=119;
-    private static final long MAX_FILE_BYTES=15L*1024L*1024L;
+    private static final long MAX_AUDIO_BYTES=15L*1024L*1024L;
+    private static final long MAX_VIDEO_BYTES=45L*1024L*1024L;
+    private static final long MAX_TOTAL_BYTES=60L*1024L*1024L;
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final List<Uri> incoming=Collections.synchronizedList(new ArrayList<>());
     private WebView webView;
@@ -165,7 +167,11 @@ public final class MainActivity extends Activity {
                         uri=incoming.get(index);
                     }
                     String type=getContentResolver().getType(uri);
-                    if(type==null||type.isEmpty())type="audio/ogg";
+                    if(type==null||type.isEmpty()){
+                        String name=audioName(uri,index).toLowerCase(Locale.ROOT);
+                        type=name.endsWith(".mp4")?"video/mp4":
+                             name.endsWith(".webm")?"video/webm":"audio/ogg";
+                    }
                     InputStream stream=getContentResolver().openInputStream(uri);
                     if(stream==null)return failStream();
                     Map<String,String> headers=new HashMap<>();
@@ -218,10 +224,18 @@ public final class MainActivity extends Activity {
             }
         }
         incoming.clear();
+        long totalBytes=0;
         for(Uri uri:candidates){
             if(incoming.size()>=4)break;
-            if(!"content".equals(uri.getScheme()))continue;
-            if(contentLength(uri)>MAX_FILE_BYTES)continue;
+            if(uri==null||!"content".equals(uri.getScheme()))continue;
+            String type=getContentResolver().getType(uri);
+            String name=audioName(uri,incoming.size()).toLowerCase(Locale.ROOT);
+            boolean video=(type!=null&&type.toLowerCase(Locale.ROOT).startsWith("video/"))
+                ||name.matches(".*\\.(mp4|webm|mov|3gp|3gpp)");
+            long bytes=contentLength(uri);
+            if(bytes>(video?MAX_VIDEO_BYTES:MAX_AUDIO_BYTES)
+               ||totalBytes+bytes>MAX_TOTAL_BYTES)continue;
+            totalBytes+=bytes;
             incoming.add(uri);
         }
         if(!candidates.isEmpty()&&incoming.isEmpty())toast("הקובץ המשותף גדול מדי או אינו נתמך");
@@ -240,11 +254,14 @@ public final class MainActivity extends Activity {
         if(name!=null){
             name=name.replaceAll("[^\\p{L}\\p{N}._ -]","_");
             if(name.length()>70)name=name.substring(name.length()-70);
-            if(name.toLowerCase(Locale.ROOT).matches(".*\\.(opus|ogg|oga|mp3|m4a|mp4|wav|webm|flac|aac)$"))return name;
+            if(name.toLowerCase(Locale.ROOT).matches(".*\\.(opus|ogg|oga|mp3|m4a|mp4|wav|webm|flac|aac|3gp|3gpp|mov)$"))return name;
         }
         String mime=getContentResolver().getType(uri);
-        String ext=mime!=null&&mime.contains("mpeg")?".mp3":mime!=null&&mime.contains("mp4")?".m4a":".opus";
-        return "WhatsApp-Voice-"+(i+1)+ext;
+        String ext=mime!=null&&mime.startsWith("video/")?
+                (mime.contains("webm")?".webm":".mp4"):
+                mime!=null&&mime.contains("mpeg")?".mp3":
+                mime!=null&&mime.contains("mp4")?".m4a":".opus";
+        return "WhatsApp-"+(i+1)+ext;
     }
     private void importIncoming(){
         ArrayList<Uri> snapshot;
