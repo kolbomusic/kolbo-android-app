@@ -187,7 +187,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
         b+='<section class="photo-heritage"><figure><img loading="lazy" src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Merkava-4-tank-6611a-white1.jpg/1280px-Merkava-4-tank-6611a-white1.jpg" alt="טנק מרכבה סימן 4 — צילום המחשה מארכיון Wikimedia Commons"><figcaption>טנק מרכבה סימן 4, צילום המחשה משנת 2015 — <strong>לא תצלום של פלוגת הקרנפים</strong>. צילום: <a href="https://commons.wikimedia.org/wiki/File:Merkava-4-tank-6611a-white1.jpg" target="_blank" rel="noopener noreferrer">צחי אבנור / MathKnight, Wikimedia Commons</a>, רישיון <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>.</figcaption></figure><div><h2>התמונות שלנו מתחילות כאן</h2><p>תצלומים מקוריים מהפלוגה יופיעו לאחר שחברים יעלו אותם, יסכימו לשיתוף ויאושרו על ידי מנהלי הקהילה.</p><a class="cta" href="/photos">📸 לאלבום התמונות</a></div></section>'
         b+=statistics()
         b+='<h2>לא צריך לזכור הכול — מתחילים מכאן</h2><div class="tiles">'
-        tiles=[("🧭","מאתרים חברים","חיפוש לפי שם, כינוי ומחזור + איתור מבוסס קישורים ברשתות.","/find"),("📸","תמונות וזיכרונות","משתפים סיפור, תמונה, הקלטה או סרטון קצר באישור מנהל.","/feed"),("💬","צ׳אט חברים","הודעות פרטיות, תמונות, קול וסרטונים אחרי אישור בקשת קשר.","/chats"),("📜","ארכיון מתועד","עדויות, סרטוני מורשת ומקורות על גדוד 46 ופלוגת הקרנפים.","/archive"),("🤝","מזמינים חברים","שליחת קישור לפלוגה בוואטסאפ, פייסבוק או בהעתקה.","/invite"),("🕯️","זוכרים יחד","דפי הנצחה אישיים וחיפוש תמונות המאפשר להציע תמונות לגלריה המתאימה.","/memorials")]
+        tiles=[("🧭","מדריך חברים","צפייה בחברים מאושרים שהסכימו להופיע, לאחר כניסה ואישור חברות.","/directory"),("📸","תמונות וזיכרונות","משתפים סיפור, תמונה, הקלטה או סרטון קצר באישור מנהל.","/feed"),("💬","צ׳אט חברים","הודעות פרטיות, תמונות, קול וסרטונים אחרי אישור בקשת קשר.","/chats"),("📜","ארכיון מתועד","עדויות, סרטוני מורשת ומקורות על גדוד 46 ופלוגת הקרנפים.","/archive"),("🤝","מזמינים חברים","שליחת קישור לפלוגה בוואטסאפ, פייסבוק או בהעתקה.","/invite"),("🕯️","זוכרים יחד","דפי הנצחה אישיים וחיפוש תמונות המאפשר להציע תמונות לגלריה המתאימה.","/memorials")]
         b+=''.join('<article class="tile"><div class="emoji">'+t[0]+'</div><h3>'+t[1]+'</h3><p>'+t[2]+'</p>'+link(t[3],"לפתיחה ←")+'</article>' for t in tiles)+'</div>'
         b+='<h2>רגעים בציר הזמן שלנו</h2><div class="tiles"><article class="tile"><span class="tag">2005</span><h3>יוני מצטרף לפלוגה</h3><p>לפי אתר יזכור, יוני התגייס ביולי 2005 ובהמשך שובץ בפלוגה ב׳ שכונתה ״הקרנפים״.</p>'+link("/source/1","לפרטי האזכור ←")+'</article><article class="tile"><span class="tag">אוגוסט 2006</span><h3>מלחמת לבנון השנייה</h3><p>הגדוד איבד את יוני שרעבי ואת אנשי כוח בניה. נזכור את חברינו בכבוד.</p>'+link("/source/4","לפרטי כתבת המורשת ←")+'</article><article class="tile"><span class="tag">2007</span><h3>ספר מורשת גדוד שלח</h3><p>חוברת מורשת הגדוד יצאה לאור בשנת 2007 וחולקה באירוע מורשת בגבעת ברנר.</p>'+link("/source/5","לפרטי ספר המורשת ←")+'</article></div>'
         b+='<div class="tile"><h2>🎞️ תצלומים וסרטוני מורשת — גדוד 46</h2><p>קישורים לאלבומים וסרטונים באתר יד לשריון. חלק מהסרטונים הישנים הוסרו משירותי וידאו, ולכן כדי למנוע נגן שבור מפנים לעמוד המקור המאומת.</p><div class="actions"><a class="cta" href="/source/12">🎬 לפרטי ארכיון התמונות והסרטונים ←</a></div></div>'
@@ -204,26 +204,6 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
         b+='</div>'+sources(filtertag=tag)
         b+='<div class="note">רוצים להוסיף פרסום שמצאתם? אפשר לפרסם קישור בהוספת זיכרון. מנהל הקהילה יאמת את המידע לפני אישורו.</div>'
         return page("ארכיון מקורות",b)
-
-    @app.route("/find")
-    def find():
-        q=request.args.get("q","").strip()[:80]
-        search=q if q else '"גדוד 46" "ברקן"'
-        qs={
-            "🌐 חיפוש כללי": "https://www.google.com/search?q="+quote(search),
-            "🖼️ תמונות ברשת": "https://www.google.com/search?tbm=isch&q="+quote(search),
-            "👥 קבוצות פייסבוק": "https://www.facebook.com/search/groups/?q="+quote(q or "גדוד 46 שלח"),
-            "🔵 פייסבוק דרך Google": "https://www.google.com/search?q="+quote("site:facebook.com "+search),
-            "📹 YouTube": "https://www.youtube.com/results?search_query="+quote(search),
-            "📸 אינסטגרם": "https://www.google.com/search?q="+quote("site:instagram.com "+search),
-            "💼 לינקדאין": "https://www.google.com/search?q="+quote("site:linkedin.com/in "+search),
-            "📜 יד לשריון": "https://www.google.com/search?q="+quote("site:yadlashiryon.com "+search),
-            "🕯️ יזכור": "https://www.google.com/search?q="+quote("site:izkor.gov.il "+search),
-        }
-        b='<h1>מאיפה מתחילים למצוא את החברים?</h1><p>כותבים שם, כינוי או אירוע. המערכת מכינה חיפוש ממוקד במאגרים ובקבוצות ציבוריות; היא אינה נכנסת לחשבונות פרטיים או שואבת פרטים אישיים ללא הסכמה.</p><form class="search" action="/find" method="get"><label for="veteran-search">חיפוש מידע פומבי על חברים ופלוגה</label><input id="veteran-search" name="q" placeholder="למשל: פלוגת הקרנפים 2006" value="'+e(q)+'"><button>חיפוש</button></form>'
-        b+='<div class="tiles">'+''.join('<div class="tile"><h3>'+e(k)+'</h3><p>פתיחת חיפוש ממוקד במקור החיצוני</p>'+link(v,"הצגת תוצאות ↗",True)+'</div>' for k,v in qs.items())+'</div>'
-        b+='<div class="note">מכירים מישהו מהרשימה ההיסטורית? פנו אליו דרך ערוץ פומבי המקובל עליו או שלחו לו את קישור ההזמנה. אין לבצע התאמת זהות אוטומטית בין אדם שמוזכר במקור לבין פרופיל פרטי ברשת.</div>'
-        return page("איתור חברים",b)
 
     @app.route("/invite")
     def invite():
