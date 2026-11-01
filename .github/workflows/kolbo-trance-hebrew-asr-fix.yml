@@ -20,7 +20,7 @@ jobs:
       - name: Verify model and actual inference in 512 MB, offline, one CPU
         run: |
           docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 --entrypoint python kolbo-asr:hebrew-fix -c "
-          import os,numpy as np
+          import os,numpy as np, tempfile, wave
           from pathlib import Path
           from faster_whisper import WhisperModel
           model_dir=Path(os.environ['KOLBO_ASR_DIR'])
@@ -28,7 +28,17 @@ jobs:
           assert model_file.stat().st_size>1000000
           model=WhisperModel(str(model_dir),device='cpu',compute_type='int8',cpu_threads=1,num_workers=1)
           segments,info=model.transcribe(np.zeros(16000*3,dtype=np.float32),language='he',beam_size=2,vad_filter=False)
-          print('BASE_MODEL_512MB_INFERENCE_OK',model_file.stat().st_size,len(list(segments)))
+          n=len(list(segments))
+          with tempfile.NamedTemporaryFile(suffix='.wav') as wav:
+            with wave.open(wav.name,'wb') as f:
+              f.setnchannels(1);f.setsampwidth(2);f.setframerate(16000)
+              f.writeframes((np.sin(np.arange(16000*2)*2*np.pi*220/16000)*6000).astype('<i2').tobytes())
+            from faster_whisper.audio import decode_audio
+            audio=decode_audio(wav.name)
+            assert len(audio)==32000
+            stream,info=model.transcribe(wav.name,language='he',beam_size=2,vad_filter=False)
+            list(stream)
+          print('BASE_MODEL_PYAV_AUDIO_FILE_DECODER_OK',model_file.stat().st_size,n)
           "
       - name: Run ASR and audio/video regression tests inside production image
         run: |
