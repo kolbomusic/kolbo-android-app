@@ -1,11 +1,12 @@
 name: Kolbo original Hebrew narration to free AI-motion video
 on:
   push:
-    branches: [kolbo-trance-generative-scenes-20261101]
+    branches: [kolbo-trance-generative-scenes-20261101, kolbo-trance-studio-20261031]
     paths:
       - 'trance-studio/backend/ai_video.py'
       - 'trance-studio/backend/app.py'
       - 'trance-studio/tests/test_ai_video.py'
+      - 'trance-studio/tests/test_animation.py'
       - 'trance-studio/web/studio.html'
       - '.github/workflows/kolbo-trance-generative-scenes.yml'
   workflow_dispatch:
