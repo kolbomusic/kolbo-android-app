@@ -289,9 +289,12 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                 # ZeroGPU queues almost never recover from four immediate
                 # retries; avoid 10+ minutes of silence on Android.
                 try:
-                    url=_request_video_generation(prompt,duration=2.0,max_wait=72)
-                except AIVideoUnavailable:
+                    # LTX 2.5 produced decoded moving H264 in an
+                    # independent 2026-11-01 canary; prefer it to the
+                    # older distilled Space that returned static frames.
                     url=_request_ltx25_generation(prompt,duration=1.0,max_wait=72)
+                except AIVideoUnavailable:
+                    url=_request_video_generation(prompt,duration=2.0,max_wait=72)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             prepared.append((words,raw,seconds))
