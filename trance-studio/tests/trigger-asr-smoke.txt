@@ -1,0 +1,2 @@
+2026-11-01 deploy 17acc70e0fad10c5c06311fbada348802a9cc8c5
+Run privacy-preserving POST without browser transcript after Render deploy.
