@@ -143,19 +143,31 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
     def source_detail(source_id):
         item=next((x for x in ARCHIVE if x["id"]==source_id),None)
         if not item:abort(404)
-        from urllib.parse import urlsplit
-        host=(urlsplit(item["url"]).hostname or "").removeprefix("www.")
-        query="site:"+host+" "+item["title"].replace("יזכור • ","").replace(" • "," ")
-        if source_id in (1,2,3):query="site:izkor.gov.il יהונתן שרעבי פלוגת הקרנפים גדוד 46"
-        if source_id==4:query="site:yadlashiryon.com גדוד 46 ערב מורשת עשור מלחמת לבנון השנייה 2016"
-        if source_id==5:query="site:yadlashiryon.com גדוד שלח מורשת 1967 2007"
-        if source_id in (7,12):query="site:yadlashiryon.com חטיבה 401 בתמונות וסרטונים גדוד 46"
-        if source_id in (9,10,13,14):query="site:izkor.gov.il "+item["title"].replace("יזכור • ","")
-        lookup="https://www.google.com/search?q="+quote(query)
+        verified_source=item["url"]
+        detail={
+            1:"דף יזכור הרשמי כולל את סיפור חייו של יוני, פרטים על שירותו, דברי חברים וזיכרונות. זהו המקור המלא, ולא רק אזכור שמו.",
+            2:"עדויות החברים מופיעות כחלק מדף ההנצחה הרשמי של יוני. המקור כולל את דברי אלעד זומר וחברים נוספים, לצד סיפור חייו.",
+            3:"שמות מפקדים וחברים מוזכרים בעדויות מדף יזכור של יוני. אין לפרש אזכור במקור כהשתתפות רשומה באתר הקהילה.",
+            4:"כתבה המתארת את ערב המורשת של גדוד 46 לציון עשור למלחמת לבנון השנייה, ואת פעילות הלוחמים והמפקדים.",
+            5:"רישום ביבליוגרפי מפורט על חוברת הגדוד (2007, 84 עמודים), עם מידע על תולדותיו. זהו רישום ספר ולא עותק מלא של 84 העמודים.",
+            6:"האתר הרשמי של צה״ל מתאר את גדוד 46 ואת פלוגת ברקן כחלק מגדודי חטיבה 401.",
+            7:"עמוד יד לשריון מרכז הפניות לתמונות וסרטונים של חטיבה 401. זמינות קובצי המדיה החיצוניים עצמם אינה מובטחת.",
+            8:"אתר המורשת ההיסטורי מתמקד בפעילות גדוד 46 במלחמת יום הכיפורים, לרבות תצלומים וסיפורים מהתקופה.",
+            9:"דף יזכור הרשמי כולל קורות חיים, שירות צבאי, תיאור כוח בניה והנצחה.",
+            10:"דף יזכור הרשמי כולל את סיפור חייו ושירותו של אורי גרוסמן, עדויות וחומרי הנצחה.",
+            11:"אתר הנצחה ייעודי לבניה ריין, עם פרקים על חייו, כוח בניה, כתבים, סרטים וגלריה.",
+            12:"עמוד ארכיון המדיה של חטיבה 401 וגדוד 46 באתר יד לשריון. הוא מכיל קישורים למקורות נוספים אך לא בהכרח מארח בעצמו את כל הסרטונים.",
+            13:"דף יזכור הרשמי כולל את סיפור חייו של אדם גורן, שירותו והנצחתו.",
+            14:"דף יזכור הרשמי כולל את קורותיו של אלכסנדר (סשה) בונימוביץ׳ ופעילות צוות הטנק."
+        }
+        is_full=source_id not in (5,7,12)
+        label="📖 לקריאת התוכן המלא במקור המאומת ↗" if is_full else "📚 לפתיחת עמוד המקור והרישום המפורט ↗"
         page_html='<h1>'+e(item["title"])+'</h1><span class="tag">'+e(item["tag"])+' · '+e(item["year"] or "ארכיון")+'</span>'
-        page_html+='<article class="event"><h2>פרטי האזכור</h2><p>'+e(item["summary"])+'</p><p class="muted">תיעוד: '+e(item["source"])+'</p></article>'
-        page_html+='<div class="note"><strong>למה אין קישור ישיר לפרסום הישן?</strong><p>חלק מהכתובות המקוריות של פרסומי מורשת והנצחה אינן נפתחות עוד. כדי שלא תגיעו לעמודי 404, סיכום האזכור נשמר כאן, ואפשר לחפש את המקור מחדש באתר המפרסם. תוצאת חיפוש אינה מבטיחה שהכתבה הישנה עדיין נגישה.</p></div>'
-        page_html+='<div class="actions"><a class="cta" href="'+e(lookup)+'" target="_blank" rel="noopener noreferrer">🔎 חיפוש הפרסום במקור ↗</a><a class="cta" href="/archive">↩ חזרה לארכיון</a></div>'
+        page_html+='<article class="event"><h2>מה מתועד בפרסום?</h2><p>'+e(detail.get(source_id,item["summary"]))+'</p><p><strong>תקציר המורשת:</strong> '+e(item["summary"])+'</p><p class="muted">גוף המקור: '+e(item["source"])+'</p></article>'
+        page_html+='<div class="note"><h2>המקור המקורי</h2><p>הקישור מוביל ישירות לעמוד שנמצא במקור הרשמי או לאתר המורשת. לא לחיפוש בגוגל. זמינותו יכולה להשתנות בעתיד.</p>'
+        page_html+='<p><a class="cta" href="'+e(verified_source)+'" target="_blank" rel="noopener noreferrer">'+label+'</a></p>'
+        page_html+='<p><small>באתר הקרנפים מוצג תקציר מקורי. כל התוכן המלא, התמונות והמסמכים מתפרסמים בכפוף לזכויות באתר המקור.</small></p></div>'
+        page_html+='<div class="actions"><a class="cta alt" href="/archive">↩ חזרה לכל מקורות הארכיון</a></div>'
         return page(item["title"],page_html)
 
     def sources(count=0,filtertag=""):
