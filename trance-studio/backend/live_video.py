@@ -105,6 +105,31 @@ def _positive_clause(tokens):
     # Doesn't visualize negated actions as if they occurred.
     return not any(t in NEGATIONS for t in tokens)
 
+def _asr_spelling_neighbor(token, expected):
+    """Bounded Hebrew spelling tolerance ONLY alongside an exact spoken verb.
+
+    This does not replace or rewrite the transcript. A base-sized Whisper
+    frequently returns e.g. "המסעית נוסעת" for "המשאית נוסעת". Only
+    longer, near-identical actor nouns are considered; no generic topic guess.
+    """
+    if len(expected)<5 or len(token)<5:
+        return False
+    variants=(expected, "ה"+expected, "ו"+expected, "וה"+expected)
+    for variant in variants:
+        if abs(len(token)-len(variant))>2:
+            continue
+        distance=list(range(len(variant)+1))
+        for i,left in enumerate(token,1):
+            next_distance=[i]
+            for j,right in enumerate(variant,1):
+                next_distance.append(min(
+                    next_distance[-1]+1, distance[j]+1,
+                    distance[j-1]+(left!=right)))
+            distance=next_distance
+        if distance[-1]<=2 and min(len(token),len(variant))>=6:
+            return True
+    return False
+
 def action_for_clause(sentence):
     words=_words(sentence)
     if not words or not _positive_clause(words):return None
@@ -121,6 +146,19 @@ def action_for_clause(sentence):
             "במשפט זוהו כמה פעולות שלא ניתן להפריד ביניהן באופן אמין. "
             "לא ייווצר סרטון לא תואם.")
     if candidates:return candidates[0]
+    # Whisper base struggles with Hebrew actor nouns (e.g. משאית/מסעית).
+    # Only use phonetic spelling recovery when the VERB is exact and one
+    # unambiguous named physical actor is near the original recognized token.
+    repaired=[]
+    for name,subjects,verbs,query in ACTIONS:
+        if not tokens.intersection(verbs):
+            continue
+        if any(_asr_spelling_neighbor(token,actor)
+               for token in words for actor in subjects):
+            repaired.append({"action":name,"query":query,
+                             "basis":"asr_spelling_approximation"})
+    if len(repaired)==1:
+        return repaired[0]
     for name,terms,query in VISUAL_LOCATIONS:
         if tokens.intersection(terms) and len(tokens)<=6:
             return {"action":name,"query":query,"basis":"explicit_location"}
@@ -214,7 +252,8 @@ def visual_plan(transcript,duration):
         "recognized_action_beats":original_beats,
         "visual_beats":len(scenes),
         "visual_coverage":"partial" if (unmatched or original_beats>len(scenes)
-                         or any(sc["basis"]=="explicit_subject_only" for sc in scenes))
+                         or any(sc["basis"] in ("explicit_subject_only",
+                                              "asr_spelling_approximation") for sc in scenes))
                          else "matched",
         "scenes":scenes
     }
