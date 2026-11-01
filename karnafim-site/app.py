@@ -238,7 +238,14 @@ def home():
 def favicon():
  return Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#19372c"/><path fill="#d8eaa2" d="M14 17h13v30h-7V24h-6zm17 0h13v30h-7V24h-6zm17 0h6v30h-6z"/><path d="M8 51h48" stroke="#d8eaa2" stroke-width="3" stroke-linecap="round"/></svg>',mimetype="image/svg+xml",headers={"Cache-Control":"public, max-age=604800","X-Content-Type-Options":"nosniff"})
 @app.route("/health")
-def health():return {"ok":True,"service":"karnafim","access":("read_only" if READ_ONLY_BOOT else "community")}
+def health():
+ # Render exposes the deployed Git commit as a non-secret runtime identifier.
+ # Show only an abbreviated validated SHA so monitors can detect stale deploys.
+ raw_revision=os.environ.get("RENDER_GIT_COMMIT","").strip()
+ revision=raw_revision[:12].lower() if re.fullmatch(r"[0-9a-fA-F]{40}",raw_revision) else "unknown"
+ return {"ok":True,"service":"karnafim",
+         "access":("read_only" if READ_ONLY_BOOT else "community"),
+         "revision":revision}
 @app.route("/terms")
 def terms_public():
  from public_pages import render_page
