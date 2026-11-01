@@ -21,6 +21,14 @@ def static():
     for p in ROOT.glob("*.py"):ast.parse(p.read_text("utf-8"),filename=str(p))
     app=(ROOT/"app.py").read_text("utf-8")
     media=(ROOT/"community_portal.py").read_text("utf-8")
+    # A retired phishing-flagged public member search must never be restored
+    # by the private community blueprint after the security hold is lifted.
+    assert '@app.route("/find", methods=["GET", "HEAD"])' in app
+    assert 'return Response(' in app
+    assert 'status=410, mimetype="text/plain"' in app
+    assert '@app.route("/find")' not in media
+    assert 'action="/find"' not in media
+    assert '"/directory"' in media
     assert "TRUSTED_HOSTS" in app and "SESSION_COOKIE_HTTPONLY=True" in app
     assert 'KARNAFIM_MAINTENANCE' in app
     assert "hmac.compare_digest" in app and "guard()" in app
