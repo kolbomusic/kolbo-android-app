@@ -17,7 +17,7 @@ def create_app(config=None):
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
     if config:app.config.update(config)
     root=Path(app.config['JOB_DIR']);root.mkdir(parents=True,exist_ok=True)
-    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);executor=ThreadPoolExecutor(max_workers=1)
+    jobs={};private_ai_plans={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
     web=Path(__file__).resolve().parents[1]/'web'
     def session_codec():
@@ -33,7 +33,9 @@ def create_app(config=None):
         now=time.time()
         with lock:
             expired=[k for k,v in jobs.items() if v['state'] in ('done','error') and now-v['created']>app.config['JOB_TTL']]
-            for k in expired:jobs.pop(k,None);shutil.rmtree(root/k,ignore_errors=True)
+            for k in expired:
+                jobs.pop(k,None);private_ai_plans.pop(k,None)
+                shutil.rmtree(root/k,ignore_errors=True)
         # Remove leftovers from a previous process too; opaque names only.
         for p in root.iterdir():
             if p.is_dir() and now-p.stat().st_mtime>app.config['JOB_TTL'] and p.name not in jobs:shutil.rmtree(p,ignore_errors=True)
@@ -171,6 +173,24 @@ def create_app(config=None):
                                   'video_error':'לא ניתן לייצר סרטון שממחיש את המילים במדויק. המיקס נשמר, ולא ייוצר סרטון גלי קול.',
                                   'storyboard_source':'no_grounded_story',
                                   'visual_coverage':'none'}
+            # If server-originated free GPU calls were rejected, the user's
+            # *consented* Android WebView can request public AI clips directly
+            # over CORS and upload ONLY generated video here for soundtrack mux.
+            # Store prompt privately in memory, NEVER in the public job status.
+            if (options.get('ai_video_consent') and options.get('video_requested')
+                    and meta['video_status']!='done' and detected_transcript):
+                try:
+                    from ai_video import _narrative_shots, cinematic_prompt
+                    prompts=[cinematic_prompt(s) for s in
+                             _narrative_shots(detected_transcript)[:2]]
+                    if prompts:
+                        with lock:
+                            private_ai_plans[job_id]={'prompts':prompts,
+                                'consented':True,'uploading':False,
+                                'upload_attempts':0}
+                        meta['client_ai_fallback_available']=True
+                except (ValueError,RuntimeError):
+                    pass
             update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             app.logger.exception('Kolbo audio/video worker error')
@@ -211,7 +231,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.13.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.14.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.post('/api/jobs')
     def create_job():
@@ -272,6 +292,115 @@ def create_app(config=None):
             if (root/job_id/'storyboard.json').exists():
                 job['storyboard_url']='/api/jobs/'+job_id+'/storyboard'
         return jsonify(job)
+
+    @app.get('/api/jobs/<job_id>/ai-plan')
+    def mobile_ai_plan(job_id):
+        """Only the holder of the original studio session can request prompts.
+
+        This does not expose speech content in the ordinary status endpoint,
+        logs or storyboard. The consent checkbox was submitted with the
+        original job; a caller cannot switch it on after uploading the voice.
+        """
+        cleanup()
+        if not re.fullmatch(r'[a-f0-9]{48}',job_id):
+            return jsonify(error='מזהה המשימה אינו תקין'),404
+        with lock:
+            job=jobs.get(job_id,{})
+            private=private_ai_plans.get(job_id)
+            ready=(job.get('state')=='done' and
+                   job.get('video_status')!='done' and private is not None and
+                   private.get('consented'))
+            prompts=list(private.get('prompts',[])) if ready else []
+            duration=job.get('audio_seconds',0)
+        if not ready:return jsonify(error='השלמת סרטון AI אינה זמינה למשימה זו או שלא ניתנה הסכמה'),403
+        return jsonify(prompts=prompts,seconds=duration,
+                       external_provider_notice='רק טקסט התמלול מועבר לשירות AI ציבורי',
+                       max_clips=2)
+
+    @app.post('/api/jobs/<job_id>/ai-clips')
+    def upload_mobile_ai_clips(job_id):
+        """Receive generated MP4 *bytes*, never arbitrary URLs.
+
+        Same-origin studio session/API key required by before_request.
+        Clip bodies and FFmpeg work are bounded; only jobs with prior
+        explicit third-party AI consent are eligible.
+        """
+        cleanup()
+        if not re.fullmatch(r'[a-f0-9]{48}',job_id):
+            return jsonify(error='מזהה המשימה אינו תקין'),404
+        with lock:
+            job=jobs.get(job_id,{})
+            private=private_ai_plans.get(job_id)
+            if not (job.get('state')=='done' and private and
+                    private.get('consented') and job.get('video_status')!='done'):
+                return jsonify(error='המשימה אינה זמינה להשלמת וידאו או שלא ניתנה הסכמה'),403
+            if private['uploading'] or private['upload_attempts']>=3:
+                return jsonify(error='ניסיון העלאת הווידאו כבר מתבצע או שהמכסה הסתיימה'),429
+            private['uploading']=True
+            private['upload_attempts']+=1
+        if not admission.acquire(blocking=False):
+            with lock:
+                if job_id in private_ai_plans:
+                    private_ai_plans[job_id]['uploading']=False
+            return jsonify(error='השרת עסוק, ניתן לנסות שוב'),429
+        work_dir=root/job_id/'mobile-ai-upload'
+        try:
+            from client_ai_fallback import (combine_mobile_ai_clips,
+                                            MobileClipError,MAX_CLIP_BYTES)
+            clips=request.files.getlist('clip')
+            if not 1<=len(clips)<=2:
+                return jsonify(error='יש להעלות קטע וידאו אחד או שניים'),400
+            work_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
+            input_paths=[]
+            for i,clip in enumerate(clips):
+                raw=clip.stream.read(MAX_CLIP_BYTES+1)
+                if not 12000<=len(raw)<=MAX_CLIP_BYTES or raw[4:8]!=b'ftyp':
+                    return jsonify(error='הווידאו שהתקבל ממנוע ה־AI אינו MP4 תקין או גדול מדי'),400
+                source=work_dir/f'original-generated-{i}.mp4'
+                source.write_bytes(raw)
+                input_paths.append(source)
+            out=root/job_id/'story.mp4'
+            board=combine_mobile_ai_clips(input_paths,
+                                          root/job_id/'mix.mp3',
+                                          out,work_dir/'encoding')
+            (root/job_id/'storyboard.json').write_text(
+                json.dumps(board,ensure_ascii=False),encoding='utf-8')
+            with lock:
+                if job_id not in jobs:
+                    out.unlink(missing_ok=True)
+                    return jsonify(error='תוקף משימת המיקס פג'),404
+                jobs[job_id].pop('video_error',None)
+                jobs[job_id].update(
+                    video_status='done',
+                    video_mode='ai_generated_client_fallback',
+                    storyboard_source=board['source'],
+                    visual_coverage='approximate',
+                    visual_beats=board['ai_clips_generated'],
+                    client_ai_fallback_available=False,
+                    ai_clips_generated=board['ai_clips_generated'],
+                    ai_clip_seconds=board['ai_clip_seconds'],
+                    video_note='סצנות AI חדשות נוצרו מהתמלול בהסכמה. זו המחשה משוערת; קטעים קצרים עשויים לחזור לאורך המיקס.',
+                    label='הסרטון והמיקס מוכנים')
+                private_ai_plans.pop(job_id,None)
+            return jsonify(video_url='/api/jobs/'+job_id+'/video',
+                           video_preview_url='/api/jobs/'+job_id+'/video_preview',
+                           video_status='done',
+                           video_mode='ai_generated_client_fallback',
+                           visual_coverage='approximate',
+                           video_note='סרטון AI שנוצר מהתמלול; המחשה משוערת, לא שחזור מדויק של כל המשפטים.',
+                           storyboard_url='/api/jobs/'+job_id+'/storyboard',
+                           ai_clips_generated=board['ai_clips_generated']),200
+        except MobileClipError as exc:
+            return jsonify(error=str(exc)),422
+        except Exception:
+            app.logger.exception('Browser-produced AI clip assembly failed')
+            return jsonify(error='שילוב סרטון ה־AI והמיקס נכשל, אך קובץ המיקס נשמר'),500
+        finally:
+            shutil.rmtree(work_dir,ignore_errors=True)
+            with lock:
+                if job_id in private_ai_plans:
+                    private_ai_plans[job_id]['uploading']=False
+            admission.release()
 
     @app.get('/api/jobs/<job_id>/audio')
     def download(job_id):
