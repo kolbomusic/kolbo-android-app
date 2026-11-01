@@ -1,0 +1,31 @@
+name: Kolbo production Hebrew voice to phone-completed motion MP4
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - 'trance-studio/backend/app.py'
+      - 'trance-studio/web/studio.html'
+      - 'trance-studio/tests/live_phone_generated_video_smoke.py'
+      - '.github/workflows/kolbo-trance-phone-ai-live.yml'
+  workflow_dispatch:
+jobs:
+  real-live-phone-mux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Synthesize only fictional Hebrew voice and a real moving test clip
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+          python - <<'PY'
+          from gtts import gTTS
+          gTTS('איש זורק כוס זכוכית על הרצפה. הכוס נשברת לרסיסים.',lang='iw').save('/tmp/kolbo-phone-voice.mp3')
+          PY
+          ffmpeg -nostdin -loglevel error -y -i /tmp/kolbo-phone-voice.mp3 -ar 48000 -ac 1 -b:a 24k -c:a libopus /tmp/kolbo-phone-fallback-sample.opus
+          ffmpeg -nostdin -loglevel error -y -f lavfi -i testsrc=size=512x704:rate=12:duration=2 -c:v libx264 -preset ultrafast -crf 30 /tmp/kolbo-phone-fallback-motion.mp4
+      - name: Assert live Render returns original voice plus genuine H264 motion MP4
+        run: python trance-studio/tests/live_phone_generated_video_smoke.py

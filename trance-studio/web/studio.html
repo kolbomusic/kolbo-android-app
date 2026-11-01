@@ -230,6 +230,92 @@ async function recognizeBeforeVideo(){
  return sentences.join('. ').slice(0,4000);
 }
 
+// Browser-origin ZeroGPU fallback: each consenting phone uses its own free
+// Gradio visitor allocation rather than a shared Render-server IP quota.
+// Audio and cookies NEVER leave kolbo-trance-studio.onrender.com.
+var freeAiSpaces=[
+ {host:'lightricks-ltx-video-distilled.hf.space',
+  submit:'/gradio_api/call/text_to_video',
+  events:'/gradio_api/call/text_to_video/',
+  data:function(prompt){return {data:[prompt,
+    'blurry, deformed, text, captions, watermark, anime, illustration',
+    '', '', 704,512,'text-to-video',2.0,9,42,true,1.0,true]}}},
+ {host:'lightricks-ltx-2-5.hf.space',
+  submit:'/gradio_api/call/v2/run',
+  events:'/gradio_api/call/run/',
+  data:function(prompt){return {
+    prompt:prompt,image_path:null,height:512,width:768,
+    duration_s:1.0,seed:42,decoder:'conv',
+    auto_len:false,randomize_seed:false,do_enhance:false}}}
+];
+function readGradioCompletion(raw,host){
+ var blocks=String(raw||'').replace(/\r/g,'').split('\n\n');
+ for(var i=blocks.length-1;i>=0;i--){
+  var rows=blocks[i].split('\n');
+  var eventLine=rows.find(function(line){return line.indexOf('event:')===0});
+  var dataLine=rows.find(function(line){return line.indexOf('data:')===0});
+  if(!eventLine||!dataLine)continue;
+  var state=eventLine.slice(6).trim();
+  if(state==='error')throw new Error('מכסת יצירת הווידאו של השירות החינמי נוצלה או שהבקשה נדחתה');
+  if(state!=='complete')continue;
+  var values=JSON.parse(dataLine.slice(5).trim());
+  var item=Array.isArray(values)?values[0]:null;
+  if(item&&item.video)item=item.video;
+  if(!item||typeof item.url!=='string')throw new Error('לא התקבל קובץ וידאו');
+  var url=new URL(item.url);
+  if(url.protocol!=='https:'||url.hostname!==host||
+     !url.pathname.startsWith('/gradio_api/file='))
+     throw new Error('מקור הווידאו אינו מאומת');
+  return url.href;
+ }
+ throw new Error('שירות יצירת הווידאו החינמי לא החזיר סרטון');
+}
+async function requestPhoneVideo(provider,prompt){
+ var host='https://'+provider.host;
+ var controller=new AbortController();
+ var timeout=setTimeout(function(){controller.abort()},170000);
+ try{
+  var response=await fetch(host+provider.submit,{
+   method:'POST',mode:'cors',credentials:'omit',cache:'no-store',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify(provider.data(prompt)),signal:controller.signal
+  });
+  if(!response.ok)throw new Error('שירות AI דחה בקשה: '+response.status);
+  var body=await response.json();
+  if(!/^[a-f0-9]{24,80}$/.test(body.event_id||''))
+    throw new Error('לא התקבל מזהה משימה תקין');
+  response=await fetch(host+provider.events+body.event_id,{
+   mode:'cors',credentials:'omit',cache:'no-store',
+   headers:{'Accept':'text/event-stream'},signal:controller.signal
+  });
+  if(!response.ok)throw new Error('תור שירות ה־AI אינו זמין');
+  return readGradioCompletion(await response.text(),provider.host);
+ }finally{clearTimeout(timeout)}
+}
+async function completeAIVideoOnPhone(jobId,prompt){
+ if(!/^[a-f0-9]{48}$/.test(String(jobId||''))||
+    typeof prompt!=='string'||!prompt.trim())
+    throw new Error('פרטי ההפקה אינם תקינים');
+ var failure=null;
+ for(var i=0;i<freeAiSpaces.length;i++){
+  try{
+   message('מכסת השרת נוצלה. מייצר סצנת AI ישירות מהמכשיר — מנוע '+(i+1)+' מתוך '+freeAiSpaces.length+'...');
+   $('progress').value=93;
+   var generatedUrl=await requestPhoneVideo(freeAiSpaces[i],prompt);
+   message('סצנה חדשה נוצרה. משלב אותה עם הקול והמוזיקה המקוריים...');
+   var r=await fetch('/api/jobs/'+jobId+'/generated-video',{
+    method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({video_url:generatedUrl})
+   });
+   var reply=await r.json();
+   if(!r.ok)throw new Error(reply.error||'אי אפשר לשלב את הווידאו במיקס');
+   return reply;
+  }catch(error){failure=error}
+ }
+ throw new Error('גם מכסת יצירת הווידאו החינמית של המכשיר אינה זמינה. '+(failure&&failure.message||''));
+}
+
 async function run(){
 if(active)return;
 if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
@@ -285,6 +371,15 @@ markStage(completed<10?'recognize':completed<87?'mix':'video');
 message(j.label||'מכין את המיקס');
 if(j.state==='error')throw new Error(j.message||'אירעה תקלה בעיבוד');
 if(j.state==='done'){
+if(wantsVideo&&!j.video_url&&$('ai_video_consent').checked&&j.client_ai_prompt){
+ try{
+  var fromPhone=await completeAIVideoOnPhone(data.id,j.client_ai_prompt);
+  Object.assign(j,fromPhone);
+  videoReason='';
+ }catch(deviceError){
+  videoReason=(deviceError&&deviceError.message)||'שירות הווידאו החינמי אינו זמין';
+ }
+}
 var mp3=await fetch(j.download_url,{credentials:'same-origin'});
 if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד אותו.');
 if(resultUrl)URL.revokeObjectURL(resultUrl);
@@ -305,12 +400,12 @@ if(j.video_url){
  videoUrl=j.video_preview_url||j.video_url;
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
- $('storyboardInfo').textContent=j.video_mode==='ai_generated_experimental'?
+ $('storyboardInfo').textContent=(j.video_mode==='ai_generated_experimental'||j.video_mode==='ai_generated_on_device')?
    'סצנה חדשה נוצרה באמצעות AI לפי התמלול. זו המחשה משוערת: קטע קצר עשוי לחזור לאורך המיקס, ולא כל פרט בהקלטה בהכרח מוצג.' :
    (j.visual_coverage==='partial'?
    'נמצא צילום מתאים לחלק מהמשפטים בלבד. המיקס המקורי נשמר לכל אורכו. הסצנות האחרות עדיין לא הומחשו במדויק.':
    'צילום וידאו נע שנבחר לפי פעולות שזוהו בדיבור המקורי — ללא גלי קול או ציורים.');
- $('videoPlayer').setAttribute('aria-label',j.video_mode==='ai_generated_experimental'?
+ $('videoPlayer').setAttribute('aria-label',(j.video_mode==='ai_generated_experimental'||j.video_mode==='ai_generated_on_device')?
    'סרטון AI ניסיוני שנוצר מן הסיפור':'סרטון מצולם מתוך הפעולות שזוהו');
  if(j.storyboard_url){
   try{
@@ -331,8 +426,8 @@ if(j.video_url){
   }catch(e){}
  }
 }
-if(j.video_status==='error'||j.video_status==='unavailable'){
- videoReason=j.video_error||videoReason||'לא נמצאו קטעי וידאו מתאימים.';
+if((j.video_status==='error'||j.video_status==='unavailable')&&!j.video_url){
+ videoReason=videoReason||j.video_error||'לא נמצאו קטעי וידאו מתאימים.';
 }
 if(wantsVideo&&!j.video_url){
  $('resultTitle').textContent='המיקס מוכן — לא הופק סרטון';
