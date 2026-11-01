@@ -28,7 +28,10 @@ class MobileClipError(ValueError):
 def validate_mp4_clip(path):
     """Reject playlists, remote media pointers, still files and oversized inputs."""
     path=Path(path)
-    if not path.is_file() or not 12000<=path.stat().st_size<=MAX_CLIP_BYTES:
+    # Small but genuine motion clips may compress below 12 KB. Validate the
+    # MP4 header, codec, duration and actual frame motion below instead of
+    # rejecting an otherwise valid, highly compressed moving clip by size.
+    if not path.is_file() or not 2048<=path.stat().st_size<=MAX_CLIP_BYTES:
         raise MobileClipError("קובץ הווידאו שנוצר חסר או גדול מדי")
     with path.open("rb") as f:
         head=f.read(16)
