@@ -127,7 +127,16 @@ function narrateTwoShots(fullPrompt){
   var shots=[words.slice(0,half).join('. '),words.slice(half).join('. ')].filter(Boolean);
   return shots.map(function(s){return prefix+s}).slice(0,MAX_SHOTS);
 }
-async function getPlan(id,passedPrompt){
+async function getPlan(id,passedPrompt,prebuilt){
+  // Preferred: precomputed, grounded, chronological scene prompts from
+  // original-file ASR. Never re-split an English+Hebrew cinematic prompt
+  // inside JavaScript (that previously cut speech mid-sentence).
+  if(Array.isArray(prebuilt)&&prebuilt.length){
+    var fromServer=prebuilt.slice(0,MAX_SHOTS).filter(function(prompt){
+      return typeof prompt==='string'&&prompt.length>20&&prompt.length<=2000&&HEBREW.test(prompt);
+    });
+    if(fromServer.length)return fromServer;
+  }
   if(passedPrompt){
     var local=narrateTwoShots(passedPrompt).filter(function(p){
       return p.length>20&&p.length<2000&&HEBREW.test(p)
@@ -145,12 +154,12 @@ async function getPlan(id,passedPrompt){
     return typeof p==='string'&&p.length>20&&p.length<2000&&HEBREW.test(p);
   });
 }
-async function generate(jobId,onStage,passedPrompt){
+async function generate(jobId,onStage,passedPrompt,prebuilt){
   if(!document.getElementById('ai_video_consent').checked)
     throw fail('נדרשת הסכמה לשימוש במנוע AI חיצוני');
   if(!/^[a-f0-9]{48}$/.test(String(jobId||'')))
     throw fail('לא נמצא מזהה המיקס');
-  var prompts=await getPlan(jobId,passedPrompt);
+  var prompts=await getPlan(jobId,passedPrompt,prebuilt);
   var blobs=[];
   for(var i=0;i<prompts.length;i++){
     var clip=null;
@@ -182,5 +191,5 @@ async function generate(jobId,onStage,passedPrompt){
   return answer;
 }
 window.KolboAIFallback={generate:generate,
-  version:'1.14.0',isDirectBrowserMode:true};
+  version:'1.15.0',isDirectBrowserMode:true};
 })();
