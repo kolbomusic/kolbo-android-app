@@ -1,5 +1,6 @@
 """Original deterministic trance composition with original-audio sampling."""
 import math
+import re
 import hashlib
 import subprocess
 import numpy as np
@@ -404,7 +405,43 @@ def _vocal_hook_quality(sample, sr):
     return min(.35,rms)*(.04+.96*(1.-min(1.,flatness))**2)*(1.-min(1.,saturation*8))
 
 
-def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
+def _semantic_comedy_cue(transcript, fraction):
+    """Conservative speech-dependent comic preset for approximate phrase timing.
+
+    The original Hebrew is used locally on the production server only.
+    Word-count interpolation is explicitly NOT forced word alignment, so the
+    source audio and syllable boundaries remain untouched.
+    """
+    phrases=[part.strip() for part in re.split(r"[.!?;,]+",str(transcript or "")[:4000])
+             if part.strip()]
+    if not phrases:return None
+    counts=[max(1,len(re.findall(r"[א-ת]+",part))) for part in phrases]
+    target=max(0.,min(.999,float(fraction)))*sum(counts)
+    elapsed=0
+    part=phrases[-1]
+    for item,count in zip(phrases,counts):
+        elapsed+=count
+        if target<elapsed:
+            part=item
+            break
+    terms=set(re.findall(r"[א-ת]+",part))
+    if terms.intersection(("לא","בלי","אינו","אינה","אינם")):
+        return None
+    cues=(
+        (("חמור","החמור","חמורה","נוער","נעירה","צורח","צועק","צעק"),"monster"),
+        (("צחוק","מצחיק","צוחק","צוחקת","צוחקים","צחקתי","צחקו"),"comic_roll"),
+        (("נפילה","נפל","נופל","נופלת","בום","פיצוץ","התפוצץ","נשבר"),"rewind"),
+        (("בוכה","בכיתי","בכי","בכייה","תינוק"),"helium"),
+        (("רוקד","רוקדת","רוקדים","ריקוד","מסיבה"),"yo_yo"),
+        (("שרתי","שרים","שירה","לשיר","שיר"),"tape"),
+    )
+    for words,mode in cues:
+        if terms.intersection(words):
+            return mode
+    return None
+
+
+def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcript_hint=''):
     """Pause-aware, beat-length vocal solos without slicing spoken words.
 
     This is an automatic editing heuristic, not phoneme/word-level ASR
@@ -480,9 +517,14 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
         source_rms=float(np.sqrt(np.mean(sample*sample)))
         if source_rms<.008:
             continue
-        mode=mode_order[index%len(mode_order)] if humor=='auto' else (
-            ('helium','comic_roll','monster','yo_yo','rewind')[index%5]
-            if humor=='chaos' else humor)
+        if humor=='auto':
+            # Match a detected story beat to a vocal trick when possible.
+            # Unknown narration still uses musically varied safe presets.
+            cue=_semantic_comedy_cue(transcript_hint,cut/max(1,len(x)))
+            mode=cue if cue and index%3!=2 else mode_order[index%len(mode_order)]
+        else:
+            mode=(('helium','comic_roll','monster','yo_yo','rewind')[index%5]
+                  if humor=='chaos' else humor)
         effect=vintage_voice_fx(sample,mode,sr,bpm,rng)
         if not len(effect):
             continue
@@ -532,7 +574,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
 
 
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None):
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint=''):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     sr=sample_rate;beat=60/bpm
@@ -547,7 +589,8 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     voice_rng=np.random.default_rng(seed^0x9E3779B97F4A7C15)
     # Voice is arranged FIRST. Its actual duration determines the score length.
     # This guarantees the last words and the final vocal trick cannot be cut.
-    arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng)
+    arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
+                                   transcript_hint=transcript_hint)
               for v in voices]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
     needed=beat*10+total_vocal_duration+max(0,len(voices)-1)*beat*3
