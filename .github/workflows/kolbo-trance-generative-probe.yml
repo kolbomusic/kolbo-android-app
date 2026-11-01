@@ -34,3 +34,28 @@ jobs:
             except Exception as e:
               print('LTX_PUBLIC_FAILED',type(e).__name__,str(e)[:350],flush=True)
           PY
+      - name: Try 1-second fictional text-to-video clip with anonymous public quota
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.error,time
+          base='https://lightricks-ltx-2-5.hf.space'
+          data={'data':['A cheerful brown donkey opens its mouth and brays on a sunny farm, cinematic live-action video, continuous motion, no text.',None,768,512,1.0,42,'conv',False,False,False]}
+          try:
+            req=urllib.request.Request(base+'/gradio_api/call/v2/run',
+              data=json.dumps(data).encode(),headers={'Content-Type':'application/json'})
+            with urllib.request.urlopen(req,timeout=35) as response:
+              event=json.load(response)
+            print('LTX_GENERATION_SUBMITTED',str(event)[:200],flush=True)
+            event_id=event['event_id']
+            with urllib.request.urlopen(base+'/gradio_api/call/run/'+event_id,timeout=210) as response:
+              for raw in response:
+                line=raw.decode('utf-8','replace').strip()
+                if line.startswith('event:'):print('LTX_EVENT',line,flush=True)
+                if line.startswith('data:'):
+                  print('LTX_RESULT',line[:800],flush=True)
+                  if 'video' in line or '"url"' in line or 'error' in line:
+                    break
+          except Exception as error:
+            print('LTX_GENERATION_UNAVAILABLE',type(error).__name__,str(error)[:700],flush=True)
+          PY
