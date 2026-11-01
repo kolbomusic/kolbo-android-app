@@ -80,6 +80,21 @@ assert all(s.get("page","").startswith("https://commons.wikimedia.org/wiki/")
 actions=[s["action"] for s in sources]
 assert len(set(actions))>=2,("REPEATED_SINGLE_ACTION_INSTEAD_OF_STORY",actions)
 print("MULTI_SCENE_ACTIONS",actions,flush=True)
+# Codecs and movement alone cannot establish content accuracy.
+# Guard explicitly against the real-world Carina Nebula false-positive.
+from urllib.parse import unquote
+import re
+names=[unquote(s['page'].split('/wiki/',1)[-1]).lower().replace('_',' ')
+       for s in sources]
+assert all('nebula' not in n and 'carina' not in n and 'cable car' not in n
+           for n in names),("SEMANTICALLY_UNRELATED_SCENE",names)
+for source,name in zip(sources,names):
+    if source['action']=='rain':
+        assert re.search(r'\\brain\\b',name),("RAIN_SCENE_INCORRECT",name)
+    if source['action'] in ('car_drive','subject_car'):
+        assert re.search(r'\\bcar\\b',name),("CAR_SCENE_INCORRECT",name)
+print("MULTI_SCENE_SEMANTIC_TITLE_CHECK_PASS",names,flush=True)
+
 out=pathlib.Path("/tmp/kolbo-multi-scene-verified.mp4")
 out.write_bytes(movie_bytes)
 info=json.loads(subprocess.check_output([
