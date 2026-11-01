@@ -45,6 +45,19 @@ class GroundedVideoTests(unittest.TestCase):
         self.assertTrue(_matches_metadata('File:Person laughs.webm','person laughing'))
         self.assertFalse(_matches_metadata('File:Dog walking.webm','dog running'))
 
+    def test_actual_whisper_base_hebrew_errors_recover_only_grounded_motion(self):
+        # Captured from a synthetic Hebrew speech -> actual OPUS -> Whisper
+        # base CI run. Never substitute imagined words for the transcript.
+        spoken='הכל אבנובח בחצר, המסעית נוסעת בקויש, הכל אבנובח שוב.'
+        plan=visual_plan(spoken,40)
+        self.assertEqual(plan['transcript'],spoken)
+        self.assertEqual([s['action'] for s in plan['scenes']],['truck_drive'])
+        self.assertEqual(plan['scenes'][0]['basis'],'asr_spelling_approximation')
+        self.assertEqual(plan['visual_coverage'],'partial')
+        self.assertGreater(plan['unmatched_clauses'],0)
+        self.assertIsNone(action_for_clause('המסעית לא נוסעת'))
+        self.assertIsNone(action_for_clause('משהו מוזר קורה לכולם'))
+
     def test_new_hebrew_subjects_split_into_independent_scenes(self):
         p=visual_plan('התינוק בוכה והאיש צוחק. הציפור עפה.',12)
         self.assertEqual([s['action'] for s in p['scenes']],
