@@ -264,6 +264,7 @@ def create_app(config=None):
             # Save only a bounded text-to-video prompt in this private, expiring
             # job status; NEVER expose the original audio to a third party.
             if (options.get('ai_video_consent') and
+                    options.get('video_strategy') != 'remix_original' and
                     meta.get('video_status') != 'done'):
                 try:
                     from ai_video import cinematic_prompt, AIVideoUnavailable
