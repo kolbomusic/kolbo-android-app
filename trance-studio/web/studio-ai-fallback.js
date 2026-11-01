@@ -39,6 +39,30 @@ async function getResponse(url,options,ms){
   if(!response.ok)throw fail('השירות החינמי עמוס או החזיר שגיאה ('+response.status+')');
   return response;
 }
+async function readTextWithDeadline(url,ms){
+  var controller=new AbortController();
+  var timer=setTimeout(function(){controller.abort()},ms);
+  try{
+    var response=await fetch(url,{
+      mode:'cors',credentials:'omit',headers:{Accept:'text/event-stream'},
+      signal:controller.signal});
+    if(!response.ok)throw fail('שירות יצירת הווידאו החזיר שגיאה ('+response.status+')');
+    return await response.text();
+  }finally{clearTimeout(timer)}
+}
+async function readBlobWithDeadline(url,ms){
+  var controller=new AbortController();
+  var timer=setTimeout(function(){controller.abort()},ms);
+  try{
+    var response=await fetch(url,{mode:'cors',credentials:'omit',signal:controller.signal});
+    if(!response.ok)throw fail('לא ניתן להוריד את הווידאו שנוצר ('+response.status+')');
+    var contentLength=Number(response.headers.get('content-length')||0);
+    if(contentLength>MAX_VIDEO_BYTES)throw fail('קובץ הווידאו גדול מדי');
+    var blob=await response.blob();
+    if(blob.size>MAX_VIDEO_BYTES)throw fail('קובץ הווידאו גדול מדי');
+    return blob;
+  }finally{clearTimeout(timer)}
+}
 function parseEventStream(text,host){
   var blocks=String(text||'').split(/\r?\n\r?\n/).filter(Boolean);
   for(var i=blocks.length-1;i>=0;i--){
@@ -78,17 +102,10 @@ async function oneClip(model,prompt,onStage){
   if(!event||! /^[a-f0-9]{24,80}$/.test(String(event.event_id||'')))
     throw fail('מנוע ה־AI לא החזיר מספר משימה');
   var url=base+(model.result||model.call+'/')+event.event_id;
-  var response=await getResponse(url,{headers:{Accept:'text/event-stream'}},105000);
-  var text=await withTimeout(105000,function(signal){
-    // Reading an already-open streaming response is independent from fetch's
-    // timeout, but this fallback still works on Android WebViews without
-    // AbortSignal.timeout.
-    return response.text();
-  });
+  var text=await readTextWithDeadline(url,105000);
   var videoUrl=parseEventStream(text,model.host);
   onStage('הקליפ נוצר. מעביר את קטע הווידאו לשרת המיקס...');
-  var download=await getResponse(videoUrl,{},45000);
-  var blob=await download.blob();
+  var blob=await readBlobWithDeadline(videoUrl,45000);
   if(blob.size<12000||blob.size>MAX_VIDEO_BYTES)
     throw fail('הסרטון שהמנוע החזיר ריק או גדול מדי');
   var magic=new Uint8Array(await blob.slice(0,12).arrayBuffer());
