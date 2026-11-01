@@ -1,0 +1,64 @@
+name: Kolbo Trance Android visible launch acceptance
+on:
+  push:
+    branches:
+      - kolbo-trance-share-no-reload-244-20261102
+      - kolbo-trance-studio-20261031
+    paths:
+      - 'trance-studio/android/**'
+      - '.github/workflows/kolbo-trance-ui-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-visible-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Build the actual production Android UI source
+        run: gradle --no-daemon -p trance-studio/android :app:assembleDebug
+      - name: Install screenshot inspector
+        run: python -m pip install --disable-pip-version-check pillow
+      - name: Boot Android and assert non-black, visible native startup UI
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_5
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            set -e
+            adb install -r trance-studio/android/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n com.kolbomusic.trancestudio.story244/com.kolbomusic.trancestudio.MainActivity
+            sleep 6
+            adb exec-out screencap -p > /tmp/kolbo-trance-launch.png
+            python - <<'PY'
+            from PIL import Image
+            from collections import Counter
+            im=Image.open('/tmp/kolbo-trance-launch.png').convert('RGB')
+            w,h=im.size
+            area=im.crop((w//12,h//8,11*w//12,7*h//8)).resize((96,96))
+            colors=Counter(area.getdata())
+            # The old bug was an entirely black, empty Android content area.
+            # Both native warmup and successful web studio must have visible UI.
+            visual=sum(n for (r,g,b),n in colors.items() if max(r,g,b)>70)
+            assert visual>=120, f'Black/empty app screen: visible pixels={visual}'
+            assert len(colors)>=18, f'Blank solid-color app: colors={len(colors)}'
+            print('REAL_ANDROID_EMULATOR_VISIBLE_STARTUP_PASS', im.size,visual,len(colors))
+            PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kolbo-android-launch-evidence
+          path: /tmp/kolbo-trance-launch.png
+          if-no-files-found: ignore
+          retention-days: 7
