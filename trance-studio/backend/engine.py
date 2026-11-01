@@ -67,7 +67,7 @@ def speech_boundaries(x, sr):
     units=[];start=int(idx[0]);end=start
     for point in idx[1:]:
         point=int(point)
-        if point-end>14:  # pause of at least 280 ms
+        if point-end>8:  # silence longer than ~180 ms is a usable phrase break
             a=max(0,(start-3)*frame);b=min(len(x),(end+4)*frame)
             if b-a>=sr*.22:units.append((a,b))
             start=point
@@ -120,32 +120,66 @@ def zero_crossing_cut(x, target, sr):
 
 
 def stretch_voice(clip, factor, sr):
-    """Small phase-vocoder time stretch: elongates a syllable without
-    simple sample-rate slowdown; intentionally retains a vintage granular edge.
-    Only use on short FX copies, never on the full source narration."""
+    """Pitch-preserving WSOLA stretch for *short copied* vocal samples.
+
+    Unlike slowing the playback rate, the output retains the original vocal
+    pitch. Local waveform matching avoids the phase-vocoder's metallic edge,
+    particularly on consonants. The clean narration is never modified.
+    """
     x=np.asarray(clip,dtype=np.float32)
-    if len(x)<512:return x.copy()
-    if not .55<=factor<=2.8:raise ValueError("unsupported stretch factor")
-    fft_size=512;hop=128
-    _,_,z=stft(x,fs=sr,nperseg=fft_size,noverlap=fft_size-hop,
-               boundary='zeros',padded=True)
-    if z.shape[1]<3:return x.copy()
-    rate=1.0/factor
-    steps=np.arange(0,z.shape[1]-1,rate)
-    advance=2*np.pi*hop*np.arange(z.shape[0])/fft_size
-    phase=np.angle(z[:,0])
-    output=np.empty((z.shape[0],len(steps)),dtype=np.complex64)
-    for column,step in enumerate(steps):
-        n=int(step);part=step-n
-        amp=(1-part)*np.abs(z[:,n])+part*np.abs(z[:,n+1])
-        output[:,column]=amp*np.exp(1j*phase)
-        delta=np.angle(z[:,n+1])-np.angle(z[:,n])-advance
-        phase+=advance+((delta+np.pi)%(2*np.pi)-np.pi)
-    _,y=istft(output,fs=sr,nperseg=fft_size,noverlap=fft_size-hop,
-              input_onesided=True,boundary=True)
-    needed=max(1,int(round(len(x)*factor)))
-    if len(y)<needed:y=np.pad(y,(0,needed-len(y)))
-    return np.clip(y[:needed],-1,1).astype(np.float32)
+    if not .55<=factor<=2.8:
+        raise ValueError("unsupported stretch factor")
+    if len(x)<max(256,int(.08*sr)) or abs(factor-1.)<.015:
+        return x.copy()
+    target=max(1,int(round(len(x)*factor)))
+    window=max(128,int(.032*sr)//2*2)
+    hop=max(16,window//4)
+    overlap=window-hop
+    search=max(6,int(sr*.006))
+    output=np.zeros(target+window,dtype=np.float64)
+    weights=np.zeros_like(output)
+    win=np.hanning(window+2)[1:-1].astype(np.float64)
+    padded=np.pad(x.astype(np.float64),(window,window*2))
+    original_size=len(x)
+    previous=0
+    for out_pos in range(0,target,hop):
+        expected=int(round(out_pos/factor))
+        if out_pos==0:
+            best=0
+        else:
+            reference=output[out_pos:out_pos+overlap]/np.maximum(
+                weights[out_pos:out_pos+overlap],.0001)
+            reference=reference-reference.mean()
+            ref_energy=float(np.dot(reference,reference))
+            best=max(0,min(original_size-1,expected))
+            high=-1e30
+            if ref_energy>1e-9:
+                step=max(1,sr//8000)
+                low=max(0,expected-search)
+                upper=min(original_size-1,expected+search)
+                for candidate in range(low,upper+1,step):
+                    fragment=padded[window+candidate:window+candidate+overlap]
+                    centered=fragment-fragment.mean()
+                    energy=float(np.dot(centered,centered))
+                    if energy<1e-10:
+                        continue
+                    score=float(np.dot(reference,centered))/math.sqrt(
+                        ref_energy*energy)
+                    # Favour the expected phoneme location on near-ties.
+                    score-=.0003*abs(candidate-expected)/max(1,search)
+                    if score>high:
+                        high=score
+                        best=candidate
+        fragment=padded[window+best:window+best+window]
+        usable=min(window,len(output)-out_pos)
+        output[out_pos:out_pos+usable]+=fragment[:usable]*win[:usable]
+        weights[out_pos:out_pos+usable]+=win[:usable]
+        previous=best
+    y=(output[:target]/np.maximum(weights[:target],.001)).astype(np.float32)
+    if not np.isfinite(y).all():
+        raise ValueError("invalid stretched vocal")
+    return np.clip(y,-1.,1.)
+
 
 
 def pitch_speed(clip, semitones, sr):
@@ -341,12 +375,14 @@ def vocal_fx_timeline(voice, sr, bpm, humor, intensity, rng):
 
 
 def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
-    """Serial, clearly audible voice performance with no overlapping voices.
+    """Pause-aware, beat-length vocal solos without slicing spoken words.
 
-    The original upload is emitted in order, uncut and unaltered once.
-    At intentional boundaries, a voiced syllable is sampled, manipulated,
-    and played as an independent foreground solo before narration resumes.
-    Returns (mono_track, fx_mask, original_spans). All FX are voice-derived.
+    This is an automatic editing heuristic, not phoneme/word-level ASR
+    alignment. It inserts FX ONLY in real measured gaps between utterances
+    and at the recording's end; a continuous phrase is never cut merely to
+    meet an arbitrary 1.85-second FX interval. Originals are bit-identical
+    in original_spans and every FX sample is a separate solo, never an
+    overlay over the next spoken word.
     """
     x=np.asarray(voice,dtype=np.float32)
     if humor=='off' or len(x)<int(sr*.5):
@@ -354,72 +390,108 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
     if density not in (1,2,3) or not .55<=fx_gain<=1.7:
         raise ValueError('invalid vocal effect controls')
     beat=60./bpm
-    # Cuts to the original narration occur at locally quiet points only.
-    # Cutting *inside* words is reserved for the sample effect itself.
-    chunks=[]
-    cursor=0
-    target_interval={1:4.7,2:2.65,3:1.85}[density]
-    step=max(int(.3*sr),int(target_interval*sr))
-    while cursor+step<len(x)-int(.34*sr):
-        target=min(len(x)-1,cursor+step)
-        radius=int(.44*sr)
-        lower=max(cursor+int(.45*sr),target-radius)
-        upper=min(len(x)-int(.20*sr),target+radius)
-        if upper<=lower:break
-        # Find local low-energy 20ms frames, reducing audible cuts.
-        width=max(8,int(.020*sr))
-        possibilities=range(lower,upper,max(1,int(.02*sr)))
-        cut=min(possibilities,key=lambda p:float(np.mean(x[p:p+width]**2)))
-        cut=zero_crossing_cut(x,cut,sr)
-        if cut<=cursor+int(.28*sr):break
-        chunks.append((cursor,cut))
-        cursor=cut
-    chunks.append((cursor,len(x)))
+    # Find only actual silences, with enough breathing room either side.
+    units=speech_boundaries(x,sr)
+    possible=[]
+    for left,right in zip(units,units[1:]):
+        gap=right[0]-left[1]
+        if gap>=int(sr*.025):
+            cut=(left[1]+right[0])//2
+            if int(.7*sr)<cut<len(x)-int(.25*sr):
+                possible.append(cut)
+    min_spacing={1:7.5,2:5.0,3:3.3}[density]
+    chosen=[]
+    previous=0
+    for cut in possible:
+        if (cut-previous)/sr>=min_spacing:
+            chosen.append(cut)
+            previous=cut
+    # One final flourish is allowed; do not repeat a word during every beat.
+    final=len(x)
+    if not chosen or (final-chosen[-1])/sr>=1.4:
+        chosen.append(final)
+    max_extensions=min(8.0,max(.75,len(x)/sr*.17))
+    total_fx_seconds=0.
     pieces=[];masks=[];original_spans=[]
-    offset=0
-    # Start every mix with clearly comic vocal transformations, then move
-    # into 90s turntable tricks. A random offset still changes each mix.
+    position=0;offset=0
     featured=('helium','comic_roll','monster','yo_yo')
-    extra=('dj','rewind','glitch','tape','stretch','scratch',
-           'cartoon','robot','pitch')
+    extras=('dj','glitch','tape','stretch','scratch','cartoon','robot','pitch')
     rotation=int(rng.integers(0,len(featured)))
-    mode_order=list(featured[rotation:]+featured[:rotation]+tuple(rng.permutation(extra)))
-    for i,(start,end) in enumerate(chunks):
-        raw=x[start:end].copy()
-        pieces.append(raw)
-        masks.append(np.zeros(len(raw),dtype=np.float32))
-        original_spans.append((start,end,offset,offset+len(raw)))
-        offset+=len(raw)
-        # Even a two-second message gets one solo effect after its full words.
-        # A short beat-synced transition is reserved for the effected phrase.
-        width=min(len(raw),max(int(.27*sr),int(.70*sr)))
-        candidates=range(0,max(1,len(raw)-width+1),max(1,int(.06*sr)))
-        position=max(candidates,key=lambda p:float(np.mean(raw[p:p+width:8]**2)))
-        sample=raw[position:position+width]
-        if len(sample)<int(.16*sr) or float(np.sqrt(np.mean(sample*sample)))<.009:
+    mode_order=list(featured[rotation:]+featured[:rotation]+tuple(rng.permutation(extras)))
+    for index,cut in enumerate(chosen):
+        raw=x[position:cut].copy()
+        if len(raw):
+            pieces.append(raw)
+            masks.append(np.zeros(len(raw),dtype=np.float32))
+            original_spans.append((position,cut,offset,offset+len(raw)))
+            offset+=len(raw)
+        position=cut
+        remaining=max_extensions-total_fx_seconds
+        if remaining<.20 or len(raw)<int(.35*sr):
             continue
-        mode=mode_order[i%len(mode_order)] if humor=='auto' else (
-            ('helium','comic_roll','monster','yo_yo','rewind')[i%5]
+        # Collect a short sample from the last clearly voiced phoneme in
+        # this phrase. The source phrase itself is NEVER truncated.
+        width=min(int(sr*.43),len(raw))
+        start=max(0,len(raw)-int(sr*.94))
+        if len(raw)-start<width:
+            start=max(0,len(raw)-width)
+        step=max(1,int(sr*.03))
+        candidates=range(start,len(raw)-width+1,step)
+        if not candidates:
+            continue
+        pick=max(candidates,key=lambda p:float(np.mean(raw[p:p+width:8]**2)))
+        sample=raw[pick:pick+width]
+        source_rms=float(np.sqrt(np.mean(sample*sample)))
+        if source_rms<.008:
+            continue
+        mode=mode_order[index%len(mode_order)] if humor=='auto' else (
+            ('helium','comic_roll','monster','yo_yo','rewind')[index%5]
             if humor=='chaos' else humor)
         effect=vintage_voice_fx(sample,mode,sr,bpm,rng)
-        # Normalize the EFFECT TO THE SOURCE VOICE loudness. Previously it was
-        # quieter than speech and buried under the instruments.
-        source_rms=float(np.sqrt(np.mean(sample*sample)))
+        if not len(effect):
+            continue
+        # Phrase breaks use an intentionally short half/whole-beat fill.
+        # The total effect overhead is bounded: a 30-second voice will not
+        # be dragged out into minutes by repeated stretches and rewinds.
+        max_fx=min(remaining-.04,beat*({1:1.15,2:1.4,3:1.55}[density]))
+        if max_fx<.18:
+            continue
+        effect=np.asarray(effect[:max(1,int(max_fx*sr))],dtype=np.float32)
         effect_rms=float(np.sqrt(np.mean(effect*effect)))
-        if effect_rms<=.0001:continue
-        gain=min(5.,max(.55,(source_rms/max(.0001,effect_rms))*fx_gain*{1:.82,2:1.0,3:1.23}[density]))
-        effect=np.tanh(effect*gain*.95).astype(np.float32)
-        k=min(int(.014*sr),len(effect)//6)
-        if k>0:
-            ramp=np.linspace(0,1,k,endpoint=False,dtype=np.float32)
-            effect[:k]*=ramp;effect[-k:]*=ramp[::-1]
-        pause=np.zeros(int(sr*min(.12,beat*.28)),dtype=np.float32)
-        pieces.extend([pause,effect,pause.copy()])
-        masks.extend([np.zeros(len(pause),np.float32),
-                      np.ones(len(effect),dtype=np.float32),
-                      np.zeros(len(pause),np.float32)])
-        offset+=len(pause)*2+len(effect)
+        if effect_rms<.0001:
+            continue
+        gain=min(3.0,max(.4,(source_rms/effect_rms)*fx_gain*
+                         {1:.85,2:1.,3:1.12}[density]))
+        # Smooth dynamics, never hard clip a loud source or the insert itself.
+        effect=np.tanh(effect*gain*.9).astype(np.float32)
+        fade=min(int(sr*.022),len(effect)//4)
+        if fade:
+            ramp=np.linspace(0.,1.,fade,endpoint=False,dtype=np.float32)
+            effect[:fade]*=ramp
+            effect[-fade:]*=ramp[::-1]
+        # Snap the insertion towards the *next* eighth-note only if it needs
+        # <=60ms of padding; never delay a speaker by a large quantization gap.
+        beat_grid=beat/2.
+        timeline=offset/sr+beat*4.
+        delay=(beat_grid-timeline%beat_grid)%beat_grid
+        pad=min(.06,delay) if delay<=.06 else 0.
+        if pad:
+            pause=np.zeros(int(sr*pad),dtype=np.float32)
+            pieces.append(pause);masks.append(np.zeros(len(pause),np.float32))
+            offset+=len(pause)
+        pieces.append(effect)
+        masks.append(np.ones(len(effect),dtype=np.float32))
+        offset+=len(effect)
+        total_fx_seconds+=len(effect)/sr+pad
+    if position<len(x):
+        rest=x[position:].copy()
+        pieces.append(rest)
+        masks.append(np.zeros(len(rest),dtype=np.float32))
+        original_spans.append((position,len(x),offset,offset+len(rest)))
+    if not pieces:
+        return x.copy(),np.zeros(len(x),dtype=np.float32),[(0,len(x),0,len(x))]
     return np.concatenate(pieces),np.concatenate(masks),original_spans
+
 
 
 def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None):
