@@ -307,7 +307,7 @@ async function completeAIVideoOnPhone(jobId,prompt){
  // Prefer the validated byte-upload route. A URL handed to Render can be
  // blocked by the GPU host even when the phone already downloaded the clip.
  if(window.KolboAIFallback){
-   return window.KolboAIFallback.generate(jobId,message,prompt);
+   return window.KolboAIFallback.generate(jobId,message,prompt,window.KolboCurrentAIScenes||[]);
  }
  if(!/^[a-f0-9]{48}$/.test(String(jobId||''))||
     typeof prompt!=='string'||!prompt.trim())
@@ -334,6 +334,8 @@ async function completeAIVideoOnPhone(jobId,prompt){
 
 async function run(){
 if(active)return;
+// run() is bound only to an explicit #generate button press. Sharing audio
+// never invokes this function or schedules background processing.
 if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
 if(files.some(function(f){return f.size>15*1048576||!f.size})){message('כל קובץ חייב להיות קטן מ־15MB ולא ריק.');return}
 active=true;markStage('upload');$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
@@ -387,6 +389,10 @@ markStage(completed<10?'recognize':completed<87?'mix':'video');
 message(j.label||'מכין את המיקס');
 if(j.state==='error')throw new Error(j.message||'אירעה תקלה בעיבוד');
 if(j.state==='done'){
+// The consented server-side planner supplies independent event prompts in
+// narrative order. No transcript-confirmation dialog and no fabricated words.
+window.KolboCurrentAIScenes=Array.isArray(j.client_ai_scene_prompts)?
+    j.client_ai_scene_prompts:[];
 var mp3=await fetch(j.download_url,{credentials:'same-origin'});
 if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד אותו.');
 if(resultUrl)URL.revokeObjectURL(resultUrl);
