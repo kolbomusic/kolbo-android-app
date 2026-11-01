@@ -176,7 +176,7 @@ def esc(v):return html.escape(str(v or ""),quote=True)
 def field(name,label,type="text",required=False,value=""):
  return f'<label>{esc(label)}<input name="{esc(name)}" type="{type}" value="{esc(value)}" maxlength="200" {"required" if required else ""}></label>'
 def view(title,body):
- u=me(); nav='<a href="/">🏠 בית</a> <a href="/memorials">🕯️ הנצחה</a> <a href="/archive">📜 ארכיון</a> <a href="/find">🔎 איתור</a> <a href="/photos">📷 תמונות</a> <a href="/feed">📸 סיפורים</a> <a href="/help">❔ עזרה</a> '
+ u=me(); nav='<a href="/">🏠 בית</a> <a href="/memorials">🕯️ הנצחה</a> <a href="/archive">📜 ארכיון</a> <a href="/directory">👥 מדריך חברים</a> <a href="/photos">📷 תמונות</a> <a href="/feed">📸 סיפורים</a> <a href="/help">❔ עזרה</a> '
  if u:
   nav+='<a href="/new-post">📸 שתפו סיפור או אירוע</a> <a href="/my-posts">📝 הפרסומים שלי</a> <a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/admin/accessibility">דיווחי נגישות</a> <a href="/community/moderation">אישור פרסומים</a> '
@@ -212,6 +212,16 @@ def health():return {"ok":True,"service":"karnafim","access":("read_only" if REA
 def terms_public():
  from public_pages import render_page
  return render_page("/terms")
+
+@app.route("/find", methods=["GET", "HEAD"])
+def retired_find():
+ # Preserve the retired address as 410 even after the private community is
+ # reopened. Never resurrect the old publicly searchable member endpoint.
+ return Response(
+  "כתובת איתור החברים הישנה הוסרה. למידע על הגישה לקהילה: /status",
+  status=410, mimetype="text/plain",
+  headers={"X-Robots-Tag":"noindex, nofollow","Cache-Control":"no-store"}
+ )
 
 @app.route("/status")
 def public_status():
@@ -347,7 +357,7 @@ def logout():
 def directory():
  u=me()
  if not u:return redirect("/login")
- if not u["approved"]:return view("ממתין לאישור",'<div class="card"><h2>בקשת ההצטרפות ממתינה לאישור</h2><p>בינתיים אפשר לצפות בארכיון המורשת, למצוא קבוצות חיפוש ולהזמין חברים.</p><a href="/archive">לארכיון</a> · <a href="/find">לאיתור חברים</a></div>')
+ if not u["approved"]:return view("ממתין לאישור",'<div class="card"><h2>בקשת ההצטרפות ממתינה לאישור</h2><p>בינתיים אפשר לצפות בארכיון המורשת, למצוא קבוצות חיפוש ולהזמין חברים.</p><a href="/archive">לארכיון</a> · <a href="/status">למידע על איתור חברים</a></div>')
  term=request.args.get("q","")[:80]
  records=sql("SELECT id,name,nickname,service_start,service_end,company,role,about,facebook_url,instagram_url,linkedin_url FROM members WHERE approved AND visible AND (name ILIKE %s OR nickname ILIKE %s) ORDER BY name LIMIT 100",('%'+term+'%','%'+term+'%'),True)
  def card_for(r):
@@ -356,7 +366,7 @@ def directory():
    if r[key]:x+='<a style="margin-left:12px" href="'+esc(r[key])+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>'
   return x+'</div>'
  cards=''.join(card_for(r) for r in records)
- body='<h1>חברי הפלוגה</h1><p>חברים מאושרים שבחרו להופיע. קישור לרשת חברתית מוצג רק אם בעל הפרופיל הוסיף אותו מרצונו.</p><form method="get"><label for="directory-search">חיפוש חבר לפי שם או כינוי</label><input id="directory-search" name="q" value="'+esc(term)+'" placeholder="שם או כינוי מהשירות"><button>חיפוש</button></form><div class="grid">'+(cards or '<div class="card"><h2>אתם הראשונים!</h2><p>החברים עוד לא בחרו להופיע במדריך. בינתיים נסו חיפוש ברשתות או הזמינו חבר מהמחזור.</p><a href="/find">איתור ברשתות</a> · <a href="/invite">הזמנת חברים</a></div>')+'</div>'
+ body='<h1>חברי הפלוגה</h1><p>חברים מאושרים שבחרו להופיע. קישור לרשת חברתית מוצג רק אם בעל הפרופיל הוסיף אותו מרצונו.</p><form method="get"><label for="directory-search">חיפוש חבר לפי שם או כינוי</label><input id="directory-search" name="q" value="'+esc(term)+'" placeholder="שם או כינוי מהשירות"><button>חיפוש</button></form><div class="grid">'+(cards or '<div class="card"><h2>אתם הראשונים!</h2><p>החברים עוד לא בחרו להופיע במדריך. בינתיים נסו חיפוש ברשתות או הזמינו חבר מהמחזור.</p><a href="/status">מצב איתור החברים</a> · <a href="/invite">הזמנת חברים</a></div>')+'</div>'
  return view("מדריך חברים",body)
 
 def social_link(value,site):
@@ -444,7 +454,7 @@ def memories():
  return redirect("/feed")
 @app.route("/discover")
 def discover():
- return redirect("/find")
+ return redirect("/status",code=303)
 @app.route("/admin/memory",methods=["POST"])
 def memory_admin():
  u=me()
