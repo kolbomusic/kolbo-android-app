@@ -77,15 +77,20 @@ def live():
             if route=="/help":ok=ok and "שאלות נפוצות" in body
             if route=="/find":ok=ok and "איתור חברי הקרנפים" in body
             if route.startswith("/memorial/"):ok=ok and "לזכר" in body
-            if route.startswith("/source/"):ok=ok and "מה ידוע מהתיעוד" in body
+            if route.startswith("/source/"):ok=ok and "תמצית התיעוד" in body
             if "form-action 'none'" not in headers.get("Content-Security-Policy",""):ok=False
+            if "noindex" in headers.get("X-Robots-Tag","").lower():ok=False
             print(("PASS" if ok else "FAIL"),route,"READ_ONLY",status)
             if not ok:errors.append((route,status))
         for route in BLOCKED:
             status,headers,body,landed=fetch(route)
-            ok=status==503 and "no-store" in headers.get("Cache-Control","")
+            ok=status==503 and "no-store" in headers.get("Cache-Control","") and "noindex" in headers.get("X-Robots-Tag","")
             print(("PASS" if ok else "FAIL"),route,"BLOCKED",status)
             if not ok:errors.append((route,status))
+    robots,_,rules,_=fetch("/robots.txt")
+    sitemap,_,xml,_=fetch("/sitemap.xml")
+    if robots!=200 or "Disallow: /login" not in rules:errors.append(("robots",robots))
+    if sitemap!=200 or "https://karnafim-community-46.onrender.com/memorial/" not in xml:errors.append(("sitemap",sitemap))
     favicon,*_=fetch("/favicon.svg")
     if favicon!=200:errors.append(("favicon",favicon))
     print("MODE", "community" if active else "read_only", "FAILURES",errors)
