@@ -15,6 +15,33 @@ from live_video import (
 )
 
 class GroundedVideoTests(unittest.TestCase):
+    def test_long_real_source_does_not_restart_at_eight_seconds(self):
+        # Regression: earlier clips of 12s looped the same first 8 seconds.
+        # Verify later output contains genuinely later decoded source frames.
+        from live_video import _make_segment
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder)
+            source=root/'moving-12s.mp4';output=root/'full-12s.mp4'
+            subprocess.run([
+                'ffmpeg','-nostdin','-v','error','-y','-f','lavfi',
+                '-i','testsrc2=size=180x320:rate=8:duration=12',
+                '-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p',
+                str(source)],check=True,timeout=35)
+            _make_segment(source,output,12.)
+            def frame(path,when):
+                return subprocess.check_output([
+                    'ffmpeg','-nostdin','-v','error','-ss',str(when),
+                    '-i',str(path),'-frames:v','1',
+                    '-vf','scale=48:64,format=gray','-f','rawvideo','-'],
+                    timeout=25)
+            early=frame(output,1.)
+            late=frame(output,9.)
+            self.assertEqual(len(early),48*64)
+            self.assertEqual(len(late),48*64)
+            difference=sum(abs(a-b) for a,b in zip(early,late))/len(early)
+            self.assertGreater(difference,1.0,
+                               'long scene repeated first eight seconds')
+
     def test_portrait_video_fills_screen_without_black_letterbox_bars(self):
         # Test-only animated synthetic source verifies portrait conversion;
         # actual user stories still use licensed moving real-world footage.
