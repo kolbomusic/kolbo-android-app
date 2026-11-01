@@ -281,7 +281,9 @@ def _matches_metadata(title,query):
     # stock intros, gameplay, incorrect scene specifics and diagrams.
     forbidden=("animation","cartoon","simulator","simulation","gameplay",
                "computer generated","cgi","3d model","slideshow",
-               "wrong side","wrong way")
+               "wrong side","wrong way", "on why ", "interview",
+               "explaining", "explains why", "talking about",
+               "presentation", "lecture", "speech about")
     if any(x in title for x in forbidden):return False
     keywords=query.lower().split()
     # Preserve the actor and the action without depending on word order
@@ -304,15 +306,38 @@ def _matches_metadata(title,query):
     return all(any(word in title for word in aliases.get(token,(token,)))
                for token in keywords)
 
+# Search real recorded events by several grounded names rather than one
+# brittle exact keyword pair. The returned item's title is still validated
+# for the ACTUAL candidate query and its license is checked.
+MEDIA_SEARCH_ALIASES={
+    "car driving": ("car driving", "driving car", "moving car", "car moving"),
+    "truck driving": ("truck driving", "driving truck", "moving truck", "lorry driving"),
+    "dog barking": ("dog barking", "barking dog"),
+    "donkey braying": ("donkey braying", "braying donkey"),
+    "farmer feeding animals": ("farmer feeding animals", "feeding livestock", "feeding cattle"),
+    "person running": ("person running", "people running"),
+    "person laughing": ("person laughing", "people laughing"),
+    "person singing": ("person singing", "people singing"),
+    "person crying": ("person crying", "people crying"),
+    "dog running": ("dog running", "running dog"),
+    "baby crying": ("baby crying", "crying baby"),
+    "bird flying": ("bird flying", "flying bird"),
+    "rain falling": ("rain falling", "falling rain", "heavy rain"),
+    "person cooking": ("person cooking", "people cooking"),
+    "people hugging": ("people hugging", "hugging people"),
+    "people dancing": ("people dancing", "dancing people"),
+    "car": ("car", "moving car"),
+    "truck": ("truck", "moving truck", "lorry"),
+    "dog": ("dog", "moving dog"),
+    "donkey": ("donkey", "walking donkey"),
+}
 def commons_candidates(query):
     # A narrow, title-validated search is deliberately preferred over generic
     # relevant-looking footage that does not show the *spoken action*.
     terms=query.lower().split()
-    searches=[query]
-    if len(terms)==2:
+    searches=list(MEDIA_SEARCH_ALIASES.get(query,(query,)))
+    if len(terms)==2 and " ".join(reversed(terms)) not in searches:
         searches.append(" ".join(reversed(terms)))
-    if query=="donkey braying":
-        searches.append("braying donkey")
     matches=[]
     seen=set()
     for search_text in dict.fromkeys(searches):
@@ -322,12 +347,12 @@ def commons_candidates(query):
                         "prop":"imageinfo","iiprop":"url|mime|size|extmetadata",
                         "format":"json","formatversion":2})
         for page in data.get("query",{}).get("pages",[]):
-            if not _matches_metadata(page.get("title",""),query):continue
+            if not _matches_metadata(page.get("title",""),search_text):continue
             info=(page.get("imageinfo") or [{}])[0]
             mime=str(info.get("mime",""))
             size=int(info.get("size",0))
             url=str(info.get("url",""))
-            if mime not in ("video/webm","video/ogg","application/ogg"):continue
+            if mime not in ("video/webm","video/ogg","application/ogg","video/mp4"):continue
             if size<10000 or size>MAX_BYTES:continue
             if not _valid_license(info.get("extmetadata",{})):continue
             parsed=urllib.parse.urlparse(url)
@@ -336,6 +361,7 @@ def commons_candidates(query):
             if url in seen:continue
             seen.add(url)
             matches.append({"url":url,"title":page["title"],"bytes":size,
+                            "matched_query":search_text,
                             "page":"https://commons.wikimedia.org/wiki/"+
                                 urllib.parse.quote(page["title"].replace(" ","_")),
                             "license":info["extmetadata"].get("LicenseShortName",{}).get("value","")})
@@ -481,7 +507,7 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
                     choices=search(candidate_query)
                 except Exception:
                     choices=[]
-                for item in choices[:4]:
+                for item in choices[:5]:
                     try:
                         download(item,source)
                         if _duration(source)>=.7:
@@ -491,13 +517,17 @@ def export_live_story(audio_mp3,video_mp4,plan,work_dir,progress=None,
                             break
                     except (OSError,subprocess.SubprocessError,ValueError,UnavailableVideo):
                         continue
-                if selected is not None:break
+                if selected is not None:
+                    if (candidate_query==query and match_level=="exact_action"
+                        and selected.get("matched_query",query)!=query):
+                        match_level="alternate_action_query"
+                    break
             cached[query]=(source,selected,match_level)
         source,selected,match_level=cached[query]
         if selected is None:
             missing.append({"action":scene["action"],"spoken":scene.get("spoken","")[:180]})
             continue
-        if match_level=="explicit_subject_only":
+        if match_level in ("explicit_subject_only","alternate_action_query"):
             plan["visual_coverage"]="partial"
             plan.setdefault("thematic_clips",[]).append(scene["action"])
         prepared.append((scene,source,selected,match_level))

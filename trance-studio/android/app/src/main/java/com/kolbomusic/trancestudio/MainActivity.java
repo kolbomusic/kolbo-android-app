@@ -6,6 +6,7 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Color;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -27,6 +28,10 @@ import android.widget.Toast;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.Button;
+import android.widget.TextView;
+import android.view.Gravity;
+import android.view.View;
 
 import org.json.JSONArray;
 
@@ -54,6 +59,8 @@ public final class MainActivity extends Activity {
     private final List<Uri> incoming=Collections.synchronizedList(new ArrayList<>());
     private WebView webView;
     private ProgressBar loading;
+    private LinearLayout offlinePanel;
+    private boolean pageLoadFailed;
     private android.webkit.ValueCallback<Uri[]> fileCallback;
 
     @Override public void onCreate(Bundle state){
@@ -63,11 +70,39 @@ public final class MainActivity extends Activity {
         LinearLayout root=new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(12,8,22));
+        root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         loading=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
         loading.setIndeterminate(true);
         root.addView(loading,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,5));
         webView=new WebView(this);
         root.addView(webView,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
+        offlinePanel=new LinearLayout(this);
+        offlinePanel.setOrientation(LinearLayout.VERTICAL);
+        offlinePanel.setGravity(Gravity.CENTER);
+        offlinePanel.setPadding(42,50,42,50);
+        offlinePanel.setBackgroundColor(Color.rgb(24,16,39));
+        offlinePanel.setVisibility(View.GONE);
+        TextView offlineTitle=new TextView(this);
+        offlineTitle.setText("אין חיבור ל־Kolbo Trance Story");
+        offlineTitle.setTextColor(Color.WHITE);
+        offlineTitle.setTextSize(23f);
+        offlineTitle.setGravity(Gravity.CENTER);
+        offlinePanel.addView(offlineTitle,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView offlineHelp=new TextView(this);
+        offlineHelp.setText("ההקלטות לא נמחקו מהמכשיר. בדוק חיבור לאינטרנט ונסה לטעון מחדש.");
+        offlineHelp.setTextColor(Color.rgb(220,204,237));
+        offlineHelp.setTextSize(16f);
+        offlineHelp.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams hintLayout=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
+        hintLayout.setMargins(0,16,0,24);
+        offlinePanel.addView(offlineHelp,hintLayout);
+        Button retry=new Button(this);
+        retry.setText("נסה שוב להתחבר");
+        retry.setAllCaps(false);
+        retry.setTextSize(16f);
+        retry.setOnClickListener(v->webView.loadUrl(STUDIO));
+        offlinePanel.addView(retry,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(offlinePanel,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
         setContentView(root);
         WebSettings settings=webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -97,10 +132,16 @@ public final class MainActivity extends Activity {
                 return true;
             }
             @Override public void onProgressChanged(WebView view,int progress){
-                loading.setVisibility(progress>=100?android.view.View.GONE:android.view.View.VISIBLE);
+                if(!pageLoadFailed)loading.setVisibility(progress>=100?View.GONE:View.VISIBLE);
             }
         });
         webView.setWebViewClient(new WebViewClient(){
+            @Override public void onPageStarted(WebView view,String url,Bitmap favicon){
+                pageLoadFailed=false;
+                offlinePanel.setVisibility(View.GONE);
+                webView.setVisibility(View.VISIBLE);
+                loading.setVisibility(View.VISIBLE);
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
                 Uri u=request.getUrl();
                 if("https".equalsIgnoreCase(u.getScheme())&&HOST.equalsIgnoreCase(u.getHost()))return false;
@@ -134,14 +175,19 @@ public final class MainActivity extends Activity {
                 }catch(Exception ex){return failStream();}
             }
             @Override public void onPageFinished(WebView view,String url){
-                if(url!=null&&url.startsWith(STUDIO))importIncoming();
+                if(!pageLoadFailed&&url!=null&&url.startsWith(STUDIO))importIncoming();
             }
             @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,SslError error){
                 handler.cancel();
                 toast("שגיאת אבטחה בחיבור לאתר");
             }
             @Override public void onReceivedError(WebView view,WebResourceRequest req,android.webkit.WebResourceError err){
-                if(req.isForMainFrame())toast("אין חיבור לסטודיו. בדוק את האינטרנט ונסה שוב");
+                if(req.isForMainFrame()){
+                    pageLoadFailed=true;
+                    loading.setVisibility(View.GONE);
+                    webView.setVisibility(View.GONE);
+                    offlinePanel.setVisibility(View.VISIBLE);
+                }
             }
         });
         collectIncoming(getIntent());
@@ -279,13 +325,13 @@ public final class MainActivity extends Activity {
                         send.setType(video?"video/mp4":"audio/mpeg");
                         send.putExtra(Intent.EXTRA_STREAM,ready);
                         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        try{startActivity(Intent.createChooser(send,video?"שיתוף סרטון האנימציה":"שיתוף המיקס"));}
+                        try{startActivity(Intent.createChooser(send,video?"שיתוף סרטון Kolbo Trance":"שיתוף המיקס"));}
                         catch(Exception e){toast("השיתוף אינו זמין. המיקס נשמר בהורדות.");}
                     }else toast(video?"הסרטון נשמר בהורדות / Kolbo Trance":"המיקס נשמר בתיקיית הורדות / Kolbo Trance");
                 });
             }catch(Exception e){
                 if(output!=null)try{getContentResolver().delete(output,null,null);}catch(Exception ignored){}
-                toast("בעיה בשמירת המיקס: "+e.getMessage());
+                toast((video?"בעיה בשמירת הסרטון: ":"בעיה בשמירת המיקס: ")+e.getMessage());
             }finally{if(c!=null)c.disconnect();}
         });
     }
