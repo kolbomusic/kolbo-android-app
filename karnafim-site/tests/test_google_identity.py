@@ -43,6 +43,16 @@ def main():
         "GOOGLE_CLIENT_SECRET":"test-only-secret-not-real",
     },clear=True):
         assert auth.enabled(),"Configured Google sign-in should pass readiness"
+        assert auth.configuration_checks()["valid_client_id"]
+        # Real Google client IDs must be accepted; a double-escaped dot would reject them.
+        os.environ["GOOGLE_CLIENT_ID"] = "761981450509-3bvp5njfhghvrsitipl0vcde0g92q9h.apps.googleusercontent.com"
+        assert auth.enabled(),"The project's real Google client ID format must be valid"
+        for invalid in ("761981450509-3bvp5njfhghvrsitipl0vcde0g92q9hXappsXgoogleusercontentXcom",
+                        "https://accounts.google.com",
+                        "761981450509-3bvp5njfhghvrsitipl0vcde0g92q9h.apps.googleusercontent.com.evil.example"):
+            os.environ["GOOGLE_CLIENT_ID"] = invalid
+            assert not auth.configuration_checks()["valid_client_id"], "Invalid Google client ID accepted"
+
     with patch.dict(os.environ,{
         "KARNAFIM_GOOGLE_AUTH_ENABLED":"1",
         "GOOGLE_CLIENT_ID":"not-a-real-client-id",
