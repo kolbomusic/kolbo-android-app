@@ -55,7 +55,9 @@ def mix_licensed_backing(path,vocal,sr=32000,transcript_hint='',bpm=145,humor='a
     # The custom backing replaces the original synthesizer, but it must
     # not strip the sound design. Accents are placed after measured voice
     # phrases, and only if there is physical space before the next phrase.
-    if humor=='auto' and transcript_hint:
+    if humor=='auto':
+        # Even without reliable Hebrew ASR, audio prosody still supports
+        # a few tasteful rhythmic accents in measured, genuine pauses.
         from engine import speech_boundaries,_semantic_comedy_cue
         from comic_stingers import create_sting
         units=speech_boundaries(mono,sr)
@@ -71,13 +73,23 @@ def mix_licensed_backing(path,vocal,sr=32000,transcript_hint='',bpm=145,humor='a
             cue=_semantic_comedy_cue(
                 transcript_hint,
                 max(0.,min(.999,(hi-spoken_begin)/max(1,spoken_end-spoken_begin))))
-            if not cue:continue
+            if not cue:
+                # Safe generic rhythmic punctuation, not a falsely
+                # asserted animal or event that was never spoken.
+                cue=("comic_roll","yo_yo","tape","helium")[count%4]
             one=create_sting(cue,sr,bpm,count)
             start=min(len(mixed)-1,hi+int(sr*.025))
             size=min(len(one),len(mixed)-start,available-int(sr*.035))
             if size<sr*.15:continue
-            mixed[start:start+size,0]+=one[:size]*.72
-            mixed[start:start+size,1]+=one[:size]*.81
+            accent=one[:size].copy()
+            edge=min(size//4,int(sr*.035))
+            if edge:
+                accent[-edge:]*=np.linspace(1.,0.,edge,dtype=np.float32)
+            # Momentarily duck existing bed+treated voice so this punch
+            # is perceptible on a phone, without touching adjacent words.
+            mixed[start:start+size]*=.73
+            mixed[start:start+size,0]+=accent*.99
+            mixed[start:start+size,1]+=accent*1.03
             last=hi;count+=1
     fade=np.clip(np.arange(len(mono),dtype=np.float32)/(sr*.03),0,1)
     fade*=np.clip((len(mono)-1-np.arange(len(mono),dtype=np.float32))/(sr*.5),0,1)
