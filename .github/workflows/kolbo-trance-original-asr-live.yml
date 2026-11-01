@@ -1,0 +1,16 @@
+name: Kolbo Trance actual original-file ASR fallback live test
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - 'trance-studio/tests/live_asr_recovery_smoke.py'
+      - '.github/workflows/kolbo-trance-original-asr-live.yml'
+  workflow_dispatch:
+jobs:
+  original-source-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate original-source fallback against live server
+        run: python trance-studio/tests/live_asr_recovery_smoke.py
