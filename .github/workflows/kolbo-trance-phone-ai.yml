@@ -6,6 +6,8 @@ on:
       - 'trance-studio/backend/client_ai_fallback.py'
       - 'trance-studio/backend/app.py'
       - 'trance-studio/tests/test_mobile_ai_fallback.py'
+      - 'trance-studio/tests/live_phone_ai_e2e.py'
+      - '.github/workflows/kolbo-trance-live-phone-ai.yml'
       - 'trance-studio/web/studio-ai-fallback.js'
       - 'trance-studio/web/studio.html'
       - '.github/workflows/kolbo-trance-phone-ai.yml'
