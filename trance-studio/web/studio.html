@@ -171,7 +171,7 @@ async function transcribeOne(file,i){
  return await new Promise(function(resolve,reject){
   var worker=new Worker('/studio-asr-worker.js',{type:'module'});
   var finished=false;
-  var timeout=setTimeout(function(){settle(new Error('זיהוי הדיבור עבר את זמן העיבוד. ניתן להזין תמלול ידני.'))},240000);
+  var timeout=setTimeout(function(){settle(new Error('פענוח הדיבור במכשיר נמשך זמן רב; ממשיך אוטומטית לפענוח מהקובץ המקורי בשרת.'))},95000);
   function settle(error,result){
    if(finished)return;
    finished=true;clearTimeout(timeout);worker.terminate();
