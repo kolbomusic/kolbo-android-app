@@ -9,6 +9,7 @@ on:
       - kolbo-trance-fix-ai-ui-regression-20261101
       - kolbo-trance-manual-create-precise-scenes-20261101
       - kolbo-trance-audio-coherence-20261101
+      - kolbo-trance-release-audio-242-20261101
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'
