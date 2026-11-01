@@ -25,6 +25,28 @@ class AIVideoTests(unittest.TestCase):
         with self.assertRaises(AIVideoUnavailable):
             cinematic_prompt('Hello world')
 
+    def test_gradio_public_failure_classifies_quota_and_hides_input(self):
+        from ai_video import _public_provider_error, _public_http_error
+        import urllib.error
+        secret='user-private-phrase-123'
+        for raw in (
+            json.dumps({'error':'You have exceeded your GPU quota. '+secret}),
+            json.dumps({'message':'GPU time limit reached '+secret}),
+            json.dumps({'detail':'ZeroGPU quota exceeded '+secret}),
+        ):
+            issue=_public_provider_error(raw)
+            self.assertIsInstance(issue,AIVideoUnavailable)
+            self.assertIn('GPU',str(issue))
+            self.assertNotIn(secret,str(issue))
+        self.assertIn('עמוס',str(_public_provider_error(
+            json.dumps({'error':'GPU capacity busy '+secret}))))
+        self.assertNotIn(secret,str(_public_provider_error(
+            json.dumps({'message':'unhandled exception '+secret}))))
+        self.assertIn('429',str(_public_http_error(
+            urllib.error.HTTPError('https://x',429,'',{},None))))
+        self.assertIn('הרשאה',str(_public_http_error(
+            urllib.error.HTTPError('https://x',403,'',{},None))))
+
     def test_gradio_video_url_requires_exact_public_https_host(self):
         u='https://lightricks-ltx-video-distilled.hf.space/gradio_api/file=/tmp/gradio/a/clip.mp4'
         data=[{'video':{'path':'/tmp/gradio/a/clip.mp4','url':u}},42]
