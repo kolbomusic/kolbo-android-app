@@ -30,13 +30,13 @@ class ComicStingsTests(unittest.TestCase):
         rng=np.random.default_rng(9)
         bed=rng.standard_normal((sr*3,2)).astype(np.float32)*.01
         active=np.zeros(len(bed),dtype=np.float32)
-        active[sr:sr+1200]=1.
+        active[sr:sr+int(.35*sr)]=1.
         fallback=add_comic_stings(bed,active,sr,145,lambda p:None)
         # Keywords can be absent in real WhatsApp speech. Still give an
         # acoustic comic accent at a selected existing voice-FX pause.
         self.assertGreater(float(np.max(np.abs(fallback-bed))),.07)
         np.testing.assert_array_equal(fallback[:sr],bed[:sr])
-        np.testing.assert_array_equal(fallback[sr+1200:],bed[sr+1200:])
+        np.testing.assert_array_equal(fallback[sr+int(.35*sr):],bed[sr+int(.35*sr):])
         np.testing.assert_array_equal(
             add_comic_stings(bed,np.zeros(len(bed)),sr,145,
                              lambda p:'monster'),bed)
