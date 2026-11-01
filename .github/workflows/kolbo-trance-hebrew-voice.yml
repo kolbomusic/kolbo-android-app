@@ -1,7 +1,7 @@
 name: Kolbo Trance Hebrew spoken OPUS-to-video acceptance
 on:
   push:
-    branches: [kolbo-trance-hebrew-voice-acceptance-20261101]
+    branches: [kolbo-trance-studio-20261031]
     paths:
       - 'trance-studio/tests/ci_hebrew_voice.py'
       - 'trance-studio/backend/live_video.py'
