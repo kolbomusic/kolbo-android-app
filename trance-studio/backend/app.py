@@ -175,10 +175,12 @@ def create_app(config=None):
                                   'ai_clip_seconds':board['ai_clip_seconds'],
                                   'ai_clips_generated':board.get('ai_clips_generated',1),
                                   'video_note':(
-                                      'הקטע נוצר באמצעות AI מתוך תמלול ההקלטה. '
-                                      'זו המחשה משוערת, לא שחזור מדויק של כל משפט. '
-                                      'סצנות AI קצרות עשויות לחזור לאורך המיקס; '
-                                      'השירות החינמי מוגבל.')}
+                                      'נוצרו '+str(board.get('ai_clips_generated',1))+
+                                      ' סצנות AI עם '+str(board.get('ai_clip_seconds',0))+
+                                      ' שניות של תנועה מקורית מתוך '+
+                                      str(round(len(audio)/32000,1))+
+                                      ' שניות מיקס. יתר הזמן מאריך או חוזר על '
+                                      'סצנות קצרות; זוהי המחשה משוערת בלבד.')}
                         except AIVideoUnavailable as err:
                             ai_generation_error=str(err)[:180]
                             app.logger.warning('Free AI video unavailable: %s',
@@ -511,14 +513,21 @@ def create_app(config=None):
                     client_ai_fallback=False,
                     ai_clips_generated=board['ai_clips_generated'],
                     ai_clip_seconds=board['ai_clip_seconds'],
-                    video_note='נוצרו סצנות AI לפי התמלול, בהסכמה. זו המחשה משוערת, לא שחזור מדויק של כל משפט.',
+                    video_note=(
+                        'נוצרו '+str(board['ai_clips_generated'])+
+                        ' סצנות AI עם '+str(board['ai_clip_seconds'])+
+                        ' שניות תנועה מקורית. יתר הסרטון מאריך קטעים; '
+                        'זו המחשה משוערת, לא יצירה רציפה של כל האירועים.'),
                     label='סרטון ה־AI והמיקס מוכנים')
             return jsonify(video_url='/api/jobs/'+job_id+'/video',
                            video_preview_url='/api/jobs/'+job_id+'/video_preview',
                            video_status='done',
                            video_mode='ai_generated_client_fallback',
                            visual_coverage='approximate',
-                           video_note='סרטון AI חדש מן התמלול; המחשה משוערת, לא שחזור מדויק.',
+                           video_note=(
+                               'נוצרו '+str(board['ai_clips_generated'])+
+                               ' סצנות AI עם '+str(board['ai_clip_seconds'])+
+                               ' שניות תנועה מקורית. חלק מהסרטון חוזר עליהן.'),
                            storyboard_url='/api/jobs/'+job_id+'/storyboard',
                            ai_clips_generated=board['ai_clips_generated']),200
         except MobileClipError as exc:
