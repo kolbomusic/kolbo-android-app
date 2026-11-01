@@ -779,6 +779,14 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     env=lfilter([.003],[1,-.997],env).astype(np.float32)
     music*= ((1-.79*np.clip(env/.18,0,1))*(1-.76*fx_highlight))[:,None]
     music+=vocal[:,None]*1.13
+    # Original cartoon punctuation is audible only at selected existing
+    # FX cuts. Foley never replaces words, is independent of YouTube,
+    # and is disabled with the user's humour-off setting.
+    if humor=='auto' and transcript_hint:
+        from comic_stingers import add_comic_stings
+        music=add_comic_stings(
+            music,fx_highlight,sr,bpm,
+            lambda fraction:_semantic_comedy_cue(transcript_hint,fraction))
     # Keep the voice solo clean, including in the reserved FX slots.
     # Echo and other delayed copies previously collided with the next line.
     # Conservative master gain / limiter: no global overdrive or loudness pumping.
