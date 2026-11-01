@@ -1,0 +1,43 @@
+name: Kolbo Trance Hebrew spoken OPUS-to-video acceptance
+on:
+  push:
+    branches: [kolbo-trance-hebrew-voice-acceptance-20261101]
+    paths:
+      - 'trance-studio/tests/ci_hebrew_voice.py'
+      - '.github/workflows/kolbo-trance-hebrew-voice.yml'
+  workflow_dispatch:
+jobs:
+  hebrew-spoken-opus:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Create NEW synthetic spoken Hebrew audio (not user content)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+          python - <<'PY'
+          from gtts import gTTS
+          speech='הכלב נובח בחצר. המשאית נוסעת בכביש. הכלב נובח שוב.'
+          gTTS(text=speech,lang='iw',slow=False).save('/tmp/kolbo-hebrew-synthetic.mp3')
+          print('Generated',len(speech),'characters of Hebrew original speech')
+          PY
+          ffmpeg -nostdin -loglevel error -y -i /tmp/kolbo-hebrew-synthetic.mp3 -c:a libopus -b:a 24k -ar 48000 -ac 1 /tmp/kolbo-hebrew-voice.opus
+          ffprobe -v error -show_entries stream=codec_name -of default=noprint_wrappers=1 /tmp/kolbo-hebrew-voice.opus
+      - name: Build real Docker image with pinned PyAV and Whisper base
+        run: docker build -t kolbo-trance:hebrew-spoken trance-studio
+      - name: Decipher actual Hebrew speech from OPUS within free server limits
+        run: |
+          docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 \
+            -v /tmp/kolbo-hebrew-voice.opus:/tmp/kolbo-hebrew-voice.opus:ro \
+            -v "$PWD/trance-studio/tests:/app/tests:ro" \
+            --entrypoint python kolbo-trance:hebrew-spoken /app/tests/ci_hebrew_voice.py
+      - name: Ensure original regression suite still passes
+        run: |
+          docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 \
+            -v "$PWD/trance-studio/tests:/app/tests:ro" \
+            --entrypoint python kolbo-trance:hebrew-spoken -m unittest discover -s /app/tests -p 'test_*.py'
