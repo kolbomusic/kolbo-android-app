@@ -55,6 +55,7 @@ def main():
         if result['state'] in ('done','error'):break
     else:raise TimeoutError('remote job did not complete in six minutes')
     assert result['state']=='done',result
+    assert result.get('engine')=='semantic_footage_with_original_asr_recovery_v5', result
     assert result['video_status']=='done',result
     assert result['storyboard_source']=='automatic_transcript_grounded_longform',result
     preview,headers,status_code=call(result['video_preview_url'],timeout=75)
