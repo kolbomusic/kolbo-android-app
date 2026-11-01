@@ -428,6 +428,21 @@ async function completeAIVideoOnPhone(jobId,prompt){
  throw new Error('גם מכסת יצירת הווידאו החינמית של המכשיר אינה זמינה. '+(failure&&failure.message||''));
 }
 
+async function submitMixJob(form){
+ // Reuse one helper for normal upload and a single post-restart recovery.
+ // Render 429 means the job was NOT admitted: retry only this case.
+ var response,body;
+ for(var busyAttempt=0;busyAttempt<3;busyAttempt++){
+  response=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
+  body=await response.json().catch(function(){return {error:'השרת לא החזיר תשובה תקינה'}});
+  if(response.status!==429||busyAttempt===2)break;
+  message('שרת העיבוד עסוק. ההקלטה נשמרה; מנסה שוב ללא יצירה כפולה...');
+  await pause(busyAttempt===0?6000:12000);
+ }
+ if(!response.ok)throw new Error(body.error||'לא ניתן לשלוח את ההקלטה');
+ if(!body.status_url||!body.id)throw new Error('השרת לא החזיר פרטי עבודה תקינים');
+ return body;
+}
 async function run(){
 if(active)return;
 // run() is bound only to an explicit #generate button press. Sharing audio
@@ -486,22 +501,33 @@ form.set('transcript_origin','auto');
 var variation=$('variation').value;
 form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99999)):variation);
 form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('fx_gain',String(Number($('fx_gain').value)/100));form.set('voice_level',String(Number($('voice').value)/100));
-// A single user click owns at most three bounded upload attempts.
- // When Render is legitimately busy, do not make them repeat the whole
- // WhatsApp share, and never start several distinct video jobs at once.
- var r,data;
- for(var busyAttempt=0;busyAttempt<3;busyAttempt++){
-  r=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
-  data=await r.json().catch(function(){return {error:'השרת לא החזיר תשובה תקינה'}});
-  if(r.status!==429||busyAttempt===2)break;
-  message('שרת העיבוד עסוק. נשמר הקובץ שבחרת; מנסה שוב ללא יצירה כפולה...');
-  await pause(busyAttempt===0?6000:12000);
- }
- if(!r.ok)throw new Error(data.error||'לא ניתן לשלוח את ההקלטה');
+// One explicit Create click may submit the same source at most twice:
+// only a proven 404 (job lost on a Render restart) authorizes recovery.
+// A short proxy outage is retried in place, never duplicated.
+var data=await submitMixJob(form);
+var lostJobRecovery=0;
+var temporaryStatusFailures=0;
 for(var attempt=0;attempt<600;attempt++){
 await pause(1000);
 var statusResponse=await fetch(data.status_url,{credentials:'same-origin'});
-var j=await statusResponse.json();
+if([502,503,504].indexOf(statusResponse.status)>=0){
+  temporaryStatusFailures++;
+  if(temporaryStatusFailures<=4){
+   message('השרת מתחבר מחדש. שומר על ההקלטה ועל ההפקה...');
+   await pause(2500);
+   continue;
+  }
+}
+temporaryStatusFailures=0;
+if(statusResponse.status===404&&lostJobRecovery<1){
+ lostJobRecovery++;
+ message('השרת אותחל באמצע העיבוד. משחזר פעם אחת את היצירה מההקלטה שכבר בחרת...');
+ markStage('upload');
+ data=await submitMixJob(form);
+ attempt=0;
+ continue;
+}
+var j=await statusResponse.json().catch(function(){return {error:'השרת לא החזיר תשובה תקינה'}});
 if(!statusResponse.ok)throw new Error(j.error||'השירות אינו זמין');
 var completed=Number(j.percent||0);
 $('progress').value=completed;
