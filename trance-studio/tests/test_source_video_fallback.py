@@ -119,6 +119,77 @@ class OriginalMovingVideoTests(unittest.TestCase):
                 self.assertNotIn('video_url',result)
                 self.assertIn('download_url',result)
 
+    def test_ai_story_does_not_call_footage_selector_even_with_valid_hebrew(self):
+        import app as server
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            with mock.patch.object(server,'ThreadPoolExecutor') as executor:
+                app=server.create_app({'TESTING':True,'JOB_DIR':str(root/'jobs'),
+                                       'API_TOKEN':'test-only'})
+                client=app.test_client()
+                response=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'nonempty fake audio'),'voice.opus'),
+                    'make_video':'on','video_requested':'on',
+                    'video_strategy':'new_story',
+                    'transcript':'החמור נוער והחקלאי צוחק בקול',
+                    'transcript_origin':'manual','seconds':'30'})
+                self.assertEqual(response.status_code,202,response.json)
+                job=executor.return_value.submit.call_args.args
+                def fake_mp3(samples,path,sr=32000):
+                    pathlib.Path(path).write_bytes(b'mp3-placeholder')
+                with (mock.patch.object(server,'load_audio',
+                                        return_value=np.ones(160000,np.float32)*.01),
+                      mock.patch.object(server,'render_mix',
+                                        return_value=(np.zeros((160000,2),np.float32),
+                                                      np.zeros(160000,np.float32))),
+                      mock.patch.object(server,'export_mp3',side_effect=fake_mp3),
+                      mock.patch.object(server,'visual_plan',
+                                        side_effect=AssertionError('stock footage forbidden')),
+                      mock.patch('source_video_fallback.compose_original_video_with_mix',
+                                 side_effect=AssertionError('source video forbidden'))):
+                    job[0](*job[1:])
+                status=client.get('/api/jobs/'+response.json['id']).json
+                self.assertEqual(status['state'],'done',status)
+                self.assertEqual(status['video_status'],'unavailable',status)
+                self.assertEqual(status['storyboard_source'],
+                                 'independent_ai_not_available')
+                self.assertNotIn('video_url',status)
+
+    def test_stock_illustration_failure_must_not_return_whatsapp_source(self):
+        import app as server
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            with mock.patch.object(server,'ThreadPoolExecutor') as executor:
+                app=server.create_app({'TESTING':True,'JOB_DIR':str(root/'jobs'),
+                                       'API_TOKEN':'test-only'})
+                client=app.test_client()
+                response=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'fake-video-data'),'video.mp4'),
+                    'video_strategy':'illustrated_story',
+                    'make_video':'on','video_requested':'on',
+                    'transcript':'החמור נוער והחקלאי צוחק בקול',
+                    'transcript_origin':'manual','seconds':'30'})
+                self.assertEqual(response.status_code,202,response.json)
+                job=executor.return_value.submit.call_args.args
+                def fake_mp3(samples,path,sr=32000):
+                    pathlib.Path(path).write_bytes(b'mp3-placeholder')
+                with (mock.patch.object(server,'load_audio',
+                                        return_value=np.ones(160000,np.float32)*.01),
+                      mock.patch.object(server,'render_mix',
+                                        return_value=(np.zeros((160000,2),np.float32),
+                                                      np.zeros(160000,np.float32))),
+                      mock.patch.object(server,'export_mp3',side_effect=fake_mp3),
+                      mock.patch.object(server,'visual_plan',
+                                        side_effect=UnavailableVideo('no licensed source')),
+                      mock.patch('source_video_fallback.compose_original_video_with_mix',
+                                 side_effect=AssertionError('video source substitution forbidden'))):
+                    job[0](*job[1:])
+                status=client.get('/api/jobs/'+response.json['id']).json
+                self.assertEqual(status['state'],'done',status)
+                self.assertEqual(status['video_status'],'unavailable',status)
+                self.assertNotEqual(status.get('storyboard_source'),
+                                    'original_shared_video')
+
     def test_audio_only_does_not_invent_a_real_world_scene(self):
         with tempfile.TemporaryDirectory() as temp:
             root=pathlib.Path(temp);music=root/'mix.mp3'
