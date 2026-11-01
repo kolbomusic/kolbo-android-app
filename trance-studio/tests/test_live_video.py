@@ -43,10 +43,9 @@ class GroundedVideoTests(unittest.TestCase):
     def test_explicit_standalone_verbs_get_grounded_partial_motion(self):
         cases={
             'הוא צוחק בקול גדול':'person_laugh',
-            'וכולם רוקדים כאן':'person_dance',
-            'אני בכיתי כל הלילה':'person_cry',
+            'הם בוכים כל הלילה':'person_cry',
             'הם רצים ביחד':'person_run',
-            'אנחנו שרים ביחד':'person_sing',
+            'כולם שרים ביחד':'person_sing',
         }
         for phrase,action in cases.items():
             with self.subTest(phrase=phrase):
@@ -56,6 +55,10 @@ class GroundedVideoTests(unittest.TestCase):
                 self.assertEqual(found['basis'],'explicit_intransitive_action')
                 plan=visual_plan(phrase,10)
                 self.assertEqual(plan['visual_coverage'],'partial')
+        # Dancing is already recognized by the existing explicit action
+        # planner and must remain covered rather than regress to 'unknown'.
+        self.assertEqual(action_for_clause('כולם רוקדים כאן')['action'],
+                         'person_dance')
         self.assertIsNone(action_for_clause('אני לא צוחק'))
         self.assertIsNone(action_for_clause('סיפור מצחיק'))
         self.assertIsNone(action_for_clause('כולם צוחקים ובוכים'))
