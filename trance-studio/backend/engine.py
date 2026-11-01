@@ -374,6 +374,36 @@ def vocal_fx_timeline(voice, sr, bpm, humor, intensity, rng):
 
 
 
+def _vocal_hook_quality(sample, sr):
+    """Rate a sampled word fragment for clear, musical comedy inserts.
+
+    Louder is not automatically better: breath noise, fricatives and clicks
+    often have high RMS but are unpleasant when pitch-shifted or repeated.
+    Prefer short, voiced/harmonic material without clipping. This is a
+    lightweight spectral heuristic, not a substitute for word alignment.
+    """
+    x=np.asarray(sample,dtype=np.float32)
+    if len(x)<int(.09*sr) or not np.isfinite(x).all():
+        return 0.
+    rms=float(np.sqrt(np.mean(x*x)))
+    if rms<.009:return 0.
+    # Calculate a small downsampled Hann-windowed spectrum. Harmonic vowels
+    # have concentrated energy; hiss/breath has near-flat spectral energy.
+    stride=max(1,sr//8000)
+    short=x[::stride]
+    size=min(len(short),2048)
+    if size<128:return 0.
+    frame=short[(len(short)-size)//2:(len(short)+size)//2]
+    spectrum=np.abs(np.fft.rfft(frame*np.hanning(len(frame))))**2
+    spectrum=spectrum[2:]
+    mean=float(np.mean(spectrum))
+    if mean<1e-10:return 0.
+    flatness=float(np.exp(np.mean(np.log(spectrum+1e-10)))/(mean+1e-10))
+    saturation=float(np.mean(np.abs(x)>.94))
+    # Use a modest loudness weighting to avoid picking consonant transients.
+    return min(.35,rms)*(.16+.84*(1.-min(1.,flatness)))*(1.-min(1.,saturation*8))
+
+
 def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
     """Pause-aware, beat-length vocal solos without slicing spoken words.
 
@@ -439,7 +469,13 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
         candidates=range(start,len(raw)-width+1,step)
         if not candidates:
             continue
-        pick=max(candidates,key=lambda p:float(np.mean(raw[p:p+width:8]**2)))
+        # Locate an actual voiced/harmonic syllable, not merely the
+        # loudest plosive or breath. Bias slightly toward the end of a
+        # phrase, where a repeated hook reads as a punchline.
+        last=max(start+1,len(raw)-width)
+        pick=max(candidates,key=lambda p:
+                 _vocal_hook_quality(raw[p:p+width],sr)*
+                 (.88+.12*(p-start)/max(1,last-start)))
         sample=raw[pick:pick+width]
         source_rms=float(np.sqrt(np.mean(sample*sample)))
         if source_rms<.008:
@@ -464,7 +500,9 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng):
                          {1:.85,2:1.,3:1.12}[density]))
         # Smooth dynamics, never hard clip a loud source or the insert itself.
         effect=np.tanh(effect*gain*.9).astype(np.float32)
-        fade=min(int(sr*.022),len(effect)//4)
+        # Longer micro-fades soften the end of a forcibly bounded fill
+        # and avoid high-frequency clicks at the next spoken phrase.
+        fade=min(int(sr*.035),len(effect)//4)
         if fade:
             ramp=np.linspace(0.,1.,fade,endpoint=False,dtype=np.float32)
             effect[:fade]*=ramp
