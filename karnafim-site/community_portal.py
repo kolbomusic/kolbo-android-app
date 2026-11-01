@@ -1,5 +1,5 @@
 """Karnafim community features: sourced archive, opt-in feed and private conversations."""
-import io, html, hashlib, os
+import io, html, hashlib, os, re
 from datetime import date
 import psycopg
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -70,6 +70,16 @@ CSS = """<style>
 </style>"""
 
 RECENT = ARCHIVE
+
+
+def safe_chat_cursor(raw):
+    """Parse a PostgreSQL BIGINT cursor; reject huge/Unicode values safely."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[0-9]{1,19}", raw):
+        raise ValueError("Invalid message cursor")
+    value = int(raw)
+    if value > 9223372036854775807:
+        raise ValueError("Message cursor exceeds database ID range")
+    return value
 
 def install(app, sql, view, me, admin, guard, formwrap, esc):
     # Persistent metadata and compact binary storage for the free-tier pilot.
@@ -647,7 +657,10 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         msgs=sql("SELECT x.id,x.sender_id,x.body,x.created_at,md.id media_id,md.kind FROM messages x LEFT JOIN community_media md ON md.id=x.media_id WHERE (x.sender_id=%s AND x.recipient_id=%s) OR (x.sender_id=%s AND x.recipient_id=%s) ORDER BY x.created_at DESC LIMIT 100",(u["id"],other_id,other_id,u["id"]),True)
         last_id=msgs[0]["id"] if msgs else 0
         after=request.args.get("after","0")
-        if not after.isdigit():after="0"
+        try:
+            after_id=safe_chat_cursor(after)
+        except ValueError:
+            abort(400, "Invalid chat cursor")
         def message_fragment(m):
             h='<div data-message-id="'+str(m["id"])+'" class="bubble '+("mine" if m["sender_id"]==u["id"] else "")+'">'
             if m["body"]:h+='<p>'+e(m["body"]).replace("\n","<br>")+'</p>'
@@ -655,7 +668,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             h+='<small>'+("אתה" if m["sender_id"]==u["id"] else e(other[0]["name"]))+' · '+e(str(m["created_at"])[:16])+'</small></div>'
             return h
         if request.args.get("partial")=="1":
-            markup=''.join(message_fragment(m) for m in reversed(msgs) if m["id"]>int(after))
+            markup=''.join(message_fragment(m) for m in reversed(msgs) if m["id"]>after_id)
             response=Response(markup,mimetype="text/html")
             response.headers["Cache-Control"]="no-store"
             return response
