@@ -1,0 +1,28 @@
+name: Kolbo live production Hebrew voice to authentic Android MP4
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - 'trance-studio/tests/production_hebrew_voice_mp4.py'
+      - '.github/workflows/kolbo-trance-production-voice-mp4.yml'
+  workflow_dispatch:
+jobs:
+  real-user-path:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare test-only actual Hebrew spoken OPUS voice
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'gTTS==2.5.4'
+          python - <<'PY'
+          from gtts import gTTS
+          gTTS('כולם רוקדים במסיבה. החמור נוער בקול חזק.',lang='iw').save('/tmp/kolbo-production-hebrew.mp3')
+          PY
+          ffmpeg -nostdin -loglevel error -y -i /tmp/kolbo-production-hebrew.mp3 -c:a libopus -ar 48000 -ac 1 -b:a 28k /tmp/kolbo-production-hebrew.opus
+      - name: Submit original OPUS to deployed Render, recognize Hebrew automatically, verify actual MP4
+        run: python trance-studio/tests/production_hebrew_voice_mp4.py
