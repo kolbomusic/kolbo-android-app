@@ -65,7 +65,8 @@ def test():
     os.environ["DATABASE_URL"]="postgresql://unreachable.invalid/not-used"
     app=setup()
     client=app.test_client()
-    expect(403,client.get("/new-post"))
+    resp=client.get("/new-post")
+    assert resp.status_code==303 and "/login?next=/new-post" in resp.headers["Location"]
     expect(403,client.get("/my-posts"))
     with client.session_transaction() as sess:sess["uid"]=42
     expect(200,client.get("/new-post"),'name="attachments" multiple')
