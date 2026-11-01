@@ -10,7 +10,11 @@ from storyboard import align_storyboard_to_vocal
 from live_video import visual_plan, export_live_story, UnavailableVideo
 
 
-ALLOWED={'.opus','.ogg','.oga','.mp3','.wav','.m4a','.aac','.mp4','.webm','.flac'}
+ALLOWED={'.opus','.ogg','.oga','.mp3','.wav','.m4a','.aac','.mp4','.webm','.flac','.3gp','.3gpp','.mov'}
+VIDEO_UPLOADS={'.mp4','.webm','.3gp','.3gpp','.mov'}
+MAX_AUDIO_UPLOAD=15*1024*1024
+MAX_VIDEO_UPLOAD=45*1024*1024
+MAX_COMBINED_UPLOAD=60*1024*1024
 
 def create_app(config=None):
     app=Flask(__name__,static_folder=None)
@@ -269,7 +273,7 @@ def create_app(config=None):
         return response
 
     @app.errorhandler(RequestEntityTooLarge)
-    def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
+    def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
     def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.14.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
@@ -292,10 +296,17 @@ def create_app(config=None):
         if any(Path(f.filename or '').suffix.lower() not in ALLOWED for f in files):return jsonify(error='סוג הקובץ אינו נתמך'),400
         if not admission.acquire(blocking=False):return jsonify(error='השרת עסוק כרגע. נסו שוב בעוד רגע או בחרו עיבוד במכשיר.'),429
         job_id=secrets.token_hex(24);directory=root/job_id;directory.mkdir(mode=0o700);paths=[]
+        total_bytes=0
         try:
             for i,file in enumerate(files):
-                content=file.stream.read(15*1024*1024+1)
-                if not content or len(content)>15*1024*1024:raise ValueError('גודל הקובץ אינו תקין: עד 15MB')
+                extension=Path(file.filename).suffix.lower()
+                size_limit=MAX_VIDEO_UPLOAD if extension in VIDEO_UPLOADS else MAX_AUDIO_UPLOAD
+                content=file.stream.read(size_limit+1)
+                if not content or len(content)>size_limit:
+                    raise ValueError('גודל הקובץ חורג מהמגבלה לסוג המדיה')
+                total_bytes+=len(content)
+                if total_bytes>MAX_COMBINED_UPLOAD:
+                    raise ValueError('ההעלאה הכוללת גדולה מ־60MB')
                 # Fingerprint the exact original file received from WhatsApp
                 # or device storage. This is used to check that the voice ASR
                 # and mixing pipeline operate on the SAME uploaded bytes.
@@ -310,7 +321,7 @@ def create_app(config=None):
             admission.release();shutil.rmtree(directory,ignore_errors=True)
             if str(exc).startswith('source_fingerprint'):
                 return jsonify(error='קובץ המקור השתנה בין התמלול להעלאה. יש לשלוח שוב את ההקלטה המקורית.'),409
-            return jsonify(error='קובץ ריק או גדול מ־15MB'),400
+            return jsonify(error='גודל הקובץ אינו תקין: עד 15MB לשמע, 45MB לסרטון ו־60MB לכל הקבצים יחד'),400
         except Exception:
             admission.release();shutil.rmtree(directory,ignore_errors=True)
             return jsonify(error='לא ניתן לקרוא את הקובץ המקורי'),400
