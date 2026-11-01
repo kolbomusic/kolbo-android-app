@@ -1,0 +1,21 @@
+name: Kolbo Trance ASR Docker image preload verification
+on:
+  push:
+    branches: [kolbo-trance-asr-warm-cache-20261101]
+    paths:
+      - 'trance-studio/Dockerfile'
+      - 'trance-studio/backend/requirements.txt'
+      - 'trance-studio/backend/source_asr.py'
+      - '.github/workflows/kolbo-trance-asr-image.yml'
+  workflow_dispatch:
+jobs:
+  build-preloaded-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build complete Docker image, including quantized free Whisper weights
+        run: docker build --pull -t kolbo-trance-asr:test trance-studio
+      - name: Confirm image contains a readable model
+        run: |
+          docker run --rm --entrypoint python kolbo-trance-asr:test -c "import os;from pathlib import Path;p=Path(os.environ['KOLBO_ASR_DIR'])/'model.bin';assert p.stat().st_size>1000000,p;print('MODEL_PRELOADED',p.stat().st_size)"
