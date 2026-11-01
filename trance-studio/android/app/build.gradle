@@ -6,7 +6,7 @@ android {
     namespace 'com.kolbomusic.trancestudio'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.kolbomusic.trancestudio.story21'
+        applicationId 'com.kolbomusic.trancestudio.story22'
         minSdk 29
         targetSdk 34
         versionCode 22
