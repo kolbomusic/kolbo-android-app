@@ -313,11 +313,13 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         r=sql("SELECT m.*,p.approved post_approved FROM community_media m LEFT JOIN community_posts p ON p.id=m.post_id WHERE m.id=%s",(media_id,),True)
         if not r:abort(404)
         m=r[0]
-        can_view=False
-        if m["owner_id"]==u["id"]:can_view=True
-        elif m["post_id"] is not None:can_view=bool(m["post_approved"])
-        elif m["recipient_id"]==u["id"] and is_connected(m["owner_id"],u["id"]):can_view=True
-        elif admin(u):can_view=True
+        # Moderators must be able to inspect unapproved attachments before
+        # publishing; ordinary approved members cannot view held post media.
+        can_view=bool(admin(u) or m["owner_id"]==u["id"])
+        if not can_view and m["post_id"] is not None:
+            can_view=bool(m["post_approved"])
+        elif not can_view and m["recipient_id"]==u["id"]:
+            can_view=is_connected(m["owner_id"],u["id"])
         if not can_view:abort(403)
         response=send_file(io.BytesIO(bytes(m["data"])),mimetype=m["mime"],as_attachment=False,download_name="shared-"+str(media_id))
         response.headers["Cache-Control"]="private, no-store"
