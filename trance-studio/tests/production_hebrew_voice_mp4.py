@@ -89,6 +89,22 @@ duration=float(info["format"]["duration"])
 assert 29<duration<32,duration
 subprocess.run(["ffmpeg","-v","error","-ss","23","-i",str(out),
     "-frames:v","1","-f","null","-"],check=True,timeout=30)
+# Confirm actual changes across decoded image frames, not simply a video stream
+# that repeats an unmoving still image for the entire soundtrack.
+raw_frames=subprocess.check_output([
+    "ffmpeg","-nostdin","-v","error","-i",str(out),
+    "-vf","fps=1,scale=64:64,format=gray","-an","-f","rawvideo","-"],
+    timeout=45)
+frame_size=64*64
+frames=[raw_frames[i:i+frame_size] for i in range(
+    0,len(raw_frames)-frame_size+1,frame_size)]
+assert len(frames)>=8,("VIDEO_FRAMES_TOO_FEW",len(frames))
+motion=[sum(abs(a-b) for a,b in zip(frames[i],frames[i+1]))/frame_size
+        for i in range(len(frames)-1)]
+assert max(motion)>2.0,("VIDEO_HAS_NO_ACTUAL_VISIBLE_MOTION",max(motion))
+print("DECODED_REAL_FRAME_MOTION_PASS",
+      {"max_average_pixel_delta":round(max(motion),2),
+       "decoded_frames":len(frames)},flush=True)
 print("REAL_PRODUCTION_HEBREW_VOICE_MP4_PASS",json.dumps({
     "mp4_bytes":len(movie_bytes),"duration":duration,
     "video_codec":video["codec_name"],"dimensions":[video["width"],video["height"]],
