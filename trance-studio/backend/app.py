@@ -88,7 +88,32 @@ def create_app(config=None):
             if options.get('video_requested'):
                 update(job_id,percent=87,label='בודק התאמה בין המשפטים לצילומי וידאו',
                        video_status='processing')
-                if not detected_transcript or len(detected_transcript.split())<2:
+                # The USER submitted an actual video, not just a voice
+                # message. Edit those real captured frames FIRST rather
+                # than replacing them with unrelated stock footage or
+                # spending a public AI quota. This is a video remix, not
+                # an invented visual reconstruction of the narration.
+                from source_video_fallback import VIDEO_TYPES
+                if any(Path(p).suffix.lower() in VIDEO_TYPES for p in paths):
+                    try:
+                        from source_video_fallback import compose_original_video_with_mix
+                        remixed=compose_original_video_with_mix(
+                            paths,root/job_id/'mix.mp3',
+                            root/job_id/'story.mp4',root/job_id/'original-video',
+                            bpm=options.get('bpm',145),
+                            transcript_hint=detected_transcript)
+                        meta={**remixed,
+                              'storyboard_source':'original_shared_video',
+                              'transcript_origin':detected_origin,
+                              'visual_beats':remixed.get('video_edit_shots',1)}
+                    except (UnavailableVideo,OSError,ValueError,
+                            subprocess.SubprocessError):
+                        # If the original has no genuine motion, proceed to
+                        # accurately grounded action footage/consented AI.
+                        (root/job_id/'story.mp4').unlink(missing_ok=True)
+                if meta.get('video_status')=='done':
+                    pass
+                elif not detected_transcript or len(detected_transcript.split())<2:
                     meta={'video_status':'unavailable',
                           'video_error':'נוסו תמלול במכשיר ובשרת, אך לא זוהו מילים מספיק אמינות מההקלטה המקורית. '+asr_recovery_error,
                           'storyboard_source':'original_asr_failed',
