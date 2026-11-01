@@ -66,7 +66,11 @@ def mix_licensed_backing(path,vocal,sr=32000,transcript_hint='',bpm=145,humor='a
             available=following-hi
             if available<sr*.21 or hi-last<sr*1.5 or count>=3:
                 continue
-            cue=_semantic_comedy_cue(transcript_hint,hi/max(1,len(mono)))
+            spoken_begin=units[0][0]
+            spoken_end=units[-1][1]
+            cue=_semantic_comedy_cue(
+                transcript_hint,
+                max(0.,min(.999,(hi-spoken_begin)/max(1,spoken_end-spoken_begin))))
             if not cue:continue
             one=create_sting(cue,sr,bpm,count)
             start=min(len(mixed)-1,hi+int(sr*.025))
