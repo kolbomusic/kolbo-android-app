@@ -1,0 +1,37 @@
+name: Kolbo Trance Hebrew ASR reliability image
+on:
+  push:
+    branches:
+      - kolbo-trance-hebrew-asr-recovery-20261101
+    paths:
+      - 'trance-studio/Dockerfile'
+      - 'trance-studio/backend/source_asr.py'
+      - 'trance-studio/tests/test_source_asr.py'
+      - '.github/workflows/kolbo-trance-hebrew-asr-fix.yml'
+  workflow_dispatch:
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build real production image with Whisper base preloaded
+        run: docker build -t kolbo-asr:hebrew-fix trance-studio
+      - name: Verify model and actual inference in 512 MB, offline, one CPU
+        run: |
+          docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 --entrypoint python kolbo-asr:hebrew-fix -c "
+          import os,numpy as np
+          from pathlib import Path
+          from faster_whisper import WhisperModel
+          model_dir=Path(os.environ['KOLBO_ASR_DIR'])
+          model_file=model_dir/'model.bin'
+          assert model_file.stat().st_size>1000000
+          model=WhisperModel(str(model_dir),device='cpu',compute_type='int8',cpu_threads=1,num_workers=1)
+          segments,info=model.transcribe(np.zeros(16000*3,dtype=np.float32),language='he',beam_size=2,vad_filter=False)
+          print('BASE_MODEL_512MB_INFERENCE_OK',model_file.stat().st_size,len(list(segments)))
+          "
+      - name: Run ASR and audio/video regression tests inside production image
+        run: |
+          docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 \
+            -v "$PWD/trance-studio/tests:/app/tests:ro" \
+            --entrypoint python kolbo-asr:hebrew-fix -m unittest discover -s /app/tests -v
