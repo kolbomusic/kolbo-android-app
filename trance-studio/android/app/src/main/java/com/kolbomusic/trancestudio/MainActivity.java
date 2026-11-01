@@ -252,7 +252,9 @@ public final class MainActivity extends Activity {
         if(snapshot.isEmpty())return;
         JSONArray names=new JSONArray();
         for(int i=0;i<snapshot.size();i++)names.put(audioName(snapshot.get(i),i));
-        // WhatsApp sharing imports clips only. Creation is started only by\n        // an explicit press on the web form Create button, never by Android.\n        String js="(async function(){try{var names="+names.toString()+";var clips=[];"
+        // WhatsApp sharing imports clips only. Creation is started only by
+        // an explicit press on the web form Create button, never by Android.
+        String js="(async function(){try{var names="+names.toString()+";var clips=[];"
                 +"for(var i=0;i<names.length;i++){var r=await fetch('/native-shared-audio/'+i,{cache:'no-store'});"
                 +"if(!r.ok)throw Error('קובץ לא זמין');var b=await r.blob();"
                 +"clips.push(new File([b],names[i],{type:b.type||'audio/ogg'}));}"
