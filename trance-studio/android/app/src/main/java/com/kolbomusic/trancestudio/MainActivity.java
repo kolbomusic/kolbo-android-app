@@ -89,7 +89,7 @@ public final class MainActivity extends Activity {
         offlineTitle.setGravity(Gravity.CENTER);
         offlinePanel.addView(offlineTitle,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
         TextView offlineHelp=new TextView(this);
-        offlineHelp.setText("ההקלטות לא נמחקו מהמכשיר. בדוק חיבור לאינטרנט ונסה לטעון מחדש.");
+        offlineHelp.setText("ההקלטות לא נמחקו מהמכשיר. שיתוף קובץ רק טוען אותו לאפליקציה; כדי ליצור סרטון יש ללחוץ על כפתור היצירה. בדוק חיבור לאינטרנט ונסה שוב.");
         offlineHelp.setTextColor(Color.rgb(220,204,237));
         offlineHelp.setTextSize(16f);
         offlineHelp.setGravity(Gravity.CENTER);
@@ -252,7 +252,7 @@ public final class MainActivity extends Activity {
         if(snapshot.isEmpty())return;
         JSONArray names=new JSONArray();
         for(int i=0;i<snapshot.size();i++)names.put(audioName(snapshot.get(i),i));
-        String js="(async function(){try{var names="+names.toString()+";var clips=[];"
+        // WhatsApp sharing imports clips only. Creation is started only by\n        // an explicit press on the web form Create button, never by Android.\n        String js="(async function(){try{var names="+names.toString()+";var clips=[];"
                 +"for(var i=0;i<names.length;i++){var r=await fetch('/native-shared-audio/'+i,{cache:'no-store'});"
                 +"if(!r.ok)throw Error('קובץ לא זמין');var b=await r.blob();"
                 +"clips.push(new File([b],names[i],{type:b.type||'audio/ogg'}));}"
