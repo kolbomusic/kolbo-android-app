@@ -72,6 +72,10 @@ def create_app(config=None):
                     app.logger.exception('Original-file ASR failed; keeping the requested audio job alive')
             clips=[load_audio(p) for p in paths]
             audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent')}
+            # Make the already recognized Hebrew speech useful for comic
+            # timing/preset decisions. Keep it in-process; never transmit
+            # private audio or transcript to a new third party.
+            audio_options['transcript_hint']=detected_transcript[:4000]
             audio,vocal=render_mix(clips,**audio_options,return_voice=True,
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             export_mp3(audio,root/job_id/'mix.mp3')
