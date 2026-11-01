@@ -180,8 +180,16 @@ def create_app(config=None):
                     meta.get('video_status') != 'done'):
                 try:
                     from ai_video import cinematic_prompt, AIVideoUnavailable
-                    meta['client_ai_prompt']=cinematic_prompt(detected_transcript)
-                    meta['client_ai_fallback']=True
+                    from narrative_plan import scene_prompts, scene_weights
+                    # All prompts are based on the ACTUAL recognized Hebrew,
+                    # never on what the application guesses was spoken.
+                    beats=scene_prompts(detected_transcript)
+                    if beats:
+                        meta['client_ai_prompt']=cinematic_prompt(detected_transcript)
+                        meta['client_ai_scene_prompts']=beats
+                        meta['client_ai_scene_weights']=scene_weights(detected_transcript)
+                        meta['client_ai_scene_count']=len(beats)
+                        meta['client_ai_fallback']=True
                 except AIVideoUnavailable:
                     pass
             update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
@@ -320,8 +328,8 @@ def create_app(config=None):
             from client_ai_fallback import (combine_mobile_ai_clips,
                                             MobileClipError,MAX_CLIP_BYTES)
             clips=request.files.getlist('clip')
-            if not 1<=len(clips)<=2:
-                return jsonify(error='נדרש קטע וידאו אחד או שניים'),400
+            if not 1<=len(clips)<=3:
+                return jsonify(error='ניתן להעלות עד שלושה קטעי וידאו לסיפור'),400
             work_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
             inputs=[]
             for i,clip in enumerate(clips):
@@ -332,8 +340,13 @@ def create_app(config=None):
                 src.write_bytes(data)
                 inputs.append(src)
             output=root/job_id/'story.mp4'
-            board=combine_mobile_ai_clips(inputs,root/job_id/'mix.mp3',
-                                          output,work_dir/'encode')
+            # Durations reflect relative spoken word counts in each scene,
+            # instead of forcing every scene to have the same screen time.
+            with lock:
+                weights=list(jobs.get(job_id,{}).get('client_ai_scene_weights',[]))
+            board=combine_mobile_ai_clips(
+                inputs,root/job_id/'mix.mp3',output,work_dir/'encode',
+                weights=weights[:len(inputs)] if len(weights)>=len(inputs) else None)
             board['transcript_origin']=job.get('transcript_origin','server_original_asr')
             (root/job_id/'storyboard.json').write_text(
                 json.dumps(board,ensure_ascii=False),encoding='utf-8')
@@ -344,6 +357,8 @@ def create_app(config=None):
                     return jsonify(error='תוקף המיקס פג'),404
                 current.pop('video_error',None)
                 current.pop('client_ai_prompt',None)
+                current.pop('client_ai_scene_prompts',None)
+                current.pop('client_ai_scene_weights',None)
                 current.update(
                     video_status='done',
                     video_mode='ai_generated_client_fallback',
