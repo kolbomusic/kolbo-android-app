@@ -106,7 +106,7 @@ async function oneClip(model,prompt,onStage){
   var videoUrl=parseEventStream(text,model.host);
   onStage('הקליפ נוצר. מעביר את קטע הווידאו לשרת המיקס...');
   var blob=await readBlobWithDeadline(videoUrl,45000);
-  if(blob.size<12000||blob.size>MAX_VIDEO_BYTES)
+  if(blob.size<2048||blob.size>MAX_VIDEO_BYTES)
     throw fail('הסרטון שהמנוע החזיר ריק או גדול מדי');
   var magic=new Uint8Array(await blob.slice(0,12).arrayBuffer());
   if(magic.length<8||String.fromCharCode(magic[4],magic[5],magic[6],magic[7])!=='ftyp')
