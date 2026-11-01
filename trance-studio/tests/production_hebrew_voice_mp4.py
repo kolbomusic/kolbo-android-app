@@ -102,6 +102,15 @@ assert len(frames)>=8,("VIDEO_FRAMES_TOO_FEW",len(frames))
 motion=[sum(abs(a-b) for a,b in zip(frames[i],frames[i+1]))/frame_size
         for i in range(len(frames)-1)]
 assert max(motion)>2.0,("VIDEO_HAS_NO_ACTUAL_VISIBLE_MOTION",max(motion))
+# Require full-height live-action portrait coverage, not the previous
+# letterboxed 16:9 footage inside a tall, mostly-black mobile screen.
+first=frames[0]
+top=sum(first[:64*8])/(64*8)
+bottom=sum(first[-64*8:])/(64*8)
+assert top>18 and bottom>18,(
+    "VIDEO_HAS_LARGE_BLACK_LETTERBOX_BARS",round(top,1),round(bottom,1))
+print("NO_BLACK_BARS_PASS",{"top_luma":round(top,1),
+                            "bottom_luma":round(bottom,1)},flush=True)
 print("DECODED_REAL_FRAME_MOTION_PASS",
       {"max_average_pixel_delta":round(max(motion),2),
        "decoded_frames":len(frames)},flush=True)
