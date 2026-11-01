@@ -296,7 +296,12 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                 try:
                     url=_request_ltx25_generation(prompt,duration=2.0)
                 except AIVideoUnavailable:
-                    url=generator(prompt,duration=1.0)
+                    try:
+                        # LTX 2.5 was independently verified producing a
+                        # real 25-frame original motion clip at exactly 1s.
+                        url=_request_ltx25_generation(prompt,duration=1.0)
+                    except AIVideoUnavailable:
+                        url=generator(prompt,duration=1.0)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             prepared.append((words,raw,seconds))
