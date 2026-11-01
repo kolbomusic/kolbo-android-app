@@ -65,7 +65,7 @@ jobs:
           sha256sum dist/Kolbo-Trance-Story-v2.2.0-beta.apk | tee dist/SHA256SUMS.txt
       - name: Confirm independent Android package and media bridge
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.2.0-beta.apk | grep -q "package: name='com.kolbomusic.trancestudio.story21'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.2.0-beta.apk | grep -q "package: name='com.kolbomusic.trancestudio.story22'"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.2.0-beta.apk | grep -q "versionCode='22' versionName='2.2.0-beta'"
           grep -q 'offlinePanel' trance-studio/android/app/src/main/java/com/kolbomusic/trancestudio/MainActivity.java
           grep -q 'downloadVideo' trance-studio/android/app/src/main/java/com/kolbomusic/trancestudio/MainActivity.java
