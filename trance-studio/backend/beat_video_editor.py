@@ -1,0 +1,142 @@
+"""Beat-aligned live-action EDITING of a user's existing WhatsApp video.
+
+Creates a visibly re-edited MP4: true shot cuts, restrained punch-in reframes,
+and story-cued speed changes. Never fabricates people/events and never overlays
+lyrics or substitutes a static picture. The source soundtrack is replaced by
+the independently rendered user-voice trance mix. FFmpeg is fully offline.
+"""
+import json
+import math
+import subprocess
+from pathlib import Path
+
+from live_video import _duration, _video_profile, UnavailableVideo
+from motion_quality import require_visible_motion, NoVisibleMotion
+
+
+def edit_decisions(duration, bpm, source_duration, transcript=""):
+    """A deterministic shot list with cuts on musical bar boundaries."""
+    if not 120<=bpm<=165 or duration<=.5 or source_duration<.75:
+        raise UnavailableVideo("נתוני הסרטון או הקצב אינם תקינים")
+    beat=60.0/bpm
+    bar=4*beat
+    # Aim at ~6 edited shots for a typical 30s WhatsApp mix, not 30
+    # random half-second cuts. Longer clips cap at eight passes.
+    bars_per_shot=max(1,round(duration/(6*bar)))
+    base=bar*bars_per_shot
+    shots=[]
+    t=0.
+    max_shots=8
+    patterns=(1.,1.,.75,1.25,1.,1.15,.85,1.)
+    speeds=(1.,1.10,.92,1.08,1.,.86,1.12,1.)
+    framing=(1.,1.085,1.14,1.045,1.10,1.17,1.06,1.0)
+    # Never decide a word-aligned cut from an unaligned Hebrew transcript.
+    # Semantic cue affects editing *style*, not the claimed actual event.
+    drama=any(w in (transcript or "") for w in ("צעק","נפל","חמור","פיצו","בום"))
+    while t<duration-.06 and len(shots)<max_shots:
+        idx=len(shots)
+        if idx==max_shots-1:
+            length=duration-t
+        else:
+            # Quantize cut to a complete musical bar.
+            bars=max(1,round(bars_per_shot*patterns[idx]))
+            next_cut=min(duration,round((t+bars*bar)/bar)*bar)
+            length=max(.18,next_cut-t)
+        length=min(length,duration-t)
+        if length<.12:break
+        speed=speeds[idx]
+        zoom=framing[idx]
+        if drama and idx in (2,5):
+            speed=.83
+            zoom=max(zoom,1.16)
+        # Follow time in original film where possible, rather than always
+        # restarting at frame zero. Short footage is reused truthfully.
+        max_seek=max(0.,source_duration-.25)
+        seek=(t*.91)%max_seek if max_seek>.3 else 0.
+        shots.append({"start":round(t,3),"duration":round(length,3),
+                      "source_seek":round(seek,3),"speed":speed,"zoom":zoom,
+                      "crop_bias":(.50,.46,.54,.5,.48,.52,.5,.5)[idx]})
+        t+=length
+    return shots
+
+
+def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
+                                  bpm=145, transcript_hint=""):
+    src=Path(source)
+    work=Path(work_dir)
+    work.mkdir(parents=True,exist_ok=True)
+    duration=_duration(music_mp3)
+    src_duration=_duration(src)
+    if not .5<=duration<=360.:
+        raise UnavailableVideo("אורך המיקס אינו מתאים לעריכת וידאו")
+    _video_profile(src)
+    require_visible_motion(src,threshold=.30)
+    shots=edit_decisions(duration,bpm,src_duration,transcript_hint)
+    if not shots:raise UnavailableVideo("לא נמצאו קטעי צילום לעריכה")
+    files=[]
+    for idx,shot in enumerate(shots):
+        clip=work/("shot-%02d.mp4"%idx)
+        speed=shot["speed"]
+        zoom=shot["zoom"]
+        bias=shot["crop_bias"]
+        # Decode actual captured frames, select new chronological portions,
+        # zoom modestly around a safe central point. No fake scene content.
+        vf=(
+            "setpts=(PTS-STARTPTS)/%.4f,fps=12,"
+            "scale=360:640:force_original_aspect_ratio=increase:"
+            "force_divisible_by=2,"
+            "scale=ceil(iw*%.4f/2)*2:ceil(ih*%.4f/2)*2,"
+            "crop=360:640:(in_w-out_w)*%.3f:(in_h-out_h)/2,"
+            "setsar=1,eq=contrast=1.035:saturation=1.045,"
+            "format=yuv420p"
+        )%(speed,zoom,zoom,bias)
+        cmd=[
+            "ffmpeg","-nostdin","-v","error","-y",
+            "-stream_loop","-1","-ss",str(shot["source_seek"]),
+            "-i",str(src),"-t",str(shot["duration"]),
+            "-vf",vf,"-map","0:v:0","-an",
+            "-c:v","libx264","-profile:v","baseline","-level","3.0",
+            "-preset","ultrafast","-crf","29","-r","12","-g","24",
+            "-movflags","+faststart",str(clip)
+        ]
+        try:
+            subprocess.run(cmd,capture_output=True,check=True,timeout=65)
+        except (OSError,subprocess.SubprocessError) as exc:
+            raise UnavailableVideo("העריכה החזותית נכשלה בעת הכנת צילום המקור") from exc
+        if not clip.is_file() or clip.stat().st_size<2048:
+            raise UnavailableVideo("לא הופק קטע צילום מעובד")
+        files.append(clip)
+    concat_list=work/"shots.txt"
+    concat_list.write_text("".join("file '%s'\n"%p.name for p in files),
+                           encoding="utf-8")
+    joined=work/"edited-no-audio.mp4"
+    try:
+        subprocess.run(["ffmpeg","-nostdin","-v","error","-y",
+                        "-f","concat","-safe","0","-i",str(concat_list),
+                        "-c:v","copy","-an","-movflags","+faststart",
+                        str(joined)],capture_output=True,check=True,timeout=35)
+        subprocess.run(["ffmpeg","-nostdin","-v","error","-y",
+                        "-i",str(joined),"-i",str(music_mp3),
+                        "-map","0:v:0","-map","1:a:0",
+                        "-c:v","copy","-c:a","aac","-b:a","160k",
+                        "-t","%.3f"%duration,"-movflags","+faststart",
+                        str(output_mp4)],capture_output=True,check=True,timeout=45)
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise UnavailableVideo("חיבור חיתוכי הווידאו למיקס נכשל") from exc
+    output=Path(output_mp4)
+    if not output.is_file() or output.stat().st_size<15000:
+        raise UnavailableVideo("קובץ MP4 הערוך לא נוצר")
+    codec,width,height=_video_profile(output)
+    if (codec,width,height)!=("h264",360,640):
+        raise UnavailableVideo("קידוד הווידאו הערוך אינו תואם אנדרואיד")
+    if abs(_duration(output)-duration)>.8:
+        raise UnavailableVideo("אורך הווידאו אינו תואם את המיקס")
+    return {"video_mode":"original_input_video",
+            "video_edit_style":"beat_cut_punch_in_speed_ramp",
+            "video_edit_shots":len(shots),
+            "video_status":"done",
+            "source":"user_original_real_moving_video",
+            "visual_coverage":"original_video_not_scene_generated",
+            "video_note":"צילום המקור עבר עריכת קליפ: חיתוכים לפי תיבות, "
+                         "שינויי מהירות והדגשות צילום מתונות, יחד עם מיקס הקול. "
+                         "האירועים המצולמים לא נוצרו מחדש ב־AI."}
