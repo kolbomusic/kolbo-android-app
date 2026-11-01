@@ -26,7 +26,6 @@ MUST_HAVE={
     "/archive":"ארכיון",
     "/photos":"תמונות",
     "/memorials":"הנצחה",
-    "/find":"חברים",
     "/help":"עזרה",
     "/accessibility":"נגישות",
     "/status":"קהילה",
