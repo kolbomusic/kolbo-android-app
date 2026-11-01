@@ -1,0 +1,40 @@
+name: Kolbo verify browser direct free video provider CORS
+on:
+  push:
+    branches: [kolbo-trance-ai-root-cause-20261101]
+    paths: ['.github/workflows/kolbo-ai-cors-probe.yml']
+  workflow_dispatch:
+jobs:
+  cors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify browsers can call public free AI Video Gradio API
+        run: |
+          python - <<'PY'
+          import urllib.request,urllib.error
+          origin='https://kolbo-trance-studio.onrender.com'
+          for host,paths in {
+            'lightricks-ltx-video-distilled.hf.space':['/gradio_api/call/text_to_video','/gradio_api/call/text_to_video/0123456789abcdef0123456789abcdef'],
+            'lightricks-ltx-2-5.hf.space':['/gradio_api/call/v2/run','/gradio_api/call/run/0123456789abcdef0123456789abcdef'],
+          }.items():
+            for path in paths:
+              url='https://'+host+path
+              for method in (['OPTIONS','GET'] if '/012345' in path else ['OPTIONS']):
+                request=urllib.request.Request(url,method=method,
+                    headers={'Origin':origin,'Access-Control-Request-Method':'POST',
+                             'Access-Control-Request-Headers':'content-type'})
+                try:
+                  with urllib.request.urlopen(request,timeout=15) as response:
+                    print('CORS_RESULT',host,path,method,response.status,
+                          'allow-origin',response.headers.get('Access-Control-Allow-Origin'),
+                          'allow-methods',response.headers.get('Access-Control-Allow-Methods'),
+                          'allow-headers',response.headers.get('Access-Control-Allow-Headers'),
+                          'allow-credentials',response.headers.get('Access-Control-Allow-Credentials'),
+                          flush=True)
+                except urllib.error.HTTPError as e:
+                  print('CORS_HTTP_ERROR',host,path,method,e.code,
+                        'allow-origin',e.headers.get('Access-Control-Allow-Origin'),flush=True)
+                except Exception as e:
+                  print('CORS_NETWORK_ERROR',host,path,method,str(e)[:100],flush=True)
+          PY
