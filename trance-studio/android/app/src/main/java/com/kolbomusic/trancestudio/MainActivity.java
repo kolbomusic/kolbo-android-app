@@ -66,6 +66,7 @@ public final class MainActivity extends Activity {
     private LinearLayout offlinePanel;
     private LinearLayout startupPanel;
     private TextView startupMessage;
+    private TextView offlineDetails;
     private final Handler mainHandler=new Handler(Looper.getMainLooper());
     private long navigationId=0;
     private int automaticRetries=0;
@@ -129,7 +130,8 @@ public final class MainActivity extends Activity {
         offlineTitle.setGravity(Gravity.CENTER);
         offlinePanel.addView(offlineTitle,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
         TextView offlineHelp=new TextView(this);
-        offlineHelp.setText("ההקלטות לא נמחקו מהמכשיר. שיתוף קובץ רק טוען אותו לאפליקציה; כדי ליצור סרטון יש ללחוץ על כפתור היצירה. בדוק חיבור לאינטרנט ונסה שוב.");
+        offlineHelp.setText("ההקלטות נשמרות במכשיר. אפשר לנסות חיבור מחדש בלי להפעיל יצירה.");
+        offlineDetails=offlineHelp;
         offlineHelp.setTextColor(Color.rgb(220,204,237));
         offlineHelp.setTextSize(16f);
         offlineHelp.setGravity(Gravity.CENTER);
@@ -314,6 +316,7 @@ public final class MainActivity extends Activity {
         webView.setVisibility(View.GONE);
         offlinePanel.setVisibility(View.VISIBLE);
         startupMessage.setText(reason);
+        if(offlineDetails!=null)offlineDetails.setText(reason+"\nההקלטות נשמרות במכשיר. לחץ על ניסיון חוזר כדי להתחבר.");
     }
 
     private WebResourceResponse failStream(){
