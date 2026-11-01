@@ -1,0 +1,28 @@
+name: Kolbo Trance real free AI video availability proof
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - '.github/workflows/kolbo-trance-real-free-ai-proof.yml'
+      - 'trance-studio/tests/production_ai_provider_canary.py'
+  workflow_dispatch:
+jobs:
+  ai-canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ffmpeg and Python dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install 'numpy>=1.26,<3' 'scipy>=1.13,<2'
+      - name: Produce a real public AI moving shot from a synthetic prompt
+        run: python trance-studio/tests/production_ai_provider_canary.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Kolbo-Public-AI-Moving-Video-Canary
+          path: /tmp/kolbo-public-video-canary.mp4
+          if-no-files-found: ignore
+          retention-days: 5
