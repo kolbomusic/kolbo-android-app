@@ -85,7 +85,7 @@ def live():
             if route=="/privacy":ok=ok and "פרטיות המידע באתר" in body
             if route=="/safety":ok=ok and "מצב אבטחת אתר הקרנפים" in body
             if route=="/help":ok=ok and "שאלות נפוצות" in body
-            if route=="/find":ok=ok and "איתור חברי הקרנפים" in body
+            if route=="/find":ok=ok and "איתור חברי פלוגת הקרנפים" in body
             if route.startswith("/memorial/"):ok=ok and "לזכר" in body
             if route.startswith("/source/"):ok=ok and "תמצית התיעוד" in body
             if "form-action 'none'" not in headers.get("Content-Security-Policy",""):ok=False
