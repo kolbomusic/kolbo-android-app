@@ -23,7 +23,7 @@ RETURN_PATHS = {"/", "/new-post", "/my-posts", "/feed", "/chats",
                 "/directory", "/photos", "/profile"}
 
 
-CLIENT_ID_RE = re.compile(r"^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$")
+CLIENT_ID_RE = re.compile(r"^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$")
 
 
 def configuration_checks():
