@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from flask import Flask, session
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 from authlib.jose import JsonWebKey, JsonWebToken
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -13,7 +14,9 @@ import google_identity as google
 
 CLIENT = "761981450509-3bvp5njfhghvrsitipl0vcde0g92q9h.apps.googleusercontent.com"
 PRIVATE = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-PUB = JsonWebKey.import_key(PRIVATE.public_key(), {"kid": "test-google-key"})
+PUBLIC_PEM = PRIVATE.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+PRIVATE_PEM = PRIVATE.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+PUB = JsonWebKey.import_key(PUBLIC_PEM, {"kid": "test-google-key"})
 TOKEN = JsonWebToken(["RS256"])
 
 class Response:
@@ -30,7 +33,7 @@ def create_token(nonce, **updates):
                    sub="113301133011330", email="existing@gmail.com",
                    email_verified=True, iat=now, exp=now+2400, nonce=nonce)
     payload.update(updates)
-    token = TOKEN.encode({"alg": "RS256", "kid": "test-google-key"}, payload, PRIVATE)
+    token = TOKEN.encode({"alg": "RS256", "kid": "test-google-key"}, payload, PRIVATE_PEM)
     return token.decode("ascii") if isinstance(token, bytes) else token
 
 def run():
