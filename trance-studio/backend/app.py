@@ -100,7 +100,9 @@ def create_app(config=None):
                         from source_video_fallback import compose_original_video_with_mix
                         original_recovery=compose_original_video_with_mix(
                             paths,root/job_id/'mix.mp3',root/job_id/'story.mp4',
-                            root/job_id/'original-video')
+                            root/job_id/'original-video',
+                            bpm=options.get('bpm',145),
+                            transcript_hint=detected_transcript)
                         meta={**original_recovery,
                               'storyboard_source':'original_shared_video',
                               'transcript_origin':'unavailable',
@@ -189,7 +191,9 @@ def create_app(config=None):
                                 from source_video_fallback import compose_original_video_with_mix
                                 recovered=compose_original_video_with_mix(
                                     paths,root/job_id/'mix.mp3',
-                                    root/job_id/'story.mp4',root/job_id/'original-video')
+                                    root/job_id/'story.mp4',root/job_id/'original-video',
+                                    bpm=options.get('bpm',145),
+                                    transcript_hint=detected_transcript)
                             except (UnavailableVideo,OSError,ValueError,
                                     subprocess.SubprocessError):
                                 pass
