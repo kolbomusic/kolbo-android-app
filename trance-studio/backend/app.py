@@ -224,7 +224,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='הקבצים גדולים מדי. עד 15MB לכל הקלטה.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.13.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.14.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.post('/api/jobs')
     def create_job():
@@ -285,6 +285,94 @@ def create_app(config=None):
             if (root/job_id/'storyboard.json').exists():
                 job['storyboard_url']='/api/jobs/'+job_id+'/storyboard'
         return jsonify(job)
+
+    @app.post('/api/jobs/<job_id>/ai-clips')
+    def accept_direct_phone_generated_clips(job_id):
+        """Use original AI-video BYTES from the phone, not a remote download URL.
+
+        Render Free may be unable to retrieve a Gradio clip after creation;
+        the phone network already fetched the MP4 successfully. Limit bytes,
+        codecs, dimensions, clip count, retries and CPU work.
+        """
+        cleanup()
+        if not re.fullmatch(r'[a-f0-9]{48}',job_id):
+            return jsonify(error='מזהה המיקס אינו תקין'),404
+        with lock:
+            job=jobs.get(job_id)
+            if not job or job.get('state')!='done':
+                return jsonify(error='המיקס אינו זמין או שתוקפו פג'),404
+            if not job.get('client_ai_fallback') or not job.get('client_ai_prompt'):
+                return jsonify(error='לא ניתנה הסכמה להעברת תמלול לשירות AI'),403
+            if job.get('video_status')=='done':
+                return jsonify(error='סרטון כבר הוכן למשימה זו'),409
+            if job.get('ai_client_busy'):
+                return jsonify(error='יצירת הסרטון כבר בתהליך'),409
+            if job.get('ai_client_upload_attempts',0)>=3:
+                return jsonify(error='הסתיימה מכסת ניסיונות שילוב הווידאו למשימה'),429
+            job['ai_client_busy']=True
+            job['ai_client_upload_attempts']=job.get('ai_client_upload_attempts',0)+1
+        if not admission.acquire(blocking=False):
+            with lock:
+                if job_id in jobs:jobs[job_id]['ai_client_busy']=False
+            return jsonify(error='השרת עסוק כרגע, ניתן לנסות שוב'),429
+        work_dir=root/job_id/'mobile-ai-upload'
+        try:
+            from client_ai_fallback import (combine_mobile_ai_clips,
+                                            MobileClipError,MAX_CLIP_BYTES)
+            clips=request.files.getlist('clip')
+            if not 1<=len(clips)<=2:
+                return jsonify(error='נדרש קטע וידאו אחד או שניים'),400
+            work_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
+            inputs=[]
+            for i,clip in enumerate(clips):
+                data=clip.stream.read(MAX_CLIP_BYTES+1)
+                if not 12000<=len(data)<=MAX_CLIP_BYTES or data[4:8]!=b'ftyp':
+                    return jsonify(error='הווידאו שהתקבל אינו MP4 אמיתי או גדול מדי'),400
+                src=work_dir/f'generated-source-{i}.mp4'
+                src.write_bytes(data)
+                inputs.append(src)
+            output=root/job_id/'story.mp4'
+            board=combine_mobile_ai_clips(inputs,root/job_id/'mix.mp3',
+                                          output,work_dir/'encode')
+            board['transcript_origin']=job.get('transcript_origin','server_original_asr')
+            (root/job_id/'storyboard.json').write_text(
+                json.dumps(board,ensure_ascii=False),encoding='utf-8')
+            with lock:
+                current=jobs.get(job_id)
+                if current is None:
+                    output.unlink(missing_ok=True)
+                    return jsonify(error='תוקף המיקס פג'),404
+                current.pop('video_error',None)
+                current.pop('client_ai_prompt',None)
+                current.update(
+                    video_status='done',
+                    video_mode='ai_generated_client_fallback',
+                    storyboard_source=board['source'],
+                    visual_coverage='approximate',
+                    visual_beats=board['ai_clips_generated'],
+                    client_ai_fallback=False,
+                    ai_clips_generated=board['ai_clips_generated'],
+                    ai_clip_seconds=board['ai_clip_seconds'],
+                    video_note='נוצרו סצנות AI לפי התמלול, בהסכמה. זו המחשה משוערת, לא שחזור מדויק של כל משפט.',
+                    label='סרטון ה־AI והמיקס מוכנים')
+            return jsonify(video_url='/api/jobs/'+job_id+'/video',
+                           video_preview_url='/api/jobs/'+job_id+'/video_preview',
+                           video_status='done',
+                           video_mode='ai_generated_client_fallback',
+                           visual_coverage='approximate',
+                           video_note='סרטון AI חדש מן התמלול; המחשה משוערת, לא שחזור מדויק.',
+                           storyboard_url='/api/jobs/'+job_id+'/storyboard',
+                           ai_clips_generated=board['ai_clips_generated']),200
+        except MobileClipError as exc:
+            return jsonify(error=str(exc)),422
+        except Exception:
+            app.logger.exception('Direct phone-generated AI video mux failed')
+            return jsonify(error='שילוב הווידאו נכשל. המיקס המקורי נשמר.'),500
+        finally:
+            shutil.rmtree(work_dir,ignore_errors=True)
+            with lock:
+                if job_id in jobs:jobs[job_id]['ai_client_busy']=False
+            admission.release()
 
     @app.post('/api/jobs/<job_id>/generated-video')
     def finalize_browser_generated_video(job_id):
@@ -448,6 +536,11 @@ def create_app(config=None):
     def studio_sw():
         response=send_file(web/'studio-sw.js',mimetype='application/javascript')
         response.headers['Service-Worker-Allowed']='/'
+        response.headers['Cache-Control']='no-store'
+        return response
+    @app.get('/studio-ai-fallback.js')
+    def studio_ai_fallback_script():
+        response=send_file(web/'studio-ai-fallback.js',mimetype='application/javascript')
         response.headers['Cache-Control']='no-store'
         return response
     @app.get('/studio-asr-worker.js')
