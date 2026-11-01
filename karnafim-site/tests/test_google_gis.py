@@ -63,25 +63,26 @@ def run():
                 assert 'id="g_id_onload"' in html
                 assert google.CALLBACK in html
                 assert 'gsi/client' in html
+                assert 'data-callback="karnafimGoogleResponse"' in html
+                assert 'id="karnafim-gis-form"' in html
+                assert 'name="csrf"' in html
+                assert 'data-login_uri=' not in html
+                assert '<script>' + google.GIS_CALLBACK_JS + '</script>' in html
                 with client.session_transaction() as sess:
-                    nonce = sess["google_gis_nonce"]
+                    nonce, csrf = sess["google_gis_nonce"], sess["csrf"]
                 signed = create_token(nonce)
 
                 assert client.post("/auth/google/callback", data={
-                    "credential":signed}).status_code == 403, "Missing double-submit CSRF"
-
-                client.set_cookie("g_csrf_token","csrf-for-test")
+                    "credential":signed}).status_code == 403, "Missing same-site CSRF"
                 invalid_csrf = client.post("/auth/google/callback", data={
-                    "g_csrf_token":"different","credential":signed})
+                    "csrf":"different","credential":signed})
                 assert invalid_csrf.status_code == 403
                 assert not db and fetch.call_count == 0
-                # A failed CSRF check consumes the one-time session nonce.
-                # Refresh the login page to issue a new, valid nonce.
-                client.get("/login")
+                # CSRF rejection happens before the one-time nonce is consumed.
                 with client.session_transaction() as sess:
-                    signed = create_token(sess["google_gis_nonce"])
+                    assert sess["google_gis_nonce"] == nonce
                 ok = client.post("/auth/google/callback", data={
-                    "g_csrf_token":"csrf-for-test","credential":signed})
+                    "csrf":csrf,"credential":signed})
                 assert ok.status_code == 303 and ok.location == "/", (ok.status_code,ok.location)
                 with client.session_transaction() as sess:
                     assert sess["uid"] == 42 and sess["auth_method"] == "google"
@@ -89,7 +90,7 @@ def run():
                 assert len(db) == 1
                 # The signed nonce can never be replayed after first login.
                 assert client.post("/auth/google/callback", data={
-                    "g_csrf_token":"csrf-for-test","credential":signed}).status_code == 403
+                    "csrf":csrf,"credential":signed}).status_code == 403
 
                 for token_kwargs in [
                     {"aud":"attacker-client.apps.googleusercontent.com"},
@@ -100,16 +101,18 @@ def run():
                 ]:
                     client.get("/login")
                     with client.session_transaction() as sess:
-                        new_nonce = sess["google_gis_nonce"]
+                        new_nonce, new_csrf = sess["google_gis_nonce"], sess["csrf"]
                     new_signed = create_token(new_nonce, **token_kwargs)
                     failed = client.post("/auth/google/callback", data={
-                        "g_csrf_token":"csrf-for-test","credential":new_signed})
+                        "csrf":new_csrf,"credential":new_signed})
                     assert failed.status_code == 401, (token_kwargs, failed.status_code)
                 client.get("/login")
+                with client.session_transaction() as sess:
+                    final_csrf = sess["csrf"]
                 bad_signed = create_token("unrelated-nonce")
                 forged = bad_signed[:30] + ("A" if bad_signed[30] != "A" else "B") + bad_signed[31:]
                 assert client.post("/auth/google/callback", data={
-                    "g_csrf_token":"csrf-for-test","credential":forged}).status_code == 401
+                    "csrf":final_csrf,"credential":forged}).status_code == 401
         assert len(db) == 1, "No rejected token should read the DB"
         print("PASS GIS signed RS256 verification, Google JWKS, nonce, CSRF, replay, audience, issuer, expiry")
 
