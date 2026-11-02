@@ -608,9 +608,6 @@ def create_app(config=None):
             from client_ai_fallback import MAX_CLIPS
             if not 1<=len(clips)<=MAX_CLIPS:
                 return jsonify(error='ניתן להעלות עד שישה קטעי וידאו לסיפור'),400
-            planned=int(job.get('client_ai_scene_count',0))
-            if planned and len(clips)!=planned:
-                return jsonify(error='לא הופקו כל הסצנות המקוריות. לא נמחזר קליפ קצר'),422
             work_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
             inputs=[]
             for i,clip in enumerate(clips):
@@ -620,6 +617,9 @@ def create_app(config=None):
                 src=work_dir/f'generated-source-{i}.mp4'
                 src.write_bytes(data)
                 inputs.append(src)
+            planned=int(job.get('client_ai_scene_count',0))
+            if planned and len(clips)!=planned:
+                return jsonify(error='לא הופקו כל הסצנות המקוריות. לא נמחזר קליפ קצר'),422
             output=root/job_id/'story.mp4'
             # Durations reflect relative spoken word counts in each scene,
             # instead of forcing every scene to have the same screen time.

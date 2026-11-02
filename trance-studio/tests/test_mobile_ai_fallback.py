@@ -100,7 +100,7 @@ class PhoneAIRecoveryTests(unittest.TestCase):
             # A pair of two-second sources cannot span a 30-second mix:
             # legacy would have stretched them in a visible endless loop.
             self.assertEqual(result.status_code,422,result.get_json())
-            self.assertIn('מספיק וידאו',result.get_json()['error'])
+            self.assertIn('סצנות',result.get_json()['error'])
             current=client.get(job['status_url']).get_json()
             self.assertEqual(current['video_status'],'unavailable')
             self.assertEqual(client.get(current['download_url']).status_code,200)
