@@ -75,9 +75,16 @@ def create_app(config=None):
                 update(job_id,percent=5,label='מזהה משפטים ותזמון אפקטים מהקלטת המקור')
                 try:
                     from source_asr import transcribe_original_files
-                    spoken,transcript_complete,transcript_timeline=transcribe_original_files(
+                    asr_result=transcribe_original_files(
                         paths,progress=lambda label:update(job_id,label=label),
                         return_timeline=True)
+                    # Preserve compatibility with older source-ASR wrappers
+                    # which return text+completion but no timestamp metadata.
+                    if len(asr_result)==3:
+                        spoken,transcript_complete,transcript_timeline=asr_result
+                    else:
+                        spoken,transcript_complete=asr_result
+                        transcript_timeline=None
                     if spoken:
                         detected_transcript=spoken
                         detected_origin='server_original_asr'
