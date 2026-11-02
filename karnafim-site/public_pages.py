@@ -115,6 +115,19 @@ def terms():
   '</article></div><p><a href="/privacy">למדיניות הפרטיות ←</a> · '
   '<a href="/safety">למצב האבטחה ←</a></p></section>')
 def status():
+ import os
+ if os.getenv("KARNAFIM_AUTH_METHOD","local").strip().lower()=="local":
+  return ('<section><h1>🔐 כניסה לחשבון הקרנפים — מצב השירות</h1>'
+   '<div class="card"><h2>שחזור מנגנון ההתחברות המקורי</h2>'
+   '<p>מנגנון דוא״ל וסיסמה מקומי הוכן מחדש. הסיסמאות הקיימות לא אופסו במסגרת השחזור, '
+   'אך עדיין לא בוצעה התחברות אמיתית לחשבון קיים.</p>'
+   '<p><strong>הכניסה אינה פעילה כרגע.</strong> בעקבות אזהרת Google Safe Browsing '
+   'אין באתר טופס ציבורי להזנת סיסמה. אין לעקוף אזהרת Chrome.</p>'
+   '<p>לפני חידוש הכניסה יש לאמת ש־Google הסירה את הסיווג המסוכן, '
+   'להשלים בדיקות אבטחה ולאשר את פתיחת הקהילה.</p></div>'
+   '<div class="card"><h2>מה נשמר?</h2><p>נתוני החברים הקיימים אינם מוצגים לציבור. '
+   'אישור חברות וחשיפת פרטים אישיים נשארים בשליטת מנהל הקהילה והחבר.</p>'
+   '<p><a href="/privacy">פרטיות</a> · <a href="/safety">אבטחת האתר</a></p></div></section>')
  # Display live non-sensitive configuration, not stale claims about setup.
  # Google Safe Browsing verdict is external: never pretend an env toggle is
  # proof that Google's warning has been removed.
