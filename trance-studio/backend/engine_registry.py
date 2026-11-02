@@ -59,6 +59,23 @@ def catalog():
             output="video/mp4",
             note="עורך את הסרטון המקורי, ואינו יוצר סצנות AI חדשות")
     ]
+    # No model weights are shipped on the tiny Render Free server.
+    # Reporting these as disabled is intentional: central/side cancellation
+    # must never be called AI source separation or singer voice conversion.
+    separate=[
+        CreativeEngine(
+            id="demucs-two-stem",task="source-separation",
+            kind="optional-local-ml",ready=False,default=False,
+            output="audio/wav",
+            note="נדרש מודל הפרדת שירה וליווי שהותקן ואומת; כרגע לא זמין בענן")
+    ]
+    voice_cover=[
+        CreativeEngine(
+            id="authorized-singing-voice-conversion",task="ai-cover",
+            kind="optional-ml-model",ready=False,default=False,
+            output="audio/mpeg",needs_consent=True,
+            note="נדרש מודל המרת קול בשירה ודוגמת קול מורשית; אינו מחובר עדיין")
+    ]
     return {
         "api_version":ENGINE_API_VERSION,
         "selection_policy":"local-dsp-first-public-ai-when-user-consents",
@@ -66,5 +83,7 @@ def catalog():
         "vocal_fx":[asdict(x) for x in speech],
         "import":[asdict(x) for x in extract],
         "video":[asdict(x) for x in generative],
+        "separation":[asdict(x) for x in separate],
+        "voice_cover":[asdict(x) for x in voice_cover],
         "promises_unlimited_public_gpu":False,
     }
