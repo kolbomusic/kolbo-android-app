@@ -103,7 +103,9 @@ def _facebook_video_id(url):
     if host!="facebook.com" and not host.endswith(".facebook.com"):
         return None
     path=parts.path
-    match=re.search(r"/(?:videos|reel)/(\d{8,22})(?:/|$)",path)
+    # Public Facebook permalink can contain a video slug between /videos/
+    # and its numeric ID, e.g. /natgeo/videos/title/1016464114801712/.
+    match=re.search(r"/(?:videos|reel)/(?:[^/?#]+/)?(\d{8,22})(?:/|$)",path)
     if match:return match.group(1)
     if path.rstrip("/") in ("/watch", "/watch/"):
         key=parse_qs(parts.query).get("v",[""])[0]
@@ -351,13 +353,20 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
                         candidates.extend(_facebook_html_media_urls(html))
         except (OSError,URLError,HTTPError,ValueError,LinkImportError):
             pass  # The original public link still gets one bounded extraction.
-        # Test the real public Chrome transport only when the ordinary
-        # redirect/metadata path did not identify a video. Passing an explicit
-        # test opener keeps existing injected-unit-test flows deterministic.
-        if opener is None and not any(_facebook_video_id(c) for c in candidates):
+        # Chrome public HTML can advertise the actual video bytes even if
+        # urllib has already resolved the numeric ID. Earlier versions skipped
+        # Chrome in that case, losing an independent (no-login) recovery path.
+        # Preserve injected test openers to keep mocked tests deterministic.
+        if opener is None and not any(_trusted_facebook_media_url(c) for c in candidates):
             candidates.extend(_facebook_public_browser_candidates(
-                url,timeout=timeout))
-    video_id=next((_facebook_video_id(c) for c in candidates if _facebook_video_id(c)),None)
+                url,timeout=min(5,timeout)))
+    ids={i for c in candidates if (i:=_facebook_video_id(c))}
+    if len(ids)>1:
+        # Different IDs from public metadata/redirects: do not risk silently
+        # downloading an unrelated video in response to the user's link.
+        raise LinkImportError("קישור השיתוף הפנה לסרטונים שונים; הייבוא נעצר כדי למנוע הורדת סרטון שגוי.",
+                              code="ambiguous_share")
+    video_id=next(iter(ids),None)
     if video_id:
         watch=f"https://www.facebook.com/watch/?v={video_id}"
         candidates.extend([
