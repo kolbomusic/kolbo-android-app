@@ -364,7 +364,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.14.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.post('/api/import-link')
     def import_social_link():
@@ -387,7 +387,8 @@ def create_app(config=None):
                 conditional=False)
             response.headers['Cache-Control']='no-store, private'
             response.headers['X-Content-Type-Options']='nosniff'
-            response.call_on_close(lambda:shutil.rmtree(folder,ignore_errors=True))
+            cleanup_folder=folder
+            response.call_on_close(lambda:shutil.rmtree(cleanup_folder,ignore_errors=True))
             folder=None
             return response
         except LinkImportError as exc:
