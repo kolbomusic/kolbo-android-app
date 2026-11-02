@@ -34,6 +34,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.webkit.WebResourceError;
+import android.util.Base64;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -500,6 +501,40 @@ public final class MainActivity extends Activity {
     }
     private void toast(String s){runOnUiThread(()->Toast.makeText(this,s,Toast.LENGTH_LONG).show());}
     private class AudioBridge{
+        @JavascriptInterface public void saveStudioAudio(String encoded){
+            if(encoded==null||encoded.length()>9*1024*1024){
+                toast("תוצאת המאסטרינג גדולה מדי לשמירה במכשיר");return;
+            }
+            io.execute(()->{
+                Uri dest=null;
+                try{
+                    byte[] bytes=Base64.decode(encoded,Base64.DEFAULT);
+                    if(bytes.length<2048||bytes.length>7*1024*1024)
+                        throw new IllegalArgumentException("גודל קובץ אינו תקין");
+                    ContentValues values=new ContentValues();
+                    values.put(MediaStore.MediaColumns.DISPLAY_NAME,
+                               "Kolbo-Studio-"+System.currentTimeMillis()+".mp3");
+                    values.put(MediaStore.MediaColumns.MIME_TYPE,"audio/mpeg");
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH,
+                               Environment.DIRECTORY_DOWNLOADS+"/Kolbo Trance");
+                    values.put(MediaStore.MediaColumns.IS_PENDING,1);
+                    dest=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+                    if(dest==null)throw new IllegalStateException("MediaStore unavailable");
+                    try(OutputStream output=getContentResolver().openOutputStream(dest)){
+                        if(output==null)throw new IllegalStateException("Output stream unavailable");
+                        output.write(bytes);
+                    }
+                    ContentValues finish=new ContentValues();
+                    finish.put(MediaStore.MediaColumns.IS_PENDING,0);
+                    getContentResolver().update(dest,finish,null,null);
+                    toast("קובץ המאסטרינג נשמר בהורדות / Kolbo Trance");
+                }catch(Exception err){
+                    if(dest!=null)try{getContentResolver().delete(dest,null,null);}
+                    catch(Exception ignored){}
+                    toast("שמירת הקובץ נכשלה. ניתן לנסות שוב.");
+                }
+            });
+        }
         @JavascriptInterface public void importFailure(){
             toast("לא ניתן לקרוא את הקובץ המשותף. אפשר לבחור אותו שוב או לנסות חיבור מחדש.");
         }
