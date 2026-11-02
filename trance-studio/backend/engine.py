@@ -45,7 +45,8 @@ STYLES = ('melodic', 'psy', 'progressive', 'goa', 'acid', 'uplifting',
           'eurodance', 'hard', 'rave', 'mixed', 'auto', 'israeli')
 HUMOR = ('auto', 'classic', 'cartoon', 'scratch', 'robot', 'chaos',
          'stretch', 'tape', 'pitch', 'glitch', 'vinyl', 'dj',
-         'helium','monster','yo_yo','comic_roll','rewind','off')
+         'helium','monster','yo_yo','comic_roll','rewind',
+         'telephone','echo','flanger','gate','ring','off')
 MOTIFS = (
     (74,77,81,77,72,77,79,77,70,74,77,74,69,73,76,73),
     (69,72,76,79,76,72,74,71,67,71,74,78,74,71,69,71),
@@ -265,6 +266,29 @@ def vintage_voice_fx(clip, mode, sr, bpm, rng):
                             fs=sr,output='sos'),x).astype(np.float32)
         y=np.round(np.tanh(lo*2.1)*30)/30
         y=y.astype(np.float32)
+    elif mode=='telephone':
+        lo=sosfilt(butter(3,[360,min(2900,sr*.42)],btype='bandpass',
+                            fs=sr,output='sos'),x).astype(np.float32)
+        y=np.tanh(lo*2.5).astype(np.float32)
+    elif mode=='echo':
+        y=x.copy()
+        for ms,amount in ((110,.54),(215,.27)):
+            gap=int(sr*ms/1000)
+            if gap<len(y):y[gap:]+=x[:-gap]*amount
+    elif mode=='flanger':
+        t=np.arange(len(x),dtype=np.float32)/sr
+        offsets=(.0022+.0015*np.sin(2*np.pi*(1.5+bpm/600)*t))*sr
+        points=np.arange(len(x),dtype=np.float32)-offsets
+        delayed=np.interp(points,np.arange(len(x)),x,left=0,right=0)
+        y=(x*.65+delayed*.45).astype(np.float32)
+    elif mode=='gate':
+        t=np.arange(len(x),dtype=np.float32)/sr
+        phase=(t/(60/bpm/4))%1
+        envelope=.13+.87*np.clip((.68-phase)*12,0,1)
+        y=(x*envelope).astype(np.float32)
+    elif mode=='ring':
+        t=np.arange(len(x),dtype=np.float32)/sr
+        y=(x*(.48+.52*np.sin(2*np.pi*34*t))).astype(np.float32)
     elif mode=='dj':
         cut=zero_crossing_cut(x,len(x)//2,sr)
         first=x[:cut]
