@@ -22,6 +22,18 @@ class Conn:
 def main():
  token,hashed=issue_token()
  assert len(token)>=40 and digest_token(token)==hashed
+ # Never mistake 'queued in PostgreSQL' for 'email will actually be sent'.
+ # This must stay off until a separate, tested sender is available.
+ with patch.dict(os.environ,{"KARNAFIM_MAIL_TRANSPORT":"gmail_queue",
+                             "KARNAFIM_GMAIL_QUEUE_ENABLED":"1",
+                             "KARNAFIM_GMAIL_DISPATCH_VERIFIED":"0",
+                             "DATABASE_URL":"postgresql://offline.invalid"}):
+  assert not delivery_ready(), "Gmail queue alone is not a live mail system"
+ with patch.dict(os.environ,{"KARNAFIM_MAIL_TRANSPORT":"gmail_queue",
+                             "KARNAFIM_GMAIL_QUEUE_ENABLED":"1",
+                             "KARNAFIM_GMAIL_DISPATCH_VERIFIED":"1",
+                             "DATABASE_URL":"postgresql://offline.invalid"}):
+  assert delivery_ready()
  assert digest_token(token[:-1]+"!") is None
  assert digest_token("x") is None
  assert digest_token(issue_token()[0])!=hashed
