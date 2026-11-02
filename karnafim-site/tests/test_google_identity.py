@@ -69,15 +69,16 @@ def main():
         assert c.get("/auth/google/start").status_code==503
         assert c.get("/auth/google/consent").status_code==503
         assert c.get("/auth/google/callback").status_code==503
-    # Site routes must not collect or accept local passwords after maintenance.
+    # The site now supports two explicitly separated authentication methods.
+    # Local passwords are allowed only after the independent safety release.
     main_app=(Path(__file__).resolve().parents[1]/"app.py").read_text("utf-8")
     login=main_app.split('@app.route("/login",',1)[1].split('@app.route("/logout",',1)[0]
-    signup=main_app.split('@app.route("/register",',1)[1].split('@app.route("/login",',1)[0]
-    assert 'request.form.get("password"' not in login
-    assert 'field("password"' not in login+signup
-    assert 'request.method=="POST":abort(405)' in signup
-    assert 'request.method=="POST":abort(405)' in login
-    assert 'session.get("auth_method")!="google"' in main_app
-    print("PASS Google OIDC identity validation, no unauthorized linking, opt-in startup and no local-password forms")
+    assert 'if AUTH_METHOD=="local":' in login
+    assert 'session["auth_method"]="local"' in login
+    assert 'if request.method=="POST":abort(405)' in login
+    assert 'KARNAFIM_LOCAL_AUTH_ENABLED' in main_app
+    assert 'SAFETY_RELEASE_APPROVED and AUTH_READY' in main_app
+    assert 'session.get("auth_method")!=AUTH_METHOD' in main_app
+    print("PASS Google OIDC identity validation, separate gated local login and no unauthorized linking")
 
 if __name__=="__main__":main()
