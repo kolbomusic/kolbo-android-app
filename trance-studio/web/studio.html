@@ -87,6 +87,11 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <option value="yo_yo">יו־יו — קול קופץ מגבוה לנמוך</option>
 <option value="comic_roll">רול קומי — הברות קופצות ומתפצלות</option>
 <option value="rewind">ריוורס — מילה קדימה ואחורה</option>
+<option value="telephone">רדיו / טלפון — פילטר ודיסטורשן קולי</option>
+<option value="echo">דיליי DJ — חזרות הד קצרות בקצב</option>
+<option value="flanger">פלנג'ר — תנועת סילון מסתחררת בקול</option>
+<option value="gate">Rhythmic Gate — חיתוך קצבי של הדיבור</option>
+<option value="ring">Ring Modulator — צליל קולי מכני משונה</option>
 <option value="chaos">מסיבה פרועה — יותר חיתוכים ואפקטים</option>
 <option value="off">ללא הומור — מוזיקה וקול בלבד</option></select>
 <label for="fx_intensity">תדירות קטעי הקול המעובדים — <output id="fxText">רגילה — תזמון לפי משפטים</output></label>
@@ -94,7 +99,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <small>1 — מדי פעם · 2 — רגיל · 3 — כמה שיותר במהלך הדיבור</small>
 <label for="fx_gain">עוצמת האפקטים ביחס לקול המקורי — <output id="fxGainText">130%</output></label>
 <input id="fx_gain" type="range" min="55" max="170" value="130" step="5">
-<small>המערכת ממקמת את האפקטים בהפסקות אמיתיות, שומרת את המשפטים המקוריים, ומנמיכה רק את הליווי בזמן הדיבור. אפקט דרמטי מתווסף רק כאשר זוהה אירוע מתאים.</small>
+<small>כעת העיבוד פועל גם בתוך דיבור רצוף כהעתקי קול קצביים ובלי למחוק את הדיבור המקורי. בחירה ידנית משנה את המעבד, והעוצמה והתדירות קובעות כמה הוא נשמע.</small>
 </details>
 <details class="advanced"><summary>בחירת מוזיקה ישראלית / עברית וחיבור קובץ מורשה</summary>
 <label for="ytMusicSearch">חיפוש מהיר ביוטיוב (ישראל / עברית)</label>
@@ -132,7 +137,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <option value="3">וריאציה 3 — קבועה</option><option value="4">וריאציה 4 — קבועה</option>
 <option value="5">וריאציה 5 — קבועה</option><option value="6">וריאציה 6 — קבועה</option>
 <option value="7">וריאציה 7 — קבועה</option><option value="8">וריאציה 8 — קבועה</option>
-</select><small>עם אותה הודעת WhatsApp ניתן להפיק כמה מיקסים עם לחנים וסינתיסייזרים שונים.</small></div>
+</select><small>כל וריאציה משנה כעת גם את רצף האקורדים, צבעי הצליל ודפוס התופים — לא רק את המלודיה.</small></div>
 
 <div><label for="length">משך המיקס</label><select id="length">
 <option value="0" selected>אוטומטי לפי אורך ההקלטות</option>
