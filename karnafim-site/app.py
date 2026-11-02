@@ -182,6 +182,23 @@ if not READ_ONLY_BOOT:
  expires_at TIMESTAMPTZ NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
  )""")
+ # HTTPS mail delivery fallback is a bounded Gmail queue, not a public route.
+ sql("""CREATE TABLE IF NOT EXISTS email_outbox (
+ id BIGSERIAL PRIMARY KEY,
+ kind TEXT NOT NULL DEFAULT 'verification',
+ to_address TEXT NOT NULL,
+ verification_url TEXT,
+ status TEXT NOT NULL DEFAULT 'pending'
+  CHECK (status IN ('pending','sending','sent','failed')),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ expires_at TIMESTAMPTZ NOT NULL,
+ attempts INTEGER NOT NULL DEFAULT 0,
+ claimed_at TIMESTAMPTZ,
+ sent_at TIMESTAMPTZ,
+ last_error TEXT NOT NULL DEFAULT ''
+ )""")
+ sql("CREATE INDEX IF NOT EXISTS email_outbox_dispatch_idx ON email_outbox(status,created_at) WHERE status='pending'")
+ sql("CREATE INDEX IF NOT EXISTS email_outbox_recipient_idx ON email_outbox(lower(to_address),created_at DESC)")
  sql("""CREATE TABLE IF NOT EXISTS login_failures (
  fingerprint TEXT NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
