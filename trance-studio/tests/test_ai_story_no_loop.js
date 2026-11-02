@@ -2,8 +2,8 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const src=fs.readFileSync('trance-studio/web/studio-ai-fallback.js','utf8');
 assert.match(src,/var MAX_SHOTS=6;/);
-assert.match(src,/duration_s:4\.5/);
-assert.match(src,/\['text-to-video',4\.5|,'text-to-video',4\.5/);
+assert.match(src,/duration_s:5\.0/);
+assert.match(src,/\['text-to-video',5\.0|,'text-to-video',5\.0/);
 assert.match(src,/var seed=42\+\(shotIndex\|\|0\)\*7919/);
 assert.match(src,/if\(!clip\)throw fail/);
 const start=src.indexOf('function requestPayload(model,prompt,shotIndex)');
