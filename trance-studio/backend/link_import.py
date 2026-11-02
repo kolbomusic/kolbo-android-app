@@ -7,11 +7,13 @@ Private/login/DRM pages fail closed. No browser cookies or account tokens.
 from __future__ import annotations
 
 import re
+import json
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+from html import unescape
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urljoin, urlsplit
@@ -202,6 +204,33 @@ def _facebook_html_media_urls(html):
     return results[:2]
 
 
+
+def _facebook_html_inline_media_urls(html):
+    """Extract public video-CDN URLs from visible inline page metadata.
+
+    Facebook sometimes embeds browser_native_sd_url/playable_url in its public
+    HTML instead of og:video. No login, private API, or browser cookies are used.
+    Whitelist fbcdn.net strictly: never fetch arbitrary URLs found in scripts.
+    """
+    if not html:
+        return []
+    page=html[:150000].decode("utf-8","replace").replace(r'\"','"')
+    pattern=(r'"(?:browser_native_sd_url|browser_native_hd_url|'
+             r'playable_url(?:_quality_hd)?|sd_src|hd_src)"\s*:\s*"'
+             r'((?:\\.|[^"\\]){1,2048})"')
+    results=[]
+    for match in re.finditer(pattern,page):
+        try:
+            value=unescape(json.loads('"'+match.group(1)+'"'))
+        except (ValueError,TypeError):
+            continue
+        safe=_trusted_facebook_media_url(value)
+        if safe and safe not in results:
+            results.append(safe)
+        if len(results)>=3:
+            break
+    return results
+
 class _FacebookCdnOnlyRedirects(HTTPRedirectHandler):
     """Keep a public media fetch on fbcdn.net; do not allow redirect-to-localhost."""
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -307,7 +336,8 @@ def _facebook_public_browser_candidates(url, *, timeout=7):
                 html=b"".join(chunks)
                 for video in _facebook_html_video_urls(html,current):
                     if video not in discovered:discovered.append(video)
-                for media in _facebook_html_media_urls(html):
+                for media in (_facebook_html_media_urls(html)+
+                              _facebook_html_inline_media_urls(html)):
                     if media not in discovered:discovered.append(media)
             break
         except Exception:
@@ -353,6 +383,7 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
                         # Direct CDN metadata is public HTML metadata, not
                         # scraped private API tokens or signed-in session data.
                         candidates.extend(_facebook_html_media_urls(html))
+                        candidates.extend(_facebook_html_inline_media_urls(html))
         except (OSError,URLError,HTTPError,ValueError,LinkImportError):
             pass  # The original public link still gets one bounded extraction.
         # Chrome public HTML can advertise the actual video bytes even if
@@ -458,7 +489,12 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     is_facebook=(urlsplit(url).hostname or "").lower().rstrip(".").endswith("facebook.com") or (urlsplit(url).hostname or "").lower().rstrip(".")=="fb.watch"
     # FaceBook share/v -> canonical video -> watch URL -> reel / official
     # public embed. An unsupported social site remains a single attempt.
-    attempts=candidates[:8]
+    # Direct public CDN bytes can succeed even when yt-dlp fails parsing a
+    # Facebook page. Try those first, before they expire or retries use time.
+    candidates=candidates[:8]
+    direct=[c for c in candidates if _trusted_facebook_media_url(c)]
+    pages=[c for c in candidates if not _trusted_facebook_media_url(c)]
+    attempts=(direct+pages) if is_facebook else candidates
     if len(attempts)>1:
         # Avoid a single dead extractor using the entire 70-second budget.
         attempt_limit=max(7,min(19,(deadline-time.monotonic())/len(attempts)))
@@ -530,8 +566,8 @@ def fetch_public_social_media(url, directory, *,timeout=70):
             code="access_restricted",attempts=len(failures),steps=details)
     if "extractor" in failures:
         raise LinkImportError(
-            "מנוע החילוץ של Facebook לא הצליח לפענח את דף הסרטון (Cannot parse data). "
-            "זה לא בהכרח אומר שהסרטון פרטי או חסום.",
+            "Facebook לא החזירה קובץ וידאו שהשרת הצליח לקרוא. "
+            "אפשר לבחור את הסרטון או הקלטת המסך מהמכשיר ולהמשיך ליצירה.",
             code="extractor_parse",attempts=len(failures),steps=details)
     raise LinkImportError(
         "לא התקבל קובץ וידאו תקין מהמקורות הציבוריים שנבדקו.",

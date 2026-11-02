@@ -105,7 +105,40 @@ class FacebookPublicMediaStreamTests(unittest.TestCase):
                 output,mime=li.fetch_public_social_media(user,root,timeout=30)
                 self.assertEqual(output.name,"shared.mp4")
                 self.assertEqual(mime,"video/mp4")
-        self.assertEqual(attempted,[("yt-dlp",user),("cdn",cdn)])
+        self.assertEqual(attempted,[("cdn",cdn)])
+
+    def test_inline_public_video_json_is_accepted_without_secrets(self):
+        page=(b'<script>window.__VIDEO__={"browser_native_sd_url":'
+              b'"https:\\/\\/video.xx.fbcdn.net\\/v\\/public.mp4?x=1\\u0026y=2",'
+              b'"playable_url":"https://127.0.0.1/private.mp4",'
+              b'"browser_native_hd_url":"https://video.xx.fbcdn.net/v/hd.mp4"}</script>')
+        self.assertEqual(li._facebook_html_inline_media_urls(page),[
+            "https://video.xx.fbcdn.net/v/public.mp4?x=1&y=2",
+            "https://video.xx.fbcdn.net/v/hd.mp4"])
+
+    def test_embedded_untrusted_urls_are_never_candidates(self):
+        page=(b'<script>{"browser_native_sd_url":"http://127.0.0.1/private",'
+              b'"playable_url":"https://video.xx.fbcdn.net.evil.test/v.mp4",'
+              b'"sd_src":"https://video.xx.fbcdn.net:8443/v.mp4"}</script>')
+        self.assertEqual(li._facebook_html_inline_media_urls(page),[])
+
+    def test_direct_cdn_candidate_runs_before_expensive_extractors(self):
+        link="https://www.facebook.com/share/v/opaque/"
+        direct="https://video.xx.fbcdn.net/v/fast.mp4"
+        urls=[link]+["https://www.facebook.com/watch/?v=1234567890"]*3+[direct]
+        seen=[]
+        def try_cdn(url,folder,*,deadline):
+            seen.append("cdn")
+            (folder/"shared.mp4").write_bytes(b"0"*4096)
+            return "ok"
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(li,"_facebook_public_candidates",return_value=urls), \
+                 patch.object(li,"_try_public_facebook_cdn",side_effect=try_cdn), \
+                 patch.object(li,"_try_public_download",side_effect=AssertionError("slow extractor used")), \
+                 patch.object(li,"_media_probe",return_value=4.0):
+                result,mime=li.fetch_public_social_media(link,folder)
+                self.assertEqual(mime,"video/mp4")
+        self.assertEqual(seen,["cdn"])
 
     def test_extractor_code_does_not_assert_private(self):
         with tempfile.TemporaryDirectory() as root:

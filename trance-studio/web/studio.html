@@ -64,6 +64,10 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <label class="videoToggle"><input type="checkbox" id="linkRights"> <span>יש לי הרשאה להשתמש במדיה הזו</span></label>
 <button type="button" class="secondary" id="importLink">נסה לייבא את הקובץ מהקישור</button>
 <div id="linkStatus" role="status" aria-live="polite" class="hint"></div>
+<div id="linkRecovery" hidden>
+<p class="quickNote">אם Facebook לא מוסרת את קובץ הסרטון לייבוא, פתח אותו באפליקציית Facebook ושמור אותו למכשיר כשיש אפשרות. לחלופין אפשר להקליט מסך עם שמע, ואז לבחור את הסרטון כאן. אין צורך לחזור להזין את הקישור.</p>
+<div class="actions"><button type="button" id="chooseRecoveredVideo">בחר סרטון / הקלטת מסך</button><button type="button" id="openRecoveredSource" class="secondary">פתח את הסרטון המקורי</button></div>
+</div>
 </details>
 <label for="video_strategy">2. מה להכין מההקלטה?</label>
 <select id="video_strategy">
@@ -313,8 +317,19 @@ window.kolboReceiveSharedLink=function(url){
  if(typeof url!=='string'||url.length>2048)return;
  $('sourceLink').value=url;
  $('socialLinkPanel').open=true;
+ $('linkRecovery').hidden=true;
  $('linkStatus').textContent='הקישור התקבל. אשר את זכויות השימוש ולחץ ״נסה לייבא״. קישורי Facebook עשויים להיחסם גם כשהסרטון ציבורי.';
  $('socialLinkPanel').scrollIntoView({behavior:'smooth',block:'center'});
+};
+// Manual recovery uses native Android's existing external-link handler;
+ // it never copies Facebook credentials or automatically generates a mix.
+$('chooseRecoveredVideo').onclick=function(){audio.click();};
+$('openRecoveredSource').onclick=function(){
+ var url=$('sourceLink').value.trim(),u;
+ try{u=new URL(url);}catch(e){return;}
+ if(u.protocol!=='https:'||!/(^|\.)(facebook\.com|fb\.watch|tiktok\.com|instagram\.com)$/.test(u.hostname.toLowerCase()))return;
+ if(window.KolboAndroid)window.location.assign(url);
+ else window.open(url,'_blank','noopener,noreferrer');
 };
 // Sharing a link never starts network access or AI generation automatically.
 $('importLink').onclick=async function(){
@@ -324,6 +339,7 @@ $('importLink').onclick=async function(){
  if(u.protocol!=='https:'||link.length>2048){$('linkStatus').textContent='נדרש קישור HTTPS תקין.';return;}
  if(!$('linkRights').checked){$('linkStatus').textContent='נדרש אישור הרשאה לשימוש במדיה.';return;}
  var button=$('importLink');button.disabled=true;
+ $('linkRecovery').hidden=true;
  $('linkStatus').textContent='מאתר את הסרטון ומנסה מסלולי ייבוא ציבוריים חלופיים... ההפקה לא תתחיל ללא לחיצה על צור.';
  try{
   var response=await fetch('/api/import-link',{
@@ -334,6 +350,7 @@ $('importLink').onclick=async function(){
    var errorBody=await response.json().catch(function(){return {}});
    var issue=new Error(errorBody.error||'לא התקבל קובץ מהקישור.');
    issue.traceId=(errorBody.trace_id||'').replace(/[^a-f0-9]/g,'').slice(0,8);
+   issue.issueCode=(errorBody.code||'').replace(/[^a-z_]/g,'').slice(0,50);
    throw issue;
   }
   var type=(response.headers.get('content-type')||'').split(';')[0].toLowerCase();
@@ -344,9 +361,11 @@ $('importLink').onclick=async function(){
   var bytes=await response.blob(),limit=(type.startsWith('video/')?45:15)*1048576;
   if(!bytes.size||bytes.size>limit)throw new Error('הקובץ גדול מדי.');
   setFiles([new File([bytes],'Social-Media.'+exts[type],{type:type})]);
+  $('linkRecovery').hidden=true;
   $('linkStatus').textContent='המדיה יובאה. ניתן לבחור הגדרות וליצור בלחיצה שלך.';
   message('הקישור נטען כמדיה; היצירה עדיין לא התחילה.');
  }catch(error){
+  $('linkRecovery').hidden=!['extractor_parse','access_restricted','no_public_media'].includes(error.issueCode);
   $('linkStatus').textContent='הייבוא לא הצליח: '+(error.message||'המדיה אינה נגישה')+
     (error.traceId?' · קוד אבחון '+error.traceId:'');
  }finally{button.disabled=false}
