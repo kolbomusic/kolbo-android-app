@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 
 from live_video import _duration, _make_segment, _video_profile, visual_plan, UnavailableVideo
-from narrative_plan import narrative_beats, scene_prompt
+from narrative_plan import narrative_beats, duration_beats, scene_prompt
 from motion_quality import require_visible_motion, NoVisibleMotion
 
 SPACE = "https://lightricks-ltx-video-distilled.hf.space"
@@ -310,11 +310,11 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
     for the full soundtrack, keep the MP3 and report incomplete video rather
     than making the user watch the same 1-second excerpt repeatedly.
     """
-    beats=narrative_beats(transcript)
-    shots=[beat.spoken_text for beat in beats]
     output_mp4=Path(output_mp4)
     work=Path(work_dir);work.mkdir(parents=True,exist_ok=True)
     audio_length=_duration(audio_mp3)
+    beats=duration_beats(transcript,audio_length)
+    shots=[beat.spoken_text for beat in beats]
     if not 1<=audio_length<=360:
         raise AIVideoUnavailable("משך המיקס אינו תקין")
     prepared=[]

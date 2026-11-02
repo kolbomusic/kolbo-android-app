@@ -7,7 +7,7 @@ import pathlib
 import unittest
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'backend'))
 from narrative_plan import (
-    narrative_beats,scene_prompts,scene_weights,scene_prompt,MAX_STORY_SCENES,
+    narrative_beats,duration_beats,scene_prompts,scene_weights,scene_prompt,MAX_STORY_SCENES,
 )
 from ai_video import _narrative_shots
 
@@ -88,6 +88,22 @@ class NarrativePlanTests(unittest.TestCase):
         self.assertIn('הילד הולך',beats[0].spoken_text)
         self.assertIn('החמור נוער',beats[1].spoken_text)
         self.assertIn('המשאית נוסעת',beats[2].spoken_text)
+
+    def test_long_hebrew_speech_gets_distinct_ordered_camera_shots_not_one_loop(self):
+        story="החמור נוער בחוזקה. אחר כך החקלאי מגיש קש לחמור."
+        shots=duration_beats(story,30)
+        self.assertEqual(len(shots),6)
+        self.assertTrue(all(shots[i].shot_index<=shots[i].shot_total
+                            for i in range(len(shots))))
+        self.assertIn('החמור נוער',shots[0].spoken_text)
+        self.assertIn('החקלאי',shots[-1].spoken_text)
+        prompts=scene_prompts(story,duration=30)
+        self.assertEqual(len(set(prompts)),6)
+        self.assertTrue(all('SAME SPOKEN MOMENT' in p for p in prompts))
+        weights=scene_weights(story,duration=30)
+        self.assertEqual(len(weights),6)
+        self.assertTrue(all(weight>=1 for weight in weights))
+        self.assertEqual(len(duration_beats('האיש מספר סיפור.',4)),1)
 
     def test_no_infinite_or_unbounded_segments(self):
         self.assertEqual(narrative_beats(''),[])

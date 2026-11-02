@@ -336,11 +336,11 @@ def create_app(config=None):
                     from narrative_plan import scene_prompts, scene_weights
                     # All prompts are based on the ACTUAL recognized Hebrew,
                     # never on what the application guesses was spoken.
-                    beats=scene_prompts(detected_transcript)
+                    beats=scene_prompts(detected_transcript,duration=len(audio)/32000)
                     if beats:
                         meta['client_ai_prompt']=cinematic_prompt(detected_transcript)
                         meta['client_ai_scene_prompts']=beats
-                        meta['client_ai_scene_weights']=scene_weights(detected_transcript)
+                        meta['client_ai_scene_weights']=scene_weights(detected_transcript,duration=len(audio)/32000)
                         meta['client_ai_scene_count']=len(beats)
                         meta['client_ai_fallback']=True
                 except AIVideoUnavailable:
