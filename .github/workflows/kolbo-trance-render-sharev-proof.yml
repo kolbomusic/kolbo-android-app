@@ -6,6 +6,8 @@ on:
       - kolbo-trance-studio-20261031
     paths:
       - 'trance-studio/tests/live_real_facebook_render_shortshare.py'
+      - 'trance-studio/backend/link_import.py'
+      - 'trance-studio/web/studio.html'
       - '.github/workflows/kolbo-trance-render-sharev-proof.yml'
   workflow_dispatch:
 permissions:
@@ -24,5 +26,16 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
           ffprobe -version | head -n 1
+      - name: Verify deployed mobile recovery UI is serving the current version
+        run: |
+          python - <<'PY'
+          from urllib.request import Request, urlopen
+          url="https://kolbo-trance-studio.onrender.com/studio"
+          with urlopen(Request(url,headers={"User-Agent":"KolboQA/1.0"}),timeout=90) as response:
+              page=response.read(500000).decode("utf-8","replace")
+          assert 'id="linkRecovery" hidden' in page, "Render is still serving previous import UI"
+          assert 'id="chooseRecoveredVideo"' in page
+          print("PRODUCTION_FACEBOOK_RECOVERY_UI_IS_DEPLOYED_PASS")
+          PY
       - name: Real production site -> authenticated share/v import -> downloaded media -> ffprobe
         run: python trance-studio/tests/live_real_facebook_render_shortshare.py
