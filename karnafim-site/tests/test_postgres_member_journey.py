@@ -160,4 +160,19 @@ with site.app.test_client() as client:
     assert client.get(media_url,base_url=BASE).status_code==403
     assert client.get(video_url,base_url=BASE).status_code==403
 
-print("PASS: PostgreSQL signup, confirmation, password login, private photo + actual video upload, byte-range playback, moderator gate and media isolation")
+from unittest.mock import patch
+from email_delivery import issue_token,send_confirmation,delivery_ready
+with patch.dict(os.environ,{"KARNAFIM_MAIL_TRANSPORT":"gmail_queue",
+                             "KARNAFIM_GMAIL_QUEUE_ENABLED":"1",
+                             "KARNAFIM_GMAIL_DISPATCH_VERIFIED":"1"}):
+    assert delivery_ready()
+    one_time,unused=issue_token()
+    assert send_confirmation("synthetic-recipient@example.test",one_time)
+    queued=site.sql("SELECT status,to_address FROM email_outbox",fetch=True)
+    assert len(queued)==1 and queued[0]["status"]=="pending"
+    assert not send_confirmation("synthetic-recipient@example.test",issue_token()[0])
+with patch.dict(os.environ,{"KARNAFIM_MAIL_TRANSPORT":"gmail_queue",
+                             "KARNAFIM_GMAIL_QUEUE_ENABLED":"1",
+                             "KARNAFIM_GMAIL_DISPATCH_VERIFIED":"0"}):
+    assert not delivery_ready()
+print("PASS: isolated PostgreSQL member, photo/video and mail queue limits")
