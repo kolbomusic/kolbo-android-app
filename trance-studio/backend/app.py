@@ -463,7 +463,13 @@ def create_app(config=None):
             folder=None
             return response
         except LinkImportError as exc:
-            return jsonify(error=str(exc)),422
+            # Log only numeric attempt count and fixed codes, NEVER full media
+            # URL, cookies, video title, content or private token.
+            trace=secrets.token_hex(4)
+            app.logger.warning(
+                'public_video_import_failed trace=%s code=%s attempts=%s',
+                trace,exc.code,exc.attempts)
+            return jsonify(error=str(exc),code=exc.code,trace_id=trace),422
         except (OSError,subprocess.SubprocessError):
             app.logger.warning('Public link import failed; no user URL logged')
             return jsonify(error='ייבוא הקישור לא הושלם. אפשר לשתף קובץ מדיה ישירות.'),503

@@ -34,7 +34,11 @@ MEDIA_EXT={".mp4":"video/mp4",".webm":"video/webm",".mov":"video/quicktime",
 
 
 class LinkImportError(ValueError):
-    pass
+    """User-safe failure with privacy-preserving diagnostic codes."""
+    def __init__(self,message,*,code="unavailable",attempts=0):
+        super().__init__(message)
+        self.code=code
+        self.attempts=int(attempts)
 
 
 def validate_public_link(raw):
@@ -112,12 +116,15 @@ class _PublicFacebookMeta(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.links=[]
+        self.media=[]
 
     def handle_starttag(self, tag, pairs):
         a=dict(pairs)
         if tag=="meta":
             kind=(a.get("property") or a.get("name") or "").lower()
-            if kind in ("og:url","twitter:url","al:web:url"):
+            if kind in ("og:video","og:video:url","og:video:secure_url"):
+                self.media.append(a.get("content") or "")
+            elif kind in ("og:url","twitter:url","al:web:url"):
                 self.links.append(a.get("content") or "")
             elif (a.get("http-equiv") or "").lower()=="refresh":
                 m=re.match(r"^\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*['\"]?([^'\"\s]+)",
@@ -160,6 +167,78 @@ def _facebook_html_video_urls(html, base):
     return results[:3]
 
 
+
+def _trusted_facebook_media_url(value):
+    """Allow only canonical public Facebook CDN video addresses, no arbitrary hosts."""
+    try:
+        u=urlsplit(str(value or "").strip())
+        host=(u.hostname or "").lower().rstrip(".")
+        if (u.scheme!="https" or not (host=="fbcdn.net" or host.endswith(".fbcdn.net"))
+            or u.port not in (None,443) or u.username or u.password
+            or "\\" in value or len(value)>2048 or not u.path.startswith("/")):
+            return None
+        return value
+    except (ValueError,AttributeError):
+        return None
+
+
+def _facebook_html_media_urls(html):
+    """Extract only explicitly advertised public og:video metadata."""
+    if not html:return []
+    parser=_PublicFacebookMeta()
+    try:
+        parser.feed(html[:150000].decode("utf-8","replace"))
+        parser.close()
+    except (ValueError,TypeError):
+        return []
+    results=[]
+    for value in parser.media[:12]:
+        safe=_trusted_facebook_media_url(value)
+        if safe and safe not in results:results.append(safe)
+    return results[:2]
+
+
+class _FacebookCdnOnlyRedirects(HTTPRedirectHandler):
+    """Keep a public media fetch on fbcdn.net; do not allow redirect-to-localhost."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _trusted_facebook_media_url(newurl):
+            raise LinkImportError("הקישור הציבורי הפנה למקור מדיה לא מאושר.",
+                                  code="unsafe_redirect")
+        return super().redirect_request(req,fp,code,msg,headers,newurl)
+
+
+def _try_public_facebook_cdn(url, folder, *, deadline, opener=None):
+    """Stream only public og:video MP4, capped by timeout/size/type; no cookies."""
+    if not _trusted_facebook_media_url(url):
+        return "unsafe_url"
+    opener=opener or build_opener(_FacebookCdnOnlyRedirects)
+    destination=folder/"shared.mp4"
+    try:
+        req=Request(url,headers={
+            "User-Agent":"Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+            "Accept":"video/mp4,video/*;q=0.9",
+        },method="GET")
+        with opener.open(req,timeout=min(8,max(1,deadline-time.monotonic()))) as response:
+            mime=(response.headers.get("Content-Type") or "").split(";",1)[0].lower().strip()
+            if mime not in ("video/mp4","application/octet-stream"):
+                return "invalid_mime"
+            length=response.headers.get("Content-Length")
+            if length and (not length.isdigit() or int(length)>MAX_VIDEO):
+                return "size"
+            total=0
+            with destination.open("wb") as stream:
+                while True:
+                    if time.monotonic()>=deadline:return "timeout"
+                    data=response.read(64*1024)
+                    if not data:break
+                    total+=len(data)
+                    if total>MAX_VIDEO:return "size"
+                    stream.write(data)
+            if total<2048:return "invalid_file"
+            return "ok"
+    except (OSError,URLError,HTTPError,LinkImportError):
+        return "unavailable"
+
 def _facebook_public_candidates(url, *, opener=None, timeout=7):
     """Try redirects and public HTML metadata of a Facebook short-share link.
 
@@ -188,8 +267,11 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
                 if not content_type or "text/html" in content_type or "application/xhtml+xml" in content_type:
                     read=getattr(response,"read",None)
                     if callable(read):
-                        candidates.extend(_facebook_html_video_urls(read(150000),
-                                                                    destination))
+                        html=read(150000)
+                        candidates.extend(_facebook_html_video_urls(html,destination))
+                        # Direct CDN metadata is public HTML metadata, not
+                        # scraped private API tokens or signed-in session data.
+                        candidates.extend(_facebook_html_media_urls(html))
         except (OSError,URLError,HTTPError,ValueError,LinkImportError):
             pass  # The original public link still gets one bounded extraction.
     video_id=next((_facebook_video_id(c) for c in candidates if _facebook_video_id(c)),None)
@@ -200,7 +282,7 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
             f"https://www.facebook.com/reel/{video_id}/",
             "https://www.facebook.com/plugins/video.php?href="+quote(watch,safe=""),
         ])
-    return list(dict.fromkeys(candidates))[:6]
+    return list(dict.fromkeys(candidates))[:8]
 
 
 def _readable_failure(stderr):
@@ -281,7 +363,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     is_facebook=(urlsplit(url).hostname or "").lower().rstrip(".").endswith("facebook.com") or (urlsplit(url).hostname or "").lower().rstrip(".")=="fb.watch"
     # FaceBook share/v -> canonical video -> watch URL -> reel / official
     # public embed. An unsupported social site remains a single attempt.
-    attempts=candidates[:6]
+    attempts=candidates[:8]
     if len(attempts)>1:
         # Avoid a single dead extractor using the entire 70-second budget.
         attempt_limit=max(7,min(19,(deadline-time.monotonic())/len(attempts)))
@@ -295,10 +377,14 @@ def fetch_public_social_media(url, directory, *,timeout=70):
             "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/"
             "b[height<=720]/ba[ext=m4a]/bestaudio"
         ) if index==0 else "b[ext=mp4]/b[height<=720]/best"
-        code=_try_public_download(candidate,folder,
-                                  deadline=min(deadline,time.monotonic()+attempt_limit),
-                                  format_spec=format_spec,
-                                  impersonate=is_facebook and index>0)
+        if _trusted_facebook_media_url(candidate):
+            code=_try_public_facebook_cdn(candidate,folder,
+                    deadline=min(deadline,time.monotonic()+attempt_limit))
+        else:
+            code=_try_public_download(candidate,folder,
+                                      deadline=min(deadline,time.monotonic()+attempt_limit),
+                                      format_spec=format_spec,
+                                      impersonate=is_facebook and index>0)
         if (code in ("extractor","restricted","unavailable") and
                 is_facebook and index==0 and len(attempts)==1 and
                 deadline-time.monotonic()>=5):
@@ -331,17 +417,18 @@ def fetch_public_social_media(url, directory, *,timeout=70):
             continue
         return result,mime
     if "size" in failures:
-        raise LinkImportError("גודל הסרטון חורג מ־45MB או מגבלת המשך של שתי דקות.")
+        raise LinkImportError("גודל הסרטון חורג מ־45MB.",code="size",attempts=len(failures))
     if "duration" in failures:
-        raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.")
+        raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.",code="duration",attempts=len(failures))
     if "private" in failures or "restricted" in failures:
         raise LinkImportError(
-            "ניסיתי מספר מסלולי גישה ציבוריים. Facebook אינו מאפשר גישה פתוחה לקובץ הזה; "
-            "אין אפשרות להיכנס לחשבון או לעקוף הגבלת צפייה.")
+            "השרת קיבל שגיאת הרשאה או הגבלת גישה מ־Facebook. אי אפשר לייבא סרטון שמוגבל לצפייה ללא הרשאה.",
+            code="access_restricted",attempts=len(failures))
     if "extractor" in failures:
         raise LinkImportError(
-            "ניסיתי כתובת שיתוף, כתובת הסרטון וגרסת צפייה ציבורית חלופית. "
-            "Facebook לא סיפק למנוע קובץ וידאו שניתן לחלץ ללא התחברות.")
+            "מנוע החילוץ של Facebook לא הצליח לפענח את דף הסרטון (Cannot parse data). "
+            "זה לא בהכרח אומר שהסרטון פרטי או חסום.",
+            code="extractor_parse",attempts=len(failures))
     raise LinkImportError(
-        "לא התקבל קובץ וידאו לאחר ניסיון חילוץ רגיל וניסיון עם פרופיל דפדפן. "
-        "ייתכן שמנוע Facebook אינו מצליח לקרוא את הפוסט או שהגישה הציבורית מוגבלת.")
+        "לא התקבל קובץ וידאו תקין מהמקורות הציבוריים שנבדקו.",
+        code="no_public_media",attempts=len(failures))
