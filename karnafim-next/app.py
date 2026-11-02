@@ -315,6 +315,22 @@ def send_verification(email,uid):
         with urlopen(req,timeout=7) as result:return result.status in (200,201,202)
     except (OSError,TimeoutError):return False
 
+@app.route("/resend-verification",methods=["GET","POST"])
+def resend_verification():
+    if not ALLOW_SIGNUP:abort(503)
+    if request.method=="POST":
+        protect()
+        limit("resend-general",10,60)
+        email=request.form.get("email","").lower().strip()[:200]
+        if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+",email):abort(400)
+        limit("resend:"+email,3,60)
+        account=sql("""SELECT id FROM b2_users
+            WHERE lower(email)=%s AND email_verification_required=TRUE""",(email,),True)
+        if account:send_verification(email,account["id"])
+        return layout("בקשת אימות",'<div class="pagehead"><h1>הבקשה נבדקה</h1><p>אם יש חשבון שממתין לאימות ושירות המיילים קיבל את ההודעה, יישלח קישור חדש. אפשר גם לבדוק בדואר הזבל.</p></div>')
+    return layout("שליחת אימות מחדש",'<div class="pagehead"><h1>שליחת אימות מחדש</h1></div>'+
+        button_form('<label>כתובת הדוא״ל שלך<input type="email" name="email" autocomplete="email" required></label><button class="primary">בקשת קישור אימות</button>','/resend-verification','class="formcard"'))
+
 @app.route("/verify-email",methods=["GET","POST"])
 def verify_email():
     if not PUBLIC_AUTH:abort(503)
