@@ -60,6 +60,7 @@ def _recognize(model, path, *, use_vad, return_segments=False):
         "condition_on_previous_text": False,
         "hallucination_silence_threshold": 1.5,
         "no_speech_threshold": 0.55,
+        "word_timestamps": bool(return_segments),
     }
     if use_vad:
         # Default VAD can discard a whole 1-3 second WhatsApp utterance.
@@ -82,15 +83,32 @@ def _recognize(model, path, *, use_vad, return_segments=False):
         if silence is not None and float(silence) > 0.80:
             continue
         recognized.append(utterance)
-        if return_segments and len(timed)<80:
-            try:
-                start=float(segment.start)
-                end=float(segment.end)
-                if 0<=start<end<=125:
-                    timed.append({"start":round(start,3),"end":round(end,3),
-                                  "text":utterance[:400]})
-            except (AttributeError,TypeError,ValueError):
-                pass
+        if return_segments and len(timed)<120:
+            # Whisper supplies word-level times when word_timestamps=True.
+            # Fallback to real segment time ranges when unavailable.
+            words=getattr(segment,"words",None)
+            emitted=False
+            if words:
+                for word in words:
+                    try:
+                        start=float(word.start); end=float(word.end)
+                        token=str(word.word or "").strip()
+                        if 0<=start<end<=125 and token:
+                            timed.append({"start":round(start,3),
+                                          "end":round(end,3),
+                                          "text":token[:80]})
+                            emitted=True
+                    except (AttributeError,TypeError,ValueError):
+                        pass
+                    if len(timed)>=120:break
+            if not emitted and len(timed)<120:
+                try:
+                    start=float(segment.start); end=float(segment.end)
+                    if 0<=start<end<=125:
+                        timed.append({"start":round(start,3),"end":round(end,3),
+                                      "text":utterance[:400]})
+                except (AttributeError,TypeError,ValueError):
+                    pass
     text=" ".join(recognized).strip()
     return (text,timed) if return_segments else text
 
