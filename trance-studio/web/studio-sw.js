@@ -6,6 +6,16 @@ try{
 var data=await event.request.formData();
 var blob=data.get('audio');
 var filename=String(blob&&blob.name||'').toLowerCase();
+if((!blob||!blob.size)&&data.get('text')){
+ var message=String(data.get('text')||'');
+ var match=message.match(/https:\/\/[^\s<>]+/i);
+ if(match&&match[0].length<=2048){
+  var cacheLink=await caches.open('kolbo-studio-share-v1');
+  await cacheLink.put('/studio/shared-link',new Response(match[0],{
+   headers:{'content-type':'text/plain;charset=UTF-8'}}));
+  return Response.redirect('/studio?sharedLink=1',303);
+ }
+}
 var video=!!blob&&(String(blob.type||'').indexOf('video/')===0||/\.(mp4|webm|mov|3gp|3gpp)$/.test(filename));
 var limit=video?45*1024*1024:15*1024*1024;
 if(!blob||!blob.size||blob.size>limit)return Response.redirect('/studio?error=upload',303);
