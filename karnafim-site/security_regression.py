@@ -39,7 +39,7 @@ def static():
     assert "image/jpeg" in media and "Image.DecompressionBombError" in media
     h=(ROOT/"maintenance_public.html").read_text("utf-8")
     assert "<form" not in h.lower() and "<script" not in h.lower()
-    assert 'SESSION_COOKIE_NAME="karnafim_oidc_session"' in app
+    assert 'SESSION_COOKIE_NAME="karnafim_member_session"' in app
     assert 'session.get("auth_method")!="local"' in app
     assert 'KARNAFIM_LOCAL_AUTH_ENABLED' in app
     assert 'SAFETY_RELEASE_APPROVED and AUTH_READY' in app
