@@ -16,6 +16,7 @@ on:
       - 'trance-studio/backend/requirements.txt'
       - 'trance-studio/web/studio.html'
       - 'trance-studio/backend/app.py'
+      - 'trance-studio/tests/test_simple_mobile_ui.js'
       - '.github/workflows/kolbo-trance-public-link-fallback.yml'
   workflow_dispatch:
 permissions:
