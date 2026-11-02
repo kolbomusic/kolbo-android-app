@@ -24,7 +24,10 @@ jobs:
           python-version: '3.12'
       - name: Check published source registry and internal link contracts
         run: python karnafim-site/link_audit.py
+      # Revision-aware live checks run by schedule or explicit dispatch,
+      # not before Render has published the pushed commit.
       - name: Check live source pages, memorials and site navigation
+        if: github.event_name != 'push'
         shell: bash
         run: |
           for attempt in {1..18}; do
