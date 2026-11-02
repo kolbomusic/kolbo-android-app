@@ -64,6 +64,7 @@ def run():
         "DATABASE_URL": "postgresql://fake/no-real-connection",
         "KARNAFIM_MAINTENANCE": "0",
         "KARNAFIM_SAFETY_RELEASE_APPROVED": "1",
+        "KARNAFIM_AUTH_METHOD": "google",
         "KARNAFIM_GOOGLE_AUTH_ENABLED": "1",
         "KARNAFIM_GOOGLE_AUTH_MODE": "gis",
         "GOOGLE_CLIENT_ID": CLIENT
