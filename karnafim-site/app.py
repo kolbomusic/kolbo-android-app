@@ -124,7 +124,7 @@ def harden_responses(resp):
    data=resp.get_data(as_text=True)
    if 'name="google-site-verification"' not in data and "</head>" in data:
     resp.set_data(data.replace("</head>",'<meta name="google-site-verification" content="'+token+'"></head>',1))
- if request.path in ("/login","/register","/password","/find") or request.path.startswith("/auth/google/"):
+ if request.path in ("/login","/register","/password","/find","/verify-email","/resend-verification") or request.path.startswith("/auth/google/"):
   resp.headers.setdefault("X-Robots-Tag","noindex, nofollow")
  resp.headers.setdefault("X-Content-Type-Options","nosniff")
  resp.headers.setdefault("X-Frame-Options","DENY")
