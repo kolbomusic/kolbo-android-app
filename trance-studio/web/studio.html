@@ -57,12 +57,12 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות להקלטה · עד 15MB לקובץ שמע או 45MB לסרטון · עד 60MB לכל ההעלאה.</div>
 <p class="quickNote">בחר קובץ ואז לחץ ״צור״. אפשר גם לשתף קובץ ישירות מ־WhatsApp. קישור מאתר חברתי הוא אפשרות ניסיונית ולא תמיד אפשר להוריד ממנו את המדיה.</p>
 <details id="socialLinkPanel" class="advanced">
-<summary>יש לי קישור מ־Facebook / TikTok במקום קובץ</summary>
+<summary>שיתוף קישור Facebook / TikTok — ייבוא אוטומטי</summary>
 <label for="sourceLink">הדבק קישור לסרטון ציבורי</label>
 <input id="sourceLink" type="url" dir="ltr" inputmode="url" placeholder="https://www.tiktok.com/... או https://www.facebook.com/...">
-<small>האפליקציה מנסה כעת גם קישורי שיתוף קצרים, את כתובת הסרטון המקורית ואת נתיב הצפייה הציבורי החלופי. אין צורך להמיר קישור בעצמך. סרטון שחסום לציבור או מחייב התחברות אינו ניתן לחילוץ אוטומטי.</small>
+<small>בשיתוף קישור לאפליקציה, הייבוא מתחיל אוטומטית ללא לחיצה נוספת. היצירה עצמה מתחילה רק בלחיצה על ״צור״. סרטון שפייסבוק אינה מאפשרת למסור כקובץ עשוי להיכשל גם בייבוא אוטומטי.</small>
 <label class="videoToggle"><input type="checkbox" id="linkRights"> <span>יש לי הרשאה להשתמש במדיה הזו</span></label>
-<button type="button" class="secondary" id="importLink">נסה לייבא את הקובץ מהקישור</button>
+<button type="button" class="secondary" id="importLink">נסה שוב לייבא מהקישור</button>
 <div id="linkStatus" role="status" aria-live="polite" class="hint"></div>
 <div id="linkRecovery" hidden>
 <p class="quickNote">אם Facebook לא מוסרת את קובץ הסרטון לייבוא, פתח אותו באפליקציית Facebook ושמור אותו למכשיר כשיש אפשרות. לחלופין אפשר להקליט מסך עם שמע, ואז לבחור את הסרטון כאן. אין צורך לחזור להזין את הקישור.</p>
@@ -241,6 +241,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 var $=function(id){return document.getElementById(id)};
 var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null,voiceUrl='',originalUrl='',videoUrl='',videoServerUrl='',videoBlob=null;
 var active=false;
+var socialImported=false,sharedLinkSerial=0,linkImportController=null;
 if(window.KolboAndroid){$('nativeStatus').hidden=false;$('install').hidden=true;}
 try{$('ai_video_consent').checked=localStorage.getItem('kolbo_trance_ai_video_consent_v1')==='yes'}catch(e){}
 function explainVideoStrategy(){
@@ -275,6 +276,7 @@ function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+(isVideoF
 function setFiles(items){
  if(active){message('כבר מתבצעת יצירה. ההקלטה החדשה לא תחליף את ההקלטה שבתהליך.');return;}
  files=Array.from(items||[]).filter(Boolean).slice(0,4);
+ socialImported=false;
  syncFiles();
  $('generate').disabled=files.length===0;
 }
@@ -312,17 +314,27 @@ $('ytMusicPreview').onclick=function(){
  message('זהו נגן תצוגה מקדימה בלבד. כדי לשלב את השיר בתוצר יש להעלות קובץ מורשה.');
 };
 window.kolboCanImportSharedAudio=function(){return !active;};
+// A user-initiated Android/PWA share is authorization to ATTEMPT IMPORT,
+// not to render a mix and not a declaration of ownership. User rights are
+// acknowledged separately before Create. Never send Facebook cookies.
 window.kolboReceiveSharedLink=function(url){
- if(active){message('מיקס פעיל. הקישור החדש לא יחליף אותו.');return;}
- if(typeof url!=='string'||url.length>2048)return;
+ if(active){message('מיקס פעיל. הקישור החדש לא יחליף אותו.');return Promise.resolve(false);}
+ if(typeof url!=='string'||url.length>2048)return Promise.resolve(false);
+ var parsed;
+ try{parsed=new URL(url);}catch(e){return Promise.resolve(false);}
+ if(parsed.protocol!=='https:')return Promise.resolve(false);
+ sharedLinkSerial++;
+ if(linkImportController)linkImportController.abort();
  $('sourceLink').value=url;
+ $('linkRights').checked=false; // Rights must be acknowledged for each new source.
  $('socialLinkPanel').open=true;
  $('linkRecovery').hidden=true;
- $('linkStatus').textContent='הקישור התקבל. אשר את זכויות השימוש ולחץ ״נסה לייבא״. קישורי Facebook עשויים להיחסם גם כשהסרטון ציבורי.';
+ setFiles([]); // Do not let a failed new link accidentally render an old video.
+ $('linkStatus').textContent='הקישור התקבל מהשיתוף. מנסה לייבא את הסרטון אוטומטית...';
  $('socialLinkPanel').scrollIntoView({behavior:'smooth',block:'center'});
+ return importSocialLink(true);
 };
-// Manual recovery uses native Android's existing external-link handler;
- // it never copies Facebook credentials or automatically generates a mix.
+// Manual recovery uses Android's external-link handler, never account data.
 $('chooseRecoveredVideo').onclick=function(){audio.click();};
 $('openRecoveredSource').onclick=function(){
  var url=$('sourceLink').value.trim(),u;
@@ -331,21 +343,28 @@ $('openRecoveredSource').onclick=function(){
  if(window.KolboAndroid)window.location.assign(url);
  else window.open(url,'_blank','noopener,noreferrer');
 };
-// Sharing a link never starts network access or AI generation automatically.
-$('importLink').onclick=async function(){
- if(active){message('מיקס פעיל. שמור את התוצאה לפני ייבוא חדש.');return;}
+async function importSocialLink(fromShare){
+ if(active){message('מיקס פעיל. שמור את התוצאה לפני ייבוא חדש.');return false;}
  var link=$('sourceLink').value.trim(),u;
- try{u=new URL(link)}catch(e){$('linkStatus').textContent='כתובת הקישור אינה תקינה.';return;}
- if(u.protocol!=='https:'||link.length>2048){$('linkStatus').textContent='נדרש קישור HTTPS תקין.';return;}
- if(!$('linkRights').checked){$('linkStatus').textContent='נדרש אישור הרשאה לשימוש במדיה.';return;}
+ try{u=new URL(link)}catch(e){$('linkStatus').textContent='כתובת הקישור אינה תקינה.';return false;}
+ if(u.protocol!=='https:'||link.length>2048){$('linkStatus').textContent='נדרש קישור HTTPS תקין.';return false;}
+ // An explicit SHARE permits a best-effort public import; it is not an
+ // affirmative copyright-rights checkbox. Rendering remains rights-gated.
+ if(!fromShare&&!$('linkRights').checked){
+  $('linkStatus').textContent='לייבוא ידני יש לאשר הרשאה לשימוש במדיה.';return false;
+ }
+ if(linkImportController)linkImportController.abort();
+ var controller=new AbortController();linkImportController=controller;
+ var serial=sharedLinkSerial;
  var button=$('importLink');button.disabled=true;
  $('linkRecovery').hidden=true;
- $('linkStatus').textContent='מאתר את הסרטון ומנסה מסלולי ייבוא ציבוריים חלופיים... ההפקה לא תתחיל ללא לחיצה על צור.';
+ $('linkStatus').textContent='מנסה לייבא את הקובץ מהשיתוף... יצירה תתחיל רק בלחיצה על ״צור״.';
  try{
   var response=await fetch('/api/import-link',{
-   method:'POST',credentials:'same-origin',
+   method:'POST',credentials:'same-origin',signal:controller.signal,
    headers:{'Content-Type':'application/json'},body:JSON.stringify({url:link})
   });
+  if(serial!==sharedLinkSerial||controller.signal.aborted)return false;
   if(!response.ok){
    var errorBody=await response.json().catch(function(){return {}});
    var issue=new Error(errorBody.error||'לא התקבל קובץ מהקישור.');
@@ -359,17 +378,26 @@ $('importLink').onclick=async function(){
    'audio/aac':'aac','audio/flac':'flac','audio/wav':'wav'};
   if(!exts[type])throw new Error('פורמט המדיה אינו נתמך.');
   var bytes=await response.blob(),limit=(type.startsWith('video/')?45:15)*1048576;
+  if(serial!==sharedLinkSerial||controller.signal.aborted)return false;
   if(!bytes.size||bytes.size>limit)throw new Error('הקובץ גדול מדי.');
   setFiles([new File([bytes],'Social-Media.'+exts[type],{type:type})]);
+  socialImported=true;
   $('linkRecovery').hidden=true;
-  $('linkStatus').textContent='המדיה יובאה. ניתן לבחור הגדרות וליצור בלחיצה שלך.';
-  message('הקישור נטען כמדיה; היצירה עדיין לא התחילה.');
+  $('linkStatus').textContent='הסרטון יובא אוטומטית. אשר זכויות שימוש, בחר סגנון ולחץ ״צור״.';
+  message('הקובץ מוכן ליצירה. ההפקה לא התחילה אוטומטית.');
+  return true;
  }catch(error){
+  if(serial!==sharedLinkSerial||controller.signal.aborted)return false;
   $('linkRecovery').hidden=!['extractor_parse','access_restricted','no_public_media'].includes(error.issueCode);
-  $('linkStatus').textContent='הייבוא לא הצליח: '+(error.message||'המדיה אינה נגישה')+
+  $('linkStatus').textContent='הייבוא האוטומטי לא הצליח: '+(error.message||'המדיה אינה נגישה')+
     (error.traceId?' · קוד אבחון '+error.traceId:'');
- }finally{button.disabled=false}
-};
+  return false;
+ }finally{
+  if(linkImportController===controller){linkImportController=null;button.disabled=false;}
+ }
+}
+$('importLink').onclick=function(){return importSocialLink(false);};
+// Sharing a link never runs the mix generator automatically.
 window.kolboImportSharedAudio=function(items){
  // Sharing from WhatsApp ONLY imports bytes. No scheduling or starting processing.
  // User must explicitly press #generate after inspecting the chosen files.
@@ -631,6 +659,12 @@ if(active)return;
 // run() is bound only to an explicit #generate button press. Sharing audio
 // never invokes this function or schedules background processing.
 if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
+if(socialImported&&!$('linkRights').checked){
+ $('socialLinkPanel').open=true;
+ $('linkStatus').textContent='לפני יצירת מיקס מסרטון חברתי יש לאשר שיש לך הרשאה להשתמש במדיה.';
+ $('linkRights').focus();
+ return;
+}
 if(files.some(function(f){return !f.size||f.size>(isVideoFile(f)?45:15)*1048576})){message('הגבלת גודל: עד 15MB להקלטה או 45MB לסרטון WhatsApp.');return}
 if(files.reduce(function(total,f){return total+f.size},0)>60*1048576){message('הקבצים גדולים מ־60MB יחד. יש לבחור פחות קבצים.');return}
 if($('make_video').checked&&$('video_strategy').value==='new_story'&&!$('ai_video_consent').checked){

@@ -39,6 +39,7 @@ jobs:
           grep -q -- '--max-filesize' trance-studio/backend/link_import.py
           grep -q -- 'No raw URL' trance-studio/backend/link_import.py
           node trance-studio/tests/test_social_link_share.js
+          node trance-studio/tests/test_auto_social_link_share.js
           node trance-studio/tests/test_simple_mobile_ui.js
       - name: Verify free browser impersonation dependency is installable
         run: |

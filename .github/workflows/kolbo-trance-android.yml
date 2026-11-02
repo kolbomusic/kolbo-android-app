@@ -76,6 +76,7 @@ jobs:
           node trance-studio/tests/test_manual_share.js
           node trance-studio/tests/test_native_share_resume.js
           node trance-studio/tests/test_social_link_share.js
+          node trance-studio/tests/test_auto_social_link_share.js
           node trance-studio/tests/test_simple_mobile_ui.js
       - name: Build installable Android APK
         run: gradle --no-daemon --stacktrace -p trance-studio/android :app:assembleDebug

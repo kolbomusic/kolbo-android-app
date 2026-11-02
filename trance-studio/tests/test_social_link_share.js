@@ -20,7 +20,8 @@ assert.ok(html.includes('id="chooseRecoveredVideo"'));
 assert.ok(html.includes('id="openRecoveredSource"'));
 assert.ok(html.includes("window.kolboReceiveSharedLink=function(url)"));
 assert.ok(html.includes("'/api/import-link'"));
-assert.ok(html.includes("if(!$('linkRights').checked)"));
+assert.ok(html.includes("if(!fromShare&&!$('linkRights').checked)"));
+assert.ok(html.includes("if(socialImported&&!$('linkRights').checked)"));
 assert.ok(sw.includes("data.get('text')"));
 assert.ok(sw.includes("'/studio/shared-link'"));
 assert.equal(pwa.share_target.params.text,'text');
@@ -30,16 +31,23 @@ const start=script.indexOf('window.kolboReceiveSharedLink=function(url)');
 const end=script.indexOf('// Manual recovery uses',start);
 assert.ok(start>0&&end>start);
 const receiver=script.slice(start,end);
-assert.ok(!/fetch\(|\.click\(|run\(|startActivity|generate/.test(receiver),
- 'Sharing URL must not fetch the media or auto-create');
-const importStart=script.indexOf("$('importLink').onclick=async function()");
+assert.ok(receiver.includes('return importSocialLink(true);'),
+ 'A shared link must immediately begin import');
+assert.ok(!/run\(|generate\.click\(|startActivity/.test(receiver),
+ 'Automatic import must never start generation');
+const importStart=script.indexOf('async function importSocialLink(fromShare)');
 const importEnd=script.indexOf('window.kolboImportSharedAudio=',importStart);
 assert.ok(importStart>0&&importEnd>importStart);
 assert.ok(script.slice(importStart,importEnd).includes('setFiles(['));
+assert.ok(script.includes("$('importLink').onclick=function(){return importSocialLink(false);}"));
 assert.ok(!script.slice(importStart,importEnd).includes('run()'));
 assert.ok(script.includes("$('chooseRecoveredVideo').onclick=function(){audio.click();}"));
 assert.ok(script.includes("window.location.assign(url)"));
 assert.ok(script.includes("'extractor_parse','access_restricted','no_public_media'"));
+assert.ok(sw.includes('sharedLink=1'));
+assert.ok(html.includes('socialImported=true'));
+assert.ok(html.includes('sharedLinkSerial++'));
+assert.ok(html.includes('linkImportController.abort()'));
 const newIntent=java.slice(java.indexOf('@Override protected void onNewIntent'),java.indexOf('@Override protected void onActivityResult'));
 assert.ok(newIntent.includes('kolboCanImportSharedAudio'));
 assert.ok(!newIntent.includes('beginLoad(false)'));
