@@ -221,7 +221,7 @@ def _readable_failure(stderr):
     return "unavailable"
 
 
-def _try_public_download(url, folder, *, deadline, format_spec):
+def _try_public_download(url, folder, *, deadline, format_spec, impersonate=False):
     command=[
         sys.executable,"-m","yt_dlp","--ignore-config",
         "--no-playlist","--no-progress","--no-warnings",
@@ -233,6 +233,10 @@ def _try_public_download(url, folder, *, deadline, format_spec):
         "--merge-output-format","mp4",
         "--output",str(folder/"shared.%(ext)s"),url
     ]
+    if impersonate:
+        # Public Chrome 99 TLS/client profile can restore Facebook extraction
+        # on some layouts. No user cookies, passwords or login sessions.
+        command[3:3]=["--impersonate","chrome-99"]
     # Capture bounded diagnostics without adding user's private URL to logs.
     with tempfile.TemporaryFile(mode="w+b") as error_stream:
         try:
@@ -274,6 +278,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     deadline=time.monotonic()+min(max(timeout,1),90)
     candidates=_facebook_public_candidates(url,timeout=min(6,max(1,deadline-time.monotonic())))
     failures=[]
+    is_facebook=(urlsplit(url).hostname or "").lower().rstrip(".").endswith("facebook.com") or (urlsplit(url).hostname or "").lower().rstrip(".")=="fb.watch"
     # FaceBook share/v -> canonical video -> watch URL -> reel / official
     # public embed. An unsupported social site remains a single attempt.
     attempts=candidates[:6]
@@ -292,7 +297,18 @@ def fetch_public_social_media(url, directory, *,timeout=70):
         ) if index==0 else "b[ext=mp4]/b[height<=720]/best"
         code=_try_public_download(candidate,folder,
                                   deadline=min(deadline,time.monotonic()+attempt_limit),
-                                  format_spec=format_spec)
+                                  format_spec=format_spec,
+                                  impersonate=is_facebook and index>0)
+        if (code in ("extractor","restricted","unavailable") and
+                is_facebook and index==0 and len(attempts)==1 and
+                deadline-time.monotonic()>=5):
+            # Only one opaque share link available: attempt independent Chrome
+            # HTTP transport before giving up; time and size caps remain.
+            for output in folder.iterdir():
+                if output.is_file():output.unlink(missing_ok=True)
+            code=_try_public_download(candidate,folder,deadline=deadline,
+                                      format_spec="b[ext=mp4]/b[height<=720]/best",
+                                      impersonate=True)
         if code!="ok":
             failures.append(code)
             if code=="size":break
@@ -327,5 +343,5 @@ def fetch_public_social_media(url, directory, *,timeout=70):
             "ניסיתי כתובת שיתוף, כתובת הסרטון וגרסת צפייה ציבורית חלופית. "
             "Facebook לא סיפק למנוע קובץ וידאו שניתן לחלץ ללא התחברות.")
     raise LinkImportError(
-        "נוסו אפשרויות חילוץ ציבוריות, אך לא התקבל קובץ מדיה תקין. "
-        "לא ניתן ליצור סרטון מהקישור ללא קובץ המקור.")
+        "לא התקבל קובץ וידאו לאחר ניסיון חילוץ רגיל וניסיון עם פרופיל דפדפן. "
+        "ייתכן שמנוע Facebook אינו מצליח לקרוא את הפוסט או שהגישה הציבורית מוגבלת.")
