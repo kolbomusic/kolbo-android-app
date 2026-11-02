@@ -454,12 +454,12 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
                     cur.execute("SELECT COALESCE(SUM(length),0) FROM community_media")
                     site=cur.fetchone()[0]
                     if mine+total_size>25*1024*1024 or site+total_size>150*1024*1024:abort(413,"אין מספיק מקום אחסון לפרסום")
-                    cur.execute("INSERT INTO community_posts(author_id,title,body,story_year,post_type,event_date,event_place,approved,ai_status,ai_reason,ai_model,ai_checked_at,ai_attempts,ai_consent) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s THEN NOW() ELSE NULL END,%s,TRUE) RETURNING id",
+                    cur.execute("INSERT INTO community_posts(author_id,title,body,story_year,post_type,event_date,event_place,approved,ai_status,ai_reason,ai_model,ai_checked_at,ai_attempts,ai_consent) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s THEN NOW() ELSE NULL END,%s,%s) RETURNING id",
                                 (u["id"],title,body,int(y) if y else None,post_type,event_date,place,
                                  bool(u["approved"] and verdict.status=="approved"),
                                  verdict.status if u["approved"] else "pending_member_approval",
                                  verdict.reason if u["approved"] else "ממתין לאישור חברות ובדיקת תוכן",verdict.model,
-                                 verdict.attempted,1 if verdict.attempted else 0))
+                                 verdict.attempted,1 if verdict.attempted else 0,wants_ai))
                     post_id=cur.fetchone()[0]
                     for info in infos:
                         cur.execute("INSERT INTO community_media(owner_id,post_id,recipient_id,mime,kind,filename,data,length) VALUES(%s,%s,NULL,%s,%s,%s,%s,%s)",
