@@ -168,7 +168,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <option value="master" selected>מאסטרינג — איזון עוצמות, קומפרסור ולימיטר</option>
 <option value="mix">מיקס — מוזיקת רקע/פלייבק עם שירה מקובץ נוסף</option>
 </select>
-<label for="studioSource">קובץ מקור (שמע או וידאו)</label>
+<label for="studioSource">קובץ מקור (או הקובץ שכבר שיתפת לאפליקציה)</label>
 <input type="file" id="studioSource" accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.mov">
 <div id="studioVoiceWrap" hidden>
 <label for="studioVoice">קובץ השירה המוקלטת שתרצה למקסס עם הפלייבק</label>
@@ -373,7 +373,7 @@ $('studioVoiceGain').oninput=function(){$('studioVoiceValue').textContent=this.v
 $('studioBackingGain').oninput=function(){$('studioBackingValue').textContent=this.value+'%'};
 $('studioRender').onclick=async function(){
  if(active){$('studioStatus').textContent='הפקת רמיקס פעילה. יש להמתין לסיומה.';return;}
- var source=$('studioSource').files[0];
+ var source=$('studioSource').files[0]||files[0];
  var second=$('studioVoice').files[0];
  var mode=$('studioMode').value;
  if(!source||(mode==='mix'&&!second)){
