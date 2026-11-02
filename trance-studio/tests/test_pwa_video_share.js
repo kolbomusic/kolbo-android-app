@@ -5,6 +5,7 @@ const accept=manifest.share_target.params.files[0].accept;
 assert.ok(accept.includes('video/*'));
 assert.ok(accept.includes('audio/*'));
 const sw=fs.readFileSync('trance-studio/web/studio-sw.js','utf8');
+const ui=fs.readFileSync('trance-studio/web/studio.html','utf8');
 const cached=[];
 let listener=null;
 class FakeResponse{
@@ -38,5 +39,25 @@ async function share(name,type,size){
  result=await share('WA-video.mp4','',20*1048576);
  assert.equal(result.url,'/studio?shared=1');
  assert.equal(cached.at(-1).response.headers['content-type'],'video/mp4');
- console.log('PWA_WHATSAPP_VIDEO_45MB_SHARE_TARGET_PASS');
+ let sharedResponse;
+ const multi=[{name:'WA-voice.opus',type:'audio/ogg',size:8*1048576},
+              {name:'WA-video.mp4',type:'video/mp4',size:40*1048576}];
+ const data={get:key=>key==='audio'?multi[0]:null,getAll:key=>key==='audio'?multi:[]};
+ const before=cached.length;
+ listener({request:{url:'https://kolbo-trance-studio.onrender.com/studio/share',
+  method:'POST',formData:async()=>data},respondWith:promise=>sharedResponse=promise});
+ result=await sharedResponse;
+ assert.equal(result.url,'/studio?shared=1');
+ assert.deepEqual(cached.slice(before).map(x=>x.key),[
+  '/studio/shared-count','/studio/shared-audio','/studio/shared-audio/1']);
+ assert.match(ui,/sharedClips\.push\(new File\(/);
+ assert.match(ui,/setFiles\(sharedClips\)/);
+ const excessive=[{name:'one.mp4',type:'video/mp4',size:40*1048576},
+                  {name:'two.mp4',type:'video/mp4',size:30*1048576}];
+ const tooLarge={get:key=>key==='audio'?excessive[0]:null,
+                 getAll:key=>key==='audio'?excessive:[]};
+ listener({request:{url:'https://kolbo-trance-studio.onrender.com/studio/share',
+  method:'POST',formData:async()=>tooLarge},respondWith:promise=>sharedResponse=promise});
+ assert.equal((await sharedResponse).url,'/studio?error=upload');
+ console.log('PWA_WHATSAPP_MULTI_VIDEO_AUDIO_60MB_SHARE_TARGET_PASS');
 })().catch(err=>{console.error(err);process.exit(1)});

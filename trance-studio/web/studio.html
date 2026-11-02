@@ -888,10 +888,22 @@ if(new URLSearchParams(location.search).get('sharedLink')==='1'&&'caches' in win
 if(new URLSearchParams(location.search).get('shared')==='1'&&'caches' in window){
 (async function(){try{
 var cache=await caches.open('kolbo-studio-share-v1');
-var r=await cache.match('/studio/shared-audio');if(!r)return;
-var blob=await r.blob();var fn=decodeURIComponent(r.headers.get('x-filename')||'WhatsApp-voice.opus');
-setFiles([new File([blob],fn,{type:blob.type||'audio/ogg'})]);await cache.delete('/studio/shared-audio');
-message('התקבלה הקלטה מ־WhatsApp. בחר סגנון ולחץ יצירת מיקס.');
+var countResponse=await cache.match('/studio/shared-count');
+var count=countResponse?Number(await countResponse.text()):1;
+if(!Number.isInteger(count)||count<1||count>4)throw new Error('מספר קבצים לא תקין');
+var sharedClips=[];
+for(var i=0;i<count;i++){
+ var key=i?'/studio/shared-audio/'+i:'/studio/shared-audio';
+ var r=await cache.match(key);if(!r)throw new Error('הקובץ חסר');
+ var blob=await r.blob();
+ var fn=decodeURIComponent(r.headers.get('x-filename')||('WhatsApp-'+(i+1)+'.opus'));
+ sharedClips.push(new File([blob],fn,{type:blob.type||'audio/ogg'}));
+}
+setFiles(sharedClips);
+for(var i=0;i<count;i++)await cache.delete(i?'/studio/shared-audio/'+i:'/studio/shared-audio');
+await cache.delete('/studio/shared-count');
+message(sharedClips.length===1?'התקבלה הקלטה מ־WhatsApp. בחר סגנון ולחץ יצירה.':
+ 'התקבלו '+sharedClips.length+' קבצים מ־WhatsApp. בחר סגנון ולחץ יצירה.');
 }catch(e){message('לא הצלחנו לפתוח את ההקלטה המשותפת. אפשר להעלות ידנית.')}}
 )();
 }}
