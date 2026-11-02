@@ -6,14 +6,15 @@ Private/login/DRM pages fail closed. No browser cookies or account tokens.
 """
 from __future__ import annotations
 
-import os
 import re
-import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 MAX_VIDEO=45*1024*1024
 MAX_AUDIO=15*1024*1024
@@ -72,62 +73,205 @@ def _media_probe(path):
     return duration
 
 
-def fetch_public_social_media(url, directory, *,timeout=70):
-    """Return (path, mime), only for a public single clip within upload limits.
 
-    yt-dlp is run without cookies, playlists, login or arbitrary user flags.
-    The importer monitors temporary directory bytes while subprocess runs,
-    terminating downloads exceeding the allowed upload budget.
+class _FacebookOnlyRedirects(HTTPRedirectHandler):
+    """Never follow a shortened share URL into a different site or private IP."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            parts=urlsplit(newurl)
+            host=(parts.hostname or "").lower().rstrip(".")
+            allowed=host=="facebook.com" or host.endswith(".facebook.com")
+            allowed=allowed or host=="fb.watch" or host.endswith(".fb.watch")
+            if not (parts.scheme=="https" and allowed and parts.port in (None,443)
+                    and not parts.username and not parts.password):
+                raise LinkImportError("Facebook הפנתה את הקישור לכתובת שאינה נתמכת.")
+        except ValueError as exc:
+            raise LinkImportError("קישור ההפניה אינו תקין.") from exc
+        return super().redirect_request(req,fp,code,msg,headers,newurl)
+
+
+def _facebook_video_id(url):
+    """Parse only an actual Facebook reel/video ID, never an opaque share token."""
+    parts=urlsplit(url)
+    host=(parts.hostname or "").lower().rstrip(".")
+    if host!="facebook.com" and not host.endswith(".facebook.com"):
+        return None
+    path=parts.path
+    match=re.search(r"/(?:videos|reel)/(\d{8,22})(?:/|$)",path)
+    if match:return match.group(1)
+    if path.rstrip("/") in ("/watch", "/watch/"):
+        key=parse_qs(parts.query).get("v",[""])[0]
+        if re.fullmatch(r"\d{8,22}",key):return key
+    return None
+
+
+def _facebook_public_candidates(url, *, opener=None, timeout=7):
+    """Resolve a Facebook *public* short link, then try documented video views.
+
+    Do not use session cookies, login, third-party proxy/loader endpoints,
+    private video metadata or bypass authentication.
     """
-    url=validate_public_link(url)
-    folder=Path(directory)
-    folder.mkdir(parents=True,exist_ok=True)
+    raw=urlsplit(url)
+    host=(raw.hostname or "").lower().rstrip(".")
+    if not (host=="fb.watch" or host.endswith(".fb.watch")
+            or host=="facebook.com" or host.endswith(".facebook.com")):
+        return [url]
+    candidates=[url]
+    canonical=url
+    if "/share/" in raw.path or host.endswith("fb.watch"):
+        client=opener or build_opener(_FacebookOnlyRedirects)
+        try:
+            request=Request(url,headers={
+                "User-Agent":"Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+                "Accept":"text/html,application/xhtml+xml",
+            },method="GET")
+            with client.open(request,timeout=timeout) as response:
+                canonical=response.geturl()
+            final=urlsplit(canonical)
+            final_host=(final.hostname or "").lower().rstrip(".")
+            if final.scheme!="https" or not (final_host=="facebook.com" or final_host.endswith(".facebook.com")):
+                canonical=url
+        except (OSError,URLError,HTTPError,ValueError,LinkImportError):
+            canonical=url
+        if canonical!=url:
+            candidates.append(canonical)
+    video_id=_facebook_video_id(canonical) or _facebook_video_id(url)
+    if video_id:
+        # Mobile/watch and Facebook's official embeddable public video endpoint
+        # can sometimes work when the short-share page extractor is broken.
+        watch=f"https://www.facebook.com/watch/?v={video_id}"
+        candidates.extend([
+            watch,
+            f"https://www.facebook.com/reel/{video_id}/",
+            "https://www.facebook.com/plugins/video.php?href="+quote(watch,safe=""),
+        ])
+    return list(dict.fromkeys(candidates))[:5]
+
+
+def _readable_failure(stderr):
+    # No raw URL, title or user speech appears in error messages or logs.
+    raw=stderr.lower()
+    if any(key in raw for key in ("log in","login required","sign in","login to", "private video","not available")):
+        return "private"
+    if any(key in raw for key in ("403 forbidden","http error 403","429 too many","blocked by")):
+        return "restricted"
+    if "cannot parse data" in raw or "no video formats found" in raw:
+        return "extractor"
+    if "unsupported url" in raw:
+        return "unsupported"
+    if "duration > 120" in raw or "does not pass filter" in raw:
+        return "duration"
+    if "file is larger" in raw or "max-filesize" in raw:
+        return "size"
+    return "unavailable"
+
+
+def _try_public_download(url, folder, *, deadline, format_spec):
     command=[
         sys.executable,"-m","yt_dlp","--ignore-config",
         "--no-playlist","--no-progress","--no-warnings",
         "--no-cache-dir","--no-write-thumbnail","--no-write-subs",
         "--no-write-auto-subs","--restrict-filenames",
+        "--socket-timeout","8","--retries","1","--fragment-retries","1",
         "--max-filesize","45M","--match-filter","duration <= 120",
-        "--format","bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/"
-                   "b[height<=720]/ba[ext=m4a]/bestaudio",
+        "--format",format_spec,
         "--merge-output-format","mp4",
-        "--output",str(folder/"shared.%(ext)s"),
-        url
+        "--output",str(folder/"shared.%(ext)s"),url
     ]
-    try:
-        proc=subprocess.Popen(command,stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
-    except (OSError,ValueError) as exc:
-        raise LinkImportError("מנוע ייבוא הקישורים אינו זמין כרגע.") from exc
-    start=time.monotonic()
-    try:
-        while proc.poll() is None:
-            if time.monotonic()-start>timeout:
-                raise LinkImportError("ייבוא הקישור התארך מדי. ניתן להעלות קובץ ישירות.")
-            size=sum(p.stat().st_size for p in folder.iterdir() if p.is_file())
-            if size>MAX_VIDEO+3*1024*1024:
-                raise LinkImportError("הסרטון גדול מהמגבלה של 45MB.")
-            time.sleep(.3)
-        if proc.returncode!=0:
-            raise LinkImportError(
-                "לא ניתן לייבא את הקישור. ייתכן שהפוסט פרטי, דורש התחברות, "
-                "מוגן או שהרשת אינה מאפשרת הורדה ציבורית.")
-        candidates=[p for p in folder.iterdir() if p.is_file()
-                    and p.suffix.lower() in MEDIA_EXT and
-                    p.name.startswith("shared.")]
-        if len(candidates)!=1:
-            raise LinkImportError("לא התקבל קובץ מדיה יחיד בפורמט נתמך.")
-        result=candidates[0]
+    # Capture bounded diagnostics without adding user's private URL to logs.
+    with tempfile.TemporaryFile(mode="w+b") as error_stream:
+        try:
+            process=subprocess.Popen(command,stdout=subprocess.DEVNULL,
+                                     stderr=error_stream)
+        except (OSError,ValueError) as exc:
+            raise LinkImportError("מנוע ייבוא הקישורים אינו זמין כרגע.") from exc
+        try:
+            while process.poll() is None:
+                if time.monotonic()>deadline:
+                    return "timeout"
+                size=sum(p.stat().st_size for p in folder.iterdir() if p.is_file())
+                if size>MAX_VIDEO+3*1024*1024:
+                    return "size"
+                time.sleep(.3)
+            if process.returncode==0:
+                return "ok"
+            error_stream.seek(0)
+            return _readable_failure(error_stream.read(12000).decode("utf-8","replace"))
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+
+
+def fetch_public_social_media(url, directory, *,timeout=70):
+    """Try independent *public* URL forms, bounded by one time/byte budget.
+
+    Never bypass authentication, use browser cookies, expose raw URLs or
+    silently replace the media with another public video. Always validate the
+    actually downloaded file (size, type and duration) with ffprobe.
+    """
+    url=validate_public_link(url)
+    folder=Path(directory)
+    folder.mkdir(parents=True,exist_ok=True)
+    deadline=time.monotonic()+min(max(timeout,1),90)
+    candidates=_facebook_public_candidates(url,timeout=min(6,max(1,deadline-time.monotonic())))
+    failures=[]
+    # FaceBook share/v -> canonical video -> watch URL -> reel / official
+    # public embed. An unsupported social site remains a single attempt.
+    attempts=candidates[:5]
+    if len(attempts)>1:
+        # Avoid a single dead extractor using the entire 70-second budget.
+        attempt_limit=max(7,min(19,(deadline-time.monotonic())/len(attempts)))
+    else:
+        attempt_limit=max(1,deadline-time.monotonic())
+    for index, candidate in enumerate(attempts):
+        for output in folder.iterdir():
+            if output.is_file():output.unlink(missing_ok=True)
+        if deadline-time.monotonic()<2:break
+        format_spec=(
+            "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/"
+            "b[height<=720]/ba[ext=m4a]/bestaudio"
+        ) if index==0 else "b[ext=mp4]/b[height<=720]/best"
+        code=_try_public_download(candidate,folder,
+                                  deadline=min(deadline,time.monotonic()+attempt_limit),
+                                  format_spec=format_spec)
+        if code!="ok":
+            failures.append(code)
+            if code=="size":break
+            continue
+        media=[p for p in folder.iterdir() if p.is_file() and
+               p.name.startswith("shared.") and p.suffix.lower() in MEDIA_EXT]
+        if len(media)!=1:
+            failures.append("invalid_file")
+            continue
+        result=media[0]
         mime=MEDIA_EXT[result.suffix.lower()]
         cap=MAX_VIDEO if mime.startswith("video/") else MAX_AUDIO
         if not 2048<=result.stat().st_size<=cap:
-            raise LinkImportError("קובץ המדיה חורג מהמגבלה או שאינו תקין.")
-        _media_probe(result)
+            failures.append("size")
+            continue
+        try:
+            _media_probe(result)
+        except LinkImportError:
+            failures.append("duration")
+            continue
         return result,mime
-    finally:
-        if proc.poll() is None:
-            proc.terminate()
-            try:proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=2)
+    if "size" in failures:
+        raise LinkImportError("גודל הסרטון חורג מ־45MB או מגבלת המשך של שתי דקות.")
+    if "duration" in failures:
+        raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.")
+    if "private" in failures or "restricted" in failures:
+        raise LinkImportError(
+            "ניסיתי מספר מסלולי גישה ציבוריים. Facebook אינו מאפשר גישה פתוחה לקובץ הזה; "
+            "אין אפשרות להיכנס לחשבון או לעקוף הגבלת צפייה.")
+    if "extractor" in failures:
+        raise LinkImportError(
+            "ניסיתי כתובת שיתוף, כתובת הסרטון וגרסת צפייה ציבורית חלופית. "
+            "Facebook לא סיפק למנוע קובץ וידאו שניתן לחלץ ללא התחברות.")
+    raise LinkImportError(
+        "נוסו אפשרויות חילוץ ציבוריות, אך לא התקבל קובץ מדיה תקין. "
+        "לא ניתן ליצור סרטון מהקישור ללא קובץ המקור.")
