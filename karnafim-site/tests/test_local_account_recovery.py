@@ -23,7 +23,6 @@ def main():
   "DATABASE_URL":"postgresql://fake/db",
   "KARNAFIM_MAINTENANCE":"0",
   "KARNAFIM_SAFETY_RELEASE_APPROVED":"1",
-  "KARNAFIM_AUTH_METHOD":"local",
   "KARNAFIM_LOCAL_AUTH_ENABLED":"1",
   "KARNAFIM_ALLOW_REGISTRATION":"0",
  }
@@ -31,11 +30,11 @@ def main():
   import psycopg
   with patch.object(psycopg,"connect",return_value=FakeConnection()):
    import app as site
-  assert not site.READ_ONLY_BOOT and site.AUTH_METHOD=="local"
+  assert not site.READ_ONLY_BOOT and site.AUTH_READY
   original_password="synthetic-test-only-Password-42"
   account={
    "id":7,"name":"Test Veteran","email":"sample@example.test",
-   "password":site.hashpw(original_password),"session_version":0,
+   "password":site.hashpw(original_password),"session_version":0,"verification_required":False,
    "approved":True,"visible":False,"nickname":"",
    "company":"ב","role":"","about":"","service_start":"",
    "service_end":"","facebook_url":"","instagram_url":"","linkedin_url":""
@@ -47,7 +46,7 @@ def main():
     return [{"n":count}]
    if query.startswith("INSERT INTO login_failures"):
     attempts.append(params[0]);return None
-   if query.startswith("SELECT id,password,session_version FROM members WHERE lower(email)="):
+   if query.startswith("SELECT id,password,session_version,verification_required FROM members WHERE lower(email)="):
     return [account.copy()] if params[0]==account["email"] else []
    if query.startswith("SELECT * FROM members WHERE id="):
     return [account.copy()] if params[0]==account["id"] else []
