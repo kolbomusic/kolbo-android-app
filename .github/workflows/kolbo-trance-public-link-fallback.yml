@@ -4,11 +4,14 @@ on:
     branches:
       - kolbo-trance-facebook-public-fallback-20261102
       - kolbo-trance-facebook-html-canonical-20261102
+      - kolbo-trance-facebook-import-diagnostics-20261102
       - kolbo-trance-studio-20261031
     paths:
       - 'trance-studio/backend/link_import.py'
       - 'trance-studio/tests/test_public_facebook_import_fallback.py'
       - 'trance-studio/tests/test_public_facebook_html_metadata.py'
+      - 'trance-studio/tests/test_public_facebook_browser_retry.py'
+      - 'trance-studio/backend/requirements.txt'
       - '.github/workflows/kolbo-trance-public-link-fallback.yml'
   workflow_dispatch:
 permissions:
@@ -26,3 +29,9 @@ jobs:
           grep -q -- '--no-playlist' trance-studio/backend/link_import.py
           grep -q -- '--max-filesize' trance-studio/backend/link_import.py
           grep -q -- 'No raw URL' trance-studio/backend/link_import.py
+      - name: Verify free browser impersonation dependency is installable
+        run: |
+          python -m pip install --disable-pip-version-check 'yt-dlp[curl-cffi]==2026.10.26'
+          python -m yt_dlp --list-impersonate-targets | tee /tmp/kolbo-impersonate-targets.txt
+          grep -i 'chrome' /tmp/kolbo-impersonate-targets.txt
+          grep -q '99' /tmp/kolbo-impersonate-targets.txt
