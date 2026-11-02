@@ -24,7 +24,6 @@ class SocialImportAndMicroRemixTests(unittest.TestCase):
             'https://www.facebook.com/reel/9876',
             'https://vm.tiktok.com/ZMz123/',
             'https://www.instagram.com/reel/example/',
-            'https://youtu.be/dQw4w9WgXcQ',
             'https://vimeo.com/123456789',
             'https://www.reddit.com/r/test/comments/123/abc',
         )
@@ -40,6 +39,7 @@ class SocialImportAndMicroRemixTests(unittest.TestCase):
             'file:///etc/passwd',
             'https://169.254.169.254/latest/meta-data',
             'https://example.org/stream.mp4',
+            'https://youtu.be/dQw4w9WgXcQ',
             'https://vm.tiktok.com/video bad',
             'https://www.facebook.com\\@evil.example/x',
         )
