@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#100a1d">
+<meta name="description" content="Kolbo AI Studio — כניסה מהירה לאולפן בלי מסך ההתעוררות של Render.">
+<title>Kolbo AI Studio · כניסה לאולפן</title>
+<style>
+:root{font-family:system-ui,Arial,sans-serif;color-scheme:dark;color:#f8f2ff;background:#100a1d}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:radial-gradient(ellipse at 8% 15%,#56307380,transparent 46%),radial-gradient(ellipse at 90% 79%,#183c7380,transparent 42%),#100a1d;display:grid;place-items:center;padding:24px}
+main{width:min(100%,670px);padding:clamp(24px,5vw,42px);background:#211831f2;border:1px solid #6e5388;border-radius:25px;box-shadow:0 30px 80px #05030b80}
+h1{font-size:clamp(30px,6vw,44px);margin:10px 0}h1 span{color:#d69eff}
+.brand{letter-spacing:2px;font-size:.86rem;color:#d8b8ff;font-weight:700}
+.intro{color:#ddd1f2;line-height:1.8;margin-bottom:26px}
+.state{border:1px solid #70568c;background:#332344;border-radius:16px;padding:17px;display:flex;align-items:center;gap:15px;margin:22px 0}
+.state strong{display:block;font-size:1.08rem}.state p{margin:5px 0 0;color:#d4c2e7;font-size:.95rem;line-height:1.6}
+.spinner{width:31px;height:31px;flex:none;border:3px solid #8a6ba9;border-top-color:#f0b5ff;border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}.ready .spinner{animation:none;border-color:#80cbb6}.ready .spinner:before{content:"✓";display:grid;place-content:center;font-weight:900;color:#92f7d5}
+.actions{display:grid;gap:11px}.btn{display:flex;justify-content:center;align-items:center;min-height:53px;padding:12px 18px;text-decoration:none;font-weight:800;border-radius:12px;border:1px solid #8262aa;cursor:pointer;font-size:1rem}
+.primary{background:linear-gradient(110deg,#de9fff,#a1b2ff);color:#1d1232;border:0}
+.btn[aria-disabled="true"]{opacity:.5;pointer-events:none;cursor:not-allowed}
+.secondary{background:#382a50;color:#f5eafd}.quiet{border:0;background:transparent;color:#cfc0e0}
+small{display:block;color:#ac9aba;margin-top:20px;line-height:1.7}
+@media(prefers-reduced-motion:reduce){.spinner{animation:none}}
+</style>
+</head>
+<body>
+<main>
+<div class="brand">KOLBO · AI STUDIO</div>
+<h1>אולפן היצירה <span>שלך</span></h1>
+<p class="intro">מיקס, מאסטרינג, טראנס, אפקטים ושיתוף קובצי שמע ווידאו. מסך הכניסה הזה פועל בענן סטטי ואינו תלוי בהתעוררות שרת העיבוד.</p>
+<section class="state" id="state" role="status" aria-live="polite" aria-atomic="true">
+<div class="spinner" aria-hidden="true"></div>
+<div><strong id="headline">מתחבר למנוע העיבוד...</strong><p id="detail">בודק שהשרת החינמי זמין לפני פתיחת האולפן.</p></div>
+</section>
+<div class="actions">
+<a class="btn primary" id="enter" href="https://kolbo-trance-studio.onrender.com/studio" aria-disabled="true" tabindex="-1">פתיחת Kolbo AI Studio</a>
+<button class="btn secondary" id="retry" type="button">בדוק חיבור מחדש</button>
+<a class="btn quiet" href="https://github.com/kolbomusic/kolbo-android-app/releases/download/trance-story-v2.4.5-beta.1/Kolbo-Trance-Story-v2.4.5-beta.apk" rel="noopener noreferrer">הורדת אפליקציית Android 2.4.5</a>
+</div>
+<small>הכניסה חינמית. במקרה שהשרת נרדם, המערכת תבדוק ותפתח אותו בלי להציג את מסך הטעינה של Render. הקלטות ויצירות אינן מתחילות מעצמן. יצירת תוכן AI מתקדם עשויה להיות כפופה למכסות שירותים חיצוניים.</small>
+</main>
+<script>
+(function(){
+'use strict';
+var SERVER='https://kolbo-trance-studio.onrender.com';
+var STUDIO=SERVER+'/studio';
+var MAX_ATTEMPTS=36;
+var attempt=0;
+var stopped=false;
+var running=false;
+var delayId=null;
+var status=document.getElementById('state');
+var header=document.getElementById('headline');
+var detail=document.getElementById('detail');
+var enter=document.getElementById('enter');
+var retry=document.getElementById('retry');
+
+function show(headline,explanation,ready){
+ header.textContent=headline;
+ detail.textContent=explanation;
+ status.classList.toggle('ready',Boolean(ready));
+ enter.setAttribute('aria-disabled',ready?'false':'true');
+ enter.tabIndex=ready?0:-1;
+}
+function next(ms){
+ if(stopped)return;
+ clearTimeout(delayId);
+ delayId=setTimeout(probe,ms);
+}
+async function probe(){
+ if(stopped||running)return;
+ running=true;attempt++;
+ var controller=new AbortController();
+ var timeout=setTimeout(function(){controller.abort()},11000);
+ try{
+  var response=await fetch(SERVER+'/health?gateway=1',{
+   method:'GET',mode:'cors',credentials:'omit',cache:'no-store',
+   signal:controller.signal,
+   headers:{'Accept':'application/json'}
+  });
+  if(!response.ok)throw Error('Server '+response.status);
+  var health=await response.json();
+  if(health.ok!==true||health.service!=='kolbo-trance-studio')throw Error('Bad health response');
+  clearTimeout(timeout);
+  stopped=true;
+  show('האולפן זמין עכשיו','החיבור נבדק. מעביר אותך לממשק היצירה.',true);
+  setTimeout(function(){window.location.assign(STUDIO)},900);
+  return;
+ }catch(error){
+  clearTimeout(timeout);
+  if(attempt>=MAX_ATTEMPTS){
+   show('השרת עדיין לא זמין','האולפן לא הגיב כרגע. אפשר לבצע בדיקה חוזרת בלי לאבד את הקבצים שבמכשיר.',false);
+  }else{
+   show('שרת העיבוד מתעורר','בוצעה בדיקת חיבור '+attempt+'. מסך היצירה ייפתח אוטומטית כשיתקבל אישור זמינות.',false);
+   next(2500);
+  }
+ }finally{running=false}
+}
+retry.addEventListener('click',function(){
+ stopped=false;attempt=0;clearTimeout(delayId);
+ if(!running){show('בודק חיבור מחדש','הבדיקה לא תתחיל יצירה או העלאת קובץ.',false);probe()}
+});
+document.addEventListener('visibilitychange',function(){
+ if(!document.hidden&&!stopped&&!running){clearTimeout(delayId);probe()}
+});
+probe();
+})();
+</script>
+</body>
+</html>

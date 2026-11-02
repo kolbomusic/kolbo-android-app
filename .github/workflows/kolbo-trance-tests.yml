@@ -14,6 +14,7 @@ on:
       - kolbo-trance-provider-failure-diagnostics-20261101
       - kolbo-trance-share-no-reload-244-20261102
       - kolbo-trance-creative-audio-20261102
+      - kolbo-trance-static-entry-20261102
       - kolbo-trance-link-share-245-20261102
     paths:
       - 'trance-studio/**'
@@ -35,6 +36,8 @@ jobs:
           pip install -r trance-studio/backend/requirements.txt
       - name: Compile
         run: python -m compileall -q trance-studio/backend trance-studio/tests
+      - name: Validate no-sleep static gateway
+        run: node trance-studio/tests/test_static_entry.js
       - name: Validate frontend JavaScript
         run: |
           node -e "const fs=require('fs');const s=fs.readFileSync('trance-studio/web/studio.html','utf8');const a=s.indexOf('<script>');const b=s.lastIndexOf('</script>');if(a<0||b<a)throw Error('No browser JS found');new Function(s.slice(a+8,b));"
