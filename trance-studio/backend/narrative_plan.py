@@ -18,7 +18,7 @@ HEBREW_WORD = re.compile(r"[א-ת]{2,}")
 BOUNDARY = re.compile(
     r"(?<=[.!?;,])\s+|\b(?:ואז|לאחר\s+מכן|ואחר\s+כך|אחר\s+כך|ופתאום|פתאום)\b"
 )
-MAX_STORY_SCENES = 3
+MAX_STORY_SCENES = 6
 
 # All English hints below require explicit matching Hebrew action in the
 # original clause. No background character/object is added without evidence.

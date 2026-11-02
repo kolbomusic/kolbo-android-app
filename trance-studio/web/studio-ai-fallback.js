@@ -14,7 +14,8 @@ var MODELS=[
    call:'/gradio_api/call/text_to_video'}
 ];
 var MAX_VIDEO_BYTES=10*1024*1024;
-var MAX_SHOTS=3;
+var MAX_SHOTS=6;
+var MIN_SCENE_SECONDS=3.0;
 var HEBREW=/[\u0590-\u05ff]/;
 
 function fail(msg){return new Error(msg)}
@@ -118,22 +119,23 @@ function parseEventStream(text,host){
   }
   throw fail('יצירת הווידאו לא הסתיימה בתור החינמי');
 }
-function requestPayload(model,prompt){
+function requestPayload(model,prompt,shotIndex){
+  var seed=42+(shotIndex||0)*7919;
   if(model.id==='ltx25'){
     return {prompt:prompt,image_path:null,height:512,width:768,
-            duration_s:1.0,seed:42,decoder:'conv',auto_len:false,
+            duration_s:4.5,seed:seed,decoder:'conv',auto_len:false,
             randomize_seed:false,do_enhance:false};
   }
   return {data:[prompt,
     'blurry, deformed, text, watermark, anime, cartoon, illustration',
-    null,null,512,704,'text-to-video',1.0,9,42,true,1.0,true]};
+    null,null,512,704,'text-to-video',4.5,9,seed,false,1.0,true]};
 }
-async function oneClip(model,prompt,onStage){
+async function oneClip(model,prompt,onStage,shotIndex){
   var base='https://'+model.host;
   onStage('פונה למנוע '+model.id+' ליצירת סצנה חדשה לפי הדיבור...');
   var submit=await getResponse(base+model.call,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(requestPayload(model,prompt))
+      body:JSON.stringify(requestPayload(model,prompt,shotIndex))
     },30000);
   var event=await submit.json();
   if(!event||! /^[a-f0-9]{24,80}$/.test(String(event.event_id||'')))
@@ -209,7 +211,7 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
     for(var p=0;p<MODELS.length;p++){
       try{
         onStage('יוצר סצנה '+(i+1)+' מתוך '+prompts.length+' — '+MODELS[p].id);
-        clip=await oneClip(MODELS[p],prompts[i],onStage);
+        clip=await oneClip(MODELS[p],prompts[i],onStage,i);
         break;
       }catch(error){
         // Never retry quota exhaustion: retries burn the shared quota.
@@ -218,7 +220,7 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
           onStage('השרת החינמי עמוס. ממתין רגע ומנסה פעם נוספת...');
           await new Promise(function(resolve){setTimeout(resolve,5000)});
           try{
-            clip=await oneClip(MODELS[p],prompts[i],onStage);
+            clip=await oneClip(MODELS[p],prompts[i],onStage,i);
             break;
           }catch(retryError){error=retryError}
         }
@@ -226,7 +228,8 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
         onStage('הסצנה לא הושלמה במנוע '+MODELS[p].id+'; בודק מנוע חלופי...');
       }
     }
-    if(!clip)break;
+    if(!clip)throw fail('לא נוצרה סצנת AI מספר '+(i+1)+
+      '. התוצאה לא תחזור על סצנה קודמת; המיקס המקורי נשמר.');
     blobs.push(clip);
   }
   if(!blobs.length){
@@ -263,5 +266,5 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
   return answer;
 }
 window.KolboAIFallback={generate:generate,
-  version:'1.16.0',isDirectBrowserMode:true};
+  version:'1.17.0',isDirectBrowserMode:true};
 })();

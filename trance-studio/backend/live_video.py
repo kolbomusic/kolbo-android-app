@@ -477,7 +477,7 @@ def _video_profile(path):
     stream=tracks[0]
     return stream.get("codec_name"),stream.get("width"),stream.get("height")
 
-def _make_segment(src,output,length):
+def _make_segment(src,output,length,*,allow_loop=True):
     """Encode real camera footage into a consistent Android-compatible portrait stream.
 
     The previous VP9-in-MP4 stream-copy route produced a playable file in
@@ -489,6 +489,8 @@ def _make_segment(src,output,length):
     if length<=0:
         raise UnavailableVideo("קטע וידאו ריק")
     source_length=_duration(src)
+    if not allow_loop and source_length+.12<length:
+        raise UnavailableVideo('אין מספיק שניות וידאו מקוריות לסצנה. לא נחזור בלולאה על קליפ קצר')
     if source_length<min(.7,length*.4):
         raise UnavailableVideo("קטע המקור קצר מדי")
     _video_profile(src)  # A genuine moving video stream is required.
@@ -516,6 +518,9 @@ def _make_segment(src,output,length):
             raise UnavailableVideo("פורמט הסרטון אינו תואם למכשירי אנדרואיד")
         if _duration(short)<.65:
             raise UnavailableVideo("לא נוצר קטע צילום נע תקין")
+        if not allow_loop:
+            short.replace(output)
+            return
         command=[
             "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
             "-stream_loop","-1","-i",str(short),"-t",f"{length:.3f}",

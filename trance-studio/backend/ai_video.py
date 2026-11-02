@@ -139,7 +139,7 @@ def _video_result_url(data, *, expected_host=SPACE_HOST):
 def _request_video_generation(prompt, *, opener=urllib.request.urlopen,
                               duration=2.0, max_wait=MAX_WAIT_SECONDS):
     """Call the documented public Gradio queue API with a bounded SSE wait."""
-    duration = min(3.0, max(1.0, float(duration)))
+    duration = min(8.0, max(1.0, float(duration)))
     data = {
         "data": [
             prompt,
@@ -202,7 +202,7 @@ def _request_ltx25_generation(prompt, *, opener=urllib.request.urlopen,
         "image_path":None,
         "height":512,
         "width":768,
-        "duration_s":min(3.0,max(1.0,float(duration))),
+        "duration_s":min(5.0,max(1.0,float(duration))),
         "seed":42,
         "decoder":"conv",
         "auto_len":False,
@@ -304,11 +304,11 @@ def _narrative_shots(transcript):
 def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                       *, progress=None, generator=_request_video_generation,
                       download=_download_public_video):
-    """Produce up to two original moving shots in spoken order with entire audio.
+    """Produce unique ordered moving shots, without extending short clips.
 
-    Original narration is sent as text ONLY after the app opt-in. Two shots
-    are attempted within the public ZeroGPU quota; if the second fails, use
-    the first and clearly report an incomplete visual recreation.
+    Free GPU capacity cannot be guaranteed. If there is not enough new motion
+    for the full soundtrack, keep the MP3 and report incomplete video rather
+    than making the user watch the same 1-second excerpt repeatedly.
     """
     beats=narrative_beats(transcript)
     shots=[beat.spoken_text for beat in beats]
@@ -338,9 +338,9 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                     # LTX 2.5 produced decoded moving H264 in an
                     # independent 2026-11-01 canary; prefer it to the
                     # older distilled Space that returned static frames.
-                    url=_request_ltx25_generation(prompt,duration=1.0,max_wait=72)
+                    url=_request_ltx25_generation(prompt,duration=4.5,max_wait=72)
                 except AIVideoUnavailable:
-                    url=_request_video_generation(prompt,duration=2.0,max_wait=72)
+                    url=_request_video_generation(prompt,duration=4.5,max_wait=72)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             prepared.append((words,raw,seconds))
@@ -348,8 +348,10 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
             failure=exc
             # Subsequent requests to the same exhausted quota will not help.
             break
+    if len(prepared)!=len(beats):
+        raise failure or AIVideoUnavailable('לא נוצרו כל סצנות הסיפור. לא נבצע חזרות של קליפ AI יחיד')
     if not prepared:
-        raise failure or AIVideoUnavailable("שירות יצירת הווידאו החינמי אינו זמין")
+        raise AIVideoUnavailable("שירות יצירת הווידאו החינמי אינו זמין")
     duration_seconds=sum(max(1,len(HEBREW.findall(clip[0])))
                          for clip in prepared)
     encoded=[]
@@ -357,8 +359,13 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
     for index,(words,raw,source_seconds) in enumerate(prepared):
         spoken_weight=max(1,len(HEBREW.findall(words)))
         allocated=audio_length*spoken_weight/duration_seconds
+        if source_seconds+.12<allocated:
+            raise AIVideoUnavailable(
+                'נוצרו רק '+str(round(source_seconds,1))+
+                ' שניות לסצנה הדורשת '+str(round(allocated,1))+
+                ' שניות. לא נמחזר את אותו קליפ שוב ושוב')
         segment=work/f"generated-segment-{index}.mp4"
-        _make_segment(raw,segment,allocated)
+        _make_segment(raw,segment,allocated,allow_loop=False)
         encoded.append(segment)
         sources.append({
             "action":"ai_generated_narrative",
@@ -417,9 +424,7 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
         "story_beats_total":len(shots),
         "scene_generation_quality":"approximate_not_verified",
         "audio_seconds":round(audio_length,2),
-        "repeated_ai_shot":any(
-            sources[i]["end"]-sources[i]["start"]>shot[2]+.5
-            for i,shot in enumerate(prepared)),
+        "repeated_ai_shot":False,
         "sources":[],
         "scenes":sources,
         "provider":SPACE_PAGE+" | "+SECONDARY_PAGE,

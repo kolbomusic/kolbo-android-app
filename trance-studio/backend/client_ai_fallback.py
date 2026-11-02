@@ -13,12 +13,13 @@ import json
 import subprocess
 from pathlib import Path
 import math
+import hashlib
 
 from live_video import _duration, _video_profile, _make_segment, UnavailableVideo
 from motion_quality import require_visible_motion, NoVisibleMotion
 
 MAX_CLIP_BYTES=10*1024*1024
-MAX_CLIPS=3
+MAX_CLIPS=6
 
 
 class MobileClipError(ValueError):
@@ -54,14 +55,19 @@ def validate_mp4_clip(path):
 
 
 def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,weights=None):
-    """Mux at most three genuine moving AI clips + the ENTIRE existing MP3.
+    """Mux unique real moving AI clips, no recycled 1-second loops, with full MP3.
 
     Inputs are server-written MP4 files uploaded as bytes, NOT external URLs.
     The output is Android-compatible H264 360x640 + AAC 160k with a single
     bounded encoding pass per small source excerpt.
     """
     if not 1<=len(paths)<=MAX_CLIPS:
-        raise MobileClipError("יש לבחור בין קטע וידאו אחד לשלושה")
+        raise MobileClipError("יש לבחור 1–6 סצנות מקוריות")
+    # Identical model responses may occur when seeds are reused or the
+    # provider caches a short default. Never treat those as distinct scenes.
+    hashes=[hashlib.sha256(Path(p).read_bytes()).digest() for p in paths]
+    if len(set(hashes))!=len(hashes):
+        raise MobileClipError("מנוע ה־AI החזיר אותה סצנה שוב. לא נייצר סרטון שחוזר על עצמו")
     work=Path(work_dir)
     work.mkdir(parents=True,exist_ok=True,mode=0o700)
     output=Path(output_mp4)
@@ -86,12 +92,17 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,weights=None):
     allocations=[duration*float(w)/total for w in weights]
     if min(allocations)<.7:
         raise MobileClipError("אורך אחת מסצנות הווידאו קצר מדי")
+    if any(allocations[i]>seconds[i]+.12 for i in range(len(paths))):
+        raise MobileClipError(
+            'לא נוצר מספיק וידאו חדש לכל אורך המיקס ('+
+            str(round(sum(seconds),1))+' מתוך '+str(round(duration,1))+
+            ' שניות). נדרשות עוד סצנות; לא נחזור על קליפ קצר')
     parts=[]
     try:
         for i,path in enumerate(paths):
             length=allocations[i] if i<len(paths)-1 else duration-sum(allocations[:-1])
             segment=work/f"mobile-scene-{i}.mp4"
-            _make_segment(path,segment,length)
+            _make_segment(path,segment,length,allow_loop=False)
             parts.append(segment)
         if len(parts)>1:
             manifest=work/"mobile-concat.txt"
@@ -128,7 +139,7 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,weights=None):
         "ai_clips_generated":len(paths),
         "audio_seconds":round(duration,2),
         "ai_clip_seconds":round(sum(seconds),2),
-        "repeated_ai_shot":any(allocations[i]>n+.5 for i,n in enumerate(seconds)),
+        "repeated_ai_shot":False,
         "sources":[],
         "pacing_basis":"original_transcript_spoken_word_counts",
         "scenes":[

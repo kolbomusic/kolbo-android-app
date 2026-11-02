@@ -221,8 +221,8 @@ def create_app(config=None):
                                       ' סצנות AI עם '+str(board.get('ai_clip_seconds',0))+
                                       ' שניות של תנועה מקורית מתוך '+
                                       str(round(len(audio)/32000,1))+
-                                      ' שניות מיקס. יתר הזמן מאריך או חוזר על '
-                                      'סצנות קצרות; זוהי המחשה משוערת בלבד.')}
+                                      ' שניות מיקס, ללא חזרה על קליפ קצר. '+
+                                      'התאמה סמנטית מלאה אינה מובטחת.')}
                         except AIVideoUnavailable as err:
                             ai_generation_error=str(err)[:180]
                             app.logger.warning('Free AI video unavailable: %s',
@@ -605,8 +605,12 @@ def create_app(config=None):
             from client_ai_fallback import (combine_mobile_ai_clips,
                                             MobileClipError,MAX_CLIP_BYTES)
             clips=request.files.getlist('clip')
-            if not 1<=len(clips)<=3:
-                return jsonify(error='ניתן להעלות עד שלושה קטעי וידאו לסיפור'),400
+            from client_ai_fallback import MAX_CLIPS
+            if not 1<=len(clips)<=MAX_CLIPS:
+                return jsonify(error='ניתן להעלות עד שישה קטעי וידאו לסיפור'),400
+            planned=int(job.get('client_ai_scene_count',0))
+            if planned and len(clips)!=planned:
+                return jsonify(error='לא הופקו כל הסצנות המקוריות. לא נמחזר קליפ קצר'),422
             work_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
             inputs=[]
             for i,clip in enumerate(clips):
@@ -648,8 +652,8 @@ def create_app(config=None):
                     video_note=(
                         'נוצרו '+str(board['ai_clips_generated'])+
                         ' סצנות AI עם '+str(board['ai_clip_seconds'])+
-                        ' שניות תנועה מקורית. יתר הסרטון מאריך קטעים; '
-                        'זו המחשה משוערת, לא יצירה רציפה של כל האירועים.'),
+                        ' שניות תנועה מקורית ברצף, ללא לולאות. '+
+                        'המחשת המילים עדיין משוערת.'),
                     label='סרטון ה־AI והמיקס מוכנים')
             return jsonify(video_url='/api/jobs/'+job_id+'/video',
                            video_preview_url='/api/jobs/'+job_id+'/video_preview',
@@ -659,7 +663,7 @@ def create_app(config=None):
                            video_note=(
                                'נוצרו '+str(board['ai_clips_generated'])+
                                ' סצנות AI עם '+str(board['ai_clip_seconds'])+
-                               ' שניות תנועה מקורית. חלק מהסרטון חוזר עליהן.'),
+                               ' שניות תנועה מקורית, ללא חזרת קליפים.'),
                            storyboard_url='/api/jobs/'+job_id+'/storyboard',
                            ai_clips_generated=board['ai_clips_generated']),200
         except MobileClipError as exc:
@@ -733,7 +737,9 @@ def create_app(config=None):
                 audio_seconds=_duration(workdir/'mix.mp3')
                 if not 1<=audio_seconds<=360:
                     raise ValueError('invalid_soundtrack_duration')
-                _make_segment(original,prepared,audio_seconds)
+                if clip_seconds+.12<audio_seconds:
+                    return jsonify(error='קליפ AI יחיד קצר מהמיקס. כדי לא לחזור על אותה שנייה, יש ליצור כמה סצנות שונות.'),422
+                _make_segment(original,prepared,audio_seconds,allow_loop=False)
                 subprocess.run(['ffmpeg','-nostdin','-hide_banner','-loglevel','error',
                     '-y','-i',str(prepared),'-i',str(workdir/'mix.mp3'),
                     '-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac',
