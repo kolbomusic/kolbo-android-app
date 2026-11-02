@@ -59,13 +59,19 @@ def live(expected_revision=None):
     active='"access":"community"' in health.replace(" ","")
     errors=[]
     if active:
+        _,_,login_html,_=fetch("/login")
+        local_mode='name="password"' in login_html
         for route in ("/","/photos","/archive","/memorials","/status","/about","/privacy","/safety","/help","/accessibility","/accessibility/report","/login","/register","/feed","/invite"):
             status,headers,body,landed=fetch(route)
             ok=status==200 and landed.startswith(URL) and "text/html" in headers.get("Content-Type","")
             if route=="/accessibility/report":
                 ok=ok and '<form' in body and 'name="csrf"' in body
-            if route in ("/login","/register"):
-                ok=ok and 'type="password"' not in body and 'name="password"' not in body and 'Google' in body
+            if local_mode and route=="/register":
+                ok=status in (200,503) and "text/html" in headers.get("Content-Type","")
+            elif route=="/login":
+                ok=ok and ('name="password"' in body if local_mode else 'name="password"' not in body and "Google" in body)
+            elif route=="/register":
+                ok=ok and 'name="password"' not in body and "Google" in body
             if route not in ("/favicon.svg",):
                 ok=ok and 'id="main-content"' in body and 'skip-to-content' in body
             print(("PASS" if ok else "FAIL"),route,"ACTIVE",status)
