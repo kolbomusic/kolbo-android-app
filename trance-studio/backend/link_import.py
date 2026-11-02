@@ -12,8 +12,9 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, quote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 MAX_VIDEO=45*1024*1024
@@ -106,11 +107,64 @@ def _facebook_video_id(url):
     return None
 
 
-def _facebook_public_candidates(url, *, opener=None, timeout=7):
-    """Resolve a Facebook *public* short link, then try documented video views.
+class _PublicFacebookMeta(HTMLParser):
+    """Read only canonical/OG URLs from an already public HTML page."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.links=[]
 
-    Do not use session cookies, login, third-party proxy/loader endpoints,
-    private video metadata or bypass authentication.
+    def handle_starttag(self, tag, pairs):
+        a=dict(pairs)
+        if tag=="meta":
+            kind=(a.get("property") or a.get("name") or "").lower()
+            if kind in ("og:url","twitter:url","al:web:url"):
+                self.links.append(a.get("content") or "")
+            elif (a.get("http-equiv") or "").lower()=="refresh":
+                m=re.match(r"^\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*['\"]?([^'\"\s]+)",
+                           a.get("content") or "",re.IGNORECASE)
+                if m:self.links.append(m.group(1))
+        elif tag=="link" and "canonical" in (a.get("rel") or "").lower().split():
+            self.links.append(a.get("href") or "")
+
+
+def _trusted_facebook_video_url(value, base):
+    """No offsite metadata links, unsafe protocols, ports, credentials or non-video pages."""
+    try:
+        resolved=urljoin(base,value.strip())
+        u=urlsplit(resolved)
+        host=(u.hostname or "").lower().rstrip(".")
+        if (u.scheme!="https" or
+            not (host=="facebook.com" or host.endswith(".facebook.com")) or
+            u.port not in (None,443) or u.username or u.password or
+            "\\" in resolved or len(resolved)>2048):
+            return None
+        return resolved if _facebook_video_id(resolved) else None
+    except ValueError:
+        return None
+
+
+def _facebook_html_video_urls(html, base):
+    """Extract at most three official public video links from bounded HTML."""
+    if not html:return []
+    parser=_PublicFacebookMeta()
+    try:
+        parser.feed(html[:150000].decode("utf-8","replace"))
+        parser.close()
+    except (ValueError,TypeError):
+        return []
+    results=[]
+    for link in parser.links[:18]:
+        if isinstance(link,str):
+            safe=_trusted_facebook_video_url(link,base)
+            if safe and safe not in results:results.append(safe)
+    return results[:3]
+
+
+def _facebook_public_candidates(url, *, opener=None, timeout=7):
+    """Try redirects and public HTML metadata of a Facebook short-share link.
+
+    A share/v/ page often responds HTTP 200 with a canonical URL inside HTML,
+    rather than redirecting. No cookies, login, private APIs or offsite URLs.
     """
     raw=urlsplit(url)
     host=(raw.hostname or "").lower().rstrip(".")
@@ -118,35 +172,35 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
             or host=="facebook.com" or host.endswith(".facebook.com")):
         return [url]
     candidates=[url]
-    canonical=url
     if "/share/" in raw.path or host.endswith("fb.watch"):
         client=opener or build_opener(_FacebookOnlyRedirects)
         try:
-            request=Request(url,headers={
+            req=Request(url,headers={
                 "User-Agent":"Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Safari/537.36",
                 "Accept":"text/html,application/xhtml+xml",
             },method="GET")
-            with client.open(request,timeout=timeout) as response:
-                canonical=response.geturl()
-            final=urlsplit(canonical)
-            final_host=(final.hostname or "").lower().rstrip(".")
-            if final.scheme!="https" or not (final_host=="facebook.com" or final_host.endswith(".facebook.com")):
-                canonical=url
+            with client.open(req,timeout=timeout) as response:
+                destination=response.geturl()
+                direct=_trusted_facebook_video_url(destination,url)
+                if direct:candidates.append(direct)
+                headers=getattr(response,"headers",{})
+                content_type=(headers.get("Content-Type") or "") if hasattr(headers,"get") else ""
+                if not content_type or "text/html" in content_type or "application/xhtml+xml" in content_type:
+                    read=getattr(response,"read",None)
+                    if callable(read):
+                        candidates.extend(_facebook_html_video_urls(read(150000),
+                                                                    destination))
         except (OSError,URLError,HTTPError,ValueError,LinkImportError):
-            canonical=url
-        if canonical!=url:
-            candidates.append(canonical)
-    video_id=_facebook_video_id(canonical) or _facebook_video_id(url)
+            pass  # The original public link still gets one bounded extraction.
+    video_id=next((_facebook_video_id(c) for c in candidates if _facebook_video_id(c)),None)
     if video_id:
-        # Mobile/watch and Facebook's official embeddable public video endpoint
-        # can sometimes work when the short-share page extractor is broken.
         watch=f"https://www.facebook.com/watch/?v={video_id}"
         candidates.extend([
             watch,
             f"https://www.facebook.com/reel/{video_id}/",
             "https://www.facebook.com/plugins/video.php?href="+quote(watch,safe=""),
         ])
-    return list(dict.fromkeys(candidates))[:5]
+    return list(dict.fromkeys(candidates))[:6]
 
 
 def _readable_failure(stderr):
@@ -222,7 +276,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     failures=[]
     # FaceBook share/v -> canonical video -> watch URL -> reel / official
     # public embed. An unsupported social site remains a single attempt.
-    attempts=candidates[:5]
+    attempts=candidates[:6]
     if len(attempts)>1:
         # Avoid a single dead extractor using the entire 70-second budget.
         attempt_limit=max(7,min(19,(deadline-time.monotonic())/len(attempts)))
