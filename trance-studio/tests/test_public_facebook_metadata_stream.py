@@ -149,7 +149,7 @@ class FacebookPublicMediaStreamTests(unittest.TestCase):
                     li.fetch_public_social_media(
                         "https://www.facebook.com/reel/4301066573492911",root,timeout=8)
         self.assertEqual(issue.exception.code,"extractor_parse")
-        self.assertIn("לא בהכרח",str(issue.exception))
+        self.assertIn("הקלטת המסך",str(issue.exception))
 
 
 if __name__ == "__main__":
