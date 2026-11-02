@@ -1,0 +1,28 @@
+name: Prove real Render Facebook share-v media import
+on:
+  push:
+    branches:
+      - kolbo-trance-live-render-shortshare-proof-20261102
+      - kolbo-trance-studio-20261031
+    paths:
+      - 'trance-studio/tests/live_real_facebook_render_shortshare.py'
+      - '.github/workflows/kolbo-trance-render-sharev-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production-sharev-to-mp4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare real MP4 codec verification
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffprobe -version | head -n 1
+      - name: Real production site -> authenticated share/v import -> downloaded media -> ffprobe
+        run: python trance-studio/tests/live_real_facebook_render_shortshare.py
