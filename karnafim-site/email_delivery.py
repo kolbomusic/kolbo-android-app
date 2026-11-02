@@ -20,7 +20,11 @@ def mail_transport():
 
 def delivery_ready():
     if mail_transport()=="gmail_queue":
+        # A database outbox is NOT an email sender. The explicit dispatcher
+        # readiness flag must only be set after verified external delivery.
+        # Without it the registration page remains disabled (fail closed).
         return (os.getenv("KARNAFIM_GMAIL_QUEUE_ENABLED","0")=="1"
+                and os.getenv("KARNAFIM_GMAIL_DISPATCH_VERIFIED","0")=="1"
                 and bool(os.getenv("DATABASE_URL","").strip()))
     return bool(os.getenv("KARNAFIM_RESEND_API_KEY","").strip()
                 and os.getenv("KARNAFIM_MAIL_FROM","").strip())
@@ -72,7 +76,7 @@ def digest_token(value):
     return hashlib.sha256(value.encode("ascii")).hexdigest()
 
 def send_confirmation(address,token):
-    """Returns True only when the provider accepted the verification email."""
+    """True means submitted to the chosen transport, NOT delivered to recipient."""
     if not delivery_ready():
         return False
     if mail_transport()=="gmail_queue":
