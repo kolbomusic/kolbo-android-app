@@ -370,35 +370,77 @@ def safety_public():
 
 @app.route("/register",methods=["GET","POST"])
 def register():
+ if AUTH_METHOD=="local":
+  if os.environ.get("KARNAFIM_ALLOW_REGISTRATION","0")!="1":
+   return view("הרשמה לחברים חדשים",'<h1>בקשת הצטרפות</h1><p>הרשמת חברים חדשים אינה פתוחה כרגע. חשבונות קיימים נשמרים.</p><a href="/login">כניסה לחשבון קיים</a>'),503
+  if request.method=="POST":
+   guard()
+   if request.form.get("consent")!="on":abort(400)
+   name=request.form.get("name","").strip()[:100]
+   email=request.form.get("email","").strip().lower()[:200]
+   pw=request.form.get("password","")
+   if len(name)<2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) or not 12<=len(pw)<=200:
+    return view("שגיאה בהרשמה",'<p class="error">נדרשים שם, דוא״ל תקין וסיסמה באורך 12–200 תווים.</p>'),400
+   try:
+    sql("INSERT INTO members(name,email,password,nickname,service_start,service_end,company,role) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+        (name,email,hashpw(pw),request.form.get("nickname","")[:100],
+         request.form.get("start","")[:40],request.form.get("end","")[:40],
+         request.form.get("company","")[:100],request.form.get("role","")[:100]))
+   except psycopg.errors.UniqueViolation:
+    pass
+   return view("בקשת הצטרפות",'<h1>הבקשה נקלטה</h1><p>הרשמה אינה אישור חברות; מנהל הקהילה יבדוק את הבקשה.</p>')
+  return view("בקשת הצטרפות",'<h1>בקשת הצטרפות לקהילה</h1><form method="post" class="card">'+formwrap(
+    field("name","שם מלא",required=True)+field("nickname","כינוי מהשירות")+
+    field("email","כתובת דוא״ל","email",True)+field("password","סיסמה אישית, לפחות 12 תווים","password",True)+
+    field("start","שנת גיוס")+field("end","שנת שחרור")+
+    field("company","פלוגה")+field("role","תפקיד")+
+    '<label><input type="checkbox" name="consent" required style="width:auto;display:inline"> אני מסכים/ה לשמירת הפרטים לצורך בקשת החברות.</label><button>שליחת בקשה</button>'
+   )+'</form>')
  if request.method=="POST":abort(405)
- return view("הצטרפות לקהילת הקרנפים",
-  '<h1>🦏 הצטרפות לקהילה</h1><div class="card">'
-  '<p>ההרשמה מתבצעת באמצעות חשבון Google מאומת בלבד. '
-  'לא נבקש ממך ליצור סיסמה חדשה באתר.</p>'
-  '<p>Google אינה מאמתת שירות בפלוגה. אחרי ההתחברות תתבקש להסכים לשמירת פרטי הקשר '
-  'ולאחר מכן להמתין לאישור מנהל הקהילה.</p>'
-  +(gis_button_html() if google_ready() and google_auth_mode()=="gis" else
-    '<a class="btn" href="/auth/google/start">המשך עם Google</a>' if google_ready() else
-    '<div class="note" role="status">ההצטרפות עדיין אינה פעילה עד לסיום בדיקת האבטחה והגדרת Google.</div>')
-  +'</div><p>הקהילה עצמאית ואינה מייצגת את צה״ל או משרד הביטחון.</p>')
+ return view("הצטרפות באמצעות Google",'<h1>הצטרפות לקהילה</h1><div class="card">'+
+  (gis_button_html() if google_ready() and google_auth_mode()=="gis" else
+   '<a class="btn" href="/auth/google/start">המשך עם Google</a>' if google_ready() else
+   '<p>ההרשמה אינה פעילה עד לאישור אבטחה.</p>')+'</div>')
 
 @app.route("/login",methods=["GET","POST"])
 def login():
- if request.method=="POST":abort(405)
  destination=request.args.get("next","/")
  from google_identity import RETURN_PATHS
  destination=destination if destination in RETURN_PATHS else "/"
  if me():return redirect(destination,code=303)
+ if AUTH_METHOD=="local":
+  if request.method=="POST":
+   guard()
+   email=request.form.get("email","").strip().lower()
+   pw=request.form.get("password","")
+   if len(email)>200 or len(pw)>200:abort(400)
+   fingerprint=auth_fingerprint(email)
+   ip_fingerprint=auth_fingerprint("__network_login_limit__")
+   if is_rate_limited(fingerprint) or is_rate_limited(ip_fingerprint):
+    return view("הכניסה מושהית",'<p class="error">יותר מדי ניסיונות כניסה. נסו שוב מאוחר יותר.</p>'),429
+   rows=sql("SELECT id,password,session_version FROM members WHERE lower(email)=%s",(email,),True) if email else []
+   if not (rows and pw and verify(pw,rows[0]["password"])):
+    for key in (fingerprint,ip_fingerprint):
+     sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(key,))
+    return view("שגיאת כניסה",'<p class="error">פרטי ההתחברות אינם נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
+   session.clear()
+   session["uid"]=rows[0]["id"]
+   session["auth_method"]="local"
+   session["credential_version"]=rows[0]["session_version"]
+   session.permanent=True
+   return redirect(destination,code=303)
+  return view("כניסה לחשבון המקורי",'<h1>🔐 כניסה לחשבון הקרנפים</h1>'
+   '<p>השתמשו בדוא״ל ובסיסמה שבחרתם באתר. אין צורך בחשבון Google.</p>'
+   '<form method="post" class="card">'+formwrap(
+    field("email","כתובת דוא״ל","email",True)+field("password","סיסמה אישית","password",True)+
+    '<button>כניסה לחשבון</button>')+'</form>')
+ if request.method=="POST":abort(405)
  href="/auth/google/start?next="+destination
- return view("כניסה לקהילת הקרנפים",
-  '<h1>🔐 כניסה באמצעות Google</h1><div class="card">'
-  '<p>התחברות לחשבון Google המאומת שלך — אין צורך בסיסמה נוספת לאתר הקרנפים.</p>'
-  '<p><strong>חשוב:</strong> אישור זהות Google אינו אישור חברות בפלוגת הקרנפים. '
-  'הגישה למדריך, להודעות ולהעלאת תמונות מותנית באישור מנהל הקהילה.</p>'
-  +(gis_button_html() if google_ready() and google_auth_mode()=="gis" else
-    '<a class="btn" href="'+esc(href)+'">התחברות מאובטחת עם Google</a>' if google_ready() else
-    '<div class="note" role="status">הכניסה אינה פעילה כרגע. חסרה הפעלת Google ואישור בטיחות האתר.</div>')
-  +'</div><p>לא נבקש סיסמת Google בתוך אתר זה.</p>')
+ return view("כניסה באמצעות Google",'<h1>🔐 כניסה באמצעות Google</h1>'
+  '<p>אימות החשבון מתבצע באמצעות Google, אישור החברות מתבצע בנפרד.</p><div class="card">'+
+  (gis_button_html() if google_ready() and google_auth_mode()=="gis" else
+   '<a class="btn" href="'+esc(href)+'">התחברות באמצעות Google</a>' if google_ready() else
+   '<p>ההתחברות אינה פעילה כרגע.</p>')+'</div>')
 
 @app.route("/logout",methods=["GET","POST"])
 def logout():
