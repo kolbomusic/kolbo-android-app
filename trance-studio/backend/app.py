@@ -467,8 +467,8 @@ def create_app(config=None):
             # URL, cookies, video title, content or private token.
             trace=secrets.token_hex(4)
             app.logger.warning(
-                'public_video_import_failed trace=%s code=%s attempts=%s',
-                trace,exc.code,exc.attempts)
+                'public_video_import_failed trace=%s code=%s attempts=%s steps=%s',
+                trace,exc.code,exc.attempts,exc.steps or 'none')
             return jsonify(error=str(exc),code=exc.code,trace_id=trace),422
         except (OSError,subprocess.SubprocessError):
             app.logger.warning('Public link import failed; no user URL logged')
