@@ -63,25 +63,36 @@ def create_app(config=None):
             detected_origin='browser_source_asr' if detected_transcript else 'unavailable'
             transcript_complete=True
             asr_recovery_error=''
-            asr_recovery_attempted=bool(options.get('video_requested') and len(detected_transcript.split())<2)
+            # Audio is the primary product, not a silent byproduct of video ASR.
+            # Recognize source speech for timestamped music/DJ direction even
+            # when MP4 was not requested. If ASR fails, still return audio.
+            audio_director=options.get('humor','auto')!='off'
+            asr_recovery_attempted=bool(
+                (audio_director or options.get('video_requested')) and
+                (audio_director or len(detected_transcript.split())<2))
+            transcript_timeline=None
             if asr_recovery_attempted:
-                update(job_id,percent=5,label='מנסה תמלול נוסף מההקלטה המקורית בשרת')
+                update(job_id,percent=5,label='מזהה משפטים ותזמון אפקטים מהקלטת המקור')
                 try:
-                    from source_asr import transcribe_original_files, SourceTranscriptionUnavailable
-                    detected_transcript,transcript_complete=transcribe_original_files(
-                        paths,progress=lambda label:update(job_id,label=label))
-                    detected_origin='server_original_asr'
+                    from source_asr import transcribe_original_files
+                    spoken,transcript_complete,transcript_timeline=transcribe_original_files(
+                        paths,progress=lambda label:update(job_id,label=label),
+                        return_timeline=True)
+                    if spoken:
+                        detected_transcript=spoken
+                        detected_origin='server_original_asr'
                 except Exception as exc:
-                    # Transcription is a best-effort subtask. A decoder/library
-                    # incompatibility must NEVER destroy the finished MP3.
+                    # On free CPU, ASR is best-effort: no loss of MP3 jobs.
                     asr_recovery_error=str(exc)[:180]
-                    app.logger.exception('Original-file ASR failed; keeping the requested audio job alive')
+                    app.logger.warning('Original speech timing unavailable: %s',
+                                       type(exc).__name__)
             clips=[load_audio(p) for p in paths]
             audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent','video_strategy','backing_music_path','music_license_ack')}
             # Make the already recognized Hebrew speech useful for comic
             # timing/preset decisions. Keep it in-process; never transmit
             # private audio or transcript to a new third party.
             audio_options['transcript_hint']=detected_transcript[:4000]
+            audio_options['transcript_timeline']=transcript_timeline
             audio,vocal=render_mix(clips,**audio_options,return_voice=True,
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             if options.get('backing_music_path'):
@@ -303,7 +314,7 @@ def create_app(config=None):
                         meta['client_ai_fallback']=True
                 except AIVideoUnavailable:
                     pass
-            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
+            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',speech_timed=bool(transcript_timeline and any(transcript_timeline)),preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             app.logger.exception('Kolbo audio/video worker error')
             update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
