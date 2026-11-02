@@ -1,0 +1,26 @@
+name: Public Facebook video link fallback safety
+on:
+  push:
+    branches:
+      - kolbo-trance-facebook-public-fallback-20261102
+      - kolbo-trance-studio-20261031
+    paths:
+      - 'trance-studio/backend/link_import.py'
+      - 'trance-studio/tests/test_public_facebook_import_fallback.py'
+      - '.github/workflows/kolbo-trance-public-link-fallback.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-fallback-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile importer and run safe public-link tests
+        run: |
+          python -m py_compile trance-studio/backend/link_import.py
+          python -m unittest discover -s trance-studio/tests -p test_public_facebook_import_fallback.py -v
+          grep -q -- '--no-playlist' trance-studio/backend/link_import.py
+          grep -q -- '--max-filesize' trance-studio/backend/link_import.py
+          grep -q -- 'No raw URL' trance-studio/backend/link_import.py
