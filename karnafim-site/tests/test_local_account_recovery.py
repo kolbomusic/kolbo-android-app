@@ -64,6 +64,12 @@ def main():
    assert login.status_code==200
    assert 'name="password"' in login.get_data(as_text=True)
    assert 'name="csrf"' in login.get_data(as_text=True)
+   # Local credentials must not load Google identity resources on the login form.
+   login_csp=login.headers.get("Content-Security-Policy","")
+   assert "default-src 'none'" in login_csp and "form-action 'self'" in login_csp
+   assert "accounts.google.com" not in login_csp
+   assert "unsafe-eval" not in login_csp
+   assert "script-src 'sha256-" in login_csp
    assert client.get("/register",base_url=BASE).status_code==503
    assert client.get("/find",base_url=BASE).status_code==410
    assert client.get("/auth/google/start",base_url=BASE).status_code==404
