@@ -1,5 +1,5 @@
 """Bounded, temporary audio jobs. Run one WSGI worker; threads share admission state."""
-import os, time, secrets, shutil, threading, json, subprocess, hashlib, re
+import os, time, secrets, shutil, threading, json, subprocess, hashlib, re, tempfile
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, send_file, send_from_directory
@@ -23,7 +23,7 @@ def create_app(config=None):
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
     if config:app.config.update(config)
     root=Path(app.config['JOB_DIR']);root.mkdir(parents=True,exist_ok=True)
-    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);executor=ThreadPoolExecutor(max_workers=1)
+    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
     web=Path(__file__).resolve().parents[1]/'web'
     def session_codec():
@@ -342,7 +342,7 @@ def create_app(config=None):
             allowed.add('http://'+request.host)
             if origin and origin.rstrip('/') not in allowed:return jsonify(error='מקור הבקשה אינו מורשה'),403
             if request.method=='OPTIONS':return '',204
-            if request.path.startswith('/api/jobs') and not app.config.get('TESTING'):
+            if (request.path.startswith('/api/jobs') or request.path=='/api/import-link') and not app.config.get('TESTING'):
                 token=app.config['API_TOKEN']
                 if not token:return jsonify(error='העיבוד בענן טרם הוגדר. ניתן לעבד במכשיר.'),503
                 if not studio_session() and not secrets.compare_digest(request.headers.get('Authorization',''),'Bearer '+token):return jsonify(error='קוד הגישה אינו תקין'),401
@@ -365,6 +365,39 @@ def create_app(config=None):
 
     @app.get('/health')
     def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.14.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+
+    @app.post('/api/import-link')
+    def import_social_link():
+        # Triggered ONLY by clicking the explicit 'import link' control.
+        # Public HTTPS social hosts only, without browser cookies or login.
+        from link_import import fetch_public_social_media, LinkImportError
+        raw=request.get_json(silent=True) or {}
+        if not isinstance(raw,dict):
+            return jsonify(error='בקשת הקישור אינה תקינה.'),400
+        link=raw.get('url','')
+        if not link_admission.acquire(blocking=False):
+            return jsonify(error='ייבוא קישור אחר מתבצע כעת. אפשר לנסות שוב.'),429
+        folder=None
+        try:
+            folder=Path(tempfile.mkdtemp(prefix='kolbo-social-',dir=root))
+            output,mime=fetch_public_social_media(link,folder)
+            response=send_file(
+                output,mimetype=mime,as_attachment=False,
+                download_name='Kolbo-Imported'+output.suffix.lower(),
+                conditional=False)
+            response.headers['Cache-Control']='no-store, private'
+            response.headers['X-Content-Type-Options']='nosniff'
+            response.call_on_close(lambda:shutil.rmtree(folder,ignore_errors=True))
+            folder=None
+            return response
+        except LinkImportError as exc:
+            return jsonify(error=str(exc)),422
+        except (OSError,subprocess.SubprocessError):
+            app.logger.warning('Public link import failed; no user URL logged')
+            return jsonify(error='ייבוא הקישור לא הושלם. אפשר לשתף קובץ מדיה ישירות.'),503
+        finally:
+            link_admission.release()
+            if folder is not None:shutil.rmtree(folder,ignore_errors=True)
 
     @app.post('/api/jobs')
     def create_job():
