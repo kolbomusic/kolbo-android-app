@@ -51,7 +51,7 @@ def _get_model():
     return _MODEL
 
 
-def _recognize(model, path, *, use_vad):
+def _recognize(model, path, *, use_vad, return_segments=False):
     # No prompting with specific actors or events: this could hallucinate
     # the user's intended movie instead of recognizing the actual recording.
     options = {
@@ -60,6 +60,7 @@ def _recognize(model, path, *, use_vad):
         "condition_on_previous_text": False,
         "hallucination_silence_threshold": 1.5,
         "no_speech_threshold": 0.55,
+        "word_timestamps": bool(return_segments),
     }
     if use_vad:
         # Default VAD can discard a whole 1-3 second WhatsApp utterance.
@@ -68,6 +69,7 @@ def _recognize(model, path, *, use_vad):
         }
     segments, _info = model.transcribe(str(path), **options)
     recognized = []
+    timed = []
     for segment in segments:
         utterance = str(getattr(segment, "text", "") or "").strip()
         if not utterance:
@@ -81,7 +83,34 @@ def _recognize(model, path, *, use_vad):
         if silence is not None and float(silence) > 0.80:
             continue
         recognized.append(utterance)
-    return " ".join(recognized).strip()
+        if return_segments and len(timed)<120:
+            # Whisper supplies word-level times when word_timestamps=True.
+            # Fallback to real segment time ranges when unavailable.
+            words=getattr(segment,"words",None)
+            emitted=False
+            if words:
+                for word in words:
+                    try:
+                        start=float(word.start); end=float(word.end)
+                        token=str(word.word or "").strip()
+                        if 0<=start<end<=125 and token:
+                            timed.append({"start":round(start,3),
+                                          "end":round(end,3),
+                                          "text":token[:80]})
+                            emitted=True
+                    except (AttributeError,TypeError,ValueError):
+                        pass
+                    if len(timed)>=120:break
+            if not emitted and len(timed)<120:
+                try:
+                    start=float(segment.start); end=float(segment.end)
+                    if 0<=start<end<=125:
+                        timed.append({"start":round(start,3),"end":round(end,3),
+                                      "text":utterance[:400]})
+                except (AttributeError,TypeError,ValueError):
+                    pass
+    text=" ".join(recognized).strip()
+    return (text,timed) if return_segments else text
 
 
 def _clean_voice(path):
@@ -111,8 +140,8 @@ def _clean_voice(path):
         return None
 
 
-def transcribe_original_files(paths, progress=None):
-    """Return (recognized words, complete) from the ORIGINAL audio only.
+def transcribe_original_files(paths, progress=None, return_timeline=False):
+    """Return (recognized words, complete[, per-file timed speech]) from originals.
 
     Each source gets a VAD pass, then a no-VAD pass if necessary, and a
     normalized-input retry if neither found credible Hebrew text. Unsupported
@@ -120,15 +149,21 @@ def transcribe_original_files(paths, progress=None):
     """
     model = _get_model()
     transcripts = []
+    timeline = []
     completed = True
     for index, path in enumerate(paths):
         if progress:
             progress("מזהה דיבור בעברית מהקלטה " + str(index + 1) +
                      " מתוך " + str(len(paths)))
         utterance = ""
+        timed = []
         for use_vad in (True, False):
             try:
-                utterance = _recognize(model, path, use_vad=use_vad)
+                if return_timeline:
+                    utterance,timed = _recognize(model,path,use_vad=use_vad,
+                                                 return_segments=True)
+                else:
+                    utterance = _recognize(model,path,use_vad=use_vad)
                 if _valid_utterance(utterance):
                     break
             except (OSError, RuntimeError, ValueError):
@@ -139,18 +174,24 @@ def transcribe_original_files(paths, progress=None):
             normalized = _clean_voice(path)
             if normalized:
                 try:
-                    utterance = _recognize(model, normalized, use_vad=False)
+                    if return_timeline:
+                        utterance,timed=_recognize(model,normalized,use_vad=False,
+                                                  return_segments=True)
+                    else:
+                        utterance = _recognize(model, normalized, use_vad=False)
                 except (OSError, RuntimeError, ValueError):
                     utterance = ""
                 finally:
                     normalized.unlink(missing_ok=True)
         if _valid_utterance(utterance):
             transcripts.append(utterance)
+            timeline.append(timed)
         else:
+            timeline.append([])
             completed = False
     result = ". ".join(transcripts)[:4000]
     if not _valid_utterance(result):
         raise SourceTranscriptionUnavailable(
             "לא זוהה דיבור עברי אמין מההקלטות גם לאחר ניסיונות פענוח נוספים"
         )
-    return result, completed
+    return (result,completed,timeline) if return_timeline else (result,completed)

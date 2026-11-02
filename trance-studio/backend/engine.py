@@ -45,7 +45,8 @@ STYLES = ('melodic', 'psy', 'progressive', 'goa', 'acid', 'uplifting',
           'eurodance', 'hard', 'rave', 'mixed', 'auto', 'israeli')
 HUMOR = ('auto', 'classic', 'cartoon', 'scratch', 'robot', 'chaos',
          'stretch', 'tape', 'pitch', 'glitch', 'vinyl', 'dj',
-         'helium','monster','yo_yo','comic_roll','rewind','off')
+         'helium','monster','yo_yo','comic_roll','rewind',
+         'telephone','echo','flanger','gate','ring','off')
 MOTIFS = (
     (74,77,81,77,72,77,79,77,70,74,77,74,69,73,76,73),
     (69,72,76,79,76,72,74,71,67,71,74,78,74,71,69,71),
@@ -265,6 +266,29 @@ def vintage_voice_fx(clip, mode, sr, bpm, rng):
                             fs=sr,output='sos'),x).astype(np.float32)
         y=np.round(np.tanh(lo*2.1)*30)/30
         y=y.astype(np.float32)
+    elif mode=='telephone':
+        lo=sosfilt(butter(3,[360,min(2900,sr*.42)],btype='bandpass',
+                            fs=sr,output='sos'),x).astype(np.float32)
+        y=np.tanh(lo*2.5).astype(np.float32)
+    elif mode=='echo':
+        y=x.copy()
+        for ms,amount in ((110,.54),(215,.27)):
+            gap=int(sr*ms/1000)
+            if gap<len(y):y[gap:]+=x[:-gap]*amount
+    elif mode=='flanger':
+        t=np.arange(len(x),dtype=np.float32)/sr
+        offsets=(.0022+.0015*np.sin(2*np.pi*(1.5+bpm/600)*t))*sr
+        points=np.arange(len(x),dtype=np.float32)-offsets
+        delayed=np.interp(points,np.arange(len(x)),x,left=0,right=0)
+        y=(x*.65+delayed*.45).astype(np.float32)
+    elif mode=='gate':
+        t=np.arange(len(x),dtype=np.float32)/sr
+        phase=(t/(60/bpm/4))%1
+        envelope=.13+.87*np.clip((.68-phase)*12,0,1)
+        y=(x*envelope).astype(np.float32)
+    elif mode=='ring':
+        t=np.arange(len(x),dtype=np.float32)/sr
+        y=(x*(.48+.52*np.sin(2*np.pi*34*t))).astype(np.float32)
     elif mode=='dj':
         cut=zero_crossing_cut(x,len(x)//2,sr)
         first=x[:cut]
@@ -441,7 +465,7 @@ def _semantic_comedy_cue(transcript, fraction):
     return None
 
 
-def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcript_hint=''):
+def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcript_hint='',timed_phrases=None):
     """Pause-aware, beat-length vocal solos without slicing spoken words.
 
     This is an automatic editing heuristic, not phoneme/word-level ASR
@@ -534,7 +558,11 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
             # Never invent an animal, explosion or baby from generic speech.
             # Avoid replaying the same specific gag in adjacent pauses;
             # between events use rhythmic samples of the speaker instead.
-            cue=_semantic_comedy_cue(transcript_hint,cut/max(1,len(x)))
+            # Ground event choice in time-aligned source segments when possible.
+            # For unsupported older ASR, approximate only as a fallback.
+            cue=(_timed_story_cue(timed_phrases,cut/sr)
+                 if timed_phrases else
+                 _semantic_comedy_cue(transcript_hint,cut/max(1,len(x))))
             if cue and cue==last_story_cue and cut-last_story_cue_cut<int(sr*7):
                 cue=None
             if cue:
@@ -626,6 +654,11 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
 
 
 
+def _timed_story_cue(phrases,at):
+    from dj_arranger import event_mode
+    return event_mode(phrases,at,lambda text:_semantic_comedy_cue(text,.5))
+
+
 def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
     """Locate REAL voiced spans for musical call-and-response arrangement.
 
@@ -658,7 +691,7 @@ def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
     smoothed=np.convolve(voiced,np.array([.12,.20,.36,.20,.12],np.float32),mode='same')
     return smoothed.astype(np.float32),fill_locations
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint=''):
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint='',transcript_timeline=None):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     sr=sample_rate;beat=60/bpm
@@ -673,9 +706,11 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     voice_rng=np.random.default_rng(seed^0x9E3779B97F4A7C15)
     # Voice is arranged FIRST. Its actual duration determines the score length.
     # This guarantees the last words and the final vocal trick cannot be cut.
+    transcript_timeline=transcript_timeline or []
     arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
-                                   transcript_hint=transcript_hint)
-              for v in voices]
+                                   transcript_hint=transcript_hint,
+                                   timed_phrases=(transcript_timeline[i] if i<len(transcript_timeline) else None))
+              for i,v in enumerate(voices)]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
     needed=beat*10+total_vocal_duration+max(0,len(voices)-1)*beat*3
     seconds=max(30.,float(seconds),math.ceil(needed))
@@ -707,11 +742,25 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # Distinctive original Israeli-folk / trance flavor uses D Freygish
     # (Phrygian dominant), not a copyrighted popular Hebrew song.
     if style=='israeli':
-        allowed_pc=(0,2,3,6,7,9,10)  # C D Eb F# G A Bb
-        chords=((38,(2,6,9)),(39,(3,7,10)),(43,(7,10,2)),(36,(0,3,7)))
+        allowed_pc=(0,2,3,6,7,9,10)  # D Freygish
+        # Original D-major / Eb / G-minor / C-minor progressions.
+        chord_banks=(
+            ((38,(2,6,9)),(39,(3,7,10)),(43,(7,10,2)),(36,(0,3,7))),
+            ((38,(2,6,9)),(36,(0,3,7)),(39,(3,7,10)),(43,(7,10,2))),
+            ((43,(7,10,2)),(39,(3,7,10)),(36,(0,3,7)),(38,(2,6,9))),
+            ((38,(2,6,9)),(43,(7,10,2)),(39,(3,7,10)),(36,(0,3,7))))
     else:
         allowed_pc=(0,2,4,5,7,9,10)  # D natural minor
-        chords=((38,(2,5,9)),(34,(10,2,5)),(41,(5,9,0)),(36,(0,4,7)))
+        chord_banks=(
+            ((38,(2,5,9)),(34,(10,2,5)),(41,(5,9,0)),(36,(0,4,7))),
+            ((38,(2,5,9)),(43,(7,10,2)),(34,(10,2,5)),(36,(0,4,7))),
+            ((38,(2,5,9)),(36,(0,4,7)),(34,(10,2,5)),(41,(5,9,0))),
+            ((43,(7,10,2)),(41,(5,9,0)),(36,(0,4,7)),(38,(2,5,9))))
+    # One coherent progression per take; variation actually changes
+    # harmony, not merely the RNG seed on the same four bars.
+    progression_index=(mix_variation%len(chord_banks) if mix_variation
+                       else int(seed%len(chord_banks)))
+    chords=chord_banks[progression_index]
     contours=(
         (0,2,4,7,4,2,0,2),(0,4,3,2,0,2,5,4),(4,3,2,0,2,3,5,7),
         (7,5,4,2,4,2,0,2),(0,0,4,5,7,5,4,2),(2,5,7,5,4,2,0,4))
@@ -808,17 +857,27 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         # Change instrumental color every two bars, keeping the rhythmic
         # hook for four bars. Variation is arranged, never randomly pasted.
         theme=sound_colors[(bar//2+music_seed)%len(sound_colors)]
-        if style=='acid':theme='acid'
-        if style=='eurodance':theme='organ'
-        if style=='progressive':theme='pluck'
-        if style in ('psy','goa'):theme='saw'
-        if style=='uplifting':theme='bell'
-        if style=='israeli':theme='oud' if phrase%2==0 else 'reed'
+        if style=='acid':theme=('acid','saw','pluck')[bar%3]
+        if style=='eurodance':theme=('organ','lead','bell')[bar%3]
+        if style=='progressive':theme=('pluck','bell','lead')[bar%3]
+        if style in ('psy','goa'):theme=('saw','acid','pluck','saw')[bar%4]
+        if style=='uplifting':theme=('bell','lead','pluck')[bar%3]
+        if style in ('hard','rave'):theme=('saw','organ','acid')[bar%3]
+        if style=='israeli':theme=('oud','reed','bell')[bar%3]
         # Percussion patterns, musical bass and volume-driven section changes.
         strength={'intro':.22,'groove':.55,'build':.63,'drop':.9,
                   'breakdown':.19,'final':.98,'outro':.33}[section]
+        # Four different programmed drum grooves. A new take should not
+        # reproduce exactly the same trance pattern in every 16-beat loop.
+        groove=(mix_variation//4 if mix_variation else seed//4)%4
         if section!='breakdown' or quarter==0:
             add(kick,time,strength)
+        if section in ('drop','final') and groove==1 and quarter==3:
+            add(kick,time+beat*.75,strength*.43)
+        if section in ('drop','final') and groove==2 and quarter==1:
+            add(kick,time+beat*.5,strength*.32)
+        if section=='build' and groove==3 and quarter==2:
+            add(snare,time+beat*.75,.28)
         if section in ('groove','build','drop','final'):
             add(hat,time+beat*.5,1.0 if section!='final' else 1.35,-.40)
             if section in ('drop','final'):
@@ -884,12 +943,34 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     vocal=np.zeros(n,dtype=np.float32)
     fx_highlight=np.zeros(n,dtype=np.float32)
     cursor=beat*4
-    for track,mask,_ in arranged:
+    # Real voice-sampled accents happen inside the narration, while the
+    # original track and its deliberate pause FX remain 100% preserved.
+    from dj_arranger import accent_overdub
+    for clip_index,(track,mask,spans) in enumerate(arranged):
         start=int(round(cursor*sr))
         end=min(n,start+len(track))
         if end>start:
             vocal[start:end]+=track[:end-start]*voice_level
             fx_highlight[start:end]=np.maximum(fx_highlight[start:end],mask[:end-start])
+            source=voices[clip_index]
+            phrases=(transcript_timeline[clip_index]
+                     if clip_index<len(transcript_timeline) else [])
+            overdub=accent_overdub(
+                source,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
+                vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
+                timed_phrases=phrases,
+                cue_from_text=lambda phrase:_semantic_comedy_cue(phrase,.5))
+            for original_start,original_end,arranged_start,arranged_end in spans:
+                # Original source spans map 1:1 to output, even after pause
+                # inserts. Adding a wet overdub never replaces a spoken word.
+                src=overdub[original_start:original_end]
+                a=start+arranged_start
+                b=min(end,a+len(src))
+                if b>a:
+                    vocal[a:b]+=src[:b-a]*voice_level
+                    if humor!='off':
+                        fx_highlight[a:b]=np.maximum(
+                            fx_highlight[a:b],np.minimum(1,np.abs(src[:b-a])*3))
         cursor+=len(track)/sr+beat*3
     progress(80,'מבצע מיקס כשהקול המעובד בחזית')
     # The synth is independent. Duck only its volume during speech so the

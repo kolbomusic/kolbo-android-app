@@ -13,6 +13,7 @@ on:
       - kolbo-trance-restart-recovery-20261101
       - kolbo-trance-provider-failure-diagnostics-20261101
       - kolbo-trance-share-no-reload-244-20261102
+      - kolbo-trance-creative-audio-20261102
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'

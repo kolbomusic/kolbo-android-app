@@ -56,32 +56,53 @@ def create_app(config=None):
 
     def work(job_id,paths,options):
         try:
-            update(job_id,state='processing',percent=4,label='קורא את ההקלטות')
+            update(job_id,state='processing',percent=4,label='קורא ומאמת את אורך ההקלטות')
+            # Validate audio duration before CPU-expensive word-level ASR.
+            # Oversized/invalid recordings must fail immediately, never sit
+            # for minutes in recognition before a simple decoder check.
+            clips=[load_audio(p) for p in paths]
             # Run ASR recovery against the ORIGINAL files before removing them.
             # A failed browser model cannot cancel a user's explicit MP4 request.
             detected_transcript=(options.get('transcript') or '').strip()
             detected_origin='browser_source_asr' if detected_transcript else 'unavailable'
             transcript_complete=True
             asr_recovery_error=''
-            asr_recovery_attempted=bool(options.get('video_requested') and len(detected_transcript.split())<2)
+            # Audio is the primary product, not a silent byproduct of video ASR.
+            # Recognize source speech for timestamped music/DJ direction even
+            # when MP4 was not requested. If ASR fails, still return audio.
+            audio_director=options.get('humor','auto')!='off'
+            asr_recovery_attempted=bool(
+                (audio_director or options.get('video_requested')) and
+                (audio_director or len(detected_transcript.split())<2))
+            transcript_timeline=None
             if asr_recovery_attempted:
-                update(job_id,percent=5,label='מנסה תמלול נוסף מההקלטה המקורית בשרת')
+                update(job_id,percent=5,label='מזהה משפטים ותזמון אפקטים מהקלטת המקור')
                 try:
-                    from source_asr import transcribe_original_files, SourceTranscriptionUnavailable
-                    detected_transcript,transcript_complete=transcribe_original_files(
-                        paths,progress=lambda label:update(job_id,label=label))
-                    detected_origin='server_original_asr'
+                    from source_asr import transcribe_original_files
+                    asr_result=transcribe_original_files(
+                        paths,progress=lambda label:update(job_id,label=label),
+                        return_timeline=True)
+                    # Preserve compatibility with older source-ASR wrappers
+                    # which return text+completion but no timestamp metadata.
+                    if len(asr_result)==3:
+                        spoken,transcript_complete,transcript_timeline=asr_result
+                    else:
+                        spoken,transcript_complete=asr_result
+                        transcript_timeline=None
+                    if spoken:
+                        detected_transcript=spoken
+                        detected_origin='server_original_asr'
                 except Exception as exc:
-                    # Transcription is a best-effort subtask. A decoder/library
-                    # incompatibility must NEVER destroy the finished MP3.
+                    # On free CPU, ASR is best-effort: no loss of MP3 jobs.
                     asr_recovery_error=str(exc)[:180]
-                    app.logger.exception('Original-file ASR failed; keeping the requested audio job alive')
-            clips=[load_audio(p) for p in paths]
+                    app.logger.warning('Original speech timing unavailable: %s',
+                                       type(exc).__name__)
             audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent','video_strategy','backing_music_path','music_license_ack')}
             # Make the already recognized Hebrew speech useful for comic
             # timing/preset decisions. Keep it in-process; never transmit
             # private audio or transcript to a new third party.
             audio_options['transcript_hint']=detected_transcript[:4000]
+            audio_options['transcript_timeline']=transcript_timeline
             audio,vocal=render_mix(clips,**audio_options,return_voice=True,
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             if options.get('backing_music_path'):
@@ -303,7 +324,7 @@ def create_app(config=None):
                         meta['client_ai_fallback']=True
                 except AIVideoUnavailable:
                     pass
-            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
+            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',speech_timed=bool(transcript_timeline and any(transcript_timeline)),preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except Exception:
             app.logger.exception('Kolbo audio/video worker error')
             update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
@@ -352,7 +373,7 @@ def create_app(config=None):
         if not 1<=len(files)<=4:return jsonify(error='יש לבחור בין הקלטה אחת לארבע הקלטות'),400
         try:
             bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','off')=='on';video_requested=request.form.get('video_requested','on' if make_video else 'off')=='on';transcription_failed=request.form.get('transcription_failed','off')=='on';transcript=request.form.get('transcript','')[:4000].strip();transcript_origin=request.form.get('transcript_origin','manual');source_hashes=request.form.get('source_hashes','');ai_video_consent=request.form.get('ai_video_consent','off')=='on';video_strategy=request.form.get('video_strategy','auto_legacy');music_license_ack=request.form.get('music_license_ack','off')=='on'
-            if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto','israeli') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','helium','monster','yo_yo','comic_roll','rewind','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or video_strategy not in ('new_story','illustrated_story','remix_original','auto_legacy'):raise ValueError()
+            if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto','israeli') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','helium','monster','yo_yo','comic_roll','rewind','telephone','echo','flanger','gate','ring','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or video_strategy not in ('new_story','illustrated_story','remix_original','auto_legacy'):raise ValueError()
         except (ValueError,TypeError):return jsonify(error='הגדרות המיקס אינן תקינות'),400
         # Never reject the upload before trying original-file server ASR.
         # If both ASR paths fail, finish the MP3 and report the MP4 limitation.
