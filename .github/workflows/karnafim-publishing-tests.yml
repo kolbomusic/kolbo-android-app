@@ -28,7 +28,9 @@ jobs:
         run: python karnafim-site/tests/test_media_access.py
       - name: Confirm private conversation attachment isolation
         run: python karnafim-site/tests/test_chat_attachment_authorization.py
-      - name: Verify Google OIDC and removal of local credential forms
+      - name: Recover original local account login, password rotation and CSRF without real user records
+        run: python karnafim-site/tests/test_local_account_recovery.py
+      - name: Verify optional Google OIDC identity and isolation from local login
         run: python karnafim-site/tests/test_google_identity.py
       - name: Verify secret-free Google Identity Services with genuine offline RSA signatures
         run: python karnafim-site/tests/test_google_gis.py
