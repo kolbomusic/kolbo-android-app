@@ -1,7 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const src=fs.readFileSync('trance-studio/web/studio-ai-fallback.js','utf8');
-assert.match(src,/var MAX_SHOTS=6;/);
+assert.match(src,/var MAX_SHOTS=24;/);
+assert.match(src,/MAX_TOTAL_VIDEO_BYTES=58\*1024\*1024/);
 assert.match(src,/duration_s:5\.0/);
 assert.match(src,/\['text-to-video',5\.0|,'text-to-video',5\.0/);
 assert.match(src,/var seed=42\+\(shotIndex\|\|0\)\*7919/);

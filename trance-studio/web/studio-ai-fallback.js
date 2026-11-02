@@ -14,7 +14,8 @@ var MODELS=[
    call:'/gradio_api/call/text_to_video'}
 ];
 var MAX_VIDEO_BYTES=10*1024*1024;
-var MAX_SHOTS=6;
+var MAX_SHOTS=24;
+var MAX_TOTAL_VIDEO_BYTES=58*1024*1024;
 var MIN_SCENE_SECONDS=3.0;
 var HEBREW=/[\u0590-\u05ff]/;
 
@@ -230,6 +231,8 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
     }
     if(!clip)throw fail('לא נוצרה סצנת AI מספר '+(i+1)+
       '. התוצאה לא תחזור על סצנה קודמת; המיקס המקורי נשמר.');
+    if(blobs.reduce(function(n,b){return n+b.size},0)+clip.size>MAX_TOTAL_VIDEO_BYTES)
+      throw fail('קובצי סצנות ה־AI גדולים מדי להעלאה חינמית. המיקס נשמר.');
     blobs.push(clip);
   }
   if(!blobs.length){
@@ -266,5 +269,5 @@ async function generate(jobId,onStage,passedPrompt,passedScenes){
   return answer;
 }
 window.KolboAIFallback={generate:generate,
-  version:'1.17.0',isDirectBrowserMode:true};
+  version:'1.18.0',isDirectBrowserMode:true};
 })();

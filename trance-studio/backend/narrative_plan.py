@@ -20,6 +20,7 @@ BOUNDARY = re.compile(
     r"(?<=[.!?;,])\s+|\b(?:ואז|לאחר\s+מכן|ואחר\s+כך|אחר\s+כך|ופתאום|פתאום)\b"
 )
 MAX_STORY_SCENES = 6
+MAX_DURATION_SCENES = 24  # 5-second unique scenes can cover a 120s voice message
 
 # All English hints below require explicit matching Hebrew action in the
 # original clause. No background character/object is added without evidence.
@@ -129,8 +130,8 @@ def narrative_beats(transcript, *, max_scenes=MAX_STORY_SCENES):
     If more clauses than public free-clip quota, consecutive clauses are
     combined in adjacent chronological chunks.
     """
-    if not 1<=max_scenes<=6:
-        raise ValueError("max_scenes must be 1..6")
+    if not 1<=max_scenes<=MAX_DURATION_SCENES:
+        raise ValueError("max_scenes must be 1..24")
     clauses=_raw_clauses(transcript)
     if not clauses:
         return []
@@ -161,8 +162,8 @@ def narrative_beats(transcript, *, max_scenes=MAX_STORY_SCENES):
 
 
 
-def duration_beats(transcript, duration_seconds, *, max_scenes=MAX_STORY_SCENES):
-    """Allocate up to six genuinely new shots across the whole spoken duration.
+def duration_beats(transcript, duration_seconds, *, max_scenes=MAX_DURATION_SCENES):
+    """Allocate up to 24 genuinely new shots across the whole spoken duration.
 
     A long single clause can need multiple moving camera shots to fill its
     spoken time, but no new spoken event is invented: each shot stays on that
@@ -232,13 +233,17 @@ def scene_prompt(beat):
     )[:1450]
 
 
-def scene_prompts(transcript, *, max_scenes=MAX_STORY_SCENES, duration=None):
-    beats=(duration_beats(transcript,duration,max_scenes=max_scenes)
-           if duration is not None else narrative_beats(transcript,max_scenes=max_scenes))
+def scene_prompts(transcript, *, max_scenes=None, duration=None):
+    limit=max_scenes if max_scenes is not None else (
+        MAX_DURATION_SCENES if duration is not None else MAX_STORY_SCENES)
+    beats=(duration_beats(transcript,duration,max_scenes=limit)
+           if duration is not None else narrative_beats(transcript,max_scenes=limit))
     return [scene_prompt(b) for b in beats]
 
 
-def scene_weights(transcript, *, max_scenes=MAX_STORY_SCENES, duration=None):
-    beats=(duration_beats(transcript,duration,max_scenes=max_scenes)
-           if duration is not None else narrative_beats(transcript,max_scenes=max_scenes))
+def scene_weights(transcript, *, max_scenes=None, duration=None):
+    limit=max_scenes if max_scenes is not None else (
+        MAX_DURATION_SCENES if duration is not None else MAX_STORY_SCENES)
+    beats=(duration_beats(transcript,duration,max_scenes=limit)
+           if duration is not None else narrative_beats(transcript,max_scenes=limit))
     return [beat.word_count for beat in beats]

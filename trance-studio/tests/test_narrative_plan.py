@@ -105,6 +105,19 @@ class NarrativePlanTests(unittest.TestCase):
         self.assertTrue(all(weight>=1 for weight in weights))
         self.assertEqual(len(duration_beats('האיש מספר סיפור.',4)),1)
 
+    def test_long_narration_can_plan_distinct_5_second_scenes_across_120_seconds(self):
+        spoken='המשאית נוסעת בכביש ואחר כך החמור נוער.'
+        sixty=duration_beats(spoken,60)
+        long=duration_beats(spoken,120)
+        self.assertEqual(len(sixty),12)
+        self.assertEqual(len(long),24)
+        self.assertEqual(len(scene_prompts(spoken,duration=120)),24)
+        self.assertEqual(len(scene_weights(spoken,duration=120)),24)
+        self.assertEqual(len(set(scene_prompts(spoken,duration=120))),24)
+        self.assertEqual(long[0].shot_index,1)
+        self.assertIn('המשאית',long[0].spoken_text)
+        self.assertIn('החמור',long[-1].spoken_text)
+
     def test_no_infinite_or_unbounded_segments(self):
         self.assertEqual(narrative_beats(''),[])
         with self.assertRaises(ValueError):

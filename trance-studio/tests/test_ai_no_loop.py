@@ -32,6 +32,23 @@ class AIUniqueScenes(unittest.TestCase):
                 combine_mobile_ai_clips([clip],soundtrack,root/'out.mp4',
                                          root/'work')
 
+    def test_reject_same_visual_frames_with_different_mp4_checksum(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);original=root/'original.mp4';copied=root/'retagged.mp4'
+            media(original,'testsrc2',3)
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-i',str(original),'-map','0:v','-c','copy',
+                '-metadata','title=changed container metadata',str(copied)],
+                check=True,timeout=20)
+            self.assertNotEqual(original.read_bytes(),copied.read_bytes())
+            soundtrack=root/'mix.mp3'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i','sine=frequency=400:duration=5',
+                '-c:a','libmp3lame',str(soundtrack)],check=True)
+            with self.assertRaisesRegex(MobileClipError,'תוכן חזותי'):
+                combine_mobile_ai_clips([original,copied],soundtrack,
+                                         root/'output.mp4',root/'work')
+
     def test_reject_identical_generated_clips_even_when_named_differently(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);a=root/'a.mp4';b=root/'b.mp4'

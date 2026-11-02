@@ -19,7 +19,8 @@ from live_video import _duration, _video_profile, _make_segment, UnavailableVide
 from motion_quality import require_visible_motion, NoVisibleMotion
 
 MAX_CLIP_BYTES=10*1024*1024
-MAX_CLIPS=6
+MAX_CLIPS=24
+MAX_AI_UPLOAD_BYTES=58*1024*1024
 
 
 class MobileClipError(ValueError):
@@ -54,6 +55,34 @@ def validate_mp4_clip(path):
     return length
 
 
+
+def _visual_signature(path):
+    """Read at most three 20x20 grayscale frames for near-duplicate detection.
+
+    This accepts only local validated MP4 file paths. It detects re-encoded
+    copies of the same scene while avoiding a heavyweight video-embedding AI.
+    """
+    try:
+        result=subprocess.run([
+            "ffmpeg","-nostdin","-v","error","-i",str(path),
+            "-vf","fps=1,scale=20:20:flags=area,format=gray",
+            "-frames:v","3","-f","rawvideo","-pix_fmt","gray","pipe:1"],
+            capture_output=True,check=True,timeout=20)
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise MobileClipError("לא ניתן לבדוק את ייחודיות סצנות הווידאו") from exc
+    data=result.stdout[:3*400]
+    if len(data)<400:
+        raise MobileClipError("קובץ הווידאו אינו מכיל פריימים תקינים")
+    return data[:(len(data)//400)*400]
+
+
+def _nearly_same_video(one,two):
+    if len(one)!=len(two):
+        return False
+    # Nearly identical decoded frames (<3 grey levels on a 0-255 scale)
+    # imply the same visual content, even with a different MP4 checksum.
+    return sum(abs(a-b) for a,b in zip(one,two))/len(one)<3.0
+
 def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,weights=None):
     """Mux unique real moving AI clips, no recycled 1-second loops, with full MP3.
 
@@ -62,12 +91,22 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,weights=None):
     bounded encoding pass per small source excerpt.
     """
     if not 1<=len(paths)<=MAX_CLIPS:
-        raise MobileClipError("יש לבחור 1–6 סצנות מקוריות")
+        raise MobileClipError("יש לבחור 1–24 סצנות מקוריות")
+    if sum(Path(p).stat().st_size for p in paths)>MAX_AI_UPLOAD_BYTES:
+        raise MobileClipError("סצנות הווידאו חורגות ממגבלת 58MB להעלאה בטוחה")
     # Identical model responses may occur when seeds are reused or the
     # provider caches a short default. Never treat those as distinct scenes.
     hashes=[hashlib.sha256(Path(p).read_bytes()).digest() for p in paths]
     if len(set(hashes))!=len(hashes):
         raise MobileClipError("מנוע ה־AI החזיר אותה סצנה שוב. לא נייצר סרטון שחוזר על עצמו")
+    # A changed MP4 container/bitrate does not mean new footage. Compare
+    # decoded low-resolution frame samples, not only the file's byte hash.
+    signatures=[_visual_signature(Path(p)) for p in paths]
+    if any(_nearly_same_video(signatures[i],signatures[j])
+           for i in range(len(signatures))
+           for j in range(i+1,len(signatures))):
+        raise MobileClipError(
+            "מנוע הווידאו החזיר תוכן חזותי כמעט זהה במספר סצנות. לא נמחזר אותו")
     work=Path(work_dir)
     work.mkdir(parents=True,exist_ok=True,mode=0o700)
     output=Path(output_mp4)
@@ -111,7 +150,7 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,weights=None):
             subprocess.run(["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
                             "-f","concat","-safe","0","-i",str(manifest),
                             "-c","copy",str(silent)],
-                           cwd=work,check=True,capture_output=True,timeout=50)
+                           cwd=work,check=True,capture_output=True,timeout=120)
         else:
             silent=parts[0]
         subprocess.run(["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
@@ -119,7 +158,7 @@ def combine_mobile_ai_clips(paths,audio_mp3,output_mp4,work_dir,*,weights=None):
                         "-map","0:v:0","-map","1:a:0","-c:v","copy",
                         "-c:a","aac","-b:a","160k","-shortest",
                         "-movflags","+faststart",str(output)],
-                       capture_output=True,check=True,timeout=75)
+                       capture_output=True,check=True,timeout=120)
         codec,w,h=_video_profile(output)
         final_length=_duration(output)
         if (codec,w,h)!=("h264",360,640) or final_length<duration-.8 or final_length>duration+1.5:

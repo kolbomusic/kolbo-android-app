@@ -603,17 +603,22 @@ def create_app(config=None):
         work_dir=root/job_id/'mobile-ai-upload'
         try:
             from client_ai_fallback import (combine_mobile_ai_clips,
-                                            MobileClipError,MAX_CLIP_BYTES)
+                                            MobileClipError,MAX_CLIP_BYTES,
+                                            MAX_AI_UPLOAD_BYTES)
             clips=request.files.getlist('clip')
             from client_ai_fallback import MAX_CLIPS
             if not 1<=len(clips)<=MAX_CLIPS:
-                return jsonify(error='ניתן להעלות עד שישה קטעי וידאו לסיפור'),400
+                return jsonify(error='ניתן להעלות עד 24 קטעי וידאו לסיפור'),400
             work_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
             inputs=[]
+            total_uploaded=0
             for i,clip in enumerate(clips):
                 data=clip.stream.read(MAX_CLIP_BYTES+1)
                 if not 12000<=len(data)<=MAX_CLIP_BYTES or data[4:8]!=b'ftyp':
                     return jsonify(error='הווידאו שהתקבל אינו MP4 אמיתי או גדול מדי'),400
+                total_uploaded+=len(data)
+                if total_uploaded>MAX_AI_UPLOAD_BYTES:
+                    return jsonify(error='סך סצנות הווידאו גדול מ־58MB'),413
                 src=work_dir/f'generated-source-{i}.mp4'
                 src.write_bytes(data)
                 inputs.append(src)
