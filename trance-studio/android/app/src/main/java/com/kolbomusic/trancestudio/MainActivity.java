@@ -36,6 +36,9 @@ import android.widget.FrameLayout;
 import android.webkit.WebResourceError;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -70,6 +73,10 @@ public final class MainActivity extends Activity {
     private final Handler mainHandler=new Handler(Looper.getMainLooper());
     private long navigationId=0;
     private long incomingVersion=0;
+    private String incomingSharedLink=null;
+    private long sharedLinkVersion=0;
+    private long deliveredSharedLinkVersion=-1;
+    private long deliveredLinkNavigation=-1;
     private long lastImportedVersion=-1;
     private long lastImportNavigation=-1;
     private int automaticRetries=0;
@@ -242,6 +249,7 @@ public final class MainActivity extends Activity {
                             startupPanel.setVisibility(View.GONE);
                             offlinePanel.setVisibility(View.GONE);
                             importIncoming(); // import does not start creation
+                            importSharedLink(); // URL is only placed in UI
                         }else{
                             recoverConnection("השרת השיב דף ללא ממשק היצירה.");
                         }
@@ -282,7 +290,7 @@ public final class MainActivity extends Activity {
         startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
         loading.setVisibility(View.VISIBLE);
         webView.setVisibility(View.VISIBLE);
-        webView.loadUrl(STUDIO+"?android=243&load="+current);
+        webView.loadUrl(STUDIO+"?android=245&load="+current);
         mainHandler.postDelayed(()->{
             if(navigationId==current&&!pageReady&&!pageLoadFailed){
                 startupMessage.setText("שרת הענן החינמי מתעורר. ההקלטות שלך נשארות במכשיר...");
@@ -328,6 +336,23 @@ public final class MainActivity extends Activity {
                 Collections.singletonMap("Cache-Control","no-store"),
                 new ByteArrayInputStream(new byte[0]));
     }
+    private static String firstHttpsLink(String text){
+        if(text==null||text.length()>8192)return null;
+        Matcher match=Pattern.compile("https://\\S+",Pattern.CASE_INSENSITIVE).matcher(text);
+        if(!match.find())return null;
+        String link=match.group();
+        while(link.endsWith(".")||link.endsWith(",")||
+              link.endsWith(")")||link.endsWith("]"))
+            link=link.substring(0,link.length()-1);
+        try{
+            Uri target=Uri.parse(link);
+            String authority=target.getAuthority();
+            if("https".equalsIgnoreCase(target.getScheme())&&
+                target.getHost()!=null&&authority!=null&&
+                !authority.contains("@")&&link.length()<=2048)return link;
+        }catch(Exception ignored){}
+        return null;
+    }
     private void collectIncoming(Intent intent){
         if(intent==null)return;
         String action=intent.getAction();
@@ -347,6 +372,20 @@ public final class MainActivity extends Activity {
                 if(uri!=null)candidates.add(uri);
             }
         }
+        // Real media content is preferred. Social apps often share a URL.
+        String link=null;
+        if(candidates.isEmpty()){
+            link=firstHttpsLink(intent.getStringExtra(Intent.EXTRA_TEXT));
+            if(link==null&&intent.getClipData()!=null){
+                for(int i=0;i<Math.min(4,intent.getClipData().getItemCount());i++){
+                    CharSequence raw=intent.getClipData().getItemAt(i).getText();
+                    link=firstHttpsLink(raw==null?null:raw.toString());
+                    if(link!=null)break;
+                }
+            }
+        }
+        incomingSharedLink=link;
+        sharedLinkVersion++;
         incoming.clear();
         incomingVersion++;
         long totalBytes=0;
@@ -408,6 +447,17 @@ public final class MainActivity extends Activity {
                 +"if(window.KolboAndroid)window.KolboAndroid.importFailure();}})();";
         webView.evaluateJavascript(js,null);
     }
+    private void importSharedLink(){
+        if(!pageReady||incomingSharedLink==null)return;
+        if(deliveredSharedLinkVersion==sharedLinkVersion&&
+           deliveredLinkNavigation==navigationId)return;
+        deliveredSharedLinkVersion=sharedLinkVersion;
+        deliveredLinkNavigation=navigationId;
+        // Escape across Java/JS boundary; never evaluate text as code.
+        String script="if(window.kolboReceiveSharedLink)window.kolboReceiveSharedLink("+
+                JSONObject.quote(incomingSharedLink)+");";
+        webView.evaluateJavascript(script,null);
+    }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);
         setIntent(intent);
@@ -433,6 +483,7 @@ public final class MainActivity extends Activity {
                     }
                     collectIncoming(intent);
                     importIncoming();
+                    importSharedLink();
                 });
         }else{
             // Keep the shared URI for import after slow Render cold start.
