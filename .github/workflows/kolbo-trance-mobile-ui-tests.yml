@@ -1,0 +1,26 @@
+name: Kolbo Trance focused Hebrew mobile UX and link import checks
+on:
+  push:
+    branches:
+      - kolbo-trance-clean-simple-social-ui-20261102
+      - kolbo-trance-studio-20261031
+    paths:
+      - 'trance-studio/web/studio.html'
+      - 'trance-studio/tests/test_simple_mobile_ui.js'
+      - 'trance-studio/tests/test_social_link_share.js'
+      - 'trance-studio/tests/test_manual_share.js'
+      - '.github/workflows/kolbo-trance-mobile-ui-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  simple-import-and-create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check social link import and explicit Create safety
+        run: |
+          node trance-studio/tests/test_simple_mobile_ui.js
+          node trance-studio/tests/test_social_link_share.js
+          node trance-studio/tests/test_manual_share.js

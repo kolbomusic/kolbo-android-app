@@ -11,6 +11,7 @@ on:
       - kolbo-trance-native-startup-recovery-20261102
       - kolbo-trance-share-no-reload-244-20261102
       - kolbo-trance-link-share-245-20261102
+      - kolbo-trance-clean-simple-social-ui-20261102
     paths:
       - 'trance-studio/android/**'
       - 'trance-studio/web/studio.html'
@@ -23,6 +24,7 @@ on:
       - 'trance-studio/web/studio-ai-fallback.js'
       - 'trance-studio/tests/test_narrative_plan.py'
       - 'trance-studio/tests/test_manual_share.js'
+      - 'trance-studio/tests/test_simple_mobile_ui.js'
       - 'trance-studio/tests/test_live_video.py'
       - '.github/workflows/kolbo-trance-android.yml'
 permissions:
@@ -74,6 +76,7 @@ jobs:
           node trance-studio/tests/test_manual_share.js
           node trance-studio/tests/test_native_share_resume.js
           node trance-studio/tests/test_social_link_share.js
+          node trance-studio/tests/test_simple_mobile_ui.js
       - name: Build installable Android APK
         run: gradle --no-daemon --stacktrace -p trance-studio/android :app:assembleDebug
       - name: Verify APK and prepare distribution

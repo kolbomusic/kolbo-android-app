@@ -37,37 +37,49 @@ button:disabled{opacity:.6;cursor:not-allowed}button.secondary{background:#37294
 :focus-visible{outline:3px solid #e9b6ff;outline-offset:3px}
 #status{padding:14px 0;color:#e5d6fc;min-height:25px}progress{width:100%;height:16px;accent-color:#c47aff;border-radius:10px}
 audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46b;border-radius:13px;background:#372d27;color:#fff3d8;white-space:pre-wrap;line-height:1.6;margin:13px 0}#result{display:none}#result.visible{display:block}
-#files{margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.foot{text-align:center;color:#9286ab;font-size:12px;padding-top:22px}
+#files{margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+#sourcePanel details{margin:16px 0}
+#sourcePanel summary{font-size:15px;line-height:1.6}
+#socialLinkPanel[open]{padding-bottom:9px}
+#aiConsentWrap{margin-top:12px}
+#aiConsentWrap .videoToggle{line-height:1.55}
+#aiConsentWrap small{display:block;margin:9px 4px}
+[hidden]{display:none!important}
+#generate:disabled{opacity:.55}.foot{text-align:center;color:#9286ab;font-size:12px;padding-top:22px}
 @media(max-width:560px){.grid{grid-template-columns:1fr}main{padding:16px 10px 92px}.panel{padding:16px}h1{font-size:clamp(29px,8vw,42px)}#creationActions{position:sticky;bottom:6px;z-index:4;background:#1a1229;border:1px solid #786190;padding:9px;border-radius:14px;box-shadow:0 10px 26px #05020ad9}#creationActions button{min-height:58px}#stages span{font-size:11px;padding:10px 2px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 </style>
 </head>
 <body><main>
 <header><div class="brand">≋ KOLBO / TRANCE STORY</div><h1>ההקלטה שלך.<br><span>טראנס מצחיק וסרטון אמיתי.</span></h1><p>שיתוף ישיר מ־WhatsApp, פענוח עברית ויצירת סרטון מהסיפור. אפשר להשתמש בצילומים קיימים או לנסות יצירת סצנה חדשה באמצעות AI. בלי גלי קול במקום סרטון.</p><div id="nativeStatus" hidden>● גרסת Android · שיתוף טוען קובץ בלבד</div></header>
-<section class="panel"><h2>01 / ההקלטות שלך</h2>
-<label for="audio">הוסף עד 4 הקלטות קול או סרטוני WhatsApp</label><input id="audio" type="file" accept="audio/*,video/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac,.3gp,.3gpp,.mov" multiple>
+<section class="panel" id="sourcePanel"><h2>1. בוחרים הקלטה או סרטון</h2>
+<label for="audio">בחר קובץ מהמכשיר (או שתף ישירות מ־WhatsApp)</label><input id="audio" type="file" accept="audio/*,video/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac,.3gp,.3gpp,.mov" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות להקלטה · עד 15MB לקובץ שמע או 45MB לסרטון · עד 60MB לכל ההעלאה.</div>
-<p class="quickNote">אפשר לשתף גם קישור לסרטון ציבורי מרשת חברתית, או קובץ מקומי. היצירה מתחילה רק בלחיצה על כפתור היצירה.</p>
-<div id="socialLinkPanel" class="advanced">
-<label for="sourceLink">קישור לסרטון או להקלטה מרשת חברתית</label>
+<p class="quickNote">בחר קובץ ואז לחץ ״צור״. אפשר גם לשתף קובץ ישירות מ־WhatsApp. קישור מאתר חברתי הוא אפשרות ניסיונית ולא תמיד אפשר להוריד ממנו את המדיה.</p>
+<details id="socialLinkPanel" class="advanced">
+<summary>יש לי קישור מ־Facebook / TikTok במקום קובץ</summary>
+<label for="sourceLink">הדבק קישור לסרטון ציבורי</label>
 <input id="sourceLink" type="url" dir="ltr" inputmode="url" placeholder="https://www.tiktok.com/... או https://www.facebook.com/...">
-<small>תומך בקישורים ציבוריים מאתרים מזוהים. תוכן פרטי או מוגן לא ייובא. עד שתי דקות, 45MB לסרטון ו־15MB לשמע.</small>
+<small>קישור שיתוף Facebook (למשל ‎/share/v/‎) עלול לא להיפתח גם כשהסרטון ציבורי. אין גישה לסרטונים שמחייבים כניסה או שאינם מורשים להורדה. במקרה כזה יש לשתף או לבחור את קובץ הווידאו עצמו.</small>
 <label class="videoToggle"><input type="checkbox" id="linkRights"> <span>יש לי הרשאה להשתמש במדיה הזו</span></label>
-<button type="button" class="secondary" id="importLink">ייבא מדיה מהקישור (ללא יצירה)</button>
+<button type="button" class="secondary" id="importLink">נסה לייבא את הקובץ מהקישור</button>
 <div id="linkStatus" role="status" aria-live="polite" class="hint"></div>
-</div>
-<label for="video_strategy">איזה סרטון ליצור?</label>
+</details>
+<label for="video_strategy">2. מה להכין מההקלטה?</label>
 <select id="video_strategy">
-<option value="new_story" selected>יצירת סרטון חדש עם AI מהדיבור — ללא צילום המקור</option>
-<option value="illustrated_story">המחשה עם צילומים חופשיים שמתאימים לדיבור — ללא צילום המקור</option>
-<option value="remix_original">עריכה יצירתית של הסרטון המקורי ששלחתי</option>
+<option value="new_story" selected>סרטון AI חדש לפי הדיבור (ניסיוני)</option>
+<option value="illustrated_story">סרטון המחשה מצילומים קיימים</option>
+<option value="remix_original">ערוך מחדש את הווידאו שלי</option>
+<option value="audio_only">מיקס טראנס מצחיק — סאונד בלבד</option>
 </select>
-<small id="videoStrategyHelp">AI חדש: המערכת מנסה ליצור סצנות חדשות מתוך התמלול, בכפוף לזמינות חינמית ולהסכמתך לשיתוף הטקסט. היא לא תחליף אותן בצילום המקורי או במאגר. קיימת גם המחשה מצילומים חופשיים, בנפרד. עריכת מקור דורשת קובץ וידאו.</small>
-<label class="videoToggle"><input id="make_video" type="checkbox" checked> <span>הפק גם סרטון וידאו לפי מה שנאמר (MP4)</span></label>
-<label class="videoToggle" for="ai_video_consent"><input id="ai_video_consent" type="checkbox"> <span>נסה גם ליצור סצנה חדשה באמצעות AI לפי הדיבור — ניסיוני וחינמי</span></label>
-<small id="aiVideoPrivacy">אם מסמנים: הטקסט שהמנוע זיהה מההקלטה נשלח לשירות AI ציבורי ב־Hugging Face. קובץ הקול עצמו אינו נשלח לשם. הווידאו עשוי להיות קצר, לחזור על עצמו או לא לדייק בכל האירועים; השירות החינמי כפוף לתורים ולמכסות. בלי סימון, המערכת משתמשת רק בצילומים קיימים בעלי רישיון.</small>
+<small id="videoStrategyHelp">כדי ליצור סצנה חדשה, המערכת תנסה להשתמש במנוע AI חינמי. השירות מוגבל ואינו מבטיח סרטון בכל בקשה.</small>
+<input id="make_video" type="checkbox" checked hidden>
+<div id="aiConsentWrap">
+<label class="videoToggle" for="ai_video_consent"><input id="ai_video_consent" type="checkbox"> <span>אני מסכים לשלוח את התמלול בלבד לשירות AI ציבורי לצורך יצירת הסרטון</span></label>
+<small id="aiVideoPrivacy">קובץ הקול לא נשלח למנוע הווידאו החיצוני. שירות ה־AI החינמי עלול להיות עמוס או מוגבל; ייתכן שיתקבל רק מיקס שמע, ללא MP4. הסכמה זו נדרשת רק לבחירת סרטון AI חדש.</small>
+</div>
 </section>
-<section class="panel"><h2>02 / סאונד מצחיק, מסודר ומקצועי</h2>
+<section class="panel"><h2>3. בוחרים סגנון סאונד</h2>
 <p class="hint">המיקס מסודר סביב הקול המקורי: המלודיה מגיבה להפסקות ולמשפטים, האפקטים מתוזמנים לפי הפסקות אמיתיות והסיפור שזוהה. אין הבטחה לזיהוי כל מילה במדויק.</p>
 <label for="creativePreset">איך יישמע המיקס?</label>
 <select id="creativePreset">
@@ -188,9 +200,9 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <audio id="studioPlayer" controls hidden preload="metadata" style="width:100%"></audio>
 <p class="hint">הפרדת שירה ופלייבק מתוך שיר מעורב, והחלפת גוון קול ב־AI Cover, יופעלו רק כשיותקן מנוע הפרדה והמרת קול אמיתי. קישור YouTube מיועד לתצוגה מקדימה, לא להורדה ועיבוד מתוך השירות.</p>
 </section>
-<section class="panel"><h2>03 / יוצרים ומנגנים</h2>
+<section class="panel"><h2>4. מתחילים יצירה</h2>
 <div id="stages" aria-label="שלבי הפקה"><span data-step="upload" data-state="current">1. העלאה</span><span data-step="recognize">2. דיבור</span><span data-step="mix">3. טראנס</span><span data-step="video">4. סרטון</span></div>
-<div class="actions" id="creationActions"><button id="generate" type="button" disabled>✦ צור סרטון ומיקס — התחל יצירה</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
+<div class="actions" id="creationActions"><button id="generate" type="button" disabled>✦ צור סרטון ומיקס</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
 <div id="status" role="status" aria-live="polite">מוכן להקלטה שלך.</div>
 <progress id="progress" max="100" value="0" hidden></progress>
 
@@ -229,12 +241,17 @@ if(window.KolboAndroid){$('nativeStatus').hidden=false;$('install').hidden=true;
 try{$('ai_video_consent').checked=localStorage.getItem('kolbo_trance_ai_video_consent_v1')==='yes'}catch(e){}
 function explainVideoStrategy(){
  var mode=$('video_strategy').value;
- $('videoStrategyHelp').textContent=mode==='new_story'?
-  'AI חדש לגמרי: חובה להסכים במפורש לשליחת התמלול בלבד לשרת היצירה הציבורי. אם השרת החינמי אינו זמין לא יוחזר סרטון מקורי או צילום מאגר.' :
-  mode==='illustrated_story'?
-  'המחשה מצילומים חופשיים לפי מה שנאמר, ללא שליחת תמלול למנוע AI וללא חזרה לסרטון המקורי. החומר המצולם איננו חדש וייתכן שרק חלק מהאירועים יומחשו.' :
-  'עריכה מחודשת של הווידאו שהעלית עם חיתוכים, שינויי מהירות וקצב. הסרטון אינו חדש מבחינת האירועים המצולמים.';
+ $('make_video').checked=mode!=='audio_only';
+ $('aiConsentWrap').hidden=mode!=='new_story';
  $('ai_video_consent').disabled=mode!=='new_story';
+ $('videoStrategyHelp').textContent=mode==='new_story'?
+  'ייווצר מיקס קולי, וננסה גם סרטון חדש לפי הדיבור. יצירת MP4 תלויה בזמינות מנוע AI חינמי ולא מובטחת.' :
+  mode==='illustrated_story'?
+  'ננסה להרכיב סרטון המחשה מצילומים קיימים ומורשים לפי הדיבור. אין זו יצירת סצנה חדשה ב־AI.' :
+  mode==='remix_original'?
+  'נערוך את הסרטון שהעלית בעזרת חיתוכים וקצב. זו לא יצירת אירועים חדשים.' :
+  'ניצור מיקס טראנס מההקלטה בלבד, ללא וידאו.';
+ $('generate').textContent=mode==='audio_only'?'✦ צור מיקס טראנס': '✦ צור סרטון ומיקס';
 }
 $('video_strategy').addEventListener('change',explainVideoStrategy);
 explainVideoStrategy();
@@ -295,7 +312,8 @@ window.kolboReceiveSharedLink=function(url){
  if(active){message('מיקס פעיל. הקישור החדש לא יחליף אותו.');return;}
  if(typeof url!=='string'||url.length>2048)return;
  $('sourceLink').value=url;
- $('linkStatus').textContent='התקבל קישור. בדוק את ההרשאות ובחר ״ייבא מדיה״. היצירה לא מתחילה אוטומטית.';
+ $('socialLinkPanel').open=true;
+ $('linkStatus').textContent='הקישור התקבל. אשר את זכויות השימוש ולחץ ״נסה לייבא״. קישורי Facebook עשויים להיחסם גם כשהסרטון ציבורי.';
  $('socialLinkPanel').scrollIntoView({behavior:'smooth',block:'center'});
 };
 // Sharing a link never starts network access or AI generation automatically.
@@ -327,7 +345,9 @@ $('importLink').onclick=async function(){
   $('linkStatus').textContent='המדיה יובאה. ניתן לבחור הגדרות וליצור בלחיצה שלך.';
   message('הקישור נטען כמדיה; היצירה עדיין לא התחילה.');
  }catch(error){
-  $('linkStatus').textContent='ייבוא הקישור נכשל: '+(error.message||'המדיה אינה נגישה');
+  var fb=/^(?:www\.|m\.|web\.)?facebook\.com$|^fb\.watch$/i.test(u.hostname);
+  $('linkStatus').textContent='הייבוא נכשל: '+(error.message||'המדיה אינה נגישה')+
+    (fb?' קישורי שיתוף Facebook לא תמיד מספקים קובץ להורדה. אם אפשר, שתף את קובץ הסרטון עצמו לאפליקציה או בחר אותו מהמכשיר.':' נסה להוסיף את קובץ המדיה ישירות מהמכשיר.');
  }finally{button.disabled=false}
 };
 window.kolboImportSharedAudio=function(items){
@@ -627,7 +647,7 @@ for(var fileIndex=0;fileIndex<files.length;fileIndex++){
 if(hashes.length===files.length)form.set('source_hashes',hashes.join(','));
 form.set('style',$('style').value);form.set('melody',$('melody').value);
 form.set('humor',$('humor').value);form.set('seconds',$('length').value);
-form.set('video_strategy',$('video_strategy').value);
+form.set('video_strategy',$('video_strategy').value==='audio_only'?'illustrated_story':$('video_strategy').value);
 var licensedMusic=$('backingMusic').files[0];
 if(licensedMusic){
  if(!$('musicRights').checked){throw new Error('יש לאשר זכויות שימוש בקובץ המוזיקה לפני יצירת המיקס.')}
