@@ -192,7 +192,10 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
 
     def home():
         u=me()
-        actions=('<a class="cta" href="/directory">🔎 איתור חברים</a><a class="cta alt" href="/new-post">📸 שתפו סיפור, אירוע או תמונות</a><a class="cta alt" href="/my-posts">📝 הפרסומים שלי</a><a class="cta alt" href="/chats">💬 הודעות</a>' if u else '<a class="cta" href="/register">🦏 הייתי שם — מצטרפים</a><a class="cta alt" href="/login">🔑 כבר חברים? כניסה לחשבון</a>')
+        share_actions='<a class="cta" href="/new-post">📸 שתפו סיפור, אירוע או תמונות</a><a class="cta alt" href="/my-posts">📝 הפרסומים שלי</a>'
+        actions=(share_actions+'<a class="cta alt" href="/directory">🔎 איתור חברים</a><a class="cta alt" href="/chats">💬 הודעות</a>' if u and u["approved"] else
+                 share_actions+'<p class="muted">אפשר להעלות תוכן לביקורת. מדריך החברים והצ׳אט ייפתחו לאחר אישור חברות.</p>' if u else
+                 '<a class="cta" href="/register">🦏 הייתי שם — מצטרפים</a><a class="cta alt" href="/login">🔑 כבר חברים? כניסה לחשבון</a>')
         b='<section class="mast"><span class="kicker">401 / 46 / פלוגה ב׳ • 2003–2006</span><h1>עשרים שנה עברו.<br>החברים עדיין כאן.</h1><p>הקרנפים, שלימים נקראו ברקן. בית לקולות, לסיפורים, לתמונות ולחברים ששירתו איתנו. כאן מתחברים מחדש — ושומרים יחד על המורשת.</p><div class="actions">'+actions+'</div></section>'
         b+='<section class="photo-heritage"><figure><img loading="lazy" src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Merkava-4-tank-6611a-white1.jpg/1280px-Merkava-4-tank-6611a-white1.jpg" alt="טנק מרכבה סימן 4 — צילום המחשה מארכיון Wikimedia Commons"><figcaption>טנק מרכבה סימן 4, צילום המחשה משנת 2015 — <strong>לא תצלום של פלוגת הקרנפים</strong>. צילום: <a href="https://commons.wikimedia.org/wiki/File:Merkava-4-tank-6611a-white1.jpg" target="_blank" rel="noopener noreferrer">צחי אבנור / MathKnight, Wikimedia Commons</a>, רישיון <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>.</figcaption></figure><div><h2>התמונות שלנו מתחילות כאן</h2><p>תצלומים מקוריים מהפלוגה יופיעו לאחר שחברים יעלו אותם, יסכימו לשיתוף ויאושרו על ידי מנהלי הקהילה.</p><a class="cta" href="/photos">📸 לאלבום התמונות</a></div></section>'
         b+=statistics()
