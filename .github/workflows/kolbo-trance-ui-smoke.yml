@@ -27,6 +27,17 @@ jobs:
         run: gradle --no-daemon -p trance-studio/android :app:assembleDebug
       - name: Install screenshot inspector
         run: python -m pip install --disable-pip-version-check pillow
+      - name: Enable GitHub hosted runner hardware virtualization
+        run: |
+          set -eu
+          if [ -c /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+            test -r /dev/kvm && test -w /dev/kvm
+          else
+            echo "::error::GitHub runner lacks /dev/kvm; real Android visual validation is unavailable"
+            exit 1
+          fi
       - name: Boot Android and assert non-black, visible native startup UI
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -34,7 +45,9 @@ jobs:
           arch: x86_64
           target: google_apis
           profile: pixel_5
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          emulator-boot-timeout: 360
+          disable-linux-hw-accel: false
           script: |
             set -e
             adb install -r trance-studio/android/app/build/outputs/apk/debug/app-debug.apk
