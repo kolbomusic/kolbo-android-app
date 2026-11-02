@@ -12,9 +12,55 @@ from urllib import request as http
 
 PUBLIC_ORIGIN="https://karnafim-community-46.onrender.com"
 
+def mail_transport():
+    """Mail route is server-selected; the website never receives Gmail credentials."""
+    if os.getenv("KARNAFIM_MAIL_TRANSPORT","").strip().lower()=="gmail_queue":
+        return "gmail_queue"
+    return "resend"
+
 def delivery_ready():
+    if mail_transport()=="gmail_queue":
+        return (os.getenv("KARNAFIM_GMAIL_QUEUE_ENABLED","0")=="1"
+                and bool(os.getenv("DATABASE_URL","").strip()))
     return bool(os.getenv("KARNAFIM_RESEND_API_KEY","").strip()
                 and os.getenv("KARNAFIM_MAIL_FROM","").strip())
+
+def queue_confirmation(address,token):
+    """Queue for an authorized Gmail sender; never expose Gmail credentials in app.
+
+    The token-bearing link is held only until dispatch, then immediately redacted.
+    Shared database advisory lock enforces a small account-wide daily allowance.
+    """
+    if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+",address or ""):
+        return False
+    if digest_token(token) is None:
+        return False
+    import psycopg
+    try:
+        with psycopg.connect(os.environ["DATABASE_URL"],connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(460021119)")
+                cur.execute("""SELECT COUNT(*) FROM email_outbox
+                    WHERE created_at>NOW()-INTERVAL '24 hours'""")
+                if cur.fetchone()[0]>=20:
+                    return False
+                cur.execute("""SELECT COUNT(*) FROM email_outbox
+                    WHERE lower(to_address)=lower(%s)
+                    AND created_at>NOW()-INTERVAL '24 hours'""",(address,))
+                if cur.fetchone()[0]>=3:
+                    return False
+                cur.execute("""SELECT COUNT(*) FROM email_outbox
+                    WHERE lower(to_address)=lower(%s)
+                    AND created_at>NOW()-INTERVAL '20 minutes'""",(address,))
+                if cur.fetchone()[0]>=1:
+                    return False
+                cur.execute("""INSERT INTO email_outbox
+                    (kind,to_address,verification_url,status,expires_at)
+                    VALUES('verification',%s,%s,'pending',NOW()+INTERVAL '24 hours')""",
+                    (address,PUBLIC_ORIGIN+"/verify-email?token="+token))
+        return True
+    except (psycopg.Error, OSError, ValueError, KeyError):
+        return False
 
 def issue_token():
     token=secrets.token_urlsafe(36)
@@ -29,6 +75,8 @@ def send_confirmation(address,token):
     """Returns True only when the provider accepted the verification email."""
     if not delivery_ready():
         return False
+    if mail_transport()=="gmail_queue":
+        return queue_confirmation(address,token)
     import json
     from urllib.error import HTTPError,URLError
     url=PUBLIC_ORIGIN+"/verify-email?token="+token
