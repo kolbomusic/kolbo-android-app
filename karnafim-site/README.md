@@ -1,23 +1,35 @@
 # הקרנפים | ברקן — קהילת יוצאי פלוגה ב׳
 
-Hebrew RTL heritage and veterans community. PostgreSQL via Neon; Flask on Render. Membership approval is separate from Google account authentication.
+אתר Flask בעברית RTL, מסד נתונים PostgreSQL ב־Neon ואירוח ב־Render. קהילה פרטית, אישור חברות על ידי מנהל בנפרד מאימות זהות.
 
-## Security incident: read-only mode
+## שחזור הכניסה המקורית — 2.11.2026
 
-Google Safe Browsing currently flags the `karnafim-community-46.onrender.com` host. Keep account sign-in, member lookup, contact requests, chat, photo uploads and moderation writes disabled. The public archive and memorial pages are available without collecting visitor passwords.
+הוחזר למערכת מסלול הדוא״ל והסיסמה המקוריים, ללא תלות ב־Google. גיבובי הסיסמאות הישנים מסוג PBKDF2-SHA256 נשארים במסד הנתונים ולא אופסו. הקוד תומך בכניסה לחשבון קיים, הגנת CSRF, הגבלת ניסיונות, בקשת חברות חדשה באישור מפורש, שינוי סיסמה וביטול התחברויות קודמות באמצעות `session_version`.
 
-**Three independent release conditions are required to restore private features:**
+**אין לפרסם טפסי כניסה בזמן אזהרת Google Safe Browsing.** ההתחברות המקומית הוכנה ונבדקה עם משתמש סינתטי בלבד. לא בוצע מבחן התחברות לסיסמה האישית האמיתית של משתמש, ואין לנסות להתחבר דרך אזהרת Chrome.
 
-- `KARNAFIM_MAINTENANCE=0`
-- `KARNAFIM_SAFETY_RELEASE_APPROVED=1`
-- Google identity must be explicitly enabled and validated. Classic mode (`KARNAFIM_GOOGLE_AUTH_MODE=oauth`) requires a confidential `GOOGLE_CLIENT_SECRET`. Google Identity Services (`KARNAFIM_GOOGLE_AUTH_MODE=gis`) uses Google's signed ID token and public JWKS and requires only a valid `GOOGLE_CLIENT_ID`, but still requires the `KARNAFIM_GOOGLE_AUTH_ENABLED=1` flag and all safety-release gates.
+תנאי הפעלה משולבים, רק לאחר הסרת האזהרה ואישור בטיחות מפורש:
 
-If any condition is missing or invalid, the server boots read-only without reading the private database. Never set the release-approval variable before a verified clean Google Safe Browsing classification and passing security regression tests. The release flag is an operator approval, *not* an automatic Google API status check.
+- `KARNAFIM_AUTH_METHOD=local` — ברירת המחדל החדשה. `google` הוא מסלול חלופי בלבד.
+- `KARNAFIM_LOCAL_AUTH_ENABLED=1` — מציין שמותר מסלול מקומי; ברירת המחדל היא כבוי.
+- `KARNAFIM_SAFETY_RELEASE_APPROVED=1` — חובה רק לאחר בדיקת Google מאומתת, לא על סמך בדיקות CI.
+- `KARNAFIM_MAINTENANCE=0` — חובה לצאת ממצב ציבורי לקריאה בלבד.
+- `KARNAFIM_ALLOW_REGISTRATION=1` — אופציונלי; הרשמות חדשות סגורות כברירת מחדל. בחברות חדשה `approved=false` עד אישור מנהל.
 
-Staged GIS mode uses the existing Google Web client ID and verified Google RS256 ID token, Google's public JWKS, double-submit cookie CSRF, one-time session nonce, issuer, audience, subject, expiry and verified-email checks. Google's button posts securely to the existing configured redirect `https://karnafim-community-46.onrender.com/auth/google/callback`; no extra OAuth client secret is required. The default remains classic confidential OAuth until the operator explicitly switches to GIS. **Do not enable either method while Chrome warns about this host.** Run `python karnafim-site/tests/test_google_gis.py` to verify local cryptography and forgery defenses. An actual Google login must still be tested after Safe Browsing clearance. Never commit secrets or display them in logs.
+אם אפילו תנאי חובה אחד לא מתקיים, האתר עולה לצפייה ציבורית בלבד בלי לקרוא את מסד החברים ובלי להציג טפסי סיסמה. ביטול תחזוקה בלבד אינו פותח חשבונות.
 
-Set `SECRET_KEY`, `DATABASE_URL` and `ADMIN_EMAIL` privately. Admins and other members must be approved in the DB; Google verifies identity, not military service. Do not display personal details or contact information without member opt-in.
+לבדיקת השחזור ללא פרטי משתמש אמיתיים:
+`python karnafim-site/tests/test_local_account_recovery.py`
 
-## Read-only checks
+## מסלול Google אופציונלי
 
-`python -m unittest discover -s karnafim-site/tests -p 'test_readonly_boot.py' -v` tests that both ordinary maintenance and a misconfigured maintenance-off switch remain private. `python karnafim-site/security_regression.py --live` checks public routes, retired credential pages and response security headers. Google Safe Browsing reviews remain an external decision; a successful deploy does not clear the browser warning.
+הקוד הקודם של Google Identity Services / OAuth נשמר להבטחת אפשרות חזרה, אך אינו נדרש לכניסה המקומית. כדי להשתמש בו בעתיד נדרש `KARNAFIM_AUTH_METHOD=google`, אישור בטיחות ואימות תצורה דרך `KARNAFIM_GOOGLE_AUTH_ENABLED` והנתונים של Google. אין לפתוח אחד המסלולים כל עוד הדפדפן מזהיר.
+
+## פריסה ובדיקות
+
+- `SECRET_KEY`, `DATABASE_URL`, `ADMIN_EMAIL` נשארים כערכי סוד ב־Render.
+- `python -m unittest discover -s karnafim-site/tests -p 'test_readonly_boot.py' -v` מאמת נעילת גישה.
+- `python karnafim-site/security_regression.py --live --expect-revision SHA` בודק התאמת הגרסה והתנהגות השרת.
+- מסלול Google Safe Browsing ב־GitHub שומר ראיות. סיווג אחרון שנבדק: `some_pages_unsafe`; אין להכריז על הסרת האזהרה ללא בדיקה מחדש.
+
+האזהרה של Google היא החלטה חיצונית. הצלחת GitHub/Render אינה מבטלת אותה. כתובות /login, /register, /password ו-/auth/google/* מחזירות HTTP 410 במצב תחזוקה; נתיבי מידע אישי נשארים סגורים.
