@@ -50,7 +50,7 @@ class PublicFacebookLinkImportTest(unittest.TestCase):
             "https://www.facebook.com/watch/?v=1800066080991078",
         ]
         seen=[]
-        def fake_download(url,folder,*,deadline,format_spec):
+        def fake_download(url,folder,*,deadline,format_spec,impersonate=False):
             seen.append(url)
             if len(seen)==1:return "extractor"
             (folder/"shared.mp4").write_bytes(b"a"*4096)
