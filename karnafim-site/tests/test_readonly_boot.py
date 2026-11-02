@@ -108,62 +108,26 @@ assert c.get("/directory").status_code == 503
         )
         self.assertEqual(0, result.returncode, result.stdout + "\\n" + result.stderr)
 
-    def test_release_flags_cannot_bypass_missing_google_oauth_credentials(self):
-        # Even two accidentally enabled flags must not expose the private DB
-        # when the real Google OAuth client secret is missing.
-        env = os.environ.copy()
-        env["SECRET_KEY"] = "test-readonly-oauth-gate-not-production"
-        env["KARNAFIM_MAINTENANCE"] = "0"
-        env["KARNAFIM_SAFETY_RELEASE_APPROVED"] = "1"
-        env["KARNAFIM_GOOGLE_AUTH_ENABLED"] = "1"
-        env["GOOGLE_CLIENT_ID"] = "761981450509-3bvp5njfhghvrsitipl0vcde0g92q9h.apps.googleusercontent.com"
-        env.pop("GOOGLE_CLIENT_SECRET", None)
-        env.pop("DATABASE_URL", None)
-        code = """
+    def test_local_accounts_cannot_start_without_explicit_authorization(self):
+        # Any missing release flag keeps personal data and forms inaccessible.
+        env=os.environ.copy()
+        env.update({"SECRET_KEY":"readonly-test-not-production",
+                    "KARNAFIM_MAINTENANCE":"0",
+                    "KARNAFIM_SAFETY_RELEASE_APPROVED":"1",
+                    "KARNAFIM_LOCAL_AUTH_ENABLED":"0"})
+        env.pop("DATABASE_URL",None)
+        code="""
 import app as site
 assert site.READ_ONLY_BOOT
-client = site.app.test_client()
-assert client.get('/health').json['access'] == 'read_only'
-assert client.get('/login').status_code == 410
-assert client.get('/directory').status_code == 503
+client=site.app.test_client()
+assert client.get('/login').status_code==410
+assert client.get('/register').status_code==410
+assert client.get('/new-post').status_code==503
+assert client.get('/verify-email').status_code==404
 """
-        result = subprocess.run(
-            [sys.executable, "-c", code],
-            cwd=str(SITE_DIR), env=env, text=True, capture_output=True, timeout=20,
-        )
-        self.assertEqual(0, result.returncode, result.stdout + "\\n" + result.stderr)
-
-    def test_gis_identity_cannot_bypass_safety_hold(self):
-        # A configured secretless Google Sign-In mode does not authorize
-        # publishing member data while Chrome still warns about this host.
-        env = os.environ.copy()
-        env.update({
-            "SECRET_KEY": "offline-safety-release-check",
-            "GOOGLE_CLIENT_ID": "761981450509-3bvp5njfhghvrsitipl0vcde0g92q9h.apps.googleusercontent.com",
-            "KARNAFIM_GOOGLE_AUTH_ENABLED": "1",
-            "KARNAFIM_GOOGLE_AUTH_MODE": "gis",
-            "KARNAFIM_MAINTENANCE": "0",
-            "KARNAFIM_SAFETY_RELEASE_APPROVED": "0",
-        })
-        env.pop("GOOGLE_CLIENT_SECRET", None)
-        env.pop("DATABASE_URL", None)
-        code = """
-import app
-from google_identity import enabled,auth_mode
-assert enabled() and auth_mode() == 'gis'
-assert app.READ_ONLY_BOOT
-c = app.app.test_client()
-assert c.get('/health').json['access'] == 'read_only'
-assert c.get('/login').status_code == 410
-assert c.get('/directory').status_code == 503
-assert c.post('/auth/google/callback').status_code == 410
-"""
-        result = subprocess.run(
-            [sys.executable, "-c", code],
-            cwd=str(SITE_DIR), env=env, text=True,
-            capture_output=True, timeout=20,
-        )
-        self.assertEqual(0, result.returncode, result.stdout + "\\n" + result.stderr)
+        result=subprocess.run([sys.executable,"-c",code],
+            cwd=str(SITE_DIR),env=env,text=True,capture_output=True,timeout=20)
+        self.assertEqual(0,result.returncode,result.stdout+"\\n"+result.stderr)
 
     def test_maintenance_off_cannot_bypass_the_security_release_lock(self):
         # A single wrong Render environment edit must not start the database
