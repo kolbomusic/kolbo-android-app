@@ -134,7 +134,14 @@ def harden_responses(resp):
  resp.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
  resp.headers.setdefault("Cross-Origin-Resource-Policy","same-origin")
  resp.headers.setdefault("Permissions-Policy","camera=(), geolocation=(), microphone=(self)")
- if request.path in ("/login", "/register") and not READ_ONLY_BOOT and google_ready() and google_auth_mode()=="gis":
+ if request.path in ("/login", "/register", "/password") and not READ_ONLY_BOOT and AUTH_METHOD=="local":
+  # Original local account forms never load Google scripts or frames.
+  resp.headers["Content-Security-Policy"]=(
+   "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; "
+   "script-src 'sha256-" + _A11Y_JS_SHA256 + "'; "
+   "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+  )
+ elif request.path in ("/login", "/register") and not READ_ONLY_BOOT and AUTH_METHOD=="google" and google_ready() and google_auth_mode()=="gis":
   resp.headers["Content-Security-Policy"]=(
    "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; "
    "form-action 'self'; script-src 'sha256-" + _A11Y_JS_SHA256 + "' 'sha256-" + _GIS_CALLBACK_SHA256 + "' https://accounts.google.com/gsi/client; "
