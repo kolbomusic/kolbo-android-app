@@ -136,6 +136,9 @@ class _PublicFacebookMeta(HTMLParser):
                 m=re.match(r"^\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*['\"]?([^'\"\s]+)",
                            a.get("content") or "",re.IGNORECASE)
                 if m:self.links.append(m.group(1))
+        elif tag in ("video","source"):
+            # Some public mobile pages expose a direct HTML5 video source.
+            self.media.append(a.get("src") or "")
         elif tag=="link" and "canonical" in (a.get("rel") or "").lower().split():
             self.links.append(a.get("href") or "")
 
@@ -402,12 +405,29 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
     video_id=next(iter(ids),None)
     if video_id:
         watch=f"https://www.facebook.com/watch/?v={video_id}"
-        candidates.extend([
-            watch,
-            f"https://www.facebook.com/reel/{video_id}/",
-            "https://www.facebook.com/plugins/video.php?href="+quote(watch,safe=""),
-        ])
-    return list(dict.fromkeys(candidates))[:8]
+        mobile=f"https://m.facebook.com/watch/?v={video_id}"
+        embed="https://www.facebook.com/plugins/video.php?href="+quote(watch,safe="")
+        # Resolving an opaque share/v/ token is not the same as extracting
+        # its MP4. Probe independent PUBLIC mobile and official embed HTML
+        # for video metadata before spending the budget on broken extractors.
+        # No account cookies, private APIs, arbitrary URLs or login bypass.
+        if opener is None and not any(_trusted_facebook_media_url(c) for c in candidates):
+            started=time.monotonic()
+            for alternate in (mobile,embed):
+                remaining=max(0,7-(time.monotonic()-started))
+                if remaining<1:break
+                discovered=_facebook_public_browser_candidates(
+                    alternate,timeout=min(3.5,remaining))
+                if any(_facebook_video_id(c) not in (None,video_id)
+                       for c in discovered):
+                    continue  # public metadata referred to the wrong video
+                for c in discovered:
+                    if c not in candidates:candidates.append(c)
+                if any(_trusted_facebook_media_url(c) for c in candidates):
+                    break
+        candidates.extend([watch,mobile,
+                           f"https://www.facebook.com/reel/{video_id}/",embed])
+    return list(dict.fromkeys(candidates))[:10]
 
 
 def _readable_failure(stderr):
@@ -487,11 +507,11 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     failures=[]
     safe_steps=[]
     is_facebook=(urlsplit(url).hostname or "").lower().rstrip(".").endswith("facebook.com") or (urlsplit(url).hostname or "").lower().rstrip(".")=="fb.watch"
-    # FaceBook share/v -> canonical video -> watch URL -> reel / official
-    # public embed. An unsupported social site remains a single attempt.
+    # Facebook short share -> canonical/mobile/embed; direct public MP4
+    # takes priority. Non-Facebook links use their existing single URL.
     # Direct public CDN bytes can succeed even when yt-dlp fails parsing a
     # Facebook page. Try those first, before they expire or retries use time.
-    candidates=candidates[:8]
+    candidates=candidates[:10]
     direct=[c for c in candidates if _trusted_facebook_media_url(c)]
     pages=[c for c in candidates if not _trusted_facebook_media_url(c)]
     attempts=(direct+pages) if is_facebook else candidates

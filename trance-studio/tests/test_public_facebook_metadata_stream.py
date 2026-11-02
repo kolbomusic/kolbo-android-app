@@ -24,6 +24,12 @@ class FacebookPublicMediaStreamTests(unittest.TestCase):
             page,"https://www.facebook.com/share/v/1Demo/"),
             ["https://www.facebook.com/reel/4301066573492911"])
 
+    def test_mobile_html_video_tag_is_accepted_only_on_trusted_cdn(self):
+        page=(b'<video src="https://video.xx.fbcdn.net/v/public.mp4"></video>'
+              b'<source src="https://attacker.example/fake.mp4">')
+        self.assertEqual(li._facebook_html_media_urls(page),[
+            "https://video.xx.fbcdn.net/v/public.mp4"])
+
     def test_do_not_download_arbitrary_metadata_url(self):
         for url in ("https://127.0.0.1/a.mp4", "http://video.xx.fbcdn.net/v/a",
                     "https://video.xx.fbcdn.net.evil.example/a",

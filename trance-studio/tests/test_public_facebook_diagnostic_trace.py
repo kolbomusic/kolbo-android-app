@@ -55,6 +55,52 @@ class PublicFacebookDiagnoseRegression(unittest.TestCase):
                 li._facebook_public_candidates(link)
         self.assertEqual(ctx.exception.code,"ambiguous_share")
 
+    def test_browser_probes_public_mobile_page_for_exact_video_cdn(self):
+        short="https://www.facebook.com/share/v/1opaque/"
+        video_id="1480256363681360"
+        canon=f"https://www.facebook.com/reel/{video_id}/"
+        cdn="https://video.xx.fbcdn.net/v/public.mp4"
+        class Response:
+            headers={"Content-Type":"text/html"}
+            def geturl(self):return canon
+            def read(self,limit):return b""
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+        class Opener:
+            def open(self,*args,**kwargs):return Response()
+        examined=[]
+        def browser(url,*,timeout):
+            examined.append(url)
+            if "/share/" in url:return [canon]
+            if url=="https://m.facebook.com/watch/?v="+video_id:
+                return [cdn]
+            return []
+        with patch.object(li,"build_opener",return_value=Opener()), \
+             patch.object(li,"_facebook_public_browser_candidates",side_effect=browser):
+            found=li._facebook_public_candidates(short)
+        self.assertIn(cdn,found)
+        self.assertEqual(examined,[short,"https://m.facebook.com/watch/?v="+video_id])
+        self.assertIn(f"https://www.facebook.com/watch/?v={video_id}",found)
+
+    def test_different_video_in_mobile_metadata_is_rejected(self):
+        short="https://www.facebook.com/share/v/1opaque/"
+        canon="https://www.facebook.com/reel/1480256363681360/"
+        class Response:
+            headers={"Content-Type":"text/html"}
+            def geturl(self):return canon
+            def read(self,limit):return b""
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+        class Opener:
+            def open(self,*args,**kwargs):return Response()
+        with patch.object(li,"build_opener",return_value=Opener()), \
+             patch.object(li,"_facebook_public_browser_candidates",
+                          side_effect=[[canon],[
+                           "https://www.facebook.com/reel/9988776655443322",
+                           "https://video.xx.fbcdn.net/v/unrelated.mp4"],[]]):
+            found=li._facebook_public_candidates(short)
+        self.assertNotIn("https://video.xx.fbcdn.net/v/unrelated.mp4",found)
+
     def test_trace_steps_codes_never_include_urls(self):
         link="https://www.facebook.com/share/v/1token/"
         links=[
