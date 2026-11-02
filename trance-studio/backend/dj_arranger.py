@@ -33,11 +33,30 @@ def accent_overdub(voice,sr,bpm,humor,intensity,gain,rng,
         return wet
     duration=len(x)/sr
     spacing={1:5.5,2:3.0,3:1.8}[intensity]
-    starts=np.arange(min(.85,duration*.3),duration-.15,spacing)
-    if not len(starts):
-        starts=[duration*.55]
+    starts=[(float(t),None) for t in
+            np.arange(min(.85,duration*.3),duration-.15,spacing)]
+    if not starts:
+        starts=[(duration*.55,None)]
+    if humor=="auto" and timed_phrases and cue_from_text:
+        # Use the actual word end for a punchline, not a percent-of-text guess.
+        # Explicit story cues replace the nearest generic rhythmic sample.
+        meaningful=[]
+        for item in timed_phrases:
+            try:
+                end=float(item["end"])
+                mode=cue_from_text(item.get("text",""))
+                if mode and .20<end<duration-.20:
+                    meaningful.append((end-.08,mode))
+            except (TypeError,ValueError,KeyError):
+                continue
+        for at,mode in meaningful:
+            if any(abs(at-other)<.75 for other,_ in starts if other!=at):
+                starts=[point for point in starts if abs(point[0]-at)>=.75]
+            if not any(abs(at-other)<.75 for other,_ in starts):
+                starts.append((at,mode))
+    starts.sort(key=lambda entry:entry[0])
     hook_cycle=("dj","comic_roll","scratch","pitch","stretch","glitch","tape")
-    for n,second in enumerate(starts):
+    for n,(second,semantic_mode) in enumerate(starts):
         target=int(second*sr)
         width=min(int(sr*.28),len(x)//5)
         lo=max(0,target-int(sr*.36))
@@ -51,7 +70,8 @@ def accent_overdub(voice,sr,bpm,humor,intensity,gain,rng,
             continue
         mode=humor
         if humor=="auto":
-            mode=(event_mode(timed_phrases,(picked+width/2)/sr,
+            mode=(semantic_mode or
+                  event_mode(timed_phrases,(picked+width/2)/sr,
                              cue_from_text or (lambda text:None))
                   or hook_cycle[n%len(hook_cycle)])
         if humor=="chaos":
