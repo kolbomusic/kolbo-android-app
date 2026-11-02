@@ -71,6 +71,15 @@ def main():
    with client.session_transaction(base_url=BASE) as sess: csrf=sess["csrf"]
    wrong=client.post("/login",base_url=BASE,data={"csrf":csrf,"email":account["email"],"password":"incorrect"})
    assert wrong.status_code==401
+   assert site.app.config["MAX_CONTENT_LENGTH"] >= 32*1024*1024
+   live_status=client.get("/status",base_url=BASE)
+   assert live_status.status_code==200
+   assert "דוא״ל וסיסמה אישית" in live_status.get_data(as_text=True)
+   assert "התחברות Google עדיין אינה זמינה" not in live_status.get_data(as_text=True)
+   # Eight failures for an unrelated account must not lock out this member.
+   for _ in range(8):
+    unlisted=client.post("/login",base_url=BASE,data={"csrf":csrf,"email":"not-listed@example.test","password":"incorrect"})
+    assert unlisted.status_code in (401,429)
    correct=client.post("/login",base_url=BASE,data={"csrf":csrf,"email":account["email"],"password":original_password})
    assert correct.status_code==303,(correct.status_code,correct.get_data(as_text=True)[:150])
    with client.session_transaction(base_url=BASE) as sess:
