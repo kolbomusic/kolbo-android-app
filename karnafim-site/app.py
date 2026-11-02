@@ -126,6 +126,9 @@ def harden_responses(resp):
     resp.set_data(data.replace("</head>",'<meta name="google-site-verification" content="'+token+'"></head>',1))
  if request.path in ("/login","/register","/password","/find","/verify-email","/resend-verification") or request.path.startswith("/auth/google/"):
   resp.headers.setdefault("X-Robots-Tag","noindex, nofollow")
+ if request.path=="/verify-email":
+  resp.headers["Referrer-Policy"]="no-referrer"
+  resp.headers["Cache-Control"]="no-store, max-age=0"
  resp.headers.setdefault("X-Content-Type-Options","nosniff")
  resp.headers.setdefault("X-Frame-Options","DENY")
  resp.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
@@ -398,13 +401,14 @@ def register():
        (member_id,hashed))
    sent=send_confirmation(email,token)
   except psycopg.errors.UniqueViolation:
-   sent=True
+   # Existing email must not be disclosed or falsely claimed as sent.
+   return view("בקשת הצטרפות",'<h1>בדוק את כתובת הדוא״ל</h1><p>אם זו הרשמה חדשה, הודעת האימות נשלחת לכתובת. אם כבר נרשמת וטרם אימתת, אפשר <a href="/resend-verification">לבקש קישור חדש</a>.</p>')
   except Exception:
    # Provider or transient database problems never bypass confirmation.
    return view("הרשמה",'<h1>לא ניתן להשלים את הבקשה כרגע</h1><p>נסו לשלוח קישור אימות מחדש.</p><a href="/resend-verification">שליחת אימות מחדש</a>'),503
   if not sent:
    return view("אימות דוא״ל",'<h1>שליחת המייל טרם הצליחה</h1><p>אפשר לבקש קישור אימות חדש.</p><a href="/resend-verification">שליחה מחדש</a>'),503
-  return view("אימות דוא״ל",'<h1>בדוק את תיבת הדוא״ל שלך</h1><p>אם כתובת הדוא״ל חדשה ותקינה, נשלח קישור אימות בתוקף 24 שעות. אין צורך לשלוח סיסמה במייל.</p>')
+  return view("אימות דוא״ל",'<h1>בדוק את תיבת הדוא״ל שלך</h1><p>שירות הדוא״ל קיבל בקשה לשליחת קישור אימות בתוקף 24 שעות. אין צורך לשלוח סיסמה במייל.</p><p>אם לא הגיע מייל, אפשר <a href="/resend-verification">לבקש קישור חדש</a>.</p>')
  return view("בקשת הצטרפות",'<h1>מצטרפים לקהילת הקרנפים / ברקן</h1><p>לאחר אימות הדוא״ל אפשר יהיה לשלוח סיפורים, תמונות וסרטונים לבדיקה, בלי לחשוף אותם לחברים לפני אישור הפרסום.</p><form method="post" class="card">'+formwrap(
   field("name","שם מלא",required=True)+field("nickname","כינוי מהשירות")+
   field("email","כתובת דוא״ל","email",True)+field("password","סיסמה אישית, לפחות 12 תווים","password",True)+
@@ -447,7 +451,7 @@ def resend_verification():
     ON CONFLICT(member_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,
     expires_at=EXCLUDED.expires_at,created_at=NOW()""",(rows[0]["id"],hashed))
    send_confirmation(email,token)
-  return view("נשלחה בקשה",'<h1>בדוק את המייל</h1><p>אם קיימת בקשה ממתינה לכתובת, נשלח קישור אימות חדש.</p>')
+  return view("בקשת אימות",'<h1>בקשת האימות נבדקה</h1><p>אם קיים חשבון הממתין לאימות ושירות הדוא״ל קיבל את הבקשה, תישלח הודעה. כדאי לבדוק גם בדואר הזבל.</p>')
  return view("שליחת אימות מחדש",'<h1>שליחת קישור אימות מחדש</h1><form method="post" class="card">'+formwrap(
   field("email","כתובת הדוא״ל של החשבון","email",True)+'<button>שליחת קישור חדש</button>')+'</form>')
 
