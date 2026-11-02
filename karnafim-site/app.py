@@ -220,6 +220,7 @@ def view(title,body):
  if u:
   nav+='<a href="/new-post">📸 שתפו סיפור או אירוע</a> <a href="/my-posts">📝 הפרסומים שלי</a> <a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/admin/accessibility">דיווחי נגישות</a> <a href="/community/moderation">אישור פרסומים</a> '
+  if AUTH_METHOD=="local":nav+='<a href="/password">שינוי סיסמה</a> '
   nav+='<a href="/logout">יציאה</a>'
  else:
   if AUTH_METHOD=="local":
@@ -561,11 +562,24 @@ def memory_admin():
 
 @app.route("/password",methods=["GET","POST"])
 def change_password():
- # Legacy local-password handling is retired; a Google account owns its password.
- return view("סיסמאות מנוהלות ב־Google",
-  '<h1>אין סיסמה מקומית באתר הקרנפים</h1>'
-  '<p>הכניסה מתבצעת דרך חשבון Google. אין כאן טופס לאיסוף או לשינוי סיסמאות.</p>'
-  '<p>ניתן לנהל את סיסמת חשבון Google דרך הגדרות החשבון של Google בלבד.</p>'),410
+ if AUTH_METHOD!="local":
+  return view("סיסמה מנוהלת ב־Google",'<h1>סיסמת Google אינה מנוהלת באתר זה.</h1>'),410
+ u=me()
+ if not u:return redirect("/login")
+ if request.method=="POST":
+  guard()
+  old=request.form.get("old","")
+  new=request.form.get("new","")
+  if not verify(old,u["password"]) or not 12<=len(new)<=200 or old==new:
+   return view("שינוי סיסמה",'<p class="error">הסיסמה הנוכחית שגויה או שהסיסמה החדשה אינה עומדת בתנאים.</p>'),400
+  sql("UPDATE members SET password=%s,session_version=session_version+1 WHERE id=%s AND password=%s",
+      (hashpw(new),u["id"],u["password"]))
+  session.clear()
+  return view("הסיסמה עודכנה",'<h1>הסיסמה עודכנה</h1><p>התחברו מחדש עם הסיסמה החדשה.</p><a href="/login">כניסה לחשבון</a>')
+ return view("שינוי סיסמה",'<h1>שינוי סיסמה</h1><form method="post" class="card">'+formwrap(
+  field("old","סיסמה נוכחית","password",True)+
+  field("new","סיסמה חדשה, לפחות 12 תווים","password",True)+
+  '<button>עדכון סיסמה</button>')+'</form>')
 
 # The public security-hold site is entirely static and must boot without DB/OAuth.
 # In community mode the original migrations and route registration still run.
