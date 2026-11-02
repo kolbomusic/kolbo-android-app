@@ -24,6 +24,15 @@ class FacebookPublicMediaStreamTests(unittest.TestCase):
             page,"https://www.facebook.com/share/v/1Demo/"),
             ["https://www.facebook.com/reel/4301066573492911"])
 
+    def test_facebook_late_public_metadata_within_bounded_page(self):
+        # Real social pages may place public video information deep in the
+        # HTML; the previous 150 KB limit silently dropped those fields.
+        leading=b" "*240000
+        late=leading+b'<meta property="og:video" content="https://video.xx.fbcdn.net/v/late.mp4">'
+        self.assertEqual(li._facebook_html_media_urls(late),
+                         ["https://video.xx.fbcdn.net/v/late.mp4"])
+        self.assertLessEqual(len(late),li.MAX_FB_HTML)
+
     def test_mobile_html_video_tag_is_accepted_only_on_trusted_cdn(self):
         page=(b'<video src="https://video.xx.fbcdn.net/v/public.mp4"></video>'
               b'<source src="https://attacker.example/fake.mp4">')

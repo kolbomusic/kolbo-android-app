@@ -22,6 +22,9 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 MAX_VIDEO=45*1024*1024
 MAX_AUDIO=15*1024*1024
 MAX_SECONDS=120.5
+# Public Facebook markup often places video metadata after the first 150 KB.
+# This remains strictly bounded and never reads full arbitrary HTML pages.
+MAX_FB_HTML=750000
 ALLOWED_HOSTS=(
     "facebook.com","fb.watch","instagram.com","tiktok.com","tiktokv.com",
     "vimeo.com",
@@ -164,7 +167,7 @@ def _facebook_html_video_urls(html, base):
     if not html:return []
     parser=_PublicFacebookMeta()
     try:
-        parser.feed(html[:150000].decode("utf-8","replace"))
+        parser.feed(html[:MAX_FB_HTML].decode("utf-8","replace"))
         parser.close()
     except (ValueError,TypeError):
         return []
@@ -196,7 +199,7 @@ def _facebook_html_media_urls(html):
     if not html:return []
     parser=_PublicFacebookMeta()
     try:
-        parser.feed(html[:150000].decode("utf-8","replace"))
+        parser.feed(html[:MAX_FB_HTML].decode("utf-8","replace"))
         parser.close()
     except (ValueError,TypeError):
         return []
@@ -217,7 +220,7 @@ def _facebook_html_inline_media_urls(html):
     """
     if not html:
         return []
-    page=html[:150000].decode("utf-8","replace").replace(r'\"','"')
+    page=html[:MAX_FB_HTML].decode("utf-8","replace").replace(r'\"','"')
     pattern=(r'"(?:browser_native_sd_url|browser_native_hd_url|'
              r'playable_url(?:_quality_hd)?|sd_src|hd_src)"\s*:\s*"'
              r'((?:\\.|[^"\\]){1,2048})"')
@@ -331,11 +334,11 @@ def _facebook_public_browser_candidates(url, *, timeout=7):
                 size=0
                 for chunk in response.iter_content(chunk_size=32768):
                     if not chunk:continue
-                    room=150000-size
+                    room=MAX_FB_HTML-size
                     if room<=0:break
                     chunks.append(chunk[:room])
                     size+=min(len(chunk),room)
-                    if size>=150000:break
+                    if size>=MAX_FB_HTML:break
                 html=b"".join(chunks)
                 for video in _facebook_html_video_urls(html,current):
                     if video not in discovered:discovered.append(video)
@@ -381,7 +384,7 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
                 if not content_type or "text/html" in content_type or "application/xhtml+xml" in content_type:
                     read=getattr(response,"read",None)
                     if callable(read):
-                        html=read(150000)
+                        html=read(MAX_FB_HTML)
                         candidates.extend(_facebook_html_video_urls(html,destination))
                         # Direct CDN metadata is public HTML metadata, not
                         # scraped private API tokens or signed-in session data.
