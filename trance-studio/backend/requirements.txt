@@ -7,3 +7,6 @@ faster-whisper==1.2.1
 # faster-whisper 1.2.1 calls av.open(metadata_errors=...), removed in PyAV >=18.
 # Pin a decoded-audio-compatible build; without this ALL original-file ASR fails.
 av==17.1.0
+
+# Public social-video link extraction; no cookies, login, or DRM bypass.
+yt-dlp>=2026.8.19,<2027
