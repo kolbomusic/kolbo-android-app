@@ -371,6 +371,61 @@ def create_app(config=None):
         from engine_registry import catalog
         return jsonify(catalog())
 
+    @app.post('/api/audio-tools/render')
+    def audio_tools_render():
+        from audio_tools import render_audio_tool, AudioToolError, SUPPORTED
+        if not link_admission.acquire(blocking=False):
+            return jsonify(error='מנוע האולפן עסוק כעת. ניתן לנסות שוב.'),429
+        work=None
+        try:
+            if request.form.get('rights')!='yes':
+                return jsonify(error='נדרש אישור הרשאות שימוש בקבצים.'),400
+            mode=request.form.get('mode','master')
+            sound=request.form.get('sound','balanced')
+            try:
+                voice_gain=int(request.form.get('voice_gain','100'))
+                backing_gain=int(request.form.get('backing_gain','80'))
+            except ValueError:
+                return jsonify(error='ערכי עוצמה אינם תקינים.'),400
+            first=request.files.get('source')
+            second=request.files.get('voice')
+            if not first or not first.filename:
+                return jsonify(error='יש לבחור קובץ שמע או וידאו מקורי.'),400
+            if mode=='mix' and (not second or not second.filename):
+                return jsonify(error='למיקס יש לבחור גם קובץ קול שני.'),400
+            work=Path(tempfile.mkdtemp(prefix='kolbo-audio-tools-',dir=root))
+            files=[]
+            for name,item in [('source',first),('voice',second)]:
+                if name=='voice' and mode!='mix':continue
+                if item is None:continue
+                ext=Path(item.filename).suffix.lower()
+                if ext not in SUPPORTED:return jsonify(error='פורמט הקובץ אינו נתמך.'),400
+                limit=MAX_VIDEO_UPLOAD if ext in VIDEO_UPLOADS else MAX_AUDIO_UPLOAD
+                data=item.stream.read(limit+1)
+                if not data or len(data)>limit:return jsonify(error='הקובץ חורג ממגבלת הגודל.'),400
+                path=work/(name+ext);path.write_bytes(data);files.append(path)
+            dest=work/'mastered.mp3'
+            render_audio_tool(files[0],dest,mode=mode,
+                              voice=files[1] if len(files)>1 else None,
+                              sound=sound,voice_gain=voice_gain,backing_gain=backing_gain)
+            # send_file may be streamed by WSGI; do not remove it before
+            # response close, otherwise the download disappears.
+            response=send_file(dest,mimetype='audio/mpeg',
+                               as_attachment=True,
+                               download_name='Kolbo-Studio-Master.mp3')
+            cleanup_dir=work
+            response.call_on_close(lambda:shutil.rmtree(cleanup_dir,ignore_errors=True))
+            work=None
+            return response
+        except AudioToolError as exc:
+            return jsonify(error=str(exc)),422
+        except OSError:
+            app.logger.exception('Audio studio filesystem error')
+            return jsonify(error='לא ניתן לשמור את קובץ האולפן.'),503
+        finally:
+            link_admission.release()
+            if work:shutil.rmtree(work,ignore_errors=True)
+
     @app.post('/api/import-link')
     def import_social_link():
         # Triggered ONLY by clicking the explicit 'import link' control.
