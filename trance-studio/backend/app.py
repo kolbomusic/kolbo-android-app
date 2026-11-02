@@ -366,6 +366,11 @@ def create_app(config=None):
     @app.get('/health')
     def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
+    @app.get('/api/capabilities')
+    def capabilities():
+        from engine_registry import catalog
+        return jsonify(catalog())
+
     @app.post('/api/import-link')
     def import_social_link():
         # Triggered ONLY by clicking the explicit 'import link' control.
