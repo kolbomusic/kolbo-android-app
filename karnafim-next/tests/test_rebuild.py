@@ -24,6 +24,8 @@ assert site.PUBLIC_AUTH and site.ALLOW_SIGNUP
 ORIGIN="https://karnafim-barkan-46.onrender.com"
 
 def get_csrf(client):
+    # Logout clears the session, so bootstrap the new CSRF with an ordinary GET.
+    client.get("/health",base_url=ORIGIN)
     with client.session_transaction(base_url=ORIGIN) as sess:
         return sess["csrf"]
 
