@@ -291,7 +291,7 @@ public final class MainActivity extends Activity {
         startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
         loading.setVisibility(View.VISIBLE);
         webView.setVisibility(View.VISIBLE);
-        webView.loadUrl(STUDIO+"?android=246&load="+current);
+        webView.loadUrl(STUDIO+"?android=2462&load="+current);
         mainHandler.postDelayed(()->{
             if(navigationId==current&&!pageReady&&!pageLoadFailed){
                 startupMessage.setText("שרת הענן החינמי מתעורר. ההקלטות שלך נשארות במכשיר...");

@@ -6,11 +6,11 @@ android {
     namespace 'com.kolbomusic.trancestudio'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.kolbomusic.trancestudio.story246'
+        applicationId 'com.kolbomusic.trancestudio.story2462'
         minSdk 29
         targetSdk 34
-        versionCode 246
-        versionName '2.4.6-beta'
+        versionCode 247
+        versionName '2.4.6-beta.2'
     }
     buildTypes {
         release {
