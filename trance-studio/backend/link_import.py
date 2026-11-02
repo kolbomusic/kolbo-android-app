@@ -20,7 +20,7 @@ MAX_AUDIO=15*1024*1024
 MAX_SECONDS=120.5
 ALLOWED_HOSTS=(
     "facebook.com","fb.watch","instagram.com","tiktok.com","tiktokv.com",
-    "youtube.com","youtu.be","youtube-nocookie.com","vimeo.com",
+    "vimeo.com",
     "twitter.com","x.com","reddit.com","redd.it","dailymotion.com",
     "dai.ly","soundcloud.com","twitch.tv","clips.twitch.tv",
     "pinterest.com","pin.it",
