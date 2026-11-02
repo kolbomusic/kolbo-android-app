@@ -43,5 +43,7 @@ jobs:
           python-version: '3.12'
       - name: Install Flask and PostgreSQL client dependencies
         run: python -m pip install -r karnafim-site/requirements.txt
-      - name: Exercise actual PostgreSQL account flow and media moderation
+      - name: Ensure free FFmpeg test encoder is available
+        run: command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+      - name: Exercise actual PostgreSQL account flow, photo and video moderation
         run: python karnafim-site/tests/test_postgres_member_journey.py
