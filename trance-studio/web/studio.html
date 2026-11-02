@@ -60,7 +60,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <summary>יש לי קישור מ־Facebook / TikTok במקום קובץ</summary>
 <label for="sourceLink">הדבק קישור לסרטון ציבורי</label>
 <input id="sourceLink" type="url" dir="ltr" inputmode="url" placeholder="https://www.tiktok.com/... או https://www.facebook.com/...">
-<small>קישור שיתוף Facebook (למשל ‎/share/v/‎) עלול לא להיפתח גם כשהסרטון ציבורי. אין גישה לסרטונים שמחייבים כניסה או שאינם מורשים להורדה. במקרה כזה יש לשתף או לבחור את קובץ הווידאו עצמו.</small>
+<small>האפליקציה מנסה כעת גם קישורי שיתוף קצרים, את כתובת הסרטון המקורית ואת נתיב הצפייה הציבורי החלופי. אין צורך להמיר קישור בעצמך. סרטון שחסום לציבור או מחייב התחברות אינו ניתן לחילוץ אוטומטי.</small>
 <label class="videoToggle"><input type="checkbox" id="linkRights"> <span>יש לי הרשאה להשתמש במדיה הזו</span></label>
 <button type="button" class="secondary" id="importLink">נסה לייבא את הקובץ מהקישור</button>
 <div id="linkStatus" role="status" aria-live="polite" class="hint"></div>
@@ -324,7 +324,7 @@ $('importLink').onclick=async function(){
  if(u.protocol!=='https:'||link.length>2048){$('linkStatus').textContent='נדרש קישור HTTPS תקין.';return;}
  if(!$('linkRights').checked){$('linkStatus').textContent='נדרש אישור הרשאה לשימוש במדיה.';return;}
  var button=$('importLink');button.disabled=true;
- $('linkStatus').textContent='מייבא קובץ ציבורי מהקישור. לא מתבצעת יצירה.';
+ $('linkStatus').textContent='מאתר את הסרטון ומנסה מסלולי ייבוא ציבוריים חלופיים... ההפקה לא תתחיל ללא לחיצה על צור.';
  try{
   var response=await fetch('/api/import-link',{
    method:'POST',credentials:'same-origin',
@@ -347,7 +347,7 @@ $('importLink').onclick=async function(){
  }catch(error){
   var fb=/^(?:www\.|m\.|web\.)?facebook\.com$|^fb\.watch$/i.test(u.hostname);
   $('linkStatus').textContent='הייבוא נכשל: '+(error.message||'המדיה אינה נגישה')+
-    (fb?' קישורי שיתוף Facebook לא תמיד מספקים קובץ להורדה. אם אפשר, שתף את קובץ הסרטון עצמו לאפליקציה או בחר אותו מהמכשיר.':' נסה להוסיף את קובץ המדיה ישירות מהמכשיר.');
+    (fb?' נבדקו מסלולי גישה ציבוריים נוספים. אם גם הם חסומים, אין אפשרות לייבא את הווידאו רק מהכתובת ללא הרשאת גישה של האתר.':' אין גישה לקובץ ציבורי תקין מהכתובת הזו.');
  }finally{button.disabled=false}
 };
 window.kolboImportSharedAudio=function(items){
