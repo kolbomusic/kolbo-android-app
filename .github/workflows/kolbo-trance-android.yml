@@ -24,6 +24,7 @@ on:
       - 'trance-studio/web/studio-ai-fallback.js'
       - 'trance-studio/tests/test_narrative_plan.py'
       - 'trance-studio/tests/test_manual_share.js'
+      - 'trance-studio/tests/test_simple_mobile_ui.js'
       - 'trance-studio/tests/test_live_video.py'
       - '.github/workflows/kolbo-trance-android.yml'
 permissions:
