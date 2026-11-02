@@ -92,8 +92,8 @@ def init():
             cur.execute("CREATE INDEX IF NOT EXISTS b2_messages_pair_idx ON b2_messages(sender,recipient,created)")
             # Preserve existing members' hashes without copying messages or passwords
             # into source code. The copied Neon branch is a rollback snapshot.
-            cur.execute("""SELECT to_regclass('public.members') IS NOT NULL""")
-            if cur.fetchone()[0]:
+            cur.execute("""SELECT to_regclass('public.members') IS NOT NULL AS has_legacy_members""")
+            if cur.fetchone()["has_legacy_members"]:
                 cur.execute("""INSERT INTO b2_users(name,email,passhash,nickname,approved,show_profile,
                                   email_verified,email_verification_required)
                     SELECT name,lower(email),password,COALESCE(nickname,''),approved,
