@@ -56,7 +56,11 @@ def create_app(config=None):
 
     def work(job_id,paths,options):
         try:
-            update(job_id,state='processing',percent=4,label='קורא את ההקלטות')
+            update(job_id,state='processing',percent=4,label='קורא ומאמת את אורך ההקלטות')
+            # Validate audio duration before CPU-expensive word-level ASR.
+            # Oversized/invalid recordings must fail immediately, never sit
+            # for minutes in recognition before a simple decoder check.
+            clips=[load_audio(p) for p in paths]
             # Run ASR recovery against the ORIGINAL files before removing them.
             # A failed browser model cannot cancel a user's explicit MP4 request.
             detected_transcript=(options.get('transcript') or '').strip()
@@ -93,7 +97,6 @@ def create_app(config=None):
                     asr_recovery_error=str(exc)[:180]
                     app.logger.warning('Original speech timing unavailable: %s',
                                        type(exc).__name__)
-            clips=[load_audio(p) for p in paths]
             audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent','video_strategy','backing_music_path','music_license_ack')}
             # Make the already recognized Hebrew speech useful for comic
             # timing/preset decisions. Keep it in-process; never transmit
