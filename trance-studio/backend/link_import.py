@@ -35,10 +35,12 @@ MEDIA_EXT={".mp4":"video/mp4",".webm":"video/webm",".mov":"video/quicktime",
 
 class LinkImportError(ValueError):
     """User-safe failure with privacy-preserving diagnostic codes."""
-    def __init__(self,message,*,code="unavailable",attempts=0):
+    def __init__(self,message,*,code="unavailable",attempts=0,steps=""):
         super().__init__(message)
         self.code=code
         self.attempts=int(attempts)
+        # Preclassified fixed tokens, not social URLs or video IDs.
+        self.steps=str(steps)[:220]
 
 
 def validate_public_link(raw):
@@ -103,7 +105,9 @@ def _facebook_video_id(url):
     if host!="facebook.com" and not host.endswith(".facebook.com"):
         return None
     path=parts.path
-    match=re.search(r"/(?:videos|reel)/(\d{8,22})(?:/|$)",path)
+    # Public Facebook permalink can contain a video slug between /videos/
+    # and its numeric ID, e.g. /natgeo/videos/title/1016464114801712/.
+    match=re.search(r"/(?:videos|reel)/(?:[^/?#]+/)?(\d{8,22})(?:/|$)",path)
     if match:return match.group(1)
     if path.rstrip("/") in ("/watch", "/watch/"):
         key=parse_qs(parts.query).get("v",[""])[0]
@@ -351,13 +355,20 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
                         candidates.extend(_facebook_html_media_urls(html))
         except (OSError,URLError,HTTPError,ValueError,LinkImportError):
             pass  # The original public link still gets one bounded extraction.
-        # Test the real public Chrome transport only when the ordinary
-        # redirect/metadata path did not identify a video. Passing an explicit
-        # test opener keeps existing injected-unit-test flows deterministic.
-        if opener is None and not any(_facebook_video_id(c) for c in candidates):
+        # Chrome public HTML can advertise the actual video bytes even if
+        # urllib has already resolved the numeric ID. Earlier versions skipped
+        # Chrome in that case, losing an independent (no-login) recovery path.
+        # Preserve injected test openers to keep mocked tests deterministic.
+        if opener is None and not any(_trusted_facebook_media_url(c) for c in candidates):
             candidates.extend(_facebook_public_browser_candidates(
-                url,timeout=timeout))
-    video_id=next((_facebook_video_id(c) for c in candidates if _facebook_video_id(c)),None)
+                url,timeout=min(5,timeout)))
+    ids={i for c in candidates if (i:=_facebook_video_id(c))}
+    if len(ids)>1:
+        # Different IDs from public metadata/redirects: do not risk silently
+        # downloading an unrelated video in response to the user's link.
+        raise LinkImportError("קישור השיתוף הפנה לסרטונים שונים; הייבוא נעצר כדי למנוע הורדת סרטון שגוי.",
+                              code="ambiguous_share")
+    video_id=next(iter(ids),None)
     if video_id:
         watch=f"https://www.facebook.com/watch/?v={video_id}"
         candidates.extend([
@@ -443,6 +454,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     deadline=time.monotonic()+min(max(timeout,1),90)
     candidates=_facebook_public_candidates(url,timeout=min(6,max(1,deadline-time.monotonic())))
     failures=[]
+    safe_steps=[]
     is_facebook=(urlsplit(url).hostname or "").lower().rstrip(".").endswith("facebook.com") or (urlsplit(url).hostname or "").lower().rstrip(".")=="fb.watch"
     # FaceBook share/v -> canonical video -> watch URL -> reel / official
     # public embed. An unsupported social site remains a single attempt.
@@ -480,6 +492,14 @@ def fetch_public_social_media(url, directory, *,timeout=70):
                                       impersonate=True)
         if code!="ok":
             failures.append(code)
+            path=urlsplit(candidate).path
+            category=("cdn" if _trusted_facebook_media_url(candidate) else
+                      "share" if "/share/" in path else
+                      "reel" if path.startswith("/reel/") else
+                      "watch" if path.startswith("/watch") else
+                      "embed" if "/plugins/video" in path else
+                      "video" if "/videos/" in path else "other")
+            safe_steps.append(category+":"+code)
             if code=="size":break
             continue
         media=[p for p in folder.iterdir() if p.is_file() and
@@ -499,19 +519,20 @@ def fetch_public_social_media(url, directory, *,timeout=70):
             failures.append("duration")
             continue
         return result,mime
+    details=",".join(safe_steps[:8])
     if "size" in failures:
-        raise LinkImportError("גודל הסרטון חורג מ־45MB.",code="size",attempts=len(failures))
+        raise LinkImportError("גודל הסרטון חורג מ־45MB.",code="size",attempts=len(failures),steps=details)
     if "duration" in failures:
-        raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.",code="duration",attempts=len(failures))
+        raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.",code="duration",attempts=len(failures),steps=details)
     if "private" in failures or "restricted" in failures:
         raise LinkImportError(
             "השרת קיבל שגיאת הרשאה או הגבלת גישה מ־Facebook. אי אפשר לייבא סרטון שמוגבל לצפייה ללא הרשאה.",
-            code="access_restricted",attempts=len(failures))
+            code="access_restricted",attempts=len(failures),steps=details)
     if "extractor" in failures:
         raise LinkImportError(
             "מנוע החילוץ של Facebook לא הצליח לפענח את דף הסרטון (Cannot parse data). "
             "זה לא בהכרח אומר שהסרטון פרטי או חסום.",
-            code="extractor_parse",attempts=len(failures))
+            code="extractor_parse",attempts=len(failures),steps=details)
     raise LinkImportError(
         "לא התקבל קובץ וידאו תקין מהמקורות הציבוריים שנבדקו.",
-        code="no_public_media",attempts=len(failures))
+        code="no_public_media",attempts=len(failures),steps=details)
