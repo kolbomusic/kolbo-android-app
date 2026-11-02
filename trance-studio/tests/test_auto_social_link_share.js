@@ -12,7 +12,7 @@ assert(start>0&&end>start);
 const code=script.slice(start,end);
 function makeCase(options={}){
  const elements=new Map();
- const $(id)=>{
+ const $=(id)=>{
   if(!elements.has(id))elements.set(id,{
    value:'',checked:false,hidden:false,disabled:false,open:false,
    focus(){},scrollIntoView(){},textContent:''
