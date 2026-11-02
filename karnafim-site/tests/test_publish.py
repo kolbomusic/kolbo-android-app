@@ -111,10 +111,16 @@ def test():
     extra.extend(("attachments",(make_image(),"pic%d.jpg"%n,"image/jpeg")) for n in range(5))
     expect(400,client.post("/new-post",data=MultiDict(extra),content_type="multipart/form-data"))
     assert len(records)==before,"Too many files should not write anything"
-    # No consent to external AI processing must stop even before persistence.
+    # Submissions without optional third-party AI consent must remain private,
+    # but they must be accepted so members can share photos and stories.
+    records.clear()
     no_consent={"post_type":"story","title":"שלום","body":"סיפור שירות","rights":"on"}
-    expect(400,client.post("/new-post",data=no_consent))
-    assert len(records)==before,"Consent must precede storing anything"
+    with patch.object(community_portal.psycopg,"connect",lambda *a,**k:Connection()):
+        submitted=client.post("/new-post",data=no_consent)
+    expect(303,submitted)
+    assert submitted.headers["Location"].endswith("?submitted=1")
+    saved_no_ai=[x for x in records if x[0].startswith("INSERT INTO community_posts")]
+    assert saved_no_ai and saved_no_ai[0][1][7] is False
     # Mock an AI response; ensure low-risk content becomes visible automatically.
     records.clear()
     safe={"post_type":"story","title":"יום בבסיס","body":"יום מצחיק עם הטנק בשטח האימונים","rights":"on","ai_consent":"on"}
@@ -126,5 +132,5 @@ def test():
     saved=[x for x in records if x[0].startswith("INSERT INTO community_posts")]
     assert saved[0][1][7] is True and saved[0][1][8]=="approved","Auto approved text must publish"
     expect(200,client.get("/community/moderation"),"אישור סיפורים")
-    print("PASS: permissions, multi-image moderation, EXIF stripping, events, invalid files, consent, fail-closed pending, AI auto-approval, moderation")
+    print("PASS: permissions, multi-image moderation, EXIF stripping, events, invalid files, optional AI consent, private pending, AI auto-approval, moderation")
 if __name__=="__main__":test()
