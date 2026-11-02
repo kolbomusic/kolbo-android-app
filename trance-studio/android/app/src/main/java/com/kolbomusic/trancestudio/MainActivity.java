@@ -373,9 +373,32 @@ public final class MainActivity extends Activity {
                 if(uri!=null)candidates.add(uri);
             }
         }
-        // Real media content is preferred. Social apps often share a URL.
+        incoming.clear();
+        incomingVersion++;
+        long totalBytes=0;
+        for(Uri uri:candidates){
+            if(incoming.size()>=4)break;
+            if(uri==null||!"content".equals(uri.getScheme()))continue;
+            String type=getContentResolver().getType(uri);
+            String name=audioName(uri,incoming.size()).toLowerCase(Locale.ROOT);
+            boolean video=(type!=null&&type.toLowerCase(Locale.ROOT).startsWith("video/"))
+                ||name.matches(".*\\.(mp4|webm|mov|3gp|3gpp)");
+            boolean audio=(type!=null&&(type.startsWith("audio/")||
+                           "application/ogg".equalsIgnoreCase(type)))
+                ||name.matches(".*\\.(opus|ogg|oga|mp3|m4a|wav|flac|aac)");
+            // A social app may put a text document URI into ClipData.
+            // Never turn text/plain into a fake WhatsApp .opus file.
+            if(!video&&!audio)continue;
+            long bytes=contentLength(uri);
+            if(bytes>(video?MAX_VIDEO_BYTES:MAX_AUDIO_BYTES)
+               ||totalBytes+bytes>MAX_TOTAL_BYTES)continue;
+            totalBytes+=bytes;
+            incoming.add(uri);
+        }
+        // Resolve a social URL only when there is no usable media stream.
+        // Prefer actual video/audio bytes over captions or post URLs.
         String link=null;
-        if(candidates.isEmpty()){
+        if(incoming.isEmpty()){
             link=firstHttpsLink(intent.getStringExtra(Intent.EXTRA_TEXT));
             if(link==null&&intent.getClipData()!=null){
                 for(int i=0;i<Math.min(4,intent.getClipData().getItemCount());i++){
@@ -387,23 +410,8 @@ public final class MainActivity extends Activity {
         }
         incomingSharedLink=link;
         sharedLinkVersion++;
-        incoming.clear();
-        incomingVersion++;
-        long totalBytes=0;
-        for(Uri uri:candidates){
-            if(incoming.size()>=4)break;
-            if(uri==null||!"content".equals(uri.getScheme()))continue;
-            String type=getContentResolver().getType(uri);
-            String name=audioName(uri,incoming.size()).toLowerCase(Locale.ROOT);
-            boolean video=(type!=null&&type.toLowerCase(Locale.ROOT).startsWith("video/"))
-                ||name.matches(".*\\.(mp4|webm|mov|3gp|3gpp)");
-            long bytes=contentLength(uri);
-            if(bytes>(video?MAX_VIDEO_BYTES:MAX_AUDIO_BYTES)
-               ||totalBytes+bytes>MAX_TOTAL_BYTES)continue;
-            totalBytes+=bytes;
-            incoming.add(uri);
-        }
-        if(!candidates.isEmpty()&&incoming.isEmpty())toast("הקובץ המשותף גדול מדי או אינו נתמך");
+        if(!candidates.isEmpty()&&incoming.isEmpty()&&link==null)
+            toast("הקובץ המשותף גדול מדי או אינו נתמך");
     }
     private long contentLength(Uri uri){
         try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.SIZE},null,null,null)){
