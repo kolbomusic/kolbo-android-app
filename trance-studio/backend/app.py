@@ -1,8 +1,8 @@
 """Bounded, temporary audio jobs. Run one WSGI worker; threads share admission state."""
-import os, time, secrets, shutil, threading, json, subprocess, hashlib, re
+import os, time, secrets, shutil, threading, json, subprocess, hashlib, re, tempfile
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory, Response
 from werkzeug.exceptions import RequestEntityTooLarge
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 from engine import load_audio, render_mix, export_mp3
@@ -23,9 +23,30 @@ def create_app(config=None):
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
     if config:app.config.update(config)
     root=Path(app.config['JOB_DIR']);root.mkdir(parents=True,exist_ok=True)
-    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);executor=ThreadPoolExecutor(max_workers=1)
+    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
     web=Path(__file__).resolve().parents[1]/'web'
+    def stream_temporary_media(media_path,mime,folder):
+        """Delete the temporary source after actual response consumption.
+
+        Flask send_file(...).call_on_close() is not reliably executed by all
+        WSGI response wrappers. This generator ties cleanup to stream close.
+        """
+        length=media_path.stat().st_size
+        def chunks():
+            try:
+                with media_path.open('rb') as infile:
+                    while True:
+                        block=infile.read(65536)
+                        if not block:break
+                        yield block
+            finally:
+                shutil.rmtree(folder,ignore_errors=True)
+        response=Response(chunks(),mimetype=mime,headers={
+            'Content-Length':str(length),'Cache-Control':'no-store, private',
+            'X-Content-Type-Options':'nosniff'})
+        return response
+
     def session_codec():
         return URLSafeTimedSerializer(app.config['API_TOKEN'],salt='kolbo-studio-web-session')
     def studio_session():
@@ -342,7 +363,7 @@ def create_app(config=None):
             allowed.add('http://'+request.host)
             if origin and origin.rstrip('/') not in allowed:return jsonify(error='מקור הבקשה אינו מורשה'),403
             if request.method=='OPTIONS':return '',204
-            if request.path.startswith('/api/jobs') and not app.config.get('TESTING'):
+            if (request.path.startswith('/api/jobs') or request.path=='/api/import-link' or request.path=='/api/audio-tools/render') and not app.config.get('TESTING'):
                 token=app.config['API_TOKEN']
                 if not token:return jsonify(error='העיבוד בענן טרם הוגדר. ניתן לעבד במכשיר.'),503
                 if not studio_session() and not secrets.compare_digest(request.headers.get('Authorization',''),'Bearer '+token):return jsonify(error='קוד הגישה אינו תקין'),401
@@ -364,7 +385,91 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.14.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+
+    @app.get('/api/capabilities')
+    def capabilities():
+        from engine_registry import catalog
+        return jsonify(catalog())
+
+    @app.post('/api/audio-tools/render')
+    def audio_tools_render():
+        from audio_tools import render_audio_tool, AudioToolError, SUPPORTED
+        if not link_admission.acquire(blocking=False):
+            return jsonify(error='מנוע האולפן עסוק כעת. ניתן לנסות שוב.'),429
+        work=None
+        try:
+            if request.form.get('rights')!='yes':
+                return jsonify(error='נדרש אישור הרשאות שימוש בקבצים.'),400
+            mode=request.form.get('mode','master')
+            sound=request.form.get('sound','balanced')
+            try:
+                voice_gain=int(request.form.get('voice_gain','100'))
+                backing_gain=int(request.form.get('backing_gain','80'))
+            except ValueError:
+                return jsonify(error='ערכי עוצמה אינם תקינים.'),400
+            first=request.files.get('source')
+            second=request.files.get('voice')
+            if not first or not first.filename:
+                return jsonify(error='יש לבחור קובץ שמע או וידאו מקורי.'),400
+            if mode=='mix' and (not second or not second.filename):
+                return jsonify(error='למיקס יש לבחור גם קובץ קול שני.'),400
+            work=Path(tempfile.mkdtemp(prefix='kolbo-audio-tools-',dir=root))
+            files=[]
+            for name,item in [('source',first),('voice',second)]:
+                if name=='voice' and mode!='mix':continue
+                if item is None:continue
+                ext=Path(item.filename).suffix.lower()
+                if ext not in SUPPORTED:return jsonify(error='פורמט הקובץ אינו נתמך.'),400
+                limit=MAX_VIDEO_UPLOAD if ext in VIDEO_UPLOADS else MAX_AUDIO_UPLOAD
+                data=item.stream.read(limit+1)
+                if not data or len(data)>limit:return jsonify(error='הקובץ חורג ממגבלת הגודל.'),400
+                path=work/(name+ext);path.write_bytes(data);files.append(path)
+            dest=work/'mastered.mp3'
+            render_audio_tool(files[0],dest,mode=mode,
+                              voice=files[1] if len(files)>1 else None,
+                              sound=sound,voice_gain=voice_gain,backing_gain=backing_gain)
+            # send_file may be streamed by WSGI; do not remove it before
+            # response close, otherwise the download disappears.
+            response=stream_temporary_media(dest,'audio/mpeg',work)
+            response.headers['Content-Disposition']='attachment; filename="Kolbo-Studio-Master.mp3"'
+            work=None
+            return response
+        except AudioToolError as exc:
+            return jsonify(error=str(exc)),422
+        except OSError:
+            app.logger.exception('Audio studio filesystem error')
+            return jsonify(error='לא ניתן לשמור את קובץ האולפן.'),503
+        finally:
+            link_admission.release()
+            if work:shutil.rmtree(work,ignore_errors=True)
+
+    @app.post('/api/import-link')
+    def import_social_link():
+        # Triggered ONLY by clicking the explicit 'import link' control.
+        # Public HTTPS social hosts only, without browser cookies or login.
+        from link_import import fetch_public_social_media, LinkImportError
+        raw=request.get_json(silent=True) or {}
+        if not isinstance(raw,dict):
+            return jsonify(error='בקשת הקישור אינה תקינה.'),400
+        link=raw.get('url','')
+        if not link_admission.acquire(blocking=False):
+            return jsonify(error='ייבוא קישור אחר מתבצע כעת. אפשר לנסות שוב.'),429
+        folder=None
+        try:
+            folder=Path(tempfile.mkdtemp(prefix='kolbo-social-',dir=root))
+            output,mime=fetch_public_social_media(link,folder)
+            response=stream_temporary_media(output,mime,folder)
+            folder=None
+            return response
+        except LinkImportError as exc:
+            return jsonify(error=str(exc)),422
+        except (OSError,subprocess.SubprocessError):
+            app.logger.warning('Public link import failed; no user URL logged')
+            return jsonify(error='ייבוא הקישור לא הושלם. אפשר לשתף קובץ מדיה ישירות.'),503
+        finally:
+            link_admission.release()
+            if folder is not None:shutil.rmtree(folder,ignore_errors=True)
 
     @app.post('/api/jobs')
     def create_job():

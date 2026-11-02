@@ -11,11 +11,11 @@ main{max-width:880px;margin:auto;padding:28px 15px 90px}header{text-align:center
 h1{font-size:clamp(32px,7vw,58px);margin:10px 0 8px;line-height:1.14}h1 span{color:#e7a4fe}header p{color:#c9bbdf;line-height:1.7;margin:0}
 .panel{background:rgba(30,23,51,.87);border:1px solid #50406d;border-radius:21px;padding:20px;margin:14px 0;box-shadow:0 6px 25px #04020a33}
 h2{font-size:19px;margin:0 0 13px}label{font-weight:bold;display:block;margin:14px 0 7px}
-small,.hint{color:#bdb2d1;font-size:13px;line-height:1.6}input,select,button,textarea{font:inherit}select,input[type=range],textarea{width:100%}
+small,.hint{color:#bdb2d1;font-size:13px;line-height:1.6}input,select,button,textarea{font:inherit}select,input[type=range],textarea,input[type=url]{width:100%}
 select{min-height:46px;border-radius:11px;background:#231a39;color:white;border:1px solid #71618b;padding:9px}
 input[type=file]{width:100%;background:#251b3b;padding:24px 12px;border:1px dashed #bd8efb;border-radius:12px}
 input[type=range],input[type=checkbox]{accent-color:#c77bea;cursor:pointer}
-textarea{background:#231a39;color:white;border:1px solid #71618b;border-radius:10px;padding:12px}
+textarea,input[type=url]{background:#231a39;color:white;border:1px solid #71618b;border-radius:10px;padding:12px;min-height:48px}
 .videoToggle{display:flex;align-items:center;gap:8px;padding:12px;border-radius:12px;background:#342150}
 .videoToggle input{width:20px;height:20px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid>div{min-width:0}
@@ -47,7 +47,15 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <section class="panel"><h2>01 / ההקלטות שלך</h2>
 <label for="audio">הוסף עד 4 הקלטות קול או סרטוני WhatsApp</label><input id="audio" type="file" accept="audio/*,video/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac,.3gp,.3gpp,.mov" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות להקלטה · עד 15MB לקובץ שמע או 45MB לסרטון · עד 60MB לכל ההעלאה.</div>
-<p class="quickNote">באנדרואיד: משתפים הקלטת קול או סרטון מ־WhatsApp לאפליקציה, מוודאים שהקובץ מופיע כאן, ובוחרים הגדרות. <b>ההפקה מתחילה רק כשלוחצים על כפתור היצירה.</b></p>
+<p class="quickNote">אפשר לשתף גם קישור לסרטון ציבורי מרשת חברתית, או קובץ מקומי. היצירה מתחילה רק בלחיצה על כפתור היצירה.</p>
+<div id="socialLinkPanel" class="advanced">
+<label for="sourceLink">קישור לסרטון או להקלטה מרשת חברתית</label>
+<input id="sourceLink" type="url" dir="ltr" inputmode="url" placeholder="https://www.tiktok.com/... או https://www.facebook.com/...">
+<small>תומך בקישורים ציבוריים מאתרים מזוהים. תוכן פרטי או מוגן לא ייובא. עד שתי דקות, 45MB לסרטון ו־15MB לשמע.</small>
+<label class="videoToggle"><input type="checkbox" id="linkRights"> <span>יש לי הרשאה להשתמש במדיה הזו</span></label>
+<button type="button" class="secondary" id="importLink">ייבא מדיה מהקישור (ללא יצירה)</button>
+<div id="linkStatus" role="status" aria-live="polite" class="hint"></div>
+</div>
 <label for="video_strategy">איזה סרטון ליצור?</label>
 <select id="video_strategy">
 <option value="new_story" selected>יצירת סרטון חדש עם AI מהדיבור — ללא צילום המקור</option>
@@ -154,6 +162,32 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </details>
 <p class="hint">כל הדיבור המקורי נשמר לפי הסדר. רול, מתיחה או סקראצ׳ של קול ה־WhatsApp מושמעים במעבר נפרד, ולא על גבי משפט אחר. המנגינה ממשיכה להתפתח ברקע.</p>
 </section>
+<section class="panel" id="audioToolsPanel"><h2>אולפן סאונד — מיקס ומאסטרינג</h2>
+<p class="hint">כלי עיבוד אמיתיים בחינם: מאסטרינג לקובץ שמע או וידאו, או מיקס של פלייבק עם הקלטת שירה נוספת. אינו מבצע עדיין המרת זהות קול של זמר לקאבר AI.</p>
+<label for="studioMode">סוג העבודה</label><select id="studioMode">
+<option value="master" selected>מאסטרינג — איזון עוצמות, קומפרסור ולימיטר</option>
+<option value="mix">מיקס — מוזיקת רקע/פלייבק עם שירה מקובץ נוסף</option>
+</select>
+<label for="studioSource">קובץ מקור (או הקובץ שכבר שיתפת לאפליקציה)</label>
+<input type="file" id="studioSource" accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.mov">
+<div id="studioVoiceWrap" hidden>
+<label for="studioVoice">קובץ השירה המוקלטת שתרצה למקסס עם הפלייבק</label>
+<input type="file" id="studioVoice" accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4">
+</div>
+<label for="studioSound">סגנון מאסטרינג</label>
+<select id="studioSound"><option value="balanced" selected>מאוזן</option><option value="warm">חם ומלא</option><option value="punchy">חד וקצבי</option><option value="clean">נקי וטבעי</option></select>
+<div id="studioLevels" hidden>
+<label for="studioBackingGain">עוצמת פלייבק — <output id="studioBackingValue">80%</output></label>
+<input id="studioBackingGain" type="range" min="15" max="150" value="80">
+<label for="studioVoiceGain">עוצמת שירה — <output id="studioVoiceValue">100%</output></label>
+<input id="studioVoiceGain" type="range" min="25" max="180" value="100">
+</div>
+<label class="videoToggle"><input type="checkbox" id="studioRights"> <span>יש לי הרשאות להשתמש במוזיקה ובקול שבתוצרים</span></label>
+<button type="button" id="studioRender">הפק MP3 מהקבצים שבחרתי</button>
+<div id="studioStatus" class="hint" role="status" aria-live="polite"></div>
+<audio id="studioPlayer" controls hidden preload="metadata" style="width:100%"></audio>
+<p class="hint">הפרדת שירה ופלייבק מתוך שיר מעורב, והחלפת גוון קול ב־AI Cover, יופעלו רק כשיותקן מנוע הפרדה והמרת קול אמיתי. קישור YouTube מיועד לתצוגה מקדימה, לא להורדה ועיבוד מתוך השירות.</p>
+</section>
 <section class="panel"><h2>03 / יוצרים ומנגנים</h2>
 <div id="stages" aria-label="שלבי הפקה"><span data-step="upload" data-state="current">1. העלאה</span><span data-step="recognize">2. דיבור</span><span data-step="mix">3. טראנס</span><span data-step="video">4. סרטון</span></div>
 <div class="actions" id="creationActions"><button id="generate" type="button" disabled>✦ צור סרטון ומיקס — התחל יצירה</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
@@ -257,6 +291,45 @@ $('ytMusicPreview').onclick=function(){
  message('זהו נגן תצוגה מקדימה בלבד. כדי לשלב את השיר בתוצר יש להעלות קובץ מורשה.');
 };
 window.kolboCanImportSharedAudio=function(){return !active;};
+window.kolboReceiveSharedLink=function(url){
+ if(active){message('מיקס פעיל. הקישור החדש לא יחליף אותו.');return;}
+ if(typeof url!=='string'||url.length>2048)return;
+ $('sourceLink').value=url;
+ $('linkStatus').textContent='התקבל קישור. בדוק את ההרשאות ובחר ״ייבא מדיה״. היצירה לא מתחילה אוטומטית.';
+ $('socialLinkPanel').scrollIntoView({behavior:'smooth',block:'center'});
+};
+// Sharing a link never starts network access or AI generation automatically.
+$('importLink').onclick=async function(){
+ if(active){message('מיקס פעיל. שמור את התוצאה לפני ייבוא חדש.');return;}
+ var link=$('sourceLink').value.trim(),u;
+ try{u=new URL(link)}catch(e){$('linkStatus').textContent='כתובת הקישור אינה תקינה.';return;}
+ if(u.protocol!=='https:'||link.length>2048){$('linkStatus').textContent='נדרש קישור HTTPS תקין.';return;}
+ if(!$('linkRights').checked){$('linkStatus').textContent='נדרש אישור הרשאה לשימוש במדיה.';return;}
+ var button=$('importLink');button.disabled=true;
+ $('linkStatus').textContent='מייבא קובץ ציבורי מהקישור. לא מתבצעת יצירה.';
+ try{
+  var response=await fetch('/api/import-link',{
+   method:'POST',credentials:'same-origin',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({url:link})
+  });
+  if(!response.ok){
+   var errorBody=await response.json().catch(function(){return {}});
+   throw new Error(errorBody.error||'לא התקבל קובץ מהקישור.');
+  }
+  var type=(response.headers.get('content-type')||'').split(';')[0].toLowerCase();
+  var exts={'video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov',
+   'video/3gpp':'3gp','audio/mp4':'m4a','audio/mpeg':'mp3','audio/ogg':'ogg',
+   'audio/aac':'aac','audio/flac':'flac','audio/wav':'wav'};
+  if(!exts[type])throw new Error('פורמט המדיה אינו נתמך.');
+  var bytes=await response.blob(),limit=(type.startsWith('video/')?45:15)*1048576;
+  if(!bytes.size||bytes.size>limit)throw new Error('הקובץ גדול מדי.');
+  setFiles([new File([bytes],'Social-Media.'+exts[type],{type:type})]);
+  $('linkStatus').textContent='המדיה יובאה. ניתן לבחור הגדרות וליצור בלחיצה שלך.';
+  message('הקישור נטען כמדיה; היצירה עדיין לא התחילה.');
+ }catch(error){
+  $('linkStatus').textContent='ייבוא הקישור נכשל: '+(error.message||'המדיה אינה נגישה');
+ }finally{button.disabled=false}
+};
 window.kolboImportSharedAudio=function(items){
  // Sharing from WhatsApp ONLY imports bytes. No scheduling or starting processing.
  // User must explicitly press #generate after inspecting the chosen files.
@@ -290,6 +363,66 @@ $('creativePreset').onchange=function(){
 ['humor','fx_intensity','fx_gain'].forEach(function(id){
  $(''+id).addEventListener('change',function(){$('creativePreset').value='custom'});
 });
+
+$('studioMode').onchange=function(){
+ var mixing=this.value==='mix';
+ $('studioVoiceWrap').hidden=!mixing;
+ $('studioLevels').hidden=!mixing;
+};
+$('studioVoiceGain').oninput=function(){$('studioVoiceValue').textContent=this.value+'%'};
+$('studioBackingGain').oninput=function(){$('studioBackingValue').textContent=this.value+'%'};
+$('studioRender').onclick=async function(){
+ if(active){$('studioStatus').textContent='הפקת רמיקס פעילה. יש להמתין לסיומה.';return;}
+ var source=$('studioSource').files[0]||files[0];
+ var second=$('studioVoice').files[0];
+ var mode=$('studioMode').value;
+ if(!source||(mode==='mix'&&!second)){
+  $('studioStatus').textContent='יש לבחור קובץ מקור'+(mode==='mix'?' וקובץ שירה':'')+'.';return;
+ }
+ if(!$('studioRights').checked){
+  $('studioStatus').textContent='נדרש אישור הרשאות שימוש במדיה.';return;
+ }
+ var form=new FormData();
+ form.append('source',source,source.name);
+ if(mode==='mix')form.append('voice',second,second.name);
+ form.set('mode',mode);
+ form.set('sound',$('studioSound').value);
+ form.set('voice_gain',$('studioVoiceGain').value);
+ form.set('backing_gain',$('studioBackingGain').value);
+ form.set('rights','yes');
+ var btn=$('studioRender');btn.disabled=true;
+ $('studioStatus').textContent='מעבד שמע ומבצע איזון עוצמות, מיקס ומאסטרינג...';
+ try{
+  var response=await fetch('/api/audio-tools/render',{
+   method:'POST',body:form,credentials:'same-origin'
+  });
+  if(!response.ok){
+   var problem=await response.json().catch(function(){return {}});
+   throw new Error(problem.error||'לא ניתן לבצע מאסטרינג לקובץ.');
+  }
+  var blob=await response.blob();
+  if(!blob.size||blob.size>7*1048576)throw new Error('הקובץ שהוחזר אינו תקין או גדול מדי.');
+  var player=$('studioPlayer');
+  if(player.dataset.objectUrl)URL.revokeObjectURL(player.dataset.objectUrl);
+  var url=URL.createObjectURL(blob);
+  player.dataset.objectUrl=url;player.src=url;player.hidden=false;
+  $('studioStatus').textContent='קובץ המאסטר מוכן. ניתן להאזין או לשמור MP3.';
+  if(window.KolboAndroid&&window.KolboAndroid.saveStudioAudio){
+   var reader=new FileReader();
+   reader.onload=function(){
+    window.KolboAndroid.saveStudioAudio(reader.result.split(',')[1]);
+   };
+   reader.readAsDataURL(blob);
+  }else{
+   var link=document.createElement('a');link.href=url;
+   link.download='Kolbo-Studio-Mastered.mp3';
+   document.body.appendChild(link);link.click();link.remove();
+  }
+ }catch(err){
+  $('studioStatus').textContent='שגיאה: '+(err.message||String(err));
+ }finally{btn.disabled=false;}
+};
+
 function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
 function verifyTranscript(txt){
  var words=String(txt||'').trim().split(/\s+/).filter(Boolean);
@@ -722,6 +855,15 @@ window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();def
 $('install').onclick=async function(){if(deferredInstall){deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('install').hidden=true}else{message('בתפריט הדפדפן בחר התקנת אפליקציה.')}};
 if('serviceWorker' in navigator){
 navigator.serviceWorker.register('/studio-sw.js',{scope:'/'}).catch(function(){});
+if(new URLSearchParams(location.search).get('sharedLink')==='1'&&'caches' in window){
+ (async function(){try{
+  var cache=await caches.open('kolbo-studio-share-v1');
+  var response=await cache.match('/studio/shared-link');if(!response)return;
+  var url=await response.text();
+  await cache.delete('/studio/shared-link');
+  window.kolboReceiveSharedLink(url);
+ }catch(e){message('לא הצלחנו לקרוא את הקישור המשותף. אפשר להדביק אותו ידנית.')}})();
+}
 if(new URLSearchParams(location.search).get('shared')==='1'&&'caches' in window){
 (async function(){try{
 var cache=await caches.open('kolbo-studio-share-v1');

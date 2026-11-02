@@ -14,6 +14,7 @@ on:
       - kolbo-trance-provider-failure-diagnostics-20261101
       - kolbo-trance-share-no-reload-244-20261102
       - kolbo-trance-creative-audio-20261102
+      - kolbo-trance-link-share-245-20261102
     paths:
       - 'trance-studio/**'
       - '.github/workflows/kolbo-trance-tests.yml'
@@ -65,6 +66,7 @@ jobs:
         run: |
           node trance-studio/tests/test_manual_share.js
           node trance-studio/tests/test_native_share_resume.js
+          node trance-studio/tests/test_social_link_share.js
       - name: Verify limited Render restart recovery without automated WhatsApp creation
         run: node trance-studio/tests/test_restart_recovery.js
       - name: Validate licensed music and story-only YouTube UI

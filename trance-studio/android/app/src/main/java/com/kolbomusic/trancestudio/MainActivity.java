@@ -34,8 +34,12 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.webkit.WebResourceError;
+import android.util.Base64;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -70,6 +74,10 @@ public final class MainActivity extends Activity {
     private final Handler mainHandler=new Handler(Looper.getMainLooper());
     private long navigationId=0;
     private long incomingVersion=0;
+    private String incomingSharedLink=null;
+    private long sharedLinkVersion=0;
+    private long deliveredSharedLinkVersion=-1;
+    private long deliveredLinkNavigation=-1;
     private long lastImportedVersion=-1;
     private long lastImportNavigation=-1;
     private int automaticRetries=0;
@@ -242,6 +250,7 @@ public final class MainActivity extends Activity {
                             startupPanel.setVisibility(View.GONE);
                             offlinePanel.setVisibility(View.GONE);
                             importIncoming(); // import does not start creation
+                            importSharedLink(); // URL is only placed in UI
                         }else{
                             recoverConnection("השרת השיב דף ללא ממשק היצירה.");
                         }
@@ -282,7 +291,7 @@ public final class MainActivity extends Activity {
         startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
         loading.setVisibility(View.VISIBLE);
         webView.setVisibility(View.VISIBLE);
-        webView.loadUrl(STUDIO+"?android=243&load="+current);
+        webView.loadUrl(STUDIO+"?android=245&load="+current);
         mainHandler.postDelayed(()->{
             if(navigationId==current&&!pageReady&&!pageLoadFailed){
                 startupMessage.setText("שרת הענן החינמי מתעורר. ההקלטות שלך נשארות במכשיר...");
@@ -328,6 +337,23 @@ public final class MainActivity extends Activity {
                 Collections.singletonMap("Cache-Control","no-store"),
                 new ByteArrayInputStream(new byte[0]));
     }
+    private static String firstHttpsLink(String text){
+        if(text==null||text.length()>8192)return null;
+        Matcher match=Pattern.compile("https://\\S+",Pattern.CASE_INSENSITIVE).matcher(text);
+        if(!match.find())return null;
+        String link=match.group();
+        while(link.endsWith(".")||link.endsWith(",")||
+              link.endsWith(")")||link.endsWith("]"))
+            link=link.substring(0,link.length()-1);
+        try{
+            Uri target=Uri.parse(link);
+            String authority=target.getAuthority();
+            if("https".equalsIgnoreCase(target.getScheme())&&
+                target.getHost()!=null&&authority!=null&&
+                !authority.contains("@")&&link.length()<=2048)return link;
+        }catch(Exception ignored){}
+        return null;
+    }
     private void collectIncoming(Intent intent){
         if(intent==null)return;
         String action=intent.getAction();
@@ -357,13 +383,35 @@ public final class MainActivity extends Activity {
             String name=audioName(uri,incoming.size()).toLowerCase(Locale.ROOT);
             boolean video=(type!=null&&type.toLowerCase(Locale.ROOT).startsWith("video/"))
                 ||name.matches(".*\\.(mp4|webm|mov|3gp|3gpp)");
+            boolean audio=(type!=null&&(type.startsWith("audio/")||
+                           "application/ogg".equalsIgnoreCase(type)))
+                ||name.matches(".*\\.(opus|ogg|oga|mp3|m4a|wav|flac|aac)");
+            // A social app may put a text document URI into ClipData.
+            // Never turn text/plain into a fake WhatsApp .opus file.
+            if(!video&&!audio)continue;
             long bytes=contentLength(uri);
             if(bytes>(video?MAX_VIDEO_BYTES:MAX_AUDIO_BYTES)
                ||totalBytes+bytes>MAX_TOTAL_BYTES)continue;
             totalBytes+=bytes;
             incoming.add(uri);
         }
-        if(!candidates.isEmpty()&&incoming.isEmpty())toast("הקובץ המשותף גדול מדי או אינו נתמך");
+        // Resolve a social URL only when there is no usable media stream.
+        // Prefer actual video/audio bytes over captions or post URLs.
+        String link=null;
+        if(incoming.isEmpty()){
+            link=firstHttpsLink(intent.getStringExtra(Intent.EXTRA_TEXT));
+            if(link==null&&intent.getClipData()!=null){
+                for(int i=0;i<Math.min(4,intent.getClipData().getItemCount());i++){
+                    CharSequence raw=intent.getClipData().getItemAt(i).getText();
+                    link=firstHttpsLink(raw==null?null:raw.toString());
+                    if(link!=null)break;
+                }
+            }
+        }
+        incomingSharedLink=link;
+        sharedLinkVersion++;
+        if(!candidates.isEmpty()&&incoming.isEmpty()&&link==null)
+            toast("הקובץ המשותף גדול מדי או אינו נתמך");
     }
     private long contentLength(Uri uri){
         try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.SIZE},null,null,null)){
@@ -408,6 +456,17 @@ public final class MainActivity extends Activity {
                 +"if(window.KolboAndroid)window.KolboAndroid.importFailure();}})();";
         webView.evaluateJavascript(js,null);
     }
+    private void importSharedLink(){
+        if(!pageReady||incomingSharedLink==null)return;
+        if(deliveredSharedLinkVersion==sharedLinkVersion&&
+           deliveredLinkNavigation==navigationId)return;
+        deliveredSharedLinkVersion=sharedLinkVersion;
+        deliveredLinkNavigation=navigationId;
+        // Escape across Java/JS boundary; never evaluate text as code.
+        String script="if(window.kolboReceiveSharedLink)window.kolboReceiveSharedLink("+
+                JSONObject.quote(incomingSharedLink)+");";
+        webView.evaluateJavascript(script,null);
+    }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);
         setIntent(intent);
@@ -433,6 +492,7 @@ public final class MainActivity extends Activity {
                     }
                     collectIncoming(intent);
                     importIncoming();
+                    importSharedLink();
                 });
         }else{
             // Keep the shared URI for import after slow Render cold start.
@@ -449,6 +509,40 @@ public final class MainActivity extends Activity {
     }
     private void toast(String s){runOnUiThread(()->Toast.makeText(this,s,Toast.LENGTH_LONG).show());}
     private class AudioBridge{
+        @JavascriptInterface public void saveStudioAudio(String encoded){
+            if(encoded==null||encoded.length()>9*1024*1024){
+                toast("תוצאת המאסטרינג גדולה מדי לשמירה במכשיר");return;
+            }
+            io.execute(()->{
+                Uri dest=null;
+                try{
+                    byte[] bytes=Base64.decode(encoded,Base64.DEFAULT);
+                    if(bytes.length<2048||bytes.length>7*1024*1024)
+                        throw new IllegalArgumentException("גודל קובץ אינו תקין");
+                    ContentValues values=new ContentValues();
+                    values.put(MediaStore.MediaColumns.DISPLAY_NAME,
+                               "Kolbo-Studio-"+System.currentTimeMillis()+".mp3");
+                    values.put(MediaStore.MediaColumns.MIME_TYPE,"audio/mpeg");
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH,
+                               Environment.DIRECTORY_DOWNLOADS+"/Kolbo Trance");
+                    values.put(MediaStore.MediaColumns.IS_PENDING,1);
+                    dest=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+                    if(dest==null)throw new IllegalStateException("MediaStore unavailable");
+                    try(OutputStream output=getContentResolver().openOutputStream(dest)){
+                        if(output==null)throw new IllegalStateException("Output stream unavailable");
+                        output.write(bytes);
+                    }
+                    ContentValues finish=new ContentValues();
+                    finish.put(MediaStore.MediaColumns.IS_PENDING,0);
+                    getContentResolver().update(dest,finish,null,null);
+                    toast("קובץ המאסטרינג נשמר בהורדות / Kolbo Trance");
+                }catch(Exception err){
+                    if(dest!=null)try{getContentResolver().delete(dest,null,null);}
+                    catch(Exception ignored){}
+                    toast("שמירת הקובץ נכשלה. ניתן לנסות שוב.");
+                }
+            });
+        }
         @JavascriptInterface public void importFailure(){
             toast("לא ניתן לקרוא את הקובץ המשותף. אפשר לבחור אותו שוב או לנסות חיבור מחדש.");
         }

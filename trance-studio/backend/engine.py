@@ -704,16 +704,29 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     seed=int.from_bytes(signature.digest(),'little')
     rng=np.random.default_rng(seed)
     voice_rng=np.random.default_rng(seed^0x9E3779B97F4A7C15)
-    # Voice is arranged FIRST. Its actual duration determines the score length.
-    # This guarantees the last words and the final vocal trick cannot be cut.
+    # An automatic 1–3-word recording must become a complete short DJ gag,
+    # never 30 seconds of repetitive backing behind a 1-second utterance.
+    from micro_remix import arrange_micro_phrase
+    short_form=(seconds==0 and humor!='off' and len(voices)==1
+                and .12<=len(voices[0])/sr<=4.5
+                and (len(transcript_hint.strip().split())<=3
+                     or not transcript_hint.strip()
+                     or len(voices[0])/sr<=2.6))
     transcript_timeline=transcript_timeline or []
-    arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
-                                   transcript_hint=transcript_hint,
-                                   timed_phrases=(transcript_timeline[i] if i<len(transcript_timeline) else None))
-              for i,v in enumerate(voices)]
+    if short_form:
+        cue=_semantic_comedy_cue(transcript_hint,.5) if transcript_hint else None
+        arranged=[arrange_micro_phrase(
+            voices[0],sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
+            vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
+            semantic_cue=cue)]
+    else:
+        arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
+                                       transcript_hint=transcript_hint,
+                                       timed_phrases=(transcript_timeline[i] if i<len(transcript_timeline) else None))
+                  for i,v in enumerate(voices)]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
-    needed=beat*10+total_vocal_duration+max(0,len(voices)-1)*beat*3
-    seconds=max(30.,float(seconds),math.ceil(needed))
+    needed=(beat*5 if short_form else beat*10)+total_vocal_duration+max(0,len(voices)-1)*beat*3
+    seconds=max((14.0 if short_form else 30.0),float(seconds),math.ceil(needed))
     if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
     n=int(round(seconds*sr))
     activity,fx_fill_times=speech_aware_music_map(arranged,sr,bpm,seconds)
@@ -843,7 +856,14 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     for b in range(total):
         time=b*beat
         bar=b//4;quarter=b%4
-        if bar<intro_end:
+        if short_form:
+            # A short joke gets its drop quickly. Do not waste the entire
+            # mini-show on generic 4-bar intro and outro ambience.
+            section=('intro' if bar==0 else
+                     'build' if bar==1 else
+                     'drop' if bar<bars-2 else
+                     'final' if bar==bars-2 else 'outro')
+        elif bar<intro_end:
             section='intro'
         elif bar>=outro_start:
             section='outro'
