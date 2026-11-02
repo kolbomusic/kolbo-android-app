@@ -317,6 +317,16 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
     shots=[beat.spoken_text for beat in beats]
     if not 1<=audio_length<=360:
         raise AIVideoUnavailable("משך המיקס אינו תקין")
+    # Check per-scene target length BEFORE consuming public GPU credits.
+    # If six clips cannot fill a long track, do not generate the first clip
+    # and then repeatedly attempt impossible later segments.
+    weights=[max(1,len(HEBREW.findall(beat.spoken_text))) for beat in beats]
+    total_weight=sum(weights)
+    allocations=[audio_length*w/total_weight for w in weights] if total_weight else []
+    if any(seconds>5.12 for seconds in allocations):
+        raise AIVideoUnavailable(
+            'אורך המיקס מחייב סצנה ארוכה יותר ממגבלת חמש השניות של '
+            'מנוע הווידאו החינמי. לא ניצור קליפים שחוזרים בלולאה')
     prepared=[]
     failure=None
     for index, beat in enumerate(beats):
@@ -343,6 +353,11 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                     url=_request_video_generation(prompt,duration=4.5,max_wait=72)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
+            if seconds+.12<allocations[index]:
+                raise AIVideoUnavailable(
+                    'מנוע ה־AI הפיק '+str(round(seconds,1))+
+                    ' שניות במקום '+str(round(allocations[index],1))+
+                    ' בסצנה '+str(index+1)+'. לא נמחזר קליפ קצר')
             prepared.append((words,raw,seconds))
         except AIVideoUnavailable as exc:
             failure=exc
@@ -352,13 +367,12 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
         raise failure or AIVideoUnavailable('לא נוצרו כל סצנות הסיפור. לא נבצע חזרות של קליפ AI יחיד')
     if not prepared:
         raise AIVideoUnavailable("שירות יצירת הווידאו החינמי אינו זמין")
-    duration_seconds=sum(max(1,len(HEBREW.findall(clip[0])))
-                         for clip in prepared)
+    duration_seconds=total_weight
     encoded=[]
     sources=[]
     for index,(words,raw,source_seconds) in enumerate(prepared):
-        spoken_weight=max(1,len(HEBREW.findall(words)))
-        allocated=audio_length*spoken_weight/duration_seconds
+        spoken_weight=weights[index]
+        allocated=allocations[index]
         if source_seconds+.12<allocated:
             raise AIVideoUnavailable(
                 'נוצרו רק '+str(round(source_seconds,1))+
