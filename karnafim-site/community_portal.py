@@ -714,11 +714,19 @@ setInterval(check,12000);
             pid=request.form.get("id","")
             if not pid.isdigit():abort(400)
             op=request.form.get("op")
-            if op=="publish":sql("UPDATE community_posts SET approved=TRUE WHERE id=%s",(int(pid),))
+            if op=="publish":
+                # Prevent disclosure of an unapproved new member's private uploads.
+                allowed=sql("""SELECT p.id FROM community_posts p
+                  JOIN members m ON m.id=p.author_id
+                  WHERE p.id=%s AND p.approved=FALSE AND m.approved=TRUE""",(int(pid),),True)
+                if not allowed:
+                    abort(409,"יש לאשר תחילה את החברות של בעל הפרסום.")
+                sql("""UPDATE community_posts p SET approved=TRUE FROM members m
+                  WHERE p.id=%s AND p.author_id=m.id AND m.approved=TRUE AND p.approved=FALSE""",(int(pid),))
             elif op=="reject":sql("DELETE FROM community_posts WHERE id=%s AND approved=FALSE",(int(pid),))
             else:abort(400)
             return redirect("/community/moderation")
-        pending=sql("SELECT p.*,m.name FROM community_posts p JOIN members m ON p.author_id=m.id WHERE NOT p.approved ORDER BY p.created_at DESC LIMIT 100",fetch=True)
+        pending=sql("SELECT p.*,m.name,m.approved AS author_approved FROM community_posts p JOIN members m ON p.author_id=m.id WHERE NOT p.approved ORDER BY p.created_at DESC LIMIT 100",fetch=True)
         b='<h1>אישור סיפורים, אירועים ותמונות</h1><p>בדוק זכויות שימוש, פרטיות, דיוק היסטורי והסכמת המצולמים לפני פרסום. גם אירועים עתידיים נבדקים לפני הופעתם בקהילה.</p>'
         if not pending:b+='<div class="note">אין כרגע פרסומים הממתינים לאישור.</div>'
         for p in pending:
@@ -728,7 +736,11 @@ setInterval(check,12000);
             b+='<p>'+e(p["body"])+'</p><small>מאת '+e(p["name"])+'</small>'
             for m in sql("SELECT id,kind FROM community_media WHERE post_id=%s",(p["id"],),True):
                 b+=media_html(m["id"],m["kind"])
-            b+='<form method="post">'+formwrap('<input type="hidden" name="id" value="'+str(p["id"])+'"><button name="op" value="publish">אישור לפרסום</button><button name="op" value="reject">מחיקת הפרסום</button>')+'</form></article>'
+            if not p["author_approved"]:
+                b+='<p class="muted">חשבון המעלה טרם אושר כחבר. התוכן נשמר פרטי עד אישור החברות.</p>'
+            b+='<form method="post">'+formwrap('<input type="hidden" name="id" value="'+str(p["id"])+'">'+
+                ('<button name="op" value="publish">אישור לפרסום</button>' if p["author_approved"] else '')+
+                '<button name="op" value="reject">מחיקת הפרסום</button>')+'</form></article>'
         return page("אישור תכנים",b)
 
     app.extensions["karnafim_portal"]={"home":home,"page":page}
