@@ -3,7 +3,7 @@ import io, html, hashlib, os, re
 from datetime import date
 import psycopg
 from PIL import Image, ImageOps, UnidentifiedImageError
-from moderation_engine import moderate, configured
+from moderation_engine import moderate, configured, Verdict, local_gate
 from urllib.parse import quote, urlsplit
 from flask import request, redirect, abort, send_file, session, Response
 from archive_data import ARCHIVE
@@ -192,7 +192,7 @@ def install(app, sql, view, me, admin, guard, formwrap, esc):
 
     def home():
         u=me()
-        actions=('<a class="cta" href="/directory">🔎 איתור חברים</a><a class="cta alt" href="/new-post">📸 שתפו סיפור, אירוע או תמונות</a><a class="cta alt" href="/my-posts">📝 הפרסומים שלי</a><a class="cta alt" href="/chats">💬 הודעות</a>' if u and u["approved"] else '<a class="cta" href="/register">🦏 הייתי שם — מצטרפים</a><a class="cta alt" href="/login">🔑 כבר חברים? כניסה לחשבון</a>')
+        actions=('<a class="cta" href="/directory">🔎 איתור חברים</a><a class="cta alt" href="/new-post">📸 שתפו סיפור, אירוע או תמונות</a><a class="cta alt" href="/my-posts">📝 הפרסומים שלי</a><a class="cta alt" href="/chats">💬 הודעות</a>' if u else '<a class="cta" href="/register">🦏 הייתי שם — מצטרפים</a><a class="cta alt" href="/login">🔑 כבר חברים? כניסה לחשבון</a>')
         b='<section class="mast"><span class="kicker">401 / 46 / פלוגה ב׳ • 2003–2006</span><h1>עשרים שנה עברו.<br>החברים עדיין כאן.</h1><p>הקרנפים, שלימים נקראו ברקן. בית לקולות, לסיפורים, לתמונות ולחברים ששירתו איתנו. כאן מתחברים מחדש — ושומרים יחד על המורשת.</p><div class="actions">'+actions+'</div></section>'
         b+='<section class="photo-heritage"><figure><img loading="lazy" src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Merkava-4-tank-6611a-white1.jpg/1280px-Merkava-4-tank-6611a-white1.jpg" alt="טנק מרכבה סימן 4 — צילום המחשה מארכיון Wikimedia Commons"><figcaption>טנק מרכבה סימן 4, צילום המחשה משנת 2015 — <strong>לא תצלום של פלוגת הקרנפים</strong>. צילום: <a href="https://commons.wikimedia.org/wiki/File:Merkava-4-tank-6611a-white1.jpg" target="_blank" rel="noopener noreferrer">צחי אבנור / MathKnight, Wikimedia Commons</a>, רישיון <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>.</figcaption></figure><div><h2>התמונות שלנו מתחילות כאן</h2><p>תצלומים מקוריים מהפלוגה יופיעו לאחר שחברים יעלו אותם, יסכימו לשיתוף ויאושרו על ידי מנהלי הקהילה.</p><a class="cta" href="/photos">📸 לאלבום התמונות</a></div></section>'
         b+=statistics()
@@ -319,7 +319,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
     @app.route("/community-media/<int:media_id>")
     def community_media(media_id):
         u=me()
-        if not u or not u["approved"]:abort(403)
+        if not u:abort(403)
         r=sql("SELECT m.*,p.approved post_approved FROM community_media m LEFT JOIN community_posts p ON p.id=m.post_id WHERE m.id=%s",(media_id,),True)
         if not r:abort(404)
         m=r[0]
@@ -328,7 +328,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         # attachments unless they themselves own/receive that message.
         owner=m["owner_id"]==u["id"]
         if m["post_id"] is not None:
-            can_view=bool(owner or admin(u) or m["post_approved"])
+            can_view=bool(owner or (u["approved"] and (admin(u) or m["post_approved"])))
         elif m["recipient_id"] is not None:
             can_view=bool(owner or (m["recipient_id"]==u["id"]
                                     and is_connected(m["owner_id"],u["id"])))
@@ -407,12 +407,9 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         u=me()
         if not u:
             return redirect("/login?next=/new-post",code=303)
-        if not u["approved"]:
-            return page("ממתינים לאישור חברות",'<div class="note" role="status"><h1>החשבון ממתין לאישור</h1><p>מנהל קהילת הקרנפים צריך לאשר את החברות לפני פרסום תמונות, אירועים וסיפורים.</p><a href="/archive">אפשר לצפות בינתיים בארכיון</a></div>'),403
         if request.method=="POST":
             guard()
             if request.form.get("rights")!="on":abort(400)
-            if request.form.get("ai_consent")!="on":abort(400,"נדרש אישור לעיבוד על ידי שירות AI חיצוני, או הימנעות משליחת הפרסום.")
             post_type=request.form.get("post_type","story")
             if post_type not in ("story","event","photo"):abort(400)
             title=request.form.get("title","").strip()[:130]
@@ -436,8 +433,14 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             if not title or (len(body)<5 and not files):abort(400,"נדרשים כותרת, וסיפור קצר או תמונה")
             infos=[inspect_file(f) for f in files]
             # Moderation runs BEFORE the transaction that creates a post. Failure is private.
-            verdict=moderate({"post_type":post_type,"title":title,"body":body,
-                              "year":y,"date":when,"place":place},infos)
+            post_data={"post_type":post_type,"title":title,"body":body,
+                       "year":y,"date":when,"place":place}
+            issue=local_gate(post_data,infos)
+            if issue:
+                return page("בדיקת בטיחות",'<div class="note"><h1>יש לתקן את הפרסום</h1><p>'+e(issue)+'</p><a href="/new-post">עריכה מחדש</a></div>'),422
+            wants_ai=request.form.get("ai_consent")=="on"
+            verdict=(moderate(post_data,infos) if wants_ai else
+                     Verdict("held","נשמר באופן פרטי לבדיקה ואישור", "",False))
             if verdict.status=="rejected":
                 return page("הפרסום לא התקבל",'<div class="note" role="alert"><h1>הפרסום לא עבר בדיקת בטיחות</h1><p>'+e(verdict.reason)+'</p><a href="/new-post">עריכת הפרסום וניסיון נוסף</a></div>'),422
             total_size=sum(info["size"] for info in infos)
@@ -453,14 +456,16 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
                     if mine+total_size>25*1024*1024 or site+total_size>150*1024*1024:abort(413,"אין מספיק מקום אחסון לפרסום")
                     cur.execute("INSERT INTO community_posts(author_id,title,body,story_year,post_type,event_date,event_place,approved,ai_status,ai_reason,ai_model,ai_checked_at,ai_attempts,ai_consent) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s THEN NOW() ELSE NULL END,%s,TRUE) RETURNING id",
                                 (u["id"],title,body,int(y) if y else None,post_type,event_date,place,
-                                 verdict.status=="approved",verdict.status,verdict.reason,verdict.model,
+                                 bool(u["approved"] and verdict.status=="approved"),
+                                 verdict.status if u["approved"] else "pending_member_approval",
+                                 verdict.reason if u["approved"] else "ממתין לאישור חברות ובדיקת תוכן",verdict.model,
                                  verdict.attempted,1 if verdict.attempted else 0))
                     post_id=cur.fetchone()[0]
                     for info in infos:
                         cur.execute("INSERT INTO community_media(owner_id,post_id,recipient_id,mime,kind,filename,data,length) VALUES(%s,%s,NULL,%s,%s,%s,%s,%s)",
                                     (u["id"],post_id,info["mime"],info["kind"],info["filename"],info["data"],info["size"]))
-            return redirect("/my-posts?auto=1" if verdict.status=="approved" else "/my-posts?submitted=1",code=303)
-        b='<h1>📸 מפרסמים זיכרון מהפלוגה</h1><p>חבר מאושר יכול לשתף סיפור, אירוע או תמונות. הפרסום יהיה גלוי לחברים המאושרים רק לאחר בדיקת מנהל.</p>'
+            return redirect("/my-posts?auto=1" if (u["approved"] and verdict.status=="approved") else "/my-posts?submitted=1",code=303)
+        b='<h1>📸 משתפים זיכרון מהפלוגה</h1><p>אפשר לשלוח סיפור, אירוע, תמונות או סרטון לאחר כניסה לחשבון מאומת. רק לאחר אישור חברות ובדיקת תוכן הפרסום יהיה גלוי לאחרים.</p>'
         b+='<form method="post" enctype="multipart/form-data" class="form-box">'+formwrap(
             '<label>סוג פרסום<select name="post_type" required><option value="story">סיפור מהשירות</option><option value="event">אירוע, מפגש או זיכרון מאירוע</option><option value="photo">אלבום תמונות</option></select></label>'
             '<label>כותרת הפרסום<input name="title" maxlength="130" required placeholder="למשל: צוות הטנק שלנו בבסיס"></label>'
@@ -470,10 +475,10 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             '<label>הסיפור או פרטי האירוע<textarea name="body" maxlength="4000" placeholder="מי היה, מה קרה, ומה אתם זוכרים? אפשר לשתף תמונות עם כותרת בלבד."></textarea></label>'
             +upload_form(True)
             +'<label><input type="checkbox" name="rights" style="width:auto;display:inline" required> אני מאשר שיש לי זכויות והרשאה לשתף את החומרים, ושלא כללתי פרטים אישיים של אחרים ללא הסכמתם.</label>'
-            +'<label><input type="checkbox" name="ai_consent" style="width:auto;display:inline" required> אני מסכים להעברת התוכן והקבצים לשירות Google Gemini לצורך ביקורת AI אוטומטית, ככל שהשירות מחובר. בשכבת השימוש החינמית Google עשויה להשתמש בתוכן לשיפור שירותיה. תוכן שלא עובר בדיקה יישמר פרטי ולא יפורסם אוטומטית.</label>'
-            +'<p class="muted">בדיקה חכמה: '+("מחוברת — תוכן בסיכון נמוך עשוי להתפרסם מיד" if configured() else "טרם חובר מנוע AI; כל פרסום יישאר פרטי עד לבדיקה")+'</p>'
+            +'<label><input type="checkbox" name="ai_consent" style="width:auto;display:inline"> בחירה בלבד: אני מסכים להעביר את התוכן לשירות Google Gemini לצורך ביקורת AI. אין חובה לסמן; בלי סימון הפרסום יישמר פרטי לביקורת מנהל.</label>'
+            +'<p class="muted">אפשר להעלות תוכן ללא שירות חיצוני. פרסומים נשמרים פרטים עד אישור לפי מדיניות הקהילה.</p>'
             +'<p id="draft-note" class="muted" role="status" aria-live="polite">טקסט הטיוטה נשמר בלשונית זו כדי לצמצם אובדן מידע במקרה שהשרת מתעורר מחדש. קבצים לא נשמרים בטיוטה.</p>'
-            +'<button type="submit">שליחת הפרסום לביקורת אוטומטית</button></form>')
+            +'<button type="submit">שמירת הסיפור והתמונות לבדיקה</button></form>')
         return page("הוספת סיפור, תמונות או אירוע",b+UPLOAD_JS+RECORD_JS+DRAFT_JS)
 
     def retry_ai_queue():
@@ -507,9 +512,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
     def my_posts():
         u=me()
         if not u:return redirect("/login?next=/my-posts",code=303)
-        if not u["approved"]:
-            return page("אין עדיין הרשאת פרסום",'<div class="note"><h1>החברות שלך ממתינה לאישור</h1><p>לאחר אישור המנהל אפשר לראות כאן סיפורים ותמונות ששיתפת.</p><a href="/archive">לארכיון המורשת</a></div>'),403
-        retry_ai_queue()
+        if u["approved"]:retry_ai_queue()
         rows=sql("SELECT id,title,body,post_type,story_year,event_date,event_place,approved,ai_status,ai_reason,created_at FROM community_posts WHERE author_id=%s ORDER BY created_at DESC LIMIT 100",(u["id"],),True)
         b='<h1>📝 הפרסומים שלי</h1><p>תמונות, אירועים וסיפורים ששלחת. עד שהמנהל מאשר אותם, רק אתה והמנהל יכולים לראות את התוכן.</p>'
         if request.args.get("submitted") in ("1",) or request.args.get("auto")=="1":
