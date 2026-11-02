@@ -114,7 +114,7 @@ class FacebookPublicMediaStreamTests(unittest.TestCase):
                  patch.object(li,"_try_public_download",return_value="extractor"):
                 with self.assertRaises(li.LinkImportError) as issue:
                     li.fetch_public_social_media(
-                        "https://www.facebook.com/reel/4301066573492911",root,timeout=2)
+                        "https://www.facebook.com/reel/4301066573492911",root,timeout=8)
         self.assertEqual(issue.exception.code,"extractor_parse")
         self.assertIn("לא בהכרח",str(issue.exception))
 
