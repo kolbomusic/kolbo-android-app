@@ -27,7 +27,7 @@ assert.equal(pwa.share_target.params.text,'text');
 const script=html.slice(html.lastIndexOf('<script>')+8,html.lastIndexOf('</script>'));
 new Function(script);
 const start=script.indexOf('window.kolboReceiveSharedLink=function(url)');
-const end=script.indexOf('// Sharing a link never starts',start);
+const end=script.indexOf('// Manual recovery uses',start);
 assert.ok(start>0&&end>start);
 const receiver=script.slice(start,end);
 assert.ok(!/fetch\(|\.click\(|run\(|startActivity|generate/.test(receiver),
