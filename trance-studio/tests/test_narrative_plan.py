@@ -89,6 +89,23 @@ class NarrativePlanTests(unittest.TestCase):
         self.assertIn('החמור נוער',beats[1].spoken_text)
         self.assertIn('המשאית נוסעת',beats[2].spoken_text)
 
+    def test_single_word_actions_after_conjunctions_are_preserved(self):
+        # A spoken verb must never vanish merely because it follows "ואז".
+        spoken='החמור נוער ואז נופל. צוחק ואז האיש אוכל את הקש.'
+        beats=narrative_beats(spoken)
+        combined=' '.join(b.spoken_text for b in beats)
+        for word in ('החמור','נוער','נופל','צוחק','האיש','אוכל','הקש'):
+            self.assertIn(word,combined)
+        self.assertLess(combined.index('נוער'),combined.index('נופל'))
+        self.assertLess(combined.index('נופל'),combined.index('צוחק'))
+        self.assertLess(combined.index('צוחק'),combined.index('אוכל'))
+
+    def test_one_word_before_connector_is_kept_with_next_scene(self):
+        beats=narrative_beats('נופל ואז האיש צוחק')
+        self.assertTrue(beats)
+        self.assertIn('נופל', ' '.join(b.spoken_text for b in beats))
+        self.assertIn('האיש צוחק', ' '.join(b.spoken_text for b in beats))
+
     def test_long_hebrew_speech_gets_distinct_ordered_camera_shots_not_one_loop(self):
         story="החמור נוער בחוזקה. אחר כך החקלאי מגיש קש לחמור."
         shots=duration_beats(story,30)

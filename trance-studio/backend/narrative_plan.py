@@ -119,8 +119,22 @@ def _clause_hints(clause):
 def _raw_clauses(transcript):
     clean=re.sub(r"[\x00-\x1f\x7f]", " ", str(transcript or ""))
     clean=re.sub(r"\s+", " ", clean).strip()[:4000]
-    return [s.strip(" .,!?:;") for s in BOUNDARY.split(clean)
-            if len(HEBREW_WORD.findall(s))>=2]
+    # A short action after a connector is still part of the recording.
+    # Previously "החמור נוער ואז נופל" discarded "נופל" entirely.
+    # Merge one-word fragments with an adjacent event in spoken order,
+    # rather than silently removing their action or fabricating new words.
+    fragments=[s.strip(" .,!?:;") for s in BOUNDARY.split(clean)]
+    fragments=[s for s in fragments if HEBREW_WORD.findall(s)]
+    clauses=[]
+    for fragment in fragments:
+        if len(HEBREW_WORD.findall(fragment))==1 and clauses:
+            clauses[-1]+=". "+fragment
+        else:
+            clauses.append(fragment)
+    if len(clauses)>1 and len(HEBREW_WORD.findall(clauses[0]))==1:
+        clauses[1]=clauses[0]+". "+clauses[1]
+        clauses.pop(0)
+    return clauses
 
 
 def narrative_beats(transcript, *, max_scenes=MAX_STORY_SCENES):
