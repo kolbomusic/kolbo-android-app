@@ -40,10 +40,13 @@ def static():
     h=(ROOT/"maintenance_public.html").read_text("utf-8")
     assert "<form" not in h.lower() and "<script" not in h.lower()
     assert 'SESSION_COOKIE_NAME="karnafim_oidc_session"' in app
-    assert 'session.get("auth_method")!=AUTH_METHOD' in app
+    assert 'session.get("auth_method")!="local"' in app
     assert 'KARNAFIM_LOCAL_AUTH_ENABLED' in app
     assert 'SAFETY_RELEASE_APPROVED and AUTH_READY' in app
-    assert 'install_google_login' in app
+    assert 'from email_delivery import' in app
+    assert 'from google_identity import' not in app
+    assert 'install_google_login' not in app
+    assert 'email_verification_tokens' in app
     print("STATIC: file syntax and security invariants OK")
 
 def live(expected_revision=None):
