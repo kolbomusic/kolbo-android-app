@@ -239,6 +239,83 @@ def _try_public_facebook_cdn(url, folder, *, deadline, opener=None):
     except (OSError,URLError,HTTPError,LinkImportError):
         return "unavailable"
 
+def _safe_facebook_page_url(candidate):
+    """Only public HTTPS Facebook page redirects; never off-domain/localhost."""
+    try:
+        p=urlsplit(candidate)
+        host=(p.hostname or "").lower().rstrip(".")
+        return bool(
+            p.scheme=="https" and p.port in (None,443) and
+            not p.username and not p.password and
+            len(candidate)<=2048 and "\\" not in candidate and
+            (host=="facebook.com" or host.endswith(".facebook.com") or
+             host=="fb.watch" or host.endswith(".fb.watch")))
+    except (ValueError,TypeError):
+        return False
+
+
+def _facebook_public_browser_candidates(url, *, timeout=7):
+    """Resolve a publicly accessible Facebook short share through curl_cffi.
+
+    urllib mobile-lookalike requests often yield a login/landing page, while
+    real Chrome 99 HTTP/TLS negotiation exposes the 3xx video destination.
+    Redirects are followed manually and never allowed off Facebook; only
+    public HTML head metadata is inspected, no account cookies or private APIs.
+    """
+    if not _safe_facebook_page_url(url):return []
+    try:
+        from curl_cffi import requests as chrome_requests
+    except ImportError:
+        return []
+    deadline=time.monotonic()+max(1,min(timeout,9))
+    current=url
+    discovered=[]
+    for _ in range(5):
+        if deadline-time.monotonic()<.6:break
+        response=None
+        try:
+            response=chrome_requests.get(
+                current,impersonate="chrome99",allow_redirects=False,
+                stream=True,timeout=min(4,max(1,deadline-time.monotonic())),
+                headers={"Accept":"text/html,application/xhtml+xml"})
+            location=response.headers.get("Location","")
+            if response.status_code in (301,302,303,307,308) and location:
+                follow=urljoin(current,location)
+                if not _safe_facebook_page_url(follow):break
+                direct=_trusted_facebook_video_url(follow,current)
+                if direct and direct not in discovered:discovered.append(direct)
+                current=follow
+                continue
+            direct=_trusted_facebook_video_url(current,url)
+            if direct and direct not in discovered:discovered.append(direct)
+            mime=(response.headers.get("Content-Type") or "").lower()
+            if response.status_code==200 and (
+                "text/html" in mime or "application/xhtml+xml" in mime):
+                chunks=[]
+                size=0
+                for chunk in response.iter_content(chunk_size=32768):
+                    if not chunk:continue
+                    room=150000-size
+                    if room<=0:break
+                    chunks.append(chunk[:room])
+                    size+=min(len(chunk),room)
+                    if size>=150000:break
+                html=b"".join(chunks)
+                for video in _facebook_html_video_urls(html,current):
+                    if video not in discovered:discovered.append(video)
+                for media in _facebook_html_media_urls(html):
+                    if media not in discovered:discovered.append(media)
+            break
+        except Exception:
+            # Network/library differences are expected on free hosts;
+            # preserve the ordinary extractor path without disclosing URLs.
+            break
+        finally:
+            if response is not None:
+                response.close()
+    return discovered[:4]
+
+
 def _facebook_public_candidates(url, *, opener=None, timeout=7):
     """Try redirects and public HTML metadata of a Facebook short-share link.
 
@@ -274,6 +351,12 @@ def _facebook_public_candidates(url, *, opener=None, timeout=7):
                         candidates.extend(_facebook_html_media_urls(html))
         except (OSError,URLError,HTTPError,ValueError,LinkImportError):
             pass  # The original public link still gets one bounded extraction.
+        # Test the real public Chrome transport only when the ordinary
+        # redirect/metadata path did not identify a video. Passing an explicit
+        # test opener keeps existing injected-unit-test flows deterministic.
+        if opener is None and not any(_facebook_video_id(c) for c in candidates):
+            candidates.extend(_facebook_public_browser_candidates(
+                url,timeout=timeout))
     video_id=next((_facebook_video_id(c) for c in candidates if _facebook_video_id(c)),None)
     if video_id:
         watch=f"https://www.facebook.com/watch/?v={video_id}"
