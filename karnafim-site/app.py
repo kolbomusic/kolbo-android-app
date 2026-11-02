@@ -14,7 +14,7 @@ _GIS_CALLBACK_SHA256=base64.b64encode(hashlib.sha256(GIS_CALLBACK_JS.encode("utf
 
 app=Flask(__name__)
 app.secret_key=os.environ['SECRET_KEY']
-app.config.update(SESSION_COOKIE_NAME="karnafim_oidc_session",SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=timedelta(hours=6),MAX_CONTENT_LENGTH=2*1024*1024,MAX_FORM_MEMORY_SIZE=64*1024,MAX_FORM_PARTS=25,TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"])
+app.config.update(SESSION_COOKIE_NAME="karnafim_oidc_session",SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=timedelta(hours=6),MAX_CONTENT_LENGTH=34*1024*1024,MAX_FORM_MEMORY_SIZE=64*1024,MAX_FORM_PARTS=25,TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"])
 # Fail closed while Google Safe Browsing flags the site. Accidentally changing
 # maintenance alone must not restore private accounts, uploads or message routes.
 # Explicitly release ONLY after Google clearance and security regressions pass:
