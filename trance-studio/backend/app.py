@@ -2,7 +2,7 @@
 import os, time, secrets, shutil, threading, json, subprocess, hashlib, re, tempfile
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory, Response
 from werkzeug.exceptions import RequestEntityTooLarge
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 from engine import load_audio, render_mix, export_mp3
@@ -26,6 +26,27 @@ def create_app(config=None):
     jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
     web=Path(__file__).resolve().parents[1]/'web'
+    def stream_temporary_media(media_path,mime,folder):
+        """Delete the temporary source after actual response consumption.
+
+        Flask send_file(...).call_on_close() is not reliably executed by all
+        WSGI response wrappers. This generator ties cleanup to stream close.
+        """
+        length=media_path.stat().st_size
+        def chunks():
+            try:
+                with media_path.open('rb') as infile:
+                    while True:
+                        block=infile.read(65536)
+                        if not block:break
+                        yield block
+            finally:
+                shutil.rmtree(folder,ignore_errors=True)
+        response=Response(chunks(),mimetype=mime,headers={
+            'Content-Length':str(length),'Cache-Control':'no-store, private',
+            'X-Content-Type-Options':'nosniff'})
+        return response
+
     def session_codec():
         return URLSafeTimedSerializer(app.config['API_TOKEN'],salt='kolbo-studio-web-session')
     def studio_session():
@@ -410,11 +431,8 @@ def create_app(config=None):
                               sound=sound,voice_gain=voice_gain,backing_gain=backing_gain)
             # send_file may be streamed by WSGI; do not remove it before
             # response close, otherwise the download disappears.
-            response=send_file(dest,mimetype='audio/mpeg',
-                               as_attachment=True,
-                               download_name='Kolbo-Studio-Master.mp3')
-            cleanup_dir=work
-            response.call_on_close(lambda:shutil.rmtree(cleanup_dir,ignore_errors=True))
+            response=stream_temporary_media(dest,'audio/mpeg',work)
+            response.headers['Content-Disposition']='attachment; filename="Kolbo-Studio-Master.mp3"'
             work=None
             return response
         except AudioToolError as exc:
@@ -441,14 +459,7 @@ def create_app(config=None):
         try:
             folder=Path(tempfile.mkdtemp(prefix='kolbo-social-',dir=root))
             output,mime=fetch_public_social_media(link,folder)
-            response=send_file(
-                output,mimetype=mime,as_attachment=False,
-                download_name='Kolbo-Imported'+output.suffix.lower(),
-                conditional=False)
-            response.headers['Cache-Control']='no-store, private'
-            response.headers['X-Content-Type-Options']='nosniff'
-            cleanup_folder=folder
-            response.call_on_close(lambda:shutil.rmtree(cleanup_folder,ignore_errors=True))
+            response=stream_temporary_media(output,mime,folder)
             folder=None
             return response
         except LinkImportError as exc:
