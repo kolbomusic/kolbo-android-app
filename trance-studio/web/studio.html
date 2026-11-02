@@ -162,6 +162,32 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </details>
 <p class="hint">כל הדיבור המקורי נשמר לפי הסדר. רול, מתיחה או סקראצ׳ של קול ה־WhatsApp מושמעים במעבר נפרד, ולא על גבי משפט אחר. המנגינה ממשיכה להתפתח ברקע.</p>
 </section>
+<section class="panel" id="audioToolsPanel"><h2>אולפן סאונד — מיקס ומאסטרינג</h2>
+<p class="hint">כלי עיבוד אמיתיים בחינם: מאסטרינג לקובץ שמע או וידאו, או מיקס של פלייבק עם הקלטת שירה נוספת. אינו מבצע עדיין המרת זהות קול של זמר לקאבר AI.</p>
+<label for="studioMode">סוג העבודה</label><select id="studioMode">
+<option value="master" selected>מאסטרינג — איזון עוצמות, קומפרסור ולימיטר</option>
+<option value="mix">מיקס — מוזיקת רקע/פלייבק עם שירה מקובץ נוסף</option>
+</select>
+<label for="studioSource">קובץ מקור (שמע או וידאו)</label>
+<input type="file" id="studioSource" accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.mov">
+<div id="studioVoiceWrap" hidden>
+<label for="studioVoice">קובץ השירה המוקלטת שתרצה למקסס עם הפלייבק</label>
+<input type="file" id="studioVoice" accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4">
+</div>
+<label for="studioSound">סגנון מאסטרינג</label>
+<select id="studioSound"><option value="balanced" selected>מאוזן</option><option value="warm">חם ומלא</option><option value="punchy">חד וקצבי</option><option value="clean">נקי וטבעי</option></select>
+<div id="studioLevels" hidden>
+<label for="studioBackingGain">עוצמת פלייבק — <output id="studioBackingValue">80%</output></label>
+<input id="studioBackingGain" type="range" min="15" max="150" value="80">
+<label for="studioVoiceGain">עוצמת שירה — <output id="studioVoiceValue">100%</output></label>
+<input id="studioVoiceGain" type="range" min="25" max="180" value="100">
+</div>
+<label class="videoToggle"><input type="checkbox" id="studioRights"> <span>יש לי הרשאות להשתמש במוזיקה ובקול שבתוצרים</span></label>
+<button type="button" id="studioRender">הפק MP3 מהקבצים שבחרתי</button>
+<div id="studioStatus" class="hint" role="status" aria-live="polite"></div>
+<audio id="studioPlayer" controls hidden preload="metadata" style="width:100%"></audio>
+<p class="hint">הפרדת שירה ופלייבק מתוך שיר מעורב, והחלפת גוון קול ב־AI Cover, יופעלו רק כשיותקן מנוע הפרדה והמרת קול אמיתי. קישור YouTube מיועד לתצוגה מקדימה, לא להורדה ועיבוד מתוך השירות.</p>
+</section>
 <section class="panel"><h2>03 / יוצרים ומנגנים</h2>
 <div id="stages" aria-label="שלבי הפקה"><span data-step="upload" data-state="current">1. העלאה</span><span data-step="recognize">2. דיבור</span><span data-step="mix">3. טראנס</span><span data-step="video">4. סרטון</span></div>
 <div class="actions" id="creationActions"><button id="generate" type="button" disabled>✦ צור סרטון ומיקס — התחל יצירה</button><button type="button" class="secondary" id="install" hidden>התקנת אפליקציה</button></div>
@@ -337,6 +363,66 @@ $('creativePreset').onchange=function(){
 ['humor','fx_intensity','fx_gain'].forEach(function(id){
  $(''+id).addEventListener('change',function(){$('creativePreset').value='custom'});
 });
+
+$('studioMode').onchange=function(){
+ var mixing=this.value==='mix';
+ $('studioVoiceWrap').hidden=!mixing;
+ $('studioLevels').hidden=!mixing;
+};
+$('studioVoiceGain').oninput=function(){$('studioVoiceValue').textContent=this.value+'%'};
+$('studioBackingGain').oninput=function(){$('studioBackingValue').textContent=this.value+'%'};
+$('studioRender').onclick=async function(){
+ if(active){$('studioStatus').textContent='הפקת רמיקס פעילה. יש להמתין לסיומה.';return;}
+ var source=$('studioSource').files[0];
+ var second=$('studioVoice').files[0];
+ var mode=$('studioMode').value;
+ if(!source||(mode==='mix'&&!second)){
+  $('studioStatus').textContent='יש לבחור קובץ מקור'+(mode==='mix'?' וקובץ שירה':'')+'.';return;
+ }
+ if(!$('studioRights').checked){
+  $('studioStatus').textContent='נדרש אישור הרשאות שימוש במדיה.';return;
+ }
+ var form=new FormData();
+ form.append('source',source,source.name);
+ if(mode==='mix')form.append('voice',second,second.name);
+ form.set('mode',mode);
+ form.set('sound',$('studioSound').value);
+ form.set('voice_gain',$('studioVoiceGain').value);
+ form.set('backing_gain',$('studioBackingGain').value);
+ form.set('rights','yes');
+ var btn=$('studioRender');btn.disabled=true;
+ $('studioStatus').textContent='מעבד שמע ומבצע איזון עוצמות, מיקס ומאסטרינג...';
+ try{
+  var response=await fetch('/api/audio-tools/render',{
+   method:'POST',body:form,credentials:'same-origin'
+  });
+  if(!response.ok){
+   var problem=await response.json().catch(function(){return {}});
+   throw new Error(problem.error||'לא ניתן לבצע מאסטרינג לקובץ.');
+  }
+  var blob=await response.blob();
+  if(!blob.size||blob.size>7*1048576)throw new Error('הקובץ שהוחזר אינו תקין או גדול מדי.');
+  var player=$('studioPlayer');
+  if(player.dataset.objectUrl)URL.revokeObjectURL(player.dataset.objectUrl);
+  var url=URL.createObjectURL(blob);
+  player.dataset.objectUrl=url;player.src=url;player.hidden=false;
+  $('studioStatus').textContent='קובץ המאסטר מוכן. ניתן להאזין או לשמור MP3.';
+  if(window.KolboAndroid&&window.KolboAndroid.saveStudioAudio){
+   var reader=new FileReader();
+   reader.onload=function(){
+    window.KolboAndroid.saveStudioAudio(reader.result.split(',')[1]);
+   };
+   reader.readAsDataURL(blob);
+  }else{
+   var link=document.createElement('a');link.href=url;
+   link.download='Kolbo-Studio-Mastered.mp3';
+   document.body.appendChild(link);link.click();link.remove();
+  }
+ }catch(err){
+  $('studioStatus').textContent='שגיאה: '+(err.message||String(err));
+ }finally{btn.disabled=false;}
+};
+
 function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms)})}
 function verifyTranscript(txt){
  var words=String(txt||'').trim().split(/\s+/).filter(Boolean);
