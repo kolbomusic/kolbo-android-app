@@ -33,13 +33,14 @@ def sample_audio():
     return raw
 
 
-def synthetic_clip(path,kind='testsrc2',seconds=2):
-    subprocess.run([
-        'ffmpeg','-nostdin','-loglevel','error','-y',
-        '-f','lavfi','-i',f'{kind}=size=512x512:rate=16:duration={seconds}',
-        '-c:v','libx264','-pix_fmt','yuv420p','-preset','veryfast',
-        '-crf','23','-movflags','+faststart',str(path)
-    ],check=True,timeout=35)
+def synthetic_clip(path,kind='testsrc2',seconds=2,flip=False):
+    cmd=['ffmpeg','-nostdin','-loglevel','error','-y',
+         '-f','lavfi','-i',f'{kind}=size=512x512:rate=16:duration={seconds}']
+    if flip:
+        cmd.extend(['-vf','hflip'])  # A genuinely different moving shot.
+    cmd.extend(['-c:v','libx264','-pix_fmt','yuv420p','-preset','veryfast',
+                '-crf','23','-movflags','+faststart',str(path)])
+    subprocess.run(cmd,check=True,timeout=35)
 
 
 def completed_job(client,opts, timeout=75):
@@ -131,7 +132,7 @@ class PhoneAIRecoveryTests(unittest.TestCase):
             frames=[]
             for i,kind in enumerate(('testsrc','testsrc2','testsrc')):
                 p=root/f'original-ai-clip-{i}.mp4'
-                synthetic_clip(p,kind,seconds=(5.2 if i==2 else 5))
+                synthetic_clip(p,kind,seconds=(5.2 if i==2 else 5),flip=(i==2))
                 frames.append(p)
             video=root/'story.mp4'
             plan=combine_mobile_ai_clips(
