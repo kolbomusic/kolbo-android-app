@@ -7,6 +7,8 @@ import io
 import os
 from pathlib import Path
 import sys
+import subprocess
+import tempfile
 
 import psycopg
 from PIL import Image
@@ -41,6 +43,20 @@ def image():
     Image.new("RGB",(64,64),(140,160,155)).save(f,format="JPEG")
     f.seek(0)
     return f
+
+def video():
+    """Generate an actual one-second MPEG-4 file for upload/playback regression."""
+    with tempfile.TemporaryDirectory() as directory:
+        target=str(Path(directory)/"test.mp4")
+        subprocess.run([
+            "ffmpeg","-hide_banner","-loglevel","error","-y",
+            "-f","lavfi","-i","color=c=navy:s=64x64:r=1",
+            "-t","1","-an","-c:v","mpeg4","-pix_fmt","yuv420p",
+            "-movflags","+faststart",target
+        ],check=True,timeout=20)
+        data=Path(target).read_bytes()
+    assert 100<len(data)<8*1024*1024 and data[4:8]==b"ftyp"
+    return io.BytesIO(data)
 
 with site.app.test_client() as client:
     r=client.get("/register",base_url=BASE)
@@ -116,9 +132,32 @@ with site.app.test_client() as client:
     assert moderated.status_code in (302,303),moderated.status_code
     assert site.sql("SELECT approved FROM community_posts WHERE id=%s",(post["id"],),True)[0]["approved"]
 
-    # Unauthenticated public may not read member-uploaded files.
+    # A genuinely encoded video must pass the same private publishing rules,
+    # be served with the appropriate video MIME, and support browser byte ranges.
+    with client.session_transaction(base_url=BASE) as sess:
+        sess["uid"]=member_id
+        sess["auth_method"]="local"
+        sess["credential_version"]=0
+        sess["csrf"]="synthetic-csrf"
+    new_video=client.post("/new-post",base_url=BASE,
+        data={"csrf":"synthetic-csrf","rights":"on","post_type":"photo",
+              "title":"סרטון ניסיון מהקהילה","body":"סרטון בדיקה שהועלה על ידי חבר.",
+              "attachments":(video(),"test.mp4","video/mp4")},
+        content_type="multipart/form-data")
+    assert new_video.status_code==303,new_video.status_code
+    video_rows=site.sql("""SELECT m.id,m.mime FROM community_media m
+         JOIN community_posts p ON p.id=m.post_id
+         WHERE p.author_id=%s AND m.kind='video'""",(member_id,),True)
+    assert len(video_rows)==1 and video_rows[0]["mime"]=="video/mp4",video_rows
+    video_url="/community-media/"+str(video_rows[0]["id"])
+    playback=client.get(video_url,base_url=BASE,headers={"Range":"bytes=0-127"})
+    assert playback.status_code==206,(playback.status_code,playback.headers)
+    assert playback.mimetype=="video/mp4"
+
+    # Unauthenticated public may not read either member-uploaded file.
     with client.session_transaction(base_url=BASE) as sess:
         sess.clear()
     assert client.get(media_url,base_url=BASE).status_code==403
+    assert client.get(video_url,base_url=BASE).status_code==403
 
-print("PASS: PostgreSQL signup, confirmation, password login, private photo upload, moderator membership gate and media isolation")
+print("PASS: PostgreSQL signup, confirmation, password login, private photo + actual video upload, byte-range playback, moderator gate and media isolation")
