@@ -21,6 +21,8 @@ on:
       - 'trance-studio/web/studio.html'
       - 'trance-studio/backend/app.py'
       - 'trance-studio/tests/test_simple_mobile_ui.js'
+      - 'trance-studio/tests/test_social_link_share.js'
+      - 'trance-studio/tests/test_auto_social_link_share.js'
       - '.github/workflows/kolbo-trance-public-link-fallback.yml'
   workflow_dispatch:
 permissions:
