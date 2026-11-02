@@ -322,7 +322,7 @@ def resend_verification():
         protect()
         limit("resend-general",10,60)
         email=request.form.get("email","").lower().strip()[:200]
-        if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+",email):abort(400)
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email):abort(400)
         limit("resend:"+email,3,60)
         account=sql("""SELECT id FROM b2_users
             WHERE lower(email)=%s AND email_verification_required=TRUE""",(email,),True)
