@@ -11,11 +11,11 @@ main{max-width:880px;margin:auto;padding:28px 15px 90px}header{text-align:center
 h1{font-size:clamp(32px,7vw,58px);margin:10px 0 8px;line-height:1.14}h1 span{color:#e7a4fe}header p{color:#c9bbdf;line-height:1.7;margin:0}
 .panel{background:rgba(30,23,51,.87);border:1px solid #50406d;border-radius:21px;padding:20px;margin:14px 0;box-shadow:0 6px 25px #04020a33}
 h2{font-size:19px;margin:0 0 13px}label{font-weight:bold;display:block;margin:14px 0 7px}
-small,.hint{color:#bdb2d1;font-size:13px;line-height:1.6}input,select,button,textarea{font:inherit}select,input[type=range],textarea{width:100%}
+small,.hint{color:#bdb2d1;font-size:13px;line-height:1.6}input,select,button,textarea{font:inherit}select,input[type=range],textarea,input[type=url]{width:100%}
 select{min-height:46px;border-radius:11px;background:#231a39;color:white;border:1px solid #71618b;padding:9px}
 input[type=file]{width:100%;background:#251b3b;padding:24px 12px;border:1px dashed #bd8efb;border-radius:12px}
 input[type=range],input[type=checkbox]{accent-color:#c77bea;cursor:pointer}
-textarea{background:#231a39;color:white;border:1px solid #71618b;border-radius:10px;padding:12px}
+textarea,input[type=url]{background:#231a39;color:white;border:1px solid #71618b;border-radius:10px;padding:12px;min-height:48px}
 .videoToggle{display:flex;align-items:center;gap:8px;padding:12px;border-radius:12px;background:#342150}
 .videoToggle input{width:20px;height:20px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid>div{min-width:0}
@@ -47,7 +47,15 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <section class="panel"><h2>01 / ההקלטות שלך</h2>
 <label for="audio">הוסף עד 4 הקלטות קול או סרטוני WhatsApp</label><input id="audio" type="file" accept="audio/*,video/*,.opus,.ogg,.oga,.m4a,.mp3,.mp4,.wav,.webm,.flac,.aac,.3gp,.3gpp,.mov" multiple>
 <div id="files" class="hint">אפשר לבחור קובצי WhatsApp או לשתף ישירות לאפליקציה המותקנת באנדרואיד. עד 120 שניות להקלטה · עד 15MB לקובץ שמע או 45MB לסרטון · עד 60MB לכל ההעלאה.</div>
-<p class="quickNote">באנדרואיד: משתפים הקלטת קול או סרטון מ־WhatsApp לאפליקציה, מוודאים שהקובץ מופיע כאן, ובוחרים הגדרות. <b>ההפקה מתחילה רק כשלוחצים על כפתור היצירה.</b></p>
+<p class="quickNote">אפשר לשתף גם קישור לסרטון ציבורי מרשת חברתית, או קובץ מקומי. היצירה מתחילה רק בלחיצה על כפתור היצירה.</p>
+<div id="socialLinkPanel" class="advanced">
+<label for="sourceLink">קישור לסרטון או להקלטה מרשת חברתית</label>
+<input id="sourceLink" type="url" dir="ltr" inputmode="url" placeholder="https://www.tiktok.com/... או https://www.facebook.com/...">
+<small>תומך בקישורים ציבוריים מאתרים מזוהים. תוכן פרטי או מוגן לא ייובא. עד שתי דקות, 45MB לסרטון ו־15MB לשמע.</small>
+<label class="videoToggle"><input type="checkbox" id="linkRights"> <span>יש לי הרשאה להשתמש במדיה הזו</span></label>
+<button type="button" class="secondary" id="importLink">ייבא מדיה מהקישור (ללא יצירה)</button>
+<div id="linkStatus" role="status" aria-live="polite" class="hint"></div>
+</div>
 <label for="video_strategy">איזה סרטון ליצור?</label>
 <select id="video_strategy">
 <option value="new_story" selected>יצירת סרטון חדש עם AI מהדיבור — ללא צילום המקור</option>
@@ -257,6 +265,45 @@ $('ytMusicPreview').onclick=function(){
  message('זהו נגן תצוגה מקדימה בלבד. כדי לשלב את השיר בתוצר יש להעלות קובץ מורשה.');
 };
 window.kolboCanImportSharedAudio=function(){return !active;};
+window.kolboReceiveSharedLink=function(url){
+ if(active){message('מיקס פעיל. הקישור החדש לא יחליף אותו.');return;}
+ if(typeof url!=='string'||url.length>2048)return;
+ $('sourceLink').value=url;
+ $('linkStatus').textContent='התקבל קישור. בדוק את ההרשאות ובחר ״ייבא מדיה״. היצירה לא מתחילה אוטומטית.';
+ $('socialLinkPanel').scrollIntoView({behavior:'smooth',block:'center'});
+};
+// Sharing a link never starts network access or AI generation automatically.
+$('importLink').onclick=async function(){
+ if(active){message('מיקס פעיל. שמור את התוצאה לפני ייבוא חדש.');return;}
+ var link=$('sourceLink').value.trim(),u;
+ try{u=new URL(link)}catch(e){$('linkStatus').textContent='כתובת הקישור אינה תקינה.';return;}
+ if(u.protocol!=='https:'||link.length>2048){$('linkStatus').textContent='נדרש קישור HTTPS תקין.';return;}
+ if(!$('linkRights').checked){$('linkStatus').textContent='נדרש אישור הרשאה לשימוש במדיה.';return;}
+ var button=$('importLink');button.disabled=true;
+ $('linkStatus').textContent='מייבא קובץ ציבורי מהקישור. לא מתבצעת יצירה.';
+ try{
+  var response=await fetch('/api/import-link',{
+   method:'POST',credentials:'same-origin',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({url:link})
+  });
+  if(!response.ok){
+   var errorBody=await response.json().catch(function(){return {}});
+   throw new Error(errorBody.error||'לא התקבל קובץ מהקישור.');
+  }
+  var type=(response.headers.get('content-type')||'').split(';')[0].toLowerCase();
+  var exts={'video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov',
+   'video/3gpp':'3gp','audio/mp4':'m4a','audio/mpeg':'mp3','audio/ogg':'ogg',
+   'audio/aac':'aac','audio/flac':'flac','audio/wav':'wav'};
+  if(!exts[type])throw new Error('פורמט המדיה אינו נתמך.');
+  var bytes=await response.blob(),limit=(type.startsWith('video/')?45:15)*1048576;
+  if(!bytes.size||bytes.size>limit)throw new Error('הקובץ גדול מדי.');
+  setFiles([new File([bytes],'Social-Media.'+exts[type],{type:type})]);
+  $('linkStatus').textContent='המדיה יובאה. ניתן לבחור הגדרות וליצור בלחיצה שלך.';
+  message('הקישור נטען כמדיה; היצירה עדיין לא התחילה.');
+ }catch(error){
+  $('linkStatus').textContent='ייבוא הקישור נכשל: '+(error.message||'המדיה אינה נגישה');
+ }finally{button.disabled=false}
+};
 window.kolboImportSharedAudio=function(items){
  // Sharing from WhatsApp ONLY imports bytes. No scheduling or starting processing.
  // User must explicitly press #generate after inspecting the chosen files.
