@@ -93,28 +93,12 @@ class BrowserAIQuotaTests(unittest.TestCase):
             with patch('ai_video._download_public_video',side_effect=fake_download) as dl:
                 ready=client.post('/api/jobs/'+data['id']+'/generated-video',
                                   json={'video_url':url})
-            self.assertEqual(ready.status_code,200,ready.get_json())
+            self.assertEqual(ready.status_code,422,ready.get_json())
+            self.assertIn('קליפ AI יחיד קצר',ready.get_json()['error'])
             dl.assert_called_once()
-            details=ready.get_json()
-            self.assertEqual(details['video_status'],'done')
-            self.assertEqual(details['video_mode'],'ai_generated_on_device')
             after=self.wait(client,data['status_url'])
-            self.assertIn('video_url',after)
-            self.assertNotIn('client_ai_prompt',after)
-            video=client.get(details['video_preview_url'])
-            self.assertEqual(video.status_code,200)
-            self.assertGreater(len(video.data),25000)
-            movie=pathlib.Path(folder)/'output.mp4'
-            movie.write_bytes(video.data)
-            check=json.loads(subprocess.check_output([
-                'ffprobe','-v','error','-show_streams','-show_format','-of',
-                'json',str(movie)]))
-            v=next(s for s in check['streams'] if s['codec_type']=='video')
-            self.assertEqual((v['codec_name'],v['width'],v['height']),
-                             ('h264',360,640))
-            self.assertEqual({s['codec_type'] for s in check['streams']},
-                             {'video','audio'})
-            self.assertGreater(float(check['format']['duration']),29.3)
+            self.assertEqual(after['video_status'],'unavailable')
+            self.assertNotIn('video_url',after)
             self.assertEqual(client.get(after['download_url']).status_code,200)
 
 

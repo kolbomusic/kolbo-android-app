@@ -97,30 +97,13 @@ class PhoneAIRecoveryTests(unittest.TestCase):
                 files.append(p.read_bytes())
             result=client.post('/api/jobs/'+job['id']+'/ai-clips',data={
                 'clip':[(io.BytesIO(data),f'clip-{i}.mp4') for i,data in enumerate(files)]})
-            self.assertEqual(result.status_code,200,result.get_json())
-            answer=result.get_json()
-            self.assertEqual(answer['video_mode'],'ai_generated_client_fallback')
-            self.assertEqual(answer['visual_coverage'],'approximate')
-            completed=client.get(job['status_url']).get_json()
-            self.assertEqual(completed['video_status'],'done',completed)
-            self.assertNotIn('video_error',completed)
-            self.assertEqual(completed['ai_clips_generated'],2)
-            mp4=client.get(completed['video_url'])
-            self.assertEqual(mp4.status_code,200)
-            media=pathlib.Path(folder)/'output.mp4'
-            media.write_bytes(mp4.data)
-            probe=json.loads(subprocess.check_output([
-                'ffprobe','-v','error','-show_streams','-show_format','-of','json',str(media)]))
-            video=next(s for s in probe['streams'] if s['codec_type']=='video')
-            self.assertEqual((video['codec_name'],video['width'],video['height']),
-                             ('h264',360,640))
-            self.assertEqual({s['codec_type'] for s in probe['streams']},
-                             {'video','audio'})
-            self.assertGreater(float(probe['format']['duration']),29)
-            subprocess.run(['ffmpeg','-v','error','-ss','20','-i',str(media),
-                            '-frames:v','1','-f','null','-'],check=True)
-            self.assertNotIn('client_ai_prompt',completed)
-            self.assertEqual(client.get(completed['download_url']).status_code,200)
+            # A pair of two-second sources cannot span a 30-second mix:
+            # legacy would have stretched them in a visible endless loop.
+            self.assertEqual(result.status_code,422,result.get_json())
+            self.assertIn('מספיק וידאו',result.get_json()['error'])
+            current=client.get(job['status_url']).get_json()
+            self.assertEqual(current['video_status'],'unavailable')
+            self.assertEqual(client.get(current['download_url']).status_code,200)
 
     def test_compact_but_real_moving_mp4_is_not_mistaken_for_missing_clip(self):
         # Public model clips may compress extremely well. Security comes from
@@ -148,7 +131,7 @@ class PhoneAIRecoveryTests(unittest.TestCase):
             frames=[]
             for i,kind in enumerate(('testsrc','testsrc2','testsrc')):
                 p=root/f'original-ai-clip-{i}.mp4'
-                synthetic_clip(p,kind,seconds=2)
+                synthetic_clip(p,kind,seconds=(5.2 if i==2 else 5))
                 frames.append(p)
             video=root/'story.mp4'
             plan=combine_mobile_ai_clips(

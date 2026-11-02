@@ -762,7 +762,7 @@ def create_app(config=None):
                 'audio_seconds':round(audio_seconds,2),
                 'sources':[],
                 'video_note':'קליפ AI חדש נוצר דרך המכשיר מתוך תמלול הדיבור. '
-                             'הקליפ חוזר לאורך המיקס ואינו שחזור מדויק של כל משפט.'
+                             'הקטע אינו מורחב בלולאה. אין הבטחה להתאמה סמנטית מושלמת.'
             }
             (workdir/'storyboard.json').write_text(
                 json.dumps(board,ensure_ascii=False),encoding='utf-8')

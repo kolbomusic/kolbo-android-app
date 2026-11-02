@@ -76,6 +76,7 @@ jobs:
           node --check trance-studio/web/studio-ai-fallback.js
           node trance-studio/tests/test_manual_share.js
           node trance-studio/tests/test_native_share_resume.js
+          node trance-studio/tests/test_ai_story_no_loop.js
           node trance-studio/tests/test_social_link_share.js
           node trance-studio/tests/test_auto_social_link_share.js
           node trance-studio/tests/test_simple_mobile_ui.js

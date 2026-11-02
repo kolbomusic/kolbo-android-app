@@ -123,12 +123,12 @@ function requestPayload(model,prompt,shotIndex){
   var seed=42+(shotIndex||0)*7919;
   if(model.id==='ltx25'){
     return {prompt:prompt,image_path:null,height:512,width:768,
-            duration_s:4.5,seed:seed,decoder:'conv',auto_len:false,
+            duration_s:5.0,seed:seed,decoder:'conv',auto_len:false,
             randomize_seed:false,do_enhance:false};
   }
   return {data:[prompt,
     'blurry, deformed, text, watermark, anime, cartoon, illustration',
-    null,null,512,704,'text-to-video',4.5,9,seed,false,1.0,true]};
+    null,null,512,704,'text-to-video',5.0,9,seed,false,1.0,true]};
 }
 async function oneClip(model,prompt,onStage,shotIndex){
   var base='https://'+model.host;

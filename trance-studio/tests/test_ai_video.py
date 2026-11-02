@@ -109,9 +109,9 @@ class AIVideoTests(unittest.TestCase):
                 count['n']+=1
                 v='testsrc' if count['n']==1 else 'smptebars'
                 subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
-                    '-f','lavfi','-i',f'{v}=size=512x704:rate=12:duration=2',
+                    '-f','lavfi','-i',f'{v}=size=512x704:rate=12:duration=4',
                     '-c:v','libvpx-vp9','-b:v','180k',str(dest)],check=True)
-                return 2.0
+                return 4.0
             out=root/'story.mp4'
             plan=generate_ai_story(
                 'האיש צוחק בקול. אחר כך הכוס נשברת על הרצפה.',
@@ -175,15 +175,15 @@ class AIVideoTests(unittest.TestCase):
             def download(url,dest):
                 # This is an actual moving WebM video, not a still or waveform.
                 subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-f','lavfi',
-                    '-i','testsrc=size=512x704:rate=12:duration=2',
+                    '-i','testsrc=size=512x704:rate=12:duration=4',
                     '-c:v','libvpx-vp9','-b:v','140k',str(dest)],check=True,timeout=30)
-                return 2.0
+                return 4.0
             out=root/'story.mp4'
             plan=generate_ai_story('האיש צוחק בקול.',audio,out,root/'ai',
                                    generator=generate,download=download)
             self.assertEqual(plan['source'],'generated_from_original_hebrew_transcript')
             self.assertEqual(plan['visual_coverage'],'approximate')
-            self.assertTrue(plan['repeated_ai_shot'])
+            self.assertFalse(plan['repeated_ai_shot'])
             self.assertTrue(seen and 'האיש צוחק' in seen[0])
             report=json.loads(subprocess.check_output([
                 'ffprobe','-v','error','-show_streams','-show_format',

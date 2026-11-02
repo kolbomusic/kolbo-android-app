@@ -95,7 +95,7 @@ class NarrativePlanTests(unittest.TestCase):
             narrative_beats('הכלב נובח',max_scenes=0)
         verylong=('הכלב נובח ואז האיש רץ. '*500)
         plan=narrative_beats(verylong)
-        self.assertLessEqual(len(plan),3)
+        self.assertLessEqual(len(plan),MAX_STORY_SCENES)
         self.assertTrue(all(len(x.spoken_text)<4000 for x in plan))
 
 
