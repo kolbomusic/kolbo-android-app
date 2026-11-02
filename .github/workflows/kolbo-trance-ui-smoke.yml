@@ -54,20 +54,7 @@ jobs:
             adb shell am start -W -n com.kolbomusic.trancestudio.story244/com.kolbomusic.trancestudio.MainActivity
             sleep 6
             adb exec-out screencap -p > /tmp/kolbo-trance-launch.png
-            python - <<'PY'
-            from PIL import Image
-            from collections import Counter
-            im=Image.open('/tmp/kolbo-trance-launch.png').convert('RGB')
-            w,h=im.size
-            area=im.crop((w//12,h//8,11*w//12,7*h//8)).resize((96,96))
-            colors=Counter(area.getdata())
-            # The old bug was an entirely black, empty Android content area.
-            # Both native warmup and successful web studio must have visible UI.
-            visual=sum(n for (r,g,b),n in colors.items() if max(r,g,b)>70)
-            assert visual>=120, f'Black/empty app screen: visible pixels={visual}'
-            assert len(colors)>=18, f'Blank solid-color app: colors={len(colors)}'
-            print('REAL_ANDROID_EMULATOR_VISIBLE_STARTUP_PASS', im.size,visual,len(colors))
-            PY
+            python trance-studio/tests/inspect_android_launch.py /tmp/kolbo-trance-launch.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
