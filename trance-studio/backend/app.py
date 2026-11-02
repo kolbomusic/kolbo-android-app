@@ -342,7 +342,7 @@ def create_app(config=None):
             allowed.add('http://'+request.host)
             if origin and origin.rstrip('/') not in allowed:return jsonify(error='מקור הבקשה אינו מורשה'),403
             if request.method=='OPTIONS':return '',204
-            if (request.path.startswith('/api/jobs') or request.path=='/api/import-link') and not app.config.get('TESTING'):
+            if (request.path.startswith('/api/jobs') or request.path=='/api/import-link' or request.path=='/api/audio-tools/render') and not app.config.get('TESTING'):
                 token=app.config['API_TOKEN']
                 if not token:return jsonify(error='העיבוד בענן טרם הוגדר. ניתן לעבד במכשיר.'),503
                 if not studio_session() and not secrets.compare_digest(request.headers.get('Authorization',''),'Bearer '+token):return jsonify(error='קוד הגישה אינו תקין'),401
