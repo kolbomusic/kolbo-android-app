@@ -34,9 +34,12 @@ DB=os.environ["DATABASE_URL"]
 ORIGIN=os.environ.get("BARKAN_PUBLIC_ORIGIN","https://karnafim-barkan-46.onrender.com").rstrip("/")
 # Public account forms are a separate switch. Never enable until the new origin
 # passes live security checks and is no longer flagged by Safe Browsing.
-PUBLIC_AUTH=os.environ.get("BARKAN_PUBLIC_AUTH","0")=="1"
+PUBLIC_AUTH=(os.environ.get("BARKAN_PUBLIC_AUTH","0")=="1"
+             and os.environ.get("BARKAN_SAFETY_RELEASE_APPROVED","0")=="1")
 EMAIL_PROVIDER=os.environ.get("BARKAN_RESEND_API_KEY","")
 MAIL_FROM=os.environ.get("BARKAN_MAIL_FROM","")
+MAIL_READY=bool(EMAIL_PROVIDER.strip() and MAIL_FROM.strip())
+ALLOW_SIGNUP=(PUBLIC_AUTH and os.environ.get("BARKAN_ALLOW_SIGNUP","0")=="1" and MAIL_READY)
 
 def connect():
     return psycopg.connect(DB,row_factory=dict_row,connect_timeout=8)
@@ -164,7 +167,9 @@ def layout(title,body):
     if PUBLIC_AUTH and u:
         menu += [("/feed","הקהילה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
         if admin():menu += [("/moderation","בקרת פרסומים"),("/members","אישור חברים")]
-    elif PUBLIC_AUTH:menu += [("/login","כניסה"),("/signup","הצטרפות")]
+    elif PUBLIC_AUTH:
+        menu += [("/login","כניסה")]
+        if ALLOW_SIGNUP:menu += [("/signup","הצטרפות")]
     nav=''.join('<a href="'+link+'"'+(' aria-current="page"' if request.path==link else '')+'>'+label+'</a>' for link,label in menu)
     banner=('<div class="banner">האתר החדש נמצא בהכנת מערכת החברים ובבדיקת אבטחה. '
             'תכני המורשת זמינים כעת; הרשמה והתחברות ייפתחו רק לאחר אימות בטיחות האתר.</div>') if not PUBLIC_AUTH else ''
@@ -199,7 +204,8 @@ def headers(resp):
 
 @app.get("/health")
 def health():
-    return {"status":"ok","generation":"new-build","auth_enabled":PUBLIC_AUTH},200
+    return {"status":"ok","generation":"new-build","auth_enabled":PUBLIC_AUTH,
+            "signup_enabled":ALLOW_SIGNUP,"email_sender_configured":MAIL_READY},200
 
 @app.get("/")
 def home():
@@ -260,11 +266,13 @@ def safety():
 
 @app.get("/status")
 def status():
-    return layout("מצב המערכת",'<div class="pagehead"><h1>מצב המערכת</h1></div><section class="story"><p>אתר מורשת חדש: פעיל. מערכת חברים: '+("פעילה." if PUBLIC_AUTH else "מושהית עד השלמת בדיקות אבטחה.")+'</p><p>אימות דוא״ל: '+("שירות HTTPS זמין." if EMAIL_PROVIDER and MAIL_FROM else "אין ספק משלוח מאומת.")+'</p><p>הכתובת הקודמת נשמרה לקריאה בלבד ולא אוספת סיסמאות.</p></section>')
+    return layout("מצב המערכת",'<div class="pagehead"><h1>מצב המערכת</h1></div><section class="story"><p>אתר מורשת חדש: פעיל. מערכת חברים: '+("פעילה." if PUBLIC_AUTH else "מושהית עד השלמת בדיקות אבטחה.")+'</p><p>אימות דוא״ל: '+("הוגדר ספק HTTPS; אימות המסירה עדיין נדרש." if MAIL_READY else "אין ספק משלוח מאומת.")+'</p><p>הכתובת הקודמת נשמרה לקריאה בלבד ולא אוספת סיסמאות.</p></section>')
 
 @app.route("/signup",methods=["GET","POST"])
 def signup():
-    if not PUBLIC_AUTH:abort(503)
+    # New members must verify email before their password can be used.
+    # Do not collect credentials if an email sender is not configured.
+    if not ALLOW_SIGNUP:abort(503)
     if request.method=="POST":
         protect();limit("signup",4,60)
         if request.form.get("agree")!="yes" or request.form.get("website"):abort(400)
@@ -273,23 +281,23 @@ def signup():
         password=request.form.get("password","")
         if len(name)<2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) or not 12<=len(password)<=200:
             return layout("הרשמה",'<div class="note error">יש להזין שם, דוא״ל תקין וסיסמה בת 12 תווים לפחות.</div>'),400
-        needs_email=bool(EMAIL_PROVIDER and MAIL_FROM)
         with connect() as c:
             with c.cursor() as cur:
                 try:
                     cur.execute("""INSERT INTO b2_users(name,email,passhash,email_verification_required)
-                        VALUES(%s,%s,%s,%s) RETURNING id""",(name,email,hashpw(password),needs_email))
+                        VALUES(%s,%s,%s,%s) RETURNING id""",(name,email,hashpw(password),True))
                     uid=cur.fetchone()["id"]
                 except psycopg.errors.UniqueViolation:
                     c.rollback()
                     return layout("הרשמה",'<div class="note">אם הבקשה כבר קיימת, אין צורך להגיש אותה שוב.</div>')
-        if needs_email:send_verification(email,uid)
-        return layout("בקשת הצטרפות",'<div class="pagehead"><h1>בקשת ההצטרפות נשמרה</h1><p>הבקשה ממתינה לאישור חברות. '+("בדקו את הדוא״ל לקישור האימות." if needs_email else "כרגע האישור מתבצע באמצעות מנהל הקהילה, ללא טענה לאימות דוא״ל.")+'</p><a class="primary" href="/login">מעבר לכניסה</a></div>')
+        if not send_verification(email,uid):
+            return layout("משלוח אימות",'<div class="pagehead"><h1>ההרשמה נשמרה, אבל המייל לא נשלח</h1><p>אפשר לנסות שוב דרך שליחת אימות מחדש. החשבון חסום לכניסה עד אימות הכתובת.</p><a href="/resend-verification" class="primary">שליחת אימות מחדש</a></div>'),503
+        return layout("בקשת הצטרפות",'<div class="pagehead"><h1>בקשת ההצטרפות נשמרה</h1><p>הודעת האימות התקבלה במערכת השליחה. יש לאמת את הדוא״ל לפני הכניסה לחשבון.</p><a class="primary" href="/login">מעבר לכניסה</a></div>')
     return layout("הרשמה",'<div class="pagehead"><h1>בקשת הצטרפות</h1><p>יוצאי פלוגה ב׳ מוזמנים להשאיר פרטים. חשבונות חדשים ממתינים לבדיקת חברות לפני השתתפות ציבורית.</p></div>'+
         button_form('<label>שם מלא<input name="name" required maxlength="90" autocomplete="name"></label><label>דוא״ל<input name="email" type="email" required autocomplete="email"></label><label>סיסמה (לפחות 12 תווים)<input type="password" name="password" minlength="12" required autocomplete="new-password"></label><input name="website" tabindex="-1" class="honeypot" aria-hidden="true"><label class="check"><input type="checkbox" name="agree" value="yes" required> אני מסכים לשמירת הפרטים לצורך קבלה לקהילה</label><button class="primary">שליחת בקשת הצטרפות</button>','/signup','class="formcard"'))
 
 def send_verification(email,uid):
-    if not (EMAIL_PROVIDER and MAIL_FROM):return False
+    if not MAIL_READY:return False
     import json
     from urllib.request import Request,urlopen
     token=secrets.token_urlsafe(36)
@@ -335,7 +343,8 @@ def login():
         session.clear();session["csrf"]=secrets.token_urlsafe(32);session["uid"]=u["id"];session.permanent=True
         return redirect("/my-posts",code=303)
     return layout("כניסה",'<div class="pagehead"><h1>כניסה לקהילה</h1><p>באמצעות דוא״ל וסיסמה. אין התחברות דרך Google.</p></div>'+
-        button_form('<label>דוא״ל<input type="email" name="email" autocomplete="email" required></label><label>סיסמה<input type="password" name="password" autocomplete="current-password" required></label><button class="primary">כניסה</button><p><a href="/signup">עדיין לא נרשמת?</a></p>','/login','class="formcard"'))
+        button_form('<label>דוא״ל<input type="email" name="email" autocomplete="email" required></label><label>סיסמה<input type="password" name="password" autocomplete="current-password" required></label><button class="primary">כניסה</button>' +
+         ('<p><a href="/signup">עדיין לא נרשמת?</a></p>' if ALLOW_SIGNUP else ''),'/login','class="formcard"'))
 
 @app.post("/logout")
 @require_login
