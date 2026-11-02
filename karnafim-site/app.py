@@ -21,8 +21,12 @@ app.config.update(SESSION_COOKIE_NAME="karnafim_oidc_session",SESSION_COOKIE_SEC
 # KARNAFIM_MAINTENANCE=0 AND KARNAFIM_SAFETY_RELEASE_APPROVED=1
 # AND Google OAuth credentials pass server-side configuration validation.
 SAFETY_RELEASE_APPROVED=os.environ.get("KARNAFIM_SAFETY_RELEASE_APPROVED","0")=="1"
+# Password sign-in is staged, but cannot be exposed while Chrome marks the site unsafe.
+AUTH_METHOD=os.environ.get("KARNAFIM_AUTH_METHOD","local").strip().lower()
+AUTH_READY=(os.environ.get("KARNAFIM_LOCAL_AUTH_ENABLED","0")=="1"
+            if AUTH_METHOD=="local" else google_ready() if AUTH_METHOD=="google" else False)
 READ_ONLY_BOOT=not (os.environ.get("KARNAFIM_MAINTENANCE","1")=="0"
-                    and SAFETY_RELEASE_APPROVED and google_ready())
+                    and SAFETY_RELEASE_APPROVED and AUTH_READY)
 DB=os.environ.get("DATABASE_URL","") if READ_ONLY_BOOT else os.environ["DATABASE_URL"]
 
 @app.before_request
@@ -178,6 +182,7 @@ if not READ_ONLY_BOOT:
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
  )""")
  sql("CREATE INDEX IF NOT EXISTS login_failures_lookup ON login_failures(fingerprint,created_at DESC)")
+ sql("ALTER TABLE members ADD COLUMN IF NOT EXISTS session_version BIGINT NOT NULL DEFAULT 0")
 
 def auth_fingerprint(email):
  raw=(email+"|"+(request.remote_addr or "")).encode("utf-8")
@@ -194,9 +199,13 @@ def verify(p,h):
  try: return hmac.compare_digest(hashpw(p,h.split(":")[0]),h)
  except: return False
 def me():
- if session.get("auth_method")!="google" or "uid" not in session:return None
+ if session.get("auth_method")!=AUTH_METHOD or "uid" not in session:return None
  rows=sql("SELECT * FROM members WHERE id=%s",(session["uid"],),True)
- return rows[0] if rows else None
+ if not rows:return None
+ if session.get("credential_version",0)!=rows[0].get("session_version",0):
+  session.clear()
+  return None
+ return rows[0]
 def admin(u):return bool(u and u["email"].lower()==os.getenv("ADMIN_EMAIL","").lower() and u["approved"])
 def token():return session.setdefault("csrf",secrets.token_urlsafe(24))
 def guard():
@@ -212,7 +221,11 @@ def view(title,body):
   nav+='<a href="/new-post">📸 שתפו סיפור או אירוע</a> <a href="/my-posts">📝 הפרסומים שלי</a> <a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> <a href="/profile">הפרופיל שלי</a> '
   if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/admin/accessibility">דיווחי נגישות</a> <a href="/community/moderation">אישור פרסומים</a> '
   nav+='<a href="/logout">יציאה</a>'
- else:nav+='<a class="nav-register" href="/register">הצטרפות באמצעות Google</a> <a class="nav-login" href="/login">🔑 Google Sign-In</a>'
+ else:
+  if AUTH_METHOD=="local":
+   nav+='<a class="nav-register" href="/register">בקשת הצטרפות</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
+  else:
+   nav+='<a class="nav-register" href="/register">הצטרפות באמצעות Google</a> <a class="nav-login" href="/login">🔑 Google Sign-In</a>'
  return integrate_html(render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
  :root{font-family:Arial,'Segoe UI',sans-serif;background:#f3f1e8;color:#172a25}*{box-sizing:border-box}body{margin:0;line-height:1.7}header{background:#172b25;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header a{color:white;text-decoration:none;margin-left:12px;font-size:14px}.logo{font-size:21px;font-weight:800;color:#dbeb9f}main{max-width:1050px;margin:auto;padding:36px 18px}h1{font-size:clamp(30px,5vw,54px);line-height:1.2;margin:0 0 18px}h2{margin-top:32px}.hero{background:linear-gradient(125deg,#142b23,#365441);padding:50px 32px;color:white;border-radius:22px}.hero p{color:#e2e9db;font-size:19px;max-width:700px}.btn,button{background:#cce38d;color:#152b24;border:0;padding:11px 20px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 0}a{color:#246448}.btn.secondary{background:#e5ebe3}.card{background:white;border:1px solid #dee2d8;border-radius:15px;padding:23px;margin:14px 0;box-shadow:0 4px 18px #13251c09}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}label{display:block;font-weight:600;margin:12px 0}input,textarea,select{width:100%;display:block;padding:12px;border:1px solid #b8c4b4;border-radius:8px;font:inherit;background:white}textarea{min-height:105px}form{max-width:560px}.muted{color:#60736a}.tag{display:inline-block;padding:3px 9px;background:#e6eedb;border-radius:14px;font-size:12px}.error{background:#fff0e8;padding:14px;border-radius:8px}footer{text-align:center;padding:28px;color:#66766b;font-size:13px}
 header{position:sticky;top:0;z-index:1000;min-height:76px;box-shadow:0 3px 12px #0002}
@@ -266,9 +279,9 @@ def public_status():
  available=google_ready()
  return view("מצב הקהילה",'<h1>מצב קהילת הקרנפים</h1><div class="card"><h2>חברות והרשאות</h2>'
   '<p>האתר הוא יוזמה עצמאית של יוצאי פלוגה ב׳ ואינו אתר רשמי של צה״ל או משרד הביטחון.</p>'
-  '<p>הכניסה החדשה תתבצע באמצעות Google בלבד. Google מאמתת בעלות על חשבון Google, לא שירות צבאי. '
+  '<p>הכניסה תתבצע באמצעות החשבון הקיים לאחר אישור האבטחה; אימות החשבון אינו אישור שירות צבאי. '
   'כל חבר יידרש לאישור נפרד של מנהל הקהילה לפני צפייה בתוכן הקהילתי ויצירת קשר.</p>'
-  +('<p><a href="/login">לכניסה באמצעות Google</a></p>'
+  +('<p><a href="/login">לכניסה לחשבון</a></p>'
     if available else '<p><strong>התחברות Google עדיין אינה זמינה.</strong> היא תופעל רק לאחר השלמת בדיקת האבטחה והגדרות OAuth.</p>')
   +'</div>')
 
@@ -349,7 +362,7 @@ def about_public():
 
 @app.route("/privacy")
 def privacy_public():
- return view("מדיניות פרטיות",'<h1>פרטיות בקהילה</h1><div class="card"><p>בעת חידוש הפעילות ההתחברות תהיה דרך Google בלבד; האתר ישמור מזהה חשבון, שם ודוא״ל בהסכמה, וכן הודעות ותמונות שחברים בוחרים לשתף. סיסמאות מקומיות ישנות אינן משמשות עוד להתחברות. האתר משתמש בעוגיית התחברות מאובטחת.</p><p>חברות מאושרת ידנית; פרטי קשר אינם מפורסמים במדריך כברירת מחדל. פרופיל מופיע רק כאשר החבר בחר להציגו. פרסומים אישיים זמינים לחברים מאושרים לאחר ביקורת מנהל.</p><p>אפשר לשנות את הגדרות החשיפה או למחוק את החשבון דרך <a href="/profile">הפרופיל שלי</a> לאחר כניסה. אין להעלות פרטים או תמונות של אחרים ללא אישור.</p></div>')
+ return view("מדיניות פרטיות",'<h1>פרטיות בקהילה</h1><div class="card"><p>בעת חידוש הפעילות אפשר יהיה להשתמש בחשבון האתר המקורי ובסיסמה הקיימת. האתר ישמור שם ודוא״ל בהסכמה, גיבוב סיסמה ולא את הסיסמה עצמה, וכן הודעות ותמונות שחברים בוחרים לשתף. האתר משתמש בעוגיית התחברות מאובטחת.</p><p>חברות מאושרת ידנית; פרטי קשר אינם מפורסמים במדריך כברירת מחדל. פרופיל מופיע רק כאשר החבר בחר להציגו. פרסומים אישיים זמינים לחברים מאושרים לאחר ביקורת מנהל.</p><p>אפשר לשנות את הגדרות החשיפה או למחוק את החשבון דרך <a href="/profile">הפרופיל שלי</a> לאחר כניסה. אין להעלות פרטים או תמונות של אחרים ללא אישור.</p></div>')
 
 @app.route("/safety")
 def safety_public():
@@ -514,8 +527,9 @@ def change_password():
 
 # The public security-hold site is entirely static and must boot without DB/OAuth.
 # In community mode the original migrations and route registration still run.
-if not READ_ONLY_BOOT:
+if not READ_ONLY_BOOT and AUTH_METHOD=="google":
  install_google_login(app,sql,view,guard,formwrap,esc)
+if not READ_ONLY_BOOT:
  from community_portal import install as install_portal
  install_portal(app,sql,view,me,admin,guard,formwrap,esc)
  from memorial_photos import setup as setup_memorial
