@@ -5,12 +5,14 @@ on:
       - kolbo-trance-facebook-public-fallback-20261102
       - kolbo-trance-facebook-html-canonical-20261102
       - kolbo-trance-facebook-import-diagnostics-20261102
+      - kolbo-trance-facebook-public-media-observability-20261102
       - kolbo-trance-studio-20261031
     paths:
       - 'trance-studio/backend/link_import.py'
       - 'trance-studio/tests/test_public_facebook_import_fallback.py'
       - 'trance-studio/tests/test_public_facebook_html_metadata.py'
       - 'trance-studio/tests/test_public_facebook_browser_retry.py'
+      - 'trance-studio/tests/test_public_facebook_metadata_stream.py'
       - 'trance-studio/backend/requirements.txt'
       - '.github/workflows/kolbo-trance-public-link-fallback.yml'
   workflow_dispatch:
