@@ -1,0 +1,120 @@
+"""Social URL import and modular creative engine tests.
+
+No external URL or real user media is ever fetched during CI.
+"""
+import io
+import pathlib
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+import numpy as np
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'backend'))
+import app
+import link_import
+import engine
+from engine_registry import catalog
+
+
+class SocialImportAndMicroRemixTests(unittest.TestCase):
+    def test_public_known_https_social_links_only(self):
+        allowed=(
+            'https://www.facebook.com/reel/9876',
+            'https://vm.tiktok.com/ZMz123/',
+            'https://www.instagram.com/reel/example/',
+            'https://youtu.be/dQw4w9WgXcQ',
+            'https://vimeo.com/123456789',
+            'https://www.reddit.com/r/test/comments/123/abc',
+        )
+        for url in allowed:
+            self.assertEqual(link_import.validate_public_link(url),url)
+        forbidden=(
+            'http://www.facebook.com/reel/123',
+            'https://localhost/private',
+            'https://127.0.0.1/internal',
+            'https://facebook.com.evil.example/video',
+            'https://user:secret@tiktok.com/video',
+            'https://tiktok.com:8443/video',
+            'file:///etc/passwd',
+            'https://169.254.169.254/latest/meta-data',
+            'https://example.org/stream.mp4',
+            'https://vm.tiktok.com/video bad',
+            'https://www.facebook.com\\@evil.example/x',
+        )
+        for url in forbidden:
+            with self.subTest(url=url):
+                with self.assertRaises(link_import.LinkImportError):
+                    link_import.validate_public_link(url)
+
+    def test_import_endpoint_authenticated_and_never_generates(self):
+        with tempfile.TemporaryDirectory() as folder:
+            instance=app.create_app({'TESTING':True,'JOB_DIR':folder,'API_TOKEN':'test-secret'})
+            client=instance.test_client()
+            with mock.patch.object(link_import,'fetch_public_social_media',
+                                   side_effect=link_import.LinkImportError('פרטי')):
+                response=client.post('/api/import-link',json={'url':'https://www.facebook.com/reel/12'})
+                self.assertEqual(response.status_code,422,response.json)
+            self.assertEqual(list(pathlib.Path(folder).glob('*')),[])
+            capabilities=client.get('/api/capabilities')
+            self.assertEqual(capabilities.status_code,200)
+            self.assertEqual(capabilities.json['api_version'],1)
+            self.assertFalse(capabilities.json['promises_unlimited_public_gpu'])
+
+    def test_mock_public_download_is_returned_not_auto_processed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            instance=app.create_app({'TESTING':True,'JOB_DIR':folder})
+            client=instance.test_client()
+            def fake_download(url,path):
+                video=pathlib.Path(path)/'shared.mp4'
+                video.write_bytes(b'verified-test-media-not-real-mp4')
+                return video,'video/mp4'
+            with mock.patch.object(link_import,'fetch_public_social_media',
+                                   side_effect=fake_download):
+                response=client.post('/api/import-link',json={'url':'https://www.tiktok.com/@example/video/123'})
+                self.assertEqual(response.status_code,200)
+                self.assertEqual(response.mimetype,'video/mp4')
+                self.assertEqual(response.data,b'verified-test-media-not-real-mp4')
+                response.close()
+            self.assertEqual(list(pathlib.Path(folder).glob('kolbo-social-*')),[])
+
+    def test_engine_catalog_explicitly_avoids_unlimited_gpu_claims(self):
+        result=catalog()
+        self.assertEqual(result['selection_policy'],
+                         'local-dsp-first-public-ai-when-user-consents')
+        self.assertTrue(any(v['kind']=='local-dsp' for v in result['music']))
+        self.assertTrue(all(v['needs_consent'] for v in result['video']
+                            if v['kind']=='external-public-ai'))
+        self.assertTrue(all(v['quota_limited'] for v in result['video']
+                            if v['kind']=='external-public-ai'))
+
+    def test_one_word_automatic_remix_is_short_and_contains_original_voice(self):
+        sr=8000
+        t=np.arange(int(1.15*sr),dtype=np.float32)/sr
+        voice=(.27*np.sin(2*np.pi*205*t)+.08*np.sin(2*np.pi*415*t)).astype(np.float32)
+        full,wet=engine.render_mix(
+            [voice],sample_rate=sr,seconds=0,humor='auto',style='mixed',
+            transcript_hint='חמור',fx_intensity=3,return_voice=True)
+        duration=len(wet)/sr
+        self.assertGreaterEqual(duration,14)
+        self.assertLess(duration,30)
+        self.assertGreater(np.max(np.abs(wet)),.02)
+        self.assertTrue(np.isfinite(full).all())
+        self.assertEqual(len(full),len(wet))
+        # A single short source is arranged in a multi-stage sound design.
+        tail=wet[int(4*sr):]
+        self.assertGreater(float(np.sqrt(np.mean(tail**2))),.001)
+
+    def test_manual_trance_off_still_preserves_short_recording(self):
+        sr=8000
+        t=np.arange(int(1*sr))/sr
+        voice=(.25*np.sin(2*np.pi*210*t)).astype(np.float32)
+        full,raw=engine.render_mix([voice],sample_rate=sr,seconds=0,
+                                   humor='off',return_voice=True)
+        self.assertGreaterEqual(len(full)/sr,30)
+        self.assertEqual(len(full),len(raw))
+
+
+if __name__=='__main__':
+    unittest.main()
