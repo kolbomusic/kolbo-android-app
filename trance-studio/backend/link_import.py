@@ -84,7 +84,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     folder.mkdir(parents=True,exist_ok=True)
     command=[
         sys.executable,"-m","yt_dlp","--ignore-config",
-        "--no-playlist","--no-progress","--no-warnings","--no-call-home",
+        "--no-playlist","--no-progress","--no-warnings",
         "--no-cache-dir","--no-write-thumbnail","--no-write-subs",
         "--no-write-auto-subs","--restrict-filenames",
         "--max-filesize","45M","--match-filter","duration <= 120",
