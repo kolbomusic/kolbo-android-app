@@ -14,6 +14,7 @@ class FakeFormData{
 }
 const vars={
  FormData:FakeFormData,encodeURIComponent,
+ MAX_TOTAL_VIDEO_BYTES:58*1024*1024,
  MODELS:[{id:'ltx25'}],
  getPlan:async()=>['Photorealistic real scene: החמור נוער'],
  oneClip:async()=>{gpuCalls++;return {size:50000}},
