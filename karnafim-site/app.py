@@ -416,13 +416,11 @@ def login():
    pw=request.form.get("password","")
    if len(email)>200 or len(pw)>200:abort(400)
    fingerprint=auth_fingerprint(email)
-   ip_fingerprint=auth_fingerprint("__network_login_limit__")
-   if is_rate_limited(fingerprint) or is_rate_limited(ip_fingerprint):
+   if is_rate_limited(fingerprint):
     return view("הכניסה מושהית",'<p class="error">יותר מדי ניסיונות כניסה. נסו שוב מאוחר יותר.</p>'),429
    rows=sql("SELECT id,password,session_version FROM members WHERE lower(email)=%s",(email,),True) if email else []
    if not (rows and pw and verify(pw,rows[0]["password"])):
-    for key in (fingerprint,ip_fingerprint):
-     sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(key,))
+    sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
     return view("שגיאת כניסה",'<p class="error">פרטי ההתחברות אינם נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
    session.clear()
    session["uid"]=rows[0]["id"]
