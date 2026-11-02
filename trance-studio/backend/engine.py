@@ -441,7 +441,7 @@ def _semantic_comedy_cue(transcript, fraction):
     return None
 
 
-def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcript_hint=''):
+def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcript_hint='',timed_phrases=None):
     """Pause-aware, beat-length vocal solos without slicing spoken words.
 
     This is an automatic editing heuristic, not phoneme/word-level ASR
@@ -534,7 +534,11 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
             # Never invent an animal, explosion or baby from generic speech.
             # Avoid replaying the same specific gag in adjacent pauses;
             # between events use rhythmic samples of the speaker instead.
-            cue=_semantic_comedy_cue(transcript_hint,cut/max(1,len(x)))
+            # Ground event choice in time-aligned source segments when possible.
+            # For unsupported older ASR, approximate only as a fallback.
+            cue=(_timed_story_cue(timed_phrases,cut/sr)
+                 if timed_phrases else
+                 _semantic_comedy_cue(transcript_hint,cut/max(1,len(x))))
             if cue and cue==last_story_cue and cut-last_story_cue_cut<int(sr*7):
                 cue=None
             if cue:
@@ -626,6 +630,11 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
 
 
 
+def _timed_story_cue(phrases,at):
+    from dj_arranger import event_mode
+    return event_mode(phrases,at,lambda text:_semantic_comedy_cue(text,.5))
+
+
 def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
     """Locate REAL voiced spans for musical call-and-response arrangement.
 
@@ -658,7 +667,7 @@ def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
     smoothed=np.convolve(voiced,np.array([.12,.20,.36,.20,.12],np.float32),mode='same')
     return smoothed.astype(np.float32),fill_locations
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint=''):
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint='',transcript_timeline=None):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     sr=sample_rate;beat=60/bpm
@@ -673,9 +682,11 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     voice_rng=np.random.default_rng(seed^0x9E3779B97F4A7C15)
     # Voice is arranged FIRST. Its actual duration determines the score length.
     # This guarantees the last words and the final vocal trick cannot be cut.
+    transcript_timeline=transcript_timeline or []
     arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
-                                   transcript_hint=transcript_hint)
-              for v in voices]
+                                   transcript_hint=transcript_hint,
+                                   timed_phrases=(transcript_timeline[i] if i<len(transcript_timeline) else None))
+              for i,v in enumerate(voices)]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
     needed=beat*10+total_vocal_duration+max(0,len(voices)-1)*beat*3
     seconds=max(30.,float(seconds),math.ceil(needed))
@@ -884,12 +895,34 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     vocal=np.zeros(n,dtype=np.float32)
     fx_highlight=np.zeros(n,dtype=np.float32)
     cursor=beat*4
-    for track,mask,_ in arranged:
+    # Real voice-sampled accents happen inside the narration, while the
+    # original track and its deliberate pause FX remain 100% preserved.
+    from dj_arranger import accent_overdub
+    for clip_index,(track,mask,spans) in enumerate(arranged):
         start=int(round(cursor*sr))
         end=min(n,start+len(track))
         if end>start:
             vocal[start:end]+=track[:end-start]*voice_level
             fx_highlight[start:end]=np.maximum(fx_highlight[start:end],mask[:end-start])
+            source=voices[clip_index]
+            phrases=(transcript_timeline[clip_index]
+                     if clip_index<len(transcript_timeline) else [])
+            overdub=accent_overdub(
+                source,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
+                vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
+                timed_phrases=phrases,
+                cue_from_text=lambda phrase:_semantic_comedy_cue(phrase,.5))
+            for original_start,original_end,arranged_start,arranged_end in spans:
+                # Original source spans map 1:1 to output, even after pause
+                # inserts. Adding a wet overdub never replaces a spoken word.
+                src=overdub[original_start:original_end]
+                a=start+arranged_start
+                b=min(end,a+len(src))
+                if b>a:
+                    vocal[a:b]+=src[:b-a]*voice_level
+                    if humor!='off':
+                        fx_highlight[a:b]=np.maximum(
+                            fx_highlight[a:b],np.minimum(1,np.abs(src[:b-a])*3))
         cursor+=len(track)/sr+beat*3
     progress(80,'מבצע מיקס כשהקול המעובד בחזית')
     # The synth is independent. Duck only its volume during speech so the
