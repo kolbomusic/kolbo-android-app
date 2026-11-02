@@ -22,19 +22,23 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 BASE=Path(__file__).resolve().parent
 app=Flask(__name__,static_folder=str(BASE/"static"))
+CONFIGURED_SECRET=os.environ.get("BARKAN_SESSION_SECRET","").strip()
+DB=os.environ.get("DATABASE_URL","").strip()
 app.config.update(
-    SECRET_KEY=os.environ["BARKAN_SESSION_SECRET"],
+    # An ephemeral key is acceptable only for a public read-only deployment.
+    # Account login requires a durable configured secret and a database.
+    SECRET_KEY=CONFIGURED_SECRET or secrets.token_urlsafe(48),
     SESSION_COOKIE_NAME="barkan_46_session",
     SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=3600*6,
     MAX_CONTENT_LENGTH=32*1024*1024, MAX_FORM_MEMORY_SIZE=128*1024,
     TRUSTED_HOSTS=["karnafim-barkan-46.onrender.com","localhost","127.0.0.1"],
 )
-DB=os.environ["DATABASE_URL"]
 ORIGIN=os.environ.get("BARKAN_PUBLIC_ORIGIN","https://karnafim-barkan-46.onrender.com").rstrip("/")
 # Public account forms are a separate switch. Never enable until the new origin
 # passes live security checks and is no longer flagged by Safe Browsing.
-PUBLIC_AUTH=(os.environ.get("BARKAN_PUBLIC_AUTH","0")=="1"
+PUBLIC_AUTH=(bool(CONFIGURED_SECRET and DB)
+             and os.environ.get("BARKAN_PUBLIC_AUTH","0")=="1"
              and os.environ.get("BARKAN_SAFETY_RELEASE_APPROVED","0")=="1")
 EMAIL_PROVIDER=os.environ.get("BARKAN_RESEND_API_KEY","")
 MAIL_FROM=os.environ.get("BARKAN_MAIL_FROM","")
@@ -100,7 +104,8 @@ def init():
                            FALSE,FALSE,FALSE FROM members
                     WHERE email IS NOT NULL AND password IS NOT NULL
                     ON CONFLICT(email) DO NOTHING""")
-init()
+if DB:
+    init()
 
 def e(value): return escape(str(value if value is not None else ""),quote=True)
 
@@ -133,7 +138,7 @@ def current():
 @app.before_request
 def before():
     if "csrf" not in session:session["csrf"]=secrets.token_urlsafe(32)
-    g.user=current() if session.get("uid") is not None else None
+    g.user=current() if PUBLIC_AUTH and session.get("uid") is not None else None
 
 def require_login(fn):
     @wraps(fn)
@@ -205,6 +210,7 @@ def headers(resp):
 @app.get("/health")
 def health():
     return {"status":"ok","generation":"new-build","auth_enabled":PUBLIC_AUTH,
+            "database_configured":bool(DB),
             "signup_enabled":ALLOW_SIGNUP,"email_sender_configured":MAIL_READY},200
 
 @app.get("/")
