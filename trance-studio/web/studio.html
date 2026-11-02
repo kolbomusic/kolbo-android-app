@@ -769,6 +769,15 @@ window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();def
 $('install').onclick=async function(){if(deferredInstall){deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('install').hidden=true}else{message('בתפריט הדפדפן בחר התקנת אפליקציה.')}};
 if('serviceWorker' in navigator){
 navigator.serviceWorker.register('/studio-sw.js',{scope:'/'}).catch(function(){});
+if(new URLSearchParams(location.search).get('sharedLink')==='1'&&'caches' in window){
+ (async function(){try{
+  var cache=await caches.open('kolbo-studio-share-v1');
+  var response=await cache.match('/studio/shared-link');if(!response)return;
+  var url=await response.text();
+  await cache.delete('/studio/shared-link');
+  window.kolboReceiveSharedLink(url);
+ }catch(e){message('לא הצלחנו לקרוא את הקישור המשותף. אפשר להדביק אותו ידנית.')}})();
+}
 if(new URLSearchParams(location.search).get('shared')==='1'&&'caches' in window){
 (async function(){try{
 var cache=await caches.open('kolbo-studio-share-v1');
