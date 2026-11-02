@@ -161,6 +161,26 @@ class AIVideoTests(unittest.TestCase):
             _video_result_url([{'url':'https://evil.com/gradio_api/file=x'}],
                               expected_host='lightricks-ltx-2-5.hf.space')
 
+    def test_short_public_clip_stops_before_wasting_followup_gpu_requests(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder);audio=root/'mix.mp3'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i','sine=frequency=420:duration=15',
+                '-c:a','libmp3lame',str(audio)],check=True)
+            calls=[]
+            def generator(prompt):
+                calls.append(prompt)
+                return 'https://lightricks-ltx-2-5.hf.space/gradio_api/file=/a.mp4'
+            def download(url,destination):
+                return 1.5
+            output=root/'story.mp4'
+            with self.assertRaisesRegex(AIVideoUnavailable,'לא נמחזר קליפ קצר'):
+                generate_ai_story(
+                    'הכלב נובח בחצר. אחר כך האיש רץ ברחוב. הכוס נשברת בבית.',
+                    audio,output,root/'generated',generator=generator,download=download)
+            self.assertEqual(len(calls),1)
+            self.assertFalse(output.exists())
+
     def test_gen_video_is_original_motion_and_full_sound_no_subtitles(self):
         with tempfile.TemporaryDirectory() as folder:
             root=pathlib.Path(folder)
