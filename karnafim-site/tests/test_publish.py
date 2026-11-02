@@ -51,7 +51,7 @@ def setup():
     app=Flask("karnafim_publishing_tests")
     app.secret_key="test-only-secret"
     def current_user():
-        return {"id":42,"approved":True,"name":"חבר בדיקה"} if session.get("uid")==42 else None
+        return {"id":42,"approved":session.get("member_approved",True),"name":"חבר בדיקה"} if session.get("uid")==42 else None
     community_portal.install(
         app,sql,
         lambda title,markup:markup,
@@ -132,5 +132,20 @@ def test():
     saved=[x for x in records if x[0].startswith("INSERT INTO community_posts")]
     assert saved[0][1][7] is True and saved[0][1][8]=="approved","Auto approved text must publish"
     expect(200,client.get("/community/moderation"),"אישור סיפורים")
+    # New verified registrants can submit without waiting for member-directory approval.
+    with client.session_transaction() as sess:sess["member_approved"]=False
+    expect(200,client.get("/new-post"),"מפרסמים" if False else "משתפים זיכרון")
+    records.clear()
+    no_ai={"post_type":"story","title":"זיכרון מהשירות","body":"הסיפור שלי מהפלוגה",
+           "rights":"on"}
+    with patch.object(community_portal.psycopg,"connect",lambda *a,**k:Connection()):
+        first=client.post("/new-post",data=no_ai)
+    expect(303,first)
+    assert first.headers["Location"].endswith("?submitted=1")
+    uploaded=[x for x in records if x[0].startswith("INSERT INTO community_posts")]
+    assert uploaded and uploaded[0][1][7] is False
+    assert uploaded[0][1][8]=="pending_member_approval"
+    assert uploaded[0][1][-1] is False,"No third-party AI consent means never forward uploads"
+    expect(200,client.get("/my-posts"),"הפרסומים שלי")
     print("PASS: permissions, multi-image moderation, EXIF stripping, events, invalid files, optional AI consent, private pending, AI auto-approval, moderation")
 if __name__=="__main__":test()
