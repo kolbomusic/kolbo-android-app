@@ -25,7 +25,7 @@ def test():
     app.secret_key = "offline-test-key-not-for-production"
     def current_member():
         uid = session.get("uid")
-        return {"id": uid, "approved": True} if uid else None
+        return {"id": uid, "approved": session.get("approved",True)} if uid else None
     community_portal.install(
         app, fake_sql, lambda title, body: body, current_member,
         lambda u: u is not None and u["id"] == 42,
@@ -41,6 +41,11 @@ def test():
     assert "no-store" in res.headers["Cache-Control"]
     with client.session_transaction() as sess: sess["uid"] = 7
     assert client.get("/community-media/50").status_code == 200, "Author may inspect own pending media"
+    with client.session_transaction() as sess: sess["approved"] = False
+    assert client.get("/community-media/50").status_code == 200, "Unapproved author may see their own submitted media"
+    with client.session_transaction() as sess: sess["uid"] = 99
+    assert client.get("/community-media/50").status_code == 403, "Unapproved other member cannot inspect an author's pending media"
+    with client.session_transaction() as sess: sess["approved"] = True
     state["approved_post"] = True
     with client.session_transaction() as sess: sess["uid"] = 99
     assert client.get("/community-media/50").status_code == 200, "Approved post media is visible to approved members"
