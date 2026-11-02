@@ -64,7 +64,7 @@ with site.app.test_client() as browser:
     assert len(send_log)==1
     member=site.sql("SELECT id,approved,email_verification_required FROM b2_users WHERE email=%s",(email,),True)
     assert member and not member["approved"] and member["email_verification_required"]
-    assert site.sql("SELECT id FROM b2_tokens WHERE user_id=%s",(member["id"],),True)
+    assert site.sql("SELECT user_id FROM b2_tokens WHERE user_id=%s",(member["id"],),True)
 
     r=browser.post("/login",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"email":email,"password":"SyntheticTestPassword#2026"})
