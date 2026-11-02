@@ -28,10 +28,10 @@ assert client.get('/health').json['revision'] == 'abcdef012345'
 status = client.get('/status')
 assert status.status_code == 200
 status_html = status.get_data(as_text=True)
-assert 'מצב Google Sign-In בפועל' in status_html
-assert 'מזהה Google Client' in status_html
-assert 'אישור שחרור אבטחה' in status_html
-assert 'טרם הושלם' in status_html
+assert 'שחזור מנגנון ההתחברות המקורי' in status_html
+assert 'דוא״ל וסיסמה מקומי' in status_html
+assert 'הכניסה אינה פעילה כרגע' in status_html
+assert 'הסיסמאות הקיימות לא אופסו' in status_html
 assert 'Google Safe Browsing' in status_html
 assert 'נוצרו פרויקט Google Cloud ולקוח OAuth ייעודי' not in status_html
 assert 'href="/status">התחברות</a>' not in status_html
