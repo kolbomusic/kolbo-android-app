@@ -332,7 +332,9 @@ $('importLink').onclick=async function(){
   });
   if(!response.ok){
    var errorBody=await response.json().catch(function(){return {}});
-   throw new Error(errorBody.error||'לא התקבל קובץ מהקישור.');
+   var issue=new Error(errorBody.error||'לא התקבל קובץ מהקישור.');
+   issue.traceId=(errorBody.trace_id||'').replace(/[^a-f0-9]/g,'').slice(0,8);
+   throw issue;
   }
   var type=(response.headers.get('content-type')||'').split(';')[0].toLowerCase();
   var exts={'video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov',
@@ -345,9 +347,8 @@ $('importLink').onclick=async function(){
   $('linkStatus').textContent='המדיה יובאה. ניתן לבחור הגדרות וליצור בלחיצה שלך.';
   message('הקישור נטען כמדיה; היצירה עדיין לא התחילה.');
  }catch(error){
-  var fb=/^(?:www\.|m\.|web\.)?facebook\.com$|^fb\.watch$/i.test(u.hostname);
-  $('linkStatus').textContent='הייבוא נכשל: '+(error.message||'המדיה אינה נגישה')+
-    (fb?' נבדקו מסלולי גישה ציבוריים נוספים. אם גם הם חסומים, אין אפשרות לייבא את הווידאו רק מהכתובת ללא הרשאת גישה של האתר.':' אין גישה לקובץ ציבורי תקין מהכתובת הזו.');
+  $('linkStatus').textContent='הייבוא לא הצליח: '+(error.message||'המדיה אינה נגישה')+
+    (error.traceId?' · קוד אבחון '+error.traceId:'');
  }finally{button.disabled=false}
 };
 window.kolboImportSharedAudio=function(items){
