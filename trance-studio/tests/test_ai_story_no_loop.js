@@ -15,5 +15,5 @@ assert.equal(p1.duration_s,4.5);
 assert.equal(p2.duration_s,4.5);
 assert.notEqual(p1.seed,p2.seed);
 const q=scope.requestPayload({id:'ltx-distilled'},'scene three',2);
-assert.equal(q.data[9],4.5);
+assert.equal(q.data[7],4.5);
 console.log('SIX_UNIQUE_AI_SCENES_USE_LONGER_CLIPS_AND_DIFFERENT_SEEDS_PASS');
