@@ -132,6 +132,12 @@ def test():
     saved=[x for x in records if x[0].startswith("INSERT INTO community_posts")]
     assert saved[0][1][7] is True and saved[0][1][8]=="approved","Auto approved text must publish"
     expect(200,client.get("/community/moderation"),"אישור סיפורים")
+    # A moderator must not publish an upload authored by a member whose
+    # membership has not yet been approved.
+    rejected_publish=client.post("/community/moderation",
+                                 data={"id":"1001","op":"publish"})
+    expect(409,rejected_publish)
+    expect(200,client.get("/photos"),"לאלבום" if False else "תמונות")
     # New verified registrants can submit without waiting for member-directory approval.
     with client.session_transaction() as sess:sess["member_approved"]=False
     expect(200,client.get("/new-post"),"מפרסמים" if False else "משתפים זיכרון")
