@@ -5,6 +5,7 @@ on:
       - kolbo-trance-real-public-facebook-e2e-verification-20261102
     paths:
       - 'trance-studio/tests/live_real_public_facebook_import.py'
+      - 'trance-studio/tests/live_real_facebook_flask_endpoint.py'
       - 'trance-studio/backend/link_import.py'
       - '.github/workflows/kolbo-trance-real-facebook-e2e.yml'
   workflow_dispatch:
@@ -27,3 +28,7 @@ jobs:
           ffprobe -version | head -n 1
       - name: Validate real Facebook public MP4 bytes, streams and duration
         run: python trance-studio/tests/live_real_public_facebook_import.py
+      - name: Install server dependencies for real authenticated API check
+        run: python -m pip install --disable-pip-version-check -r trance-studio/backend/requirements.txt
+      - name: Prove /studio session and real /api/import-link streaming an MP4
+        run: python trance-studio/tests/live_real_facebook_flask_endpoint.py
