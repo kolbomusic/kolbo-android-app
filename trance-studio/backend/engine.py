@@ -718,11 +718,25 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # Distinctive original Israeli-folk / trance flavor uses D Freygish
     # (Phrygian dominant), not a copyrighted popular Hebrew song.
     if style=='israeli':
-        allowed_pc=(0,2,3,6,7,9,10)  # C D Eb F# G A Bb
-        chords=((38,(2,6,9)),(39,(3,7,10)),(43,(7,10,2)),(36,(0,3,7)))
+        allowed_pc=(0,2,3,6,7,9,10)  # D Freygish
+        # Original D-major / Eb / G-minor / C-minor progressions.
+        chord_banks=(
+            ((38,(2,6,9)),(39,(3,7,10)),(43,(7,10,2)),(36,(0,3,7))),
+            ((38,(2,6,9)),(36,(0,3,7)),(39,(3,7,10)),(43,(7,10,2))),
+            ((43,(7,10,2)),(39,(3,7,10)),(36,(0,3,7)),(38,(2,6,9))),
+            ((38,(2,6,9)),(43,(7,10,2)),(39,(3,7,10)),(36,(0,3,7))))
     else:
         allowed_pc=(0,2,4,5,7,9,10)  # D natural minor
-        chords=((38,(2,5,9)),(34,(10,2,5)),(41,(5,9,0)),(36,(0,4,7)))
+        chord_banks=(
+            ((38,(2,5,9)),(34,(10,2,5)),(41,(5,9,0)),(36,(0,4,7))),
+            ((38,(2,5,9)),(43,(7,10,2)),(34,(10,2,5)),(36,(0,4,7))),
+            ((38,(2,5,9)),(36,(0,4,7)),(34,(10,2,5)),(41,(5,9,0))),
+            ((43,(7,10,2)),(41,(5,9,0)),(36,(0,4,7)),(38,(2,5,9))))
+    # One coherent progression per take; variation actually changes
+    # harmony, not merely the RNG seed on the same four bars.
+    progression_index=(mix_variation%len(chord_banks) if mix_variation
+                       else int(seed%len(chord_banks)))
+    chords=chord_banks[progression_index]
     contours=(
         (0,2,4,7,4,2,0,2),(0,4,3,2,0,2,5,4),(4,3,2,0,2,3,5,7),
         (7,5,4,2,4,2,0,2),(0,0,4,5,7,5,4,2),(2,5,7,5,4,2,0,4))
@@ -819,17 +833,27 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         # Change instrumental color every two bars, keeping the rhythmic
         # hook for four bars. Variation is arranged, never randomly pasted.
         theme=sound_colors[(bar//2+music_seed)%len(sound_colors)]
-        if style=='acid':theme='acid'
-        if style=='eurodance':theme='organ'
-        if style=='progressive':theme='pluck'
-        if style in ('psy','goa'):theme='saw'
-        if style=='uplifting':theme='bell'
-        if style=='israeli':theme='oud' if phrase%2==0 else 'reed'
+        if style=='acid':theme=('acid','saw','pluck')[bar%3]
+        if style=='eurodance':theme=('organ','lead','bell')[bar%3]
+        if style=='progressive':theme=('pluck','bell','lead')[bar%3]
+        if style in ('psy','goa'):theme=('saw','acid','pluck','saw')[bar%4]
+        if style=='uplifting':theme=('bell','lead','pluck')[bar%3]
+        if style in ('hard','rave'):theme=('saw','organ','acid')[bar%3]
+        if style=='israeli':theme=('oud','reed','bell')[bar%3]
         # Percussion patterns, musical bass and volume-driven section changes.
         strength={'intro':.22,'groove':.55,'build':.63,'drop':.9,
                   'breakdown':.19,'final':.98,'outro':.33}[section]
+        # Four different programmed drum grooves. A new take should not
+        # reproduce exactly the same trance pattern in every 16-beat loop.
+        groove=(mix_variation//4 if mix_variation else seed//4)%4
         if section!='breakdown' or quarter==0:
             add(kick,time,strength)
+        if section in ('drop','final') and groove==1 and quarter==3:
+            add(kick,time+beat*.75,strength*.43)
+        if section in ('drop','final') and groove==2 and quarter==1:
+            add(kick,time+beat*.5,strength*.32)
+        if section=='build' and groove==3 and quarter==2:
+            add(snare,time+beat*.75,.28)
         if section in ('groove','build','drop','final'):
             add(hat,time+beat*.5,1.0 if section!='final' else 1.35,-.40)
             if section in ('drop','final'):
