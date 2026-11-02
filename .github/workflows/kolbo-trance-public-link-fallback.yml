@@ -6,6 +6,7 @@ on:
       - kolbo-trance-facebook-html-canonical-20261102
       - kolbo-trance-facebook-import-diagnostics-20261102
       - kolbo-trance-facebook-public-media-observability-20261102
+      - kolbo-trance-public-short-share-real-qa-20261102
       - kolbo-trance-studio-20261031
     paths:
       - 'trance-studio/backend/link_import.py'
@@ -13,6 +14,7 @@ on:
       - 'trance-studio/tests/test_public_facebook_html_metadata.py'
       - 'trance-studio/tests/test_public_facebook_browser_retry.py'
       - 'trance-studio/tests/test_public_facebook_metadata_stream.py'
+      - 'trance-studio/tests/test_public_facebook_chrome_redirect.py'
       - 'trance-studio/backend/requirements.txt'
       - 'trance-studio/web/studio.html'
       - 'trance-studio/backend/app.py'
