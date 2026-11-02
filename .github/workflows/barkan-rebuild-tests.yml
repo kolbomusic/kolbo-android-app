@@ -1,0 +1,49 @@
+name: Barkan rebuilt community integration tests
+on:
+  push:
+    branches: [karnafim-barkan-rebuild-20261102]
+    paths:
+      - 'karnafim-next/**'
+      - '.github/workflows/barkan-rebuild-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  community-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: barkan_ci
+          POSTGRES_USER: barkan_ci
+          POSTGRES_PASSWORD: synthetic_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U barkan_ci -d barkan_ci"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql://barkan_ci:synthetic_ci_password@localhost:5432/barkan_ci
+      BARKAN_SESSION_SECRET: CI-test-only-synthetic-very-long-session-key-not-for-production
+      BARKAN_PUBLIC_ORIGIN: https://karnafim-barkan-46.onrender.com
+      BARKAN_ADMIN_EMAIL: admin@example.test
+      BARKAN_PUBLIC_AUTH: '1'
+      BARKAN_SAFETY_RELEASE_APPROVED: '1'
+      BARKAN_ALLOW_SIGNUP: '1'
+      BARKAN_RESEND_API_KEY: synthetic-mocked-never-used
+      BARKAN_MAIL_FROM: noreply@example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r karnafim-next/requirements.txt
+      - name: Verify syntax and start separate clean app
+        run: python -m compileall -q karnafim-next
+      - name: Execute full community flow with disposable PostgreSQL
+        run: python karnafim-next/tests/test_rebuild.py
