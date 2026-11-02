@@ -31,7 +31,7 @@ def queue_confirmation(address,token):
     The token-bearing link is held only until dispatch, then immediately redacted.
     Shared database advisory lock enforces a small account-wide daily allowance.
     """
-    if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+",address or ""):
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",address or ""):
         return False
     if digest_token(token) is None:
         return False
