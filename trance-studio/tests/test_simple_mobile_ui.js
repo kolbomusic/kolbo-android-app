@@ -25,5 +25,5 @@ const importAt=script.indexOf("$('importLink').onclick=async function()");
 const importEnd=script.indexOf('window.kolboImportSharedAudio=',importAt);
 assert.ok(importAt>0&&importEnd>importAt);
 assert.doesNotMatch(script.slice(importAt,importEnd),/\brun\(\)/);
-assert.match(script.slice(importAt,importEnd),/share\//i);
+assert.match(script.slice(importAt,importEnd),/Facebook/i);
 console.log('HEBREW_MOBILE_SIMPLE_IMPORT_VIDEO_CONSENT_AND_MANUAL_CREATE_PASS');
