@@ -277,14 +277,15 @@ def retired_find():
 
 @app.route("/status")
 def public_status():
- available=google_ready()
+ method="דוא״ל וסיסמה אישית" if AUTH_METHOD=="local" else "Google"
+ signup_allowed=AUTH_METHOD!="local" or os.getenv("KARNAFIM_ALLOW_REGISTRATION","0")=="1"
  return view("מצב הקהילה",'<h1>מצב קהילת הקרנפים</h1><div class="card"><h2>חברות והרשאות</h2>'
-  '<p>האתר הוא יוזמה עצמאית של יוצאי פלוגה ב׳ ואינו אתר רשמי של צה״ל או משרד הביטחון.</p>'
-  '<p>הכניסה תתבצע באמצעות החשבון הקיים לאחר אישור האבטחה; אימות החשבון אינו אישור שירות צבאי. '
-  'כל חבר יידרש לאישור נפרד של מנהל הקהילה לפני צפייה בתוכן הקהילתי ויצירת קשר.</p>'
-  +('<p><a href="/login">לכניסה לחשבון</a></p>'
-    if available else '<p><strong>התחברות Google עדיין אינה זמינה.</strong> היא תופעל רק לאחר השלמת בדיקת האבטחה והגדרות OAuth.</p>')
-  +'</div>')
+  '<p>זוהי יוזמה עצמאית של יוצאי פלוגה ב׳ ואינה אתר רשמי של צה״ל או משרד הביטחון.</p>'
+  '<p>הכניסה מתבצעת באמצעות '+method+'. אימות החשבון אינו אישור שירות צבאי. '
+  'אישור חברות נפרד נדרש לפני גישה למידע ולפרסומים פרטיים.</p>'
+  '<p><a href="/login">כניסה לחשבון קיים</a></p>'
+  +('<p><a href="/register">בקשת הצטרפות</a></p>' if signup_allowed else
+    '<p>הרשמת חברים חדשים מושהית לעת עתה.</p>')+'</div>')
 
 # Minimal privacy-preserving accessibility feedback: no public user directory, no messages to email.
 if not READ_ONLY_BOOT:
