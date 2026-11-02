@@ -35,10 +35,12 @@ MEDIA_EXT={".mp4":"video/mp4",".webm":"video/webm",".mov":"video/quicktime",
 
 class LinkImportError(ValueError):
     """User-safe failure with privacy-preserving diagnostic codes."""
-    def __init__(self,message,*,code="unavailable",attempts=0):
+    def __init__(self,message,*,code="unavailable",attempts=0,steps=""):
         super().__init__(message)
         self.code=code
         self.attempts=int(attempts)
+        # Preclassified fixed tokens, not social URLs or video IDs.
+        self.steps=str(steps)[:220]
 
 
 def validate_public_link(raw):
@@ -452,6 +454,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     deadline=time.monotonic()+min(max(timeout,1),90)
     candidates=_facebook_public_candidates(url,timeout=min(6,max(1,deadline-time.monotonic())))
     failures=[]
+    safe_steps=[]
     is_facebook=(urlsplit(url).hostname or "").lower().rstrip(".").endswith("facebook.com") or (urlsplit(url).hostname or "").lower().rstrip(".")=="fb.watch"
     # FaceBook share/v -> canonical video -> watch URL -> reel / official
     # public embed. An unsupported social site remains a single attempt.
@@ -489,6 +492,14 @@ def fetch_public_social_media(url, directory, *,timeout=70):
                                       impersonate=True)
         if code!="ok":
             failures.append(code)
+            path=urlsplit(candidate).path
+            category=("cdn" if _trusted_facebook_media_url(candidate) else
+                      "share" if "/share/" in path else
+                      "reel" if path.startswith("/reel/") else
+                      "watch" if path.startswith("/watch") else
+                      "embed" if "/plugins/video" in path else
+                      "video" if "/videos/" in path else "other")
+            safe_steps.append(category+":"+code)
             if code=="size":break
             continue
         media=[p for p in folder.iterdir() if p.is_file() and
@@ -508,19 +519,20 @@ def fetch_public_social_media(url, directory, *,timeout=70):
             failures.append("duration")
             continue
         return result,mime
+    details=",".join(safe_steps[:8])
     if "size" in failures:
-        raise LinkImportError("גודל הסרטון חורג מ־45MB.",code="size",attempts=len(failures))
+        raise LinkImportError("גודל הסרטון חורג מ־45MB.",code="size",attempts=len(failures),steps=details)
     if "duration" in failures:
-        raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.",code="duration",attempts=len(failures))
+        raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.",code="duration",attempts=len(failures),steps=details)
     if "private" in failures or "restricted" in failures:
         raise LinkImportError(
             "השרת קיבל שגיאת הרשאה או הגבלת גישה מ־Facebook. אי אפשר לייבא סרטון שמוגבל לצפייה ללא הרשאה.",
-            code="access_restricted",attempts=len(failures))
+            code="access_restricted",attempts=len(failures),steps=details)
     if "extractor" in failures:
         raise LinkImportError(
             "מנוע החילוץ של Facebook לא הצליח לפענח את דף הסרטון (Cannot parse data). "
             "זה לא בהכרח אומר שהסרטון פרטי או חסום.",
-            code="extractor_parse",attempts=len(failures))
+            code="extractor_parse",attempts=len(failures),steps=details)
     raise LinkImportError(
         "לא התקבל קובץ וידאו תקין מהמקורות הציבוריים שנבדקו.",
-        code="no_public_media",attempts=len(failures))
+        code="no_public_media",attempts=len(failures),steps=details)
