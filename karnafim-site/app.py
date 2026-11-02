@@ -371,75 +371,113 @@ def safety_public():
 
 @app.route("/register",methods=["GET","POST"])
 def register():
- if AUTH_METHOD=="local":
-  if os.environ.get("KARNAFIM_ALLOW_REGISTRATION","0")!="1":
-   return view("הרשמה לחברים חדשים",'<h1>בקשת הצטרפות</h1><p>הרשמת חברים חדשים אינה פתוחה כרגע. חשבונות קיימים נשמרים.</p><a href="/login">כניסה לחשבון קיים</a>'),503
-  if request.method=="POST":
-   guard()
-   if request.form.get("consent")!="on":abort(400)
-   name=request.form.get("name","").strip()[:100]
-   email=request.form.get("email","").strip().lower()[:200]
-   pw=request.form.get("password","")
-   if len(name)<2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) or not 12<=len(pw)<=200:
-    return view("שגיאה בהרשמה",'<p class="error">נדרשים שם, דוא״ל תקין וסיסמה באורך 12–200 תווים.</p>'),400
-   try:
-    sql("INSERT INTO members(name,email,password,nickname,service_start,service_end,company,role) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-        (name,email,hashpw(pw),request.form.get("nickname","")[:100],
-         request.form.get("start","")[:40],request.form.get("end","")[:40],
-         request.form.get("company","")[:100],request.form.get("role","")[:100]))
-   except psycopg.errors.UniqueViolation:
-    pass
-   return view("בקשת הצטרפות",'<h1>הבקשה נקלטה</h1><p>הרשמה אינה אישור חברות; מנהל הקהילה יבדוק את הבקשה.</p>')
-  return view("בקשת הצטרפות",'<h1>בקשת הצטרפות לקהילה</h1><form method="post" class="card">'+formwrap(
-    field("name","שם מלא",required=True)+field("nickname","כינוי מהשירות")+
-    field("email","כתובת דוא״ל","email",True)+field("password","סיסמה אישית, לפחות 12 תווים","password",True)+
-    field("start","שנת גיוס")+field("end","שנת שחרור")+
-    field("company","פלוגה")+field("role","תפקיד")+
-    '<label><input type="checkbox" name="consent" required style="width:auto;display:inline"> אני מסכים/ה לשמירת הפרטים לצורך בקשת החברות.</label><button>שליחת בקשה</button>'
-   )+'</form>')
- if request.method=="POST":abort(405)
- return view("הצטרפות באמצעות Google",'<h1>הצטרפות לקהילה</h1><div class="card">'+
-  (gis_button_html() if google_ready() and google_auth_mode()=="gis" else
-   '<a class="btn" href="/auth/google/start">המשך עם Google</a>' if google_ready() else
-   '<p>ההרשמה אינה פעילה עד לאישור אבטחה.</p>')+'</div>')
+ if os.getenv("KARNAFIM_ALLOW_REGISTRATION","0")!="1" or not delivery_ready():
+  return view("הרשמה מושהית",'<h1>בקשת הצטרפות</h1><p>הרשמה עם אימות דוא״ל עדיין אינה זמינה עד להפעלת שירות משלוח מאומת ולסיום בדיקת האבטחה.</p><p>חשבונות ותיקים לא נמחקו.</p>'),503
+ if request.method=="POST":
+  guard()
+  if request.form.get("consent")!="on":abort(400)
+  name=request.form.get("name","").strip()[:100]
+  email=request.form.get("email","").strip().lower()[:200]
+  pw=request.form.get("password","")
+  if len(name)<2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) or not 12<=len(pw)<=200:
+   return view("שגיאה בהרשמה",'<p class="error">יש להזין שם, דוא״ל תקין וסיסמה בת 12–200 תווים.</p>'),400
+  fingerprint=auth_fingerprint("signup:"+email)
+  if is_rate_limited(fingerprint):
+   return view("הרשמה מושהית",'<p>נשלחו יותר מדי בקשות. אפשר לנסות שוב בהמשך.</p>'),429
+  sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
+  token,hashed=issue_token()
+  try:
+   row=sql("""INSERT INTO members(name,email,password,nickname,service_start,service_end,company,role,verification_required)
+    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,TRUE) RETURNING id""",
+    (name,email,hashpw(pw),request.form.get("nickname","")[:100],request.form.get("start","")[:40],
+     request.form.get("end","")[:40],request.form.get("company","")[:100],request.form.get("role","")[:100]),True)
+   member_id=row[0]["id"]
+   sql("INSERT INTO email_verification_tokens(member_id,token_hash,expires_at) VALUES(%s,%s,NOW()+INTERVAL '24 hours')",
+       (member_id,hashed))
+   sent=send_confirmation(email,token)
+  except psycopg.errors.UniqueViolation:
+   sent=True
+  except Exception:
+   # Provider or transient database problems never bypass confirmation.
+   return view("הרשמה",'<h1>לא ניתן להשלים את הבקשה כרגע</h1><p>נסו לשלוח קישור אימות מחדש.</p><a href="/resend-verification">שליחת אימות מחדש</a>'),503
+  if not sent:
+   return view("אימות דוא״ל",'<h1>שליחת המייל טרם הצליחה</h1><p>אפשר לבקש קישור אימות חדש.</p><a href="/resend-verification">שליחה מחדש</a>'),503
+  return view("אימות דוא״ל",'<h1>בדוק את תיבת הדוא״ל שלך</h1><p>אם כתובת הדוא״ל חדשה ותקינה, נשלח קישור אימות בתוקף 24 שעות. אין צורך לשלוח סיסמה במייל.</p>')
+ return view("בקשת הצטרפות",'<h1>מצטרפים לקהילת הקרנפים / ברקן</h1><p>לאחר אימות הדוא״ל אפשר יהיה לשלוח סיפורים, תמונות וסרטונים לבדיקה, בלי לחשוף אותם לחברים לפני אישור הפרסום.</p><form method="post" class="card">'+formwrap(
+  field("name","שם מלא",required=True)+field("nickname","כינוי מהשירות")+
+  field("email","כתובת דוא״ל","email",True)+field("password","סיסמה אישית, לפחות 12 תווים","password",True)+
+  field("start","שנת גיוס")+field("end","שנת שחרור")+field("company","פלוגה")+field("role","תפקיד")+
+  '<label><input type="checkbox" name="consent" required style="width:auto;display:inline"> אני מסכים/ה לשמירת הפרטים לצורך ההצטרפות.</label><button>הרשמה ושליחת קישור אימות</button>'
+ )+'</form>')
+
+@app.route("/verify-email",methods=["GET","POST"])
+def verify_email():
+ value=request.values.get("token","")
+ hashed=digest_token(value)
+ if not hashed:abort(400)
+ if request.method=="POST":
+  guard()
+  updated=sql("""WITH used AS (
+   DELETE FROM email_verification_tokens WHERE token_hash=%s AND expires_at>NOW()
+   RETURNING member_id)
+   UPDATE members SET verification_required=FALSE,email_verified_at=NOW()
+   FROM used WHERE members.id=used.member_id RETURNING members.id""",(hashed,),True)
+  if not updated:return view("קישור שפג תוקפו",'<h1>הקישור אינו תקף או שכבר נוצל</h1><a href="/resend-verification">בקשת קישור חדש</a>'),410
+  return view("דוא״ל אומת",'<h1>כתובת הדוא״ל אומתה בהצלחה</h1><p>כעת אפשר להתחבר עם הסיסמה שבחרת ולהעלות זיכרונות ותמונות לביקורת.</p><a href="/login">כניסה לחשבון</a>')
+ return view("אימות דוא״ל",'<h1>אימות כתובת הדוא״ל</h1><p>לאימות החשבון ולפתיחת האפשרות לשתף תוכן, לחץ על הכפתור.</p>'
+  '<form method="post" class="card">'+formwrap('<input type="hidden" name="token" value="'+esc(value)+'"><button>אימות כתובת הדוא״ל</button>')+'</form>')
+
+@app.route("/resend-verification",methods=["GET","POST"])
+def resend_verification():
+ if not delivery_ready():return view("שירות אימות דוא״ל",'<h1>שליחת המיילים אינה זמינה כרגע</h1>'),503
+ if request.method=="POST":
+  guard()
+  email=request.form.get("email","").strip().lower()
+  if len(email)>200 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email):abort(400)
+  fingerprint=auth_fingerprint("resend:"+email)
+  if is_rate_limited(fingerprint):return view("בקשות מרובות",'<p>נסה שוב מאוחר יותר.</p>'),429
+  sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
+  rows=sql("SELECT id FROM members WHERE lower(email)=%s AND verification_required=TRUE",(email,),True)
+  if rows:
+   token,hashed=issue_token()
+   sql("""INSERT INTO email_verification_tokens(member_id,token_hash,expires_at)
+    VALUES(%s,%s,NOW()+INTERVAL '24 hours')
+    ON CONFLICT(member_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,
+    expires_at=EXCLUDED.expires_at,created_at=NOW()""",(rows[0]["id"],hashed))
+   send_confirmation(email,token)
+  return view("נשלחה בקשה",'<h1>בדוק את המייל</h1><p>אם קיימת בקשה ממתינה לכתובת, נשלח קישור אימות חדש.</p>')
+ return view("שליחת אימות מחדש",'<h1>שליחת קישור אימות מחדש</h1><form method="post" class="card">'+formwrap(
+  field("email","כתובת הדוא״ל של החשבון","email",True)+'<button>שליחת קישור חדש</button>')+'</form>')
 
 @app.route("/login",methods=["GET","POST"])
 def login():
  destination=request.args.get("next","/")
- from google_identity import RETURN_PATHS
- destination=destination if destination in RETURN_PATHS else "/"
+ destination=destination if destination in SAFE_RETURN_PATHS else "/"
  if me():return redirect(destination,code=303)
- if AUTH_METHOD=="local":
-  if request.method=="POST":
-   guard()
-   email=request.form.get("email","").strip().lower()
-   pw=request.form.get("password","")
-   if len(email)>200 or len(pw)>200:abort(400)
-   fingerprint=auth_fingerprint(email)
-   if is_rate_limited(fingerprint):
-    return view("הכניסה מושהית",'<p class="error">יותר מדי ניסיונות כניסה. נסו שוב מאוחר יותר.</p>'),429
-   rows=sql("SELECT id,password,session_version FROM members WHERE lower(email)=%s",(email,),True) if email else []
-   if not (rows and pw and verify(pw,rows[0]["password"])):
-    sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
-    return view("שגיאת כניסה",'<p class="error">פרטי ההתחברות אינם נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
-   session.clear()
-   session["uid"]=rows[0]["id"]
-   session["auth_method"]="local"
-   session["credential_version"]=rows[0]["session_version"]
-   session.permanent=True
-   return redirect(destination,code=303)
-  return view("כניסה לחשבון המקורי",'<h1>🔐 כניסה לחשבון הקרנפים</h1>'
-   '<p>השתמשו בדוא״ל ובסיסמה שבחרתם באתר. אין צורך בחשבון Google.</p>'
-   '<form method="post" class="card">'+formwrap(
-    field("email","כתובת דוא״ל","email",True)+field("password","סיסמה אישית","password",True)+
-    '<button>כניסה לחשבון</button>')+'</form>')
- if request.method=="POST":abort(405)
- href="/auth/google/start?next="+destination
- return view("כניסה באמצעות Google",'<h1>🔐 כניסה באמצעות Google</h1>'
-  '<p>אימות החשבון מתבצע באמצעות Google, אישור החברות מתבצע בנפרד.</p><div class="card">'+
-  (gis_button_html() if google_ready() and google_auth_mode()=="gis" else
-   '<a class="btn" href="'+esc(href)+'">התחברות באמצעות Google</a>' if google_ready() else
-   '<p>ההתחברות אינה פעילה כרגע.</p>')+'</div>')
+ if request.method=="POST":
+  guard()
+  email=request.form.get("email","").strip().lower()
+  pw=request.form.get("password","")
+  if len(email)>200 or len(pw)>200:abort(400)
+  fingerprint=auth_fingerprint(email)
+  if is_rate_limited(fingerprint):
+   return view("הכניסה מושהית",'<p class="error">יותר מדי ניסיונות. אפשר לנסות שוב מאוחר יותר.</p>'),429
+  rows=sql("SELECT id,password,session_version,verification_required FROM members WHERE lower(email)=%s",(email,),True) if email else []
+  if not (rows and pw and verify(pw,rows[0]["password"])):
+   sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
+   return view("שגיאת כניסה",'<p class="error">פרטי ההתחברות אינם נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
+  if rows[0]["verification_required"]:
+   return view("נדרש אימות דוא״ל",'<h1>כתובת הדוא״ל עדיין לא אומתה</h1><p>כדי להתחבר ולהעלות תמונות וסיפורים יש לאמת קודם את המייל.</p><a href="/resend-verification">שליחת קישור מחדש</a>'),403
+  session.clear()
+  session["uid"]=rows[0]["id"]
+  session["auth_method"]="local"
+  session["credential_version"]=rows[0]["session_version"]
+  session.permanent=True
+  return redirect(destination,code=303)
+ return view("כניסה לחשבון",'<h1>🔐 כניסה לקהילת הקרנפים</h1><p>התחבר עם כתובת הדוא״ל והסיסמה האישית שלך. חשבונות קיימים נשמרו.</p>'
+  '<form method="post" class="card">'+formwrap(
+    field("email","כתובת דוא״ל","email",True)+field("password","סיסמה","password",True)+
+    '<button>כניסה לחשבון</button>')+'</form><p><a href="/resend-verification">אימות מייל להרשמה חדשה</a></p>')
 
 @app.route("/logout",methods=["GET","POST"])
 def logout():
