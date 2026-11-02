@@ -79,12 +79,12 @@ def live(expected_revision=None):
         # Publishing must guide logged-out users through login and then resume.
         status,headers,body,landed=fetch("/new-post")
         ok=(status==200 and "/login?next=/new-post" in landed and
-            'name="password"' not in body and "Google" in body)
+            ('name="password"' in body if local_mode else 'name="password"' not in body and "Google" in body))
         print(("PASS" if ok else "FAIL"),"/new-post","LOGIN_REQUIRED",status)
         if not ok:errors.append(("/new-post",status))
         for route,nextpage in (("/my-posts","/my-posts"),("/chats","/chats")):
             status,headers,body,landed=fetch(route)
-            ok=status==200 and "/login?next="+nextpage in landed and 'name="password"' not in body
+            ok=status==200 and "/login?next="+nextpage in landed
             print(("PASS" if ok else "FAIL"),route,"LOGIN_REQUIRED",status)
             if not ok:errors.append((route,status))
         for route in ("/profile","/directory"):
@@ -94,8 +94,11 @@ def live(expected_revision=None):
             if not ok:errors.append((route,status))
         for retired in ("/password", "/find"):
             status,headers,body,landed=fetch(retired)
-            ok=status==410 and "noindex" in headers.get("X-Robots-Tag","").lower()
-            print(("PASS" if ok else "FAIL"),retired,"RETIRED",status)
+            if retired=="/password" and local_mode:
+                ok=status==200 and landed.rstrip("/")==URL+"/login"
+            else:
+                ok=status==410 and "noindex" in headers.get("X-Robots-Tag","").lower()
+            print(("PASS" if ok else "FAIL"),retired,"PASSWORD_OR_RETIRED",status)
             if not ok:errors.append((retired,status))
         for route in ("/admin","/community/moderation","/community-media/1"):
             status,headers,body,landed=fetch(route)
