@@ -38,7 +38,10 @@ jobs:
           script: |
             set -e
             adb install -r trance-studio/android/app/build/outputs/apk/debug/app-debug.apk
-            adb shell am start -W -n com.kolbomusic.trancestudio.story244/com.kolbomusic.trancestudio.MainActivity
+            # Use the package actually installed from this APK; do not pin a prior beta.
+            PACKAGE_ID="$(adb shell pm list packages | sed -n 's/^package:\(com\.kolbomusic\.trancestudio\.story[0-9]*\)$/\1/p' | head -n 1)"
+            test -n "$PACKAGE_ID"
+            adb shell am start -W -n "$PACKAGE_ID/com.kolbomusic.trancestudio.MainActivity"
             sleep 6
             adb exec-out screencap -p > /tmp/kolbo-trance-launch.png
             python - <<'PY'
