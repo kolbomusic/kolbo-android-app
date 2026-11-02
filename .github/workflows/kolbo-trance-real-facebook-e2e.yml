@@ -4,6 +4,7 @@ on:
     branches:
       - kolbo-trance-real-public-facebook-e2e-verification-20261102
       - kolbo-trance-public-short-share-real-qa-20261102
+      - kolbo-trance-facebook-trace-7ecfd487-20261102
     paths:
       - 'trance-studio/tests/live_real_public_facebook_import.py'
       - 'trance-studio/tests/live_real_facebook_flask_endpoint.py'
