@@ -349,7 +349,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
             target="post-files"
             form='<label>📎 הוספת תמונות, סרטון או הקלטה (עד ארבעה קבצים)<input id="'+target+'" type="file" name="attachments" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg,audio/mp4,audio/wav"></label>'
             form+='<div id="file-summary" aria-live="polite" class="muted">ניתן לצרף עד ארבעה קבצים. תמונות עד 8MB לקובץ לפני כיווץ אוטומטי; סרטון עד 8MB וקול עד 2MB.</div>'
-            form+='<div id="upload-previews" class="media-grid"></div>'
+            form+='<p class="muted">עד ארבעה קבצים, עד 8MB לקובץ ועד 12MB יחד בפרסום.</p><div id="upload-previews" class="media-grid"></div>'
             return form+recorder(target)+'<p class="muted">תמונות יעברו כיווץ והסרת פרטי מיקום. שמרו על הסכמת המצולמים. עד 25MB אחסון לכל חבר במסגרת הניסוי.</p>'
         return '<label>📎 צירוף תמונה / סרטון / קול<input id="chat-file" type="file" name="attachment" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg,audio/mp4,audio/wav"></label>'+recorder("chat-file")+'<p class="muted">תמונה עד 8MB לפני כיווץ, קול עד 2MB, וידאו עד 8MB.</p>'
 
@@ -517,16 +517,16 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
         if not u:return redirect("/login?next=/my-posts",code=303)
         if u["approved"]:retry_ai_queue()
         rows=sql("SELECT id,title,body,post_type,story_year,event_date,event_place,approved,ai_status,ai_reason,created_at FROM community_posts WHERE author_id=%s ORDER BY created_at DESC LIMIT 100",(u["id"],),True)
-        b='<h1>📝 הפרסומים שלי</h1><p>תמונות, אירועים וסיפורים ששלחת. עד שהמנהל מאשר אותם, רק אתה והמנהל יכולים לראות את התוכן.</p>'
+        b='<h1>📝 הפרסומים שלי</h1><p>תמונות, אירועים וסיפורים ששלחת. לפני פרסום ואישור חברות, התוכן פרטי וגלוי רק לך ולמנהל לצורך בדיקה.</p>'
         if request.args.get("submitted") in ("1",) or request.args.get("auto")=="1":
             b+='<script>try{sessionStorage.removeItem("karnafim-post-draft-v1")}catch(_){}</script>'
-        if request.args.get("submitted")=="1":b+='<div class="note" role="status">✓ הפרסום נשמר במצב פרטי. ביקורת ה־AI לא אישרה פרסום אוטומטי.</div>'
+        if request.args.get("submitted")=="1":b+='<div class="note" role="status">✓ הפרסום נקלט ונשמר באופן פרטי. הוא יוצג לאחרים רק לאחר אישור החברות וביקורת התוכן.</div>'
         if request.args.get("auto")=="1":b+='<div class="note" role="status">✓ הפרסום אושר בביקורת אוטומטית והופיע בציר הזמן של החברים.</div>'
         b+='<div class="actions"><a class="cta" href="/new-post">➕ פרסום חדש</a><a class="cta" href="/feed">לציר הזמן</a></div>'
         if not rows:b+='<div class="note">אין לך עדיין פרסומים. אפשר להעלות עכשיו תמונה, סיפור או אירוע מהשירות.</div>'
         labels={"story":"סיפור","event":"אירוע","photo":"אלבום תמונות"}
         for p in rows:
-            state="פורסם לחברי הקהילה" if p["approved"] else ("ממתין לחיבור או לחידוש בדיקת AI" if p["ai_status"]=="pending_ai" else "נשאר פרטי — בדיקה לא חד־משמעית")
+            state="פורסם לחברי הקהילה" if p["approved"] else ("ממתין לאישור חברות" if p["ai_status"]=="pending_member_approval" else "נשמר פרטי — ממתין לביקורת")
             b+='<article class="event"><span class="tag">'+e(labels.get(p["post_type"],"סיפור"))+'</span> <span class="tag">'+e(state)+'</span><h2>'+e(p["title"])+'</h2>'
             if p["event_date"]:b+='<p>📅 '+e(p["event_date"])+'</p>'
             if p["event_place"]:b+='<p>📍 '+e(p["event_place"])+'</p>'
@@ -558,6 +558,7 @@ document.querySelectorAll('.record-voice').forEach(btn=>{
                 b+='<div class="media-grid">'+''.join('<figure class="tile"><a href="/community-media/'+str(r["id"])+'" target="_blank" rel="noopener"><img loading="lazy" src="/community-media/'+str(r["id"])+'" alt="תמונה מהקהילה שאושרה לפרסום"></a></figure>' for r in rows)+'</div>'
             else:b+='<div class="note">הגלריה הקהילתית עדיין ממתינה לתמונות המקוריות הראשונות.</div>'
             b+='<div class="actions"><a class="cta" href="/new-post">➕ שיתוף תמונה מהפלוגה</a><a class="cta" href="/feed">לכל הסיפורים</a></div>'
+        elif u:b+='<div class="note">החברות שלך ממתינה לאישור. כבר אפשר להעלות תמונות וסרטונים באופן פרטי לבדיקה. <a href="/new-post">העלאת תמונות וסרטונים</a> · <a href="/my-posts">הפרסומים שלי</a></div>'
         else:b+='<div class="note">הגלריה האישית של חברי הפלוגה מיועדת לחברים מאושרים בלבד. <a href="/register">בקשת הצטרפות</a> · <a href="/login">כניסה לחשבון</a></div>'
         b+='<p class="muted">לא בוצע זיהוי פנים אוטומטי ואין כאן טענה שהמצולמים שירתו ביחידה. תצלומי קהילה יוצגו רק לאחר אישור ובדיקת זכויות.</p>'
         return page("גלריית תמונות",b)
