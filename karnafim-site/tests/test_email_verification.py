@@ -86,6 +86,21 @@ def main():
    assert wrong.status_code==403
    verify=client.get("/verify-email?token="+test_token,base_url="https://karnafim-community-46.onrender.com")
    assert verify.status_code==200 and member["verification_required"]
+   assert verify.headers.get("Referrer-Policy")=="no-referrer"
+   assert "no-store" in verify.headers.get("Cache-Control","")
+   # A second signup with the same email must not falsely claim another message
+   # was delivered or generate new tokens; it should offer controlled resend.
+   original_sql=site.sql
+   def duplicate_sql(query,params=(),fetch=False):
+    if query.startswith("INSERT INTO members"):
+     raise psycopg.errors.UniqueViolation("duplicate synthetic email")
+    return original_sql(query,params,fetch)
+   site.sql=duplicate_sql
+   duplicate=client.post("/register",data=data,base_url="https://karnafim-community-46.onrender.com")
+   assert duplicate.status_code==200
+   assert "resend-verification" in duplicate.get_data(as_text=True)
+   assert len(deliveries)==1
+   site.sql=original_sql
    with client.session_transaction(base_url="https://karnafim-community-46.onrender.com") as sess:
     csrf=sess["csrf"]
    done=client.post("/verify-email",data={"csrf":csrf,"token":test_token},
