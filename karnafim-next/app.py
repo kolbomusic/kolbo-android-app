@@ -310,8 +310,8 @@ def signup():
         if not send_verification(email,uid):
             return layout("משלוח אימות",'<div class="pagehead"><h1>ההרשמה נשמרה, אבל המייל לא נשלח</h1><p>אפשר לנסות שוב דרך שליחת אימות מחדש. החשבון חסום לכניסה עד אימות הכתובת.</p><a href="/resend-verification" class="primary">שליחת אימות מחדש</a></div>'),503
         return layout("בקשת הצטרפות",'<div class="pagehead"><h1>בקשת ההצטרפות נשמרה</h1><p>הודעת האימות התקבלה במערכת השליחה. יש לאמת את הדוא״ל לפני הכניסה לחשבון.</p><a class="primary" href="/login">מעבר לכניסה</a></div>')
-    return layout("הרשמה",'<div class="pagehead"><h1>בקשת הצטרפות</h1><p>יוצאי פלוגה ב׳ מוזמנים להשאיר פרטים. חשבונות חדשים ממתינים לבדיקת חברות לפני השתתפות ציבורית.</p></div>'+
-        button_form('<label>שם מלא<input name="name" required maxlength="90" autocomplete="name"></label><label>דוא״ל<input name="email" type="email" required autocomplete="email"></label><label>סיסמה (לפחות 12 תווים)<input type="password" name="password" minlength="12" required autocomplete="new-password"></label><input name="website" tabindex="-1" class="honeypot" aria-hidden="true"><label class="check"><input type="checkbox" name="agree" value="yes" required> אני מסכים לשמירת הפרטים לצורך קבלה לקהילה</label><button class="primary">שליחת בקשת הצטרפות</button>','/signup','class="formcard"'))
+    return layout("הרשמה",'<section class="auth-page"><div class="pagehead"><span class="tag">חברות בקהילה</span><h1>מצטרפים לקרנפים</h1><p>חשבון אישי ומאובטח ליוצאי פלוגה ב׳. לאחר אימות כתובת הדוא״ל, בקשת החברות תיבדק לפני גישה לתכנים של חברים.</p></div><div class="auth-trust"><span>🔒 חיבור מוצפן</span><span>✉ אימות דוא״ל</span><span>◈ קהילה לחברים מאושרים</span></div>'+
+        button_form('<label>שם מלא<input name="name" required maxlength="90" autocomplete="name" placeholder="איך קוראים לך?"></label><label>כתובת דוא״ל<input name="email" type="email" inputmode="email" dir="ltr" required autocomplete="email" placeholder="you@example.com"></label><label>סיסמה אישית — לפחות 12 תווים<input type="password" name="password" minlength="12" maxlength="200" required autocomplete="new-password"></label><input name="website" tabindex="-1" class="honeypot" aria-hidden="true"><label class="check"><input type="checkbox" name="agree" value="yes" required> אני מסכים לשמירת הפרטים לצורך קבלה לקהילה</label><button class="primary">שליחת בקשת הצטרפות</button>','/signup','class="formcard"')+'</section>')
 
 def send_verification(email,uid):
     if not MAIL_READY:return False
@@ -375,9 +375,9 @@ def login():
         if u["email_verification_required"]:return layout("כניסה",'<div class="note">יש לאמת תחילה את כתובת הדוא״ל.</div>'),403
         session.clear();session["csrf"]=secrets.token_urlsafe(32);session["uid"]=u["id"];session.permanent=True
         return redirect("/my-posts",code=303)
-    return layout("כניסה",'<div class="pagehead"><h1>כניסה לקהילה</h1><p>באמצעות דוא״ל וסיסמה. אין התחברות דרך Google.</p></div>'+
-        button_form('<label>דוא״ל<input type="email" name="email" autocomplete="email" required></label><label>סיסמה<input type="password" name="password" autocomplete="current-password" required></label><button class="primary">כניסה</button>' +
-         ('<p><a href="/signup">עדיין לא נרשמת?</a></p>' if ALLOW_SIGNUP else ''),'/login','class="formcard"'))
+    return layout("כניסה",'<section class="auth-page"><div class="pagehead"><span class="tag">המרחב האישי</span><h1>טוב שחזרת הביתה</h1><p>התחברות מאובטחת באמצעות כתובת דוא״ל וסיסמה. אחרי הכניסה יחכו לך הזיכרונות, החברים והפרסומים שלך.</p></div><div class="auth-trust"><span>🔒 חיבור מוצפן</span><span>◈ חשבון פרטי</span><span>✦ זיכרונות משותפים</span></div>'+
+        button_form('<label>כתובת דוא״ל<input type="email" dir="ltr" inputmode="email" name="email" autocomplete="email" placeholder="you@example.com" required></label><label>סיסמה<input type="password" name="password" autocomplete="current-password" required></label><button class="primary">כניסה לחשבון</button>' +
+         ('<p><a href="/signup">עדיין לא נרשמת?</a></p>' if ALLOW_SIGNUP else ''),'/login','class="formcard"')+'</section>')
 
 @app.post("/logout")
 @require_login
