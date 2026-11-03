@@ -96,15 +96,23 @@
   const close = () => {
     nav.classList.remove("open");
     toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-label", "פתיחת תפריט הניווט");
     toggle.textContent = "☰ תפריט";
   };
   toggle.addEventListener("click", () => {
     const open = !nav.classList.contains("open");
     nav.classList.toggle("open", open);
     toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "סגירת תפריט הניווט" : "פתיחת תפריט הניווט");
     toggle.textContent = open ? "✕ סגירה" : "☰ תפריט";
+    if (open) nav.querySelector("a")?.focus({ preventScroll: true });
   });
   nav.addEventListener("click", e => { if (e.target.closest("a")) close(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && nav.classList.contains("open")) { close(); toggle.focus(); } });
+  document.addEventListener("pointerdown", e => {
+    if (nav.classList.contains("open") && !nav.contains(e.target) && !toggle.contains(e.target)) close();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && nav.classList.contains("open")) { close(); toggle.focus(); }
+  });
   window.addEventListener("resize", () => { if (window.innerWidth > 680) close(); });
 })();
