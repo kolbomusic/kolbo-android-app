@@ -34,8 +34,25 @@ with psycopg.connect(DB) as connection:
         cursor.execute("""INSERT INTO members(name,email,password,nickname,approved)
             VALUES(%s,%s,%s,%s,TRUE)""",
             ("חבר בדיקת מעבר","legacy-test@example.test",legacy_hash,"חבר ותיק"))
+# Even with an API key configured and member login enabled, registration
+# MUST stay locked until a real delivery test is independently approved.
+isolated_env=dict(os.environ)
+isolated_env["BARKAN_MAIL_DELIVERY_VERIFIED"]="0"
+lock_test=subprocess.run([sys.executable,"-c", """
+import app
+assert app.PUBLIC_AUTH is True
+assert app.MAIL_READY is True
+assert app.MAIL_DELIVERY_VERIFIED is False
+assert app.ALLOW_SIGNUP is False
+c=app.app.test_client()
+base="https://karnafim-community-46.onrender.com"
+assert c.get("/signup",base_url=base).status_code==503
+assert c.get("/health",base_url=base).get_json()["email_delivery_release_verified"] is False
+"""],cwd=APP,env=isolated_env,capture_output=True,text=True,timeout=30)
+assert lock_test.returncode==0,(lock_test.stdout,lock_test.stderr[-1200:])
+
 import app as site
-assert site.PUBLIC_AUTH and site.ALLOW_SIGNUP
+assert site.PUBLIC_AUTH and site.ALLOW_SIGNUP and site.MAIL_DELIVERY_VERIFIED
 legacy=site.sql("SELECT id,passhash,approved FROM b2_users WHERE email=%s",
                 ("legacy-test@example.test",),True)
 assert legacy and legacy["approved"]
