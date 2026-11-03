@@ -90,6 +90,7 @@ def init():
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_throttle(
                 fingerprint TEXT NOT NULL,at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_throttle_idx ON b2_throttle(fingerprint,at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_throttle_time_idx ON b2_throttle(at)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_posts(
                 id BIGSERIAL PRIMARY KEY,author BIGINT NOT NULL REFERENCES b2_users(id),
                 title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',
@@ -143,6 +144,10 @@ def limit(label, maximum=8, minutes=15):
     fp=finger(label)
     with connect() as c:
         with c.cursor() as cur:
+            # Old throttle entries are no longer relevant. Reclaim space
+            # using an indexed timestamp, without touching member data.
+            # Keep at least two days of history for all current windows.
+            cur.execute("DELETE FROM b2_throttle WHERE at < NOW() - INTERVAL '2 days'")
             cur.execute("SELECT COUNT(*) n FROM b2_throttle WHERE fingerprint=%s AND at>NOW()-(%s * INTERVAL '1 minute')",(fp,minutes))
             if cur.fetchone()["n"]>=maximum:abort(429)
             cur.execute("INSERT INTO b2_throttle(fingerprint) VALUES(%s)",(fp,))
