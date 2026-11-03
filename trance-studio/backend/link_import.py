@@ -661,13 +661,18 @@ def fetch_public_social_media(url, directory, *,timeout=70):
         if code!="ok":
             failures.append(code)
             path=urlsplit(candidate).path
-            category=("cdn" if _trusted_facebook_media_url(candidate) else
+            category=("tiktok" if is_tiktok else
+                      "cdn" if _trusted_facebook_media_url(candidate) else
                       "share" if "/share/" in path else
                       "reel" if path.startswith("/reel/") else
                       "watch" if path.startswith("/watch") else
                       "embed" if "/plugins/video" in path else
                       "video" if "/videos/" in path else "other")
             safe_steps.append(category+":"+code)
+            # The canonical and short TikTok URLs refer to the SAME film.
+            # If its duration or size exceeds a limit, a second download
+            # attempt cannot change that restriction.
+            if code in ("size","duration") and is_tiktok:break
             if code=="size":break
             continue
         media=[p for p in folder.iterdir() if p.is_file() and
