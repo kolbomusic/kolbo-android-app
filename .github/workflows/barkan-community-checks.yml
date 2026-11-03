@@ -38,3 +38,5 @@ jobs:
         run: python tests/test_review_rules.py
       - name: Verify private media access
         run: python tests/test_media_permissions.py
+      - name: Verify upload limits and image validation
+        run: python tests/test_upload_limits.py
