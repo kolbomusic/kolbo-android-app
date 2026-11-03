@@ -211,11 +211,13 @@ with site.app.test_client() as browser:
     r=browser.post("/new",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"rights":"yes",
         "title":"זיכרון בדיקה","body":"סיפור בדיקה שנכתב ללא מידע מזהה.",
-        "kind":"photo","uploads":(jpeg(),"photo.jpg","image/jpeg"),
+        "kind":"photo","album_cohort":"2003-11",
+        "uploads":(jpeg(),"photo.jpg","image/jpeg"),
     },content_type="multipart/form-data")
     assert r.status_code==303,(r.status_code,r.get_data(as_text=True)[:240])
     post=site.sql("SELECT id,status FROM b2_posts WHERE author=%s",(member["id"],),True)
     assert post["status"]=="pending"
+    assert site.sql("SELECT album_cohort FROM b2_posts WHERE id=%s",(post["id"],),True)["album_cohort"]=="2003-11"
     photo=site.sql("SELECT id,mime FROM b2_media WHERE post_id=%s",(post["id"],),True)
     assert photo["mime"]=="image/jpeg"
     assert browser.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==200
@@ -223,6 +225,8 @@ with site.app.test_client() as browser:
     # Pending media never leaks into the public-facing gallery.
     gallery=browser.get("/photos",base_url=ORIGIN).get_data(as_text=True)
     assert "/media/"+str(photo["id"]) not in gallery
+    assert browser.post("/photos/self-tag",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(photo["id"]),"action":"add"}).status_code==403
 
     # Non-admin pending applicants cannot list, approve or reject other members.
     assert browser.get("/members",base_url=ORIGIN).status_code==403
@@ -264,6 +268,20 @@ with site.app.test_client() as browser:
     gallery=browser.get("/photos",base_url=ORIGIN).get_data(as_text=True)
     assert "/media/"+str(photo["id"]) in gallery
     assert "זיכרון בדיקה" in gallery
+    assert "2003-11" in gallery
+    assert "זיכרון בדיקה" in browser.get("/photos?cohort=2003-11",base_url=ORIGIN).get_data(as_text=True)
+    assert "זיכרון בדיקה" not in browser.get("/photos?cohort=2004-03",base_url=ORIGIN).get_data(as_text=True)
+    assert browser.get("/photos?cohort=2004-99",base_url=ORIGIN).status_code==400
+    assert browser.post("/photos/self-tag",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(photo["id"]),"action":"add"}).status_code==303
+    assert site.sql("SELECT count(*) n FROM b2_photo_self_tags WHERE media_id=%s",(photo["id"],),True)["n"]==1
+    assert browser.post("/photos/self-tag",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(photo["id"]),"action":"add"}).status_code==303
+    assert site.sql("SELECT count(*) n FROM b2_photo_self_tags WHERE media_id=%s",(photo["id"],),True)["n"]==1
+    assert "מנהל ניסוי" in browser.get("/photos?cohort=2003-11",base_url=ORIGIN).get_data(as_text=True)
+    assert browser.post("/photos/self-tag",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(photo["id"]),"action":"remove"}).status_code==303
+    assert site.sql("SELECT count(*) n FROM b2_photo_self_tags WHERE media_id=%s",(photo["id"],),True)["n"]==0
     assert browser.get("/find",base_url=ORIGIN).status_code==200
     # The directory is strictly opt-in: approved members stay invisible
     # until they deliberately enable visibility in their own profile.
@@ -403,6 +421,8 @@ assert c.get("/find",base_url=origin).status_code==403
 assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
 assert c.get("/inbox",base_url=origin).status_code==403
 assert c.get("/meetups",base_url=origin).status_code==403
+assert c.post("/photos/self-tag",base_url=origin,data={
+  "id":"1","action":"add"}).status_code==403
 assert c.post("/meetups/rsvp",base_url=origin,data={"id":"1","decision":"yes"}).status_code==403
 profile=c.get("/profile",base_url=origin)
 assert profile.status_code==200
