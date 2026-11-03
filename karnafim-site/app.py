@@ -286,7 +286,7 @@ def layout(title,body):
     u=g.user
     menu=[("/","בית"),("/heritage","מורשת"),("/memorial","הנצחה"),("/photos","תמונות"),("/about","על הקהילה"),("/help","עזרה")]
     if PUBLIC_AUTH and u:
-        menu += [("/feed","הקהילה"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
+        menu += [("/feed","הקהילה"),("/voices","מורשת קולית"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
         permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
         if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
@@ -821,10 +821,11 @@ def create_post():
         cohort=request.form.get("album_cohort","").strip()
         if cohort and not re.fullmatch(r"(19[9][0-9]|20[0-3][0-9])-(0[1-9]|1[0-2])",cohort):
             abort(400)
-        if kind not in ("story","photo","event") or not title or request.form.get("rights")!="yes":abort(400)
+        if kind not in ("story","photo","event","voice") or not title or request.form.get("rights")!="yes":abort(400)
         files=[v for v in request.files.getlist("uploads") if v and v.filename]
         if len(files)>4:abort(413)
         safe=[image_or_video(f) for f in files]
+        if kind=="voice" and (len(safe)!=1 or safe[0][1]!="audio"):abort(400)
         if not body and not safe:abort(400)
         if sum(len(v[2]) for v in safe)>16*1024*1024:abort(413)
         with connect() as c:
@@ -839,7 +840,7 @@ def create_post():
                         (pid,g.user["id"],mime,typ,data,len(data)))
         return redirect("/my-posts",303)
     return layout("שיתוף סיפור",'<div class="pagehead"><h1>משתפים זיכרון</h1><p>הפרסום יישמר פרטי עד אישור חברות וביקורת התוכן.</p></div>'+button_form(
-        '<label>סוג זיכרון<select name="kind"><option value="story">סיפור</option><option value="photo">תמונות או סרטון</option><option value="event">אירוע ומפגש</option></select></label><label>כותרת<input name="title" required maxlength="120"></label><label>שנה (לא חובה)<input name="year" maxlength="30"></label><label>אלבום מחזור גיוס (אופציונלי)<input type="month" name="album_cohort" min="1990-01" max="2035-12"></label><label>תוכן<textarea name="body" maxlength="4000" rows="6"></textarea></label><label>קבצים (עד ארבעה)<input type="file" name="uploads" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg"></label><p class="muted">עד 8MB לקובץ ו־16MB סך הכול לפרסום. תמונות יעברו כיווץ והסרת נתוני EXIF.</p><label class="check"><input type="checkbox" name="rights" value="yes" required> אני מאשר שיש לי זכויות לפרסם את התוכן</label><button class="primary">שליחה לביקורת</button>',
+        '<label>סוג זיכרון<select name="kind"><option value="story">סיפור</option><option value="photo">תמונות או סרטון</option><option value="event">אירוע ומפגש</option><option value="voice">זיכרון קולי</option></select></label><label>כותרת<input name="title" required maxlength="120"></label><label>שנה (לא חובה)<input name="year" maxlength="30"></label><label>אלבום מחזור גיוס (אופציונלי)<input type="month" name="album_cohort" min="1990-01" max="2035-12"></label><label>תוכן<textarea name="body" maxlength="4000" rows="6"></textarea></label><label>קבצים (עד ארבעה)<input id="story-uploads" type="file" name="uploads" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg"></label><section class="story" data-voice-recorder hidden><h2>הקלטת זיכרון מהמיקרופון</h2><p>ההקלטה מתחילה רק בלחיצה על התחלה. ניתן להאזין לפני שליחה. הקובץ לא נשלח עד ללחיצה על ״שליחה לביקורת״.</p><div class="hero-actions"><button type="button" class="outline" data-record-start>התחלת הקלטה</button><button type="button" class="subtle" data-record-stop disabled>עצירת הקלטה</button></div><p role="status" aria-live="polite" data-record-status>לא הוקלט עדיין.</p><audio controls preload="none" data-record-preview hidden></audio></section><p class="muted">עד 8MB לקובץ ו־16MB סך הכול לפרסום. תמונות יעברו כיווץ והסרת נתוני EXIF. להקלטות קוליות יש לבחור ״זיכרון קולי״ ולצרף קובץ WebM או OGG אחד, או להשתמש בהקלטה הישירה אם הדפדפן תומך.</p><label class="check"><input type="checkbox" name="rights" value="yes" required> אני מאשר שיש לי זכויות לפרסם את התוכן</label><button class="primary">שליחה לביקורת</button>',
         "/new",'class="formcard" enctype="multipart/form-data"'))
 
 def media_html(mid,kind):
@@ -888,6 +889,40 @@ def feed():
         files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
         items+='<article class="post"><span class="tag">'+e(p["kind"])+'</span><h2>'+e(p["title"])+'</h2><p>'+e(p["name"])+' · '+e(p["year_text"])+'</p><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div></article>'
     return layout("מרחב החברים",'<div class="pagehead"><h1>החברים משתפים</h1><p>סיפורים ותמונות שפורסמו לאחר ביקורת.</p><a href="/new" class="primary">שיתוף משלך</a></div>'+(items or '<div class="note">עדיין אין פרסומים מאושרים.</div>'))
+
+@app.get("/voices")
+@require_approved
+def voice_archive():
+    """Opt-in published voice histories, without external audio or transcription."""
+    cohort=request.args.get("cohort","").strip()
+    if cohort and not re.fullmatch(r"(19[9][0-9]|20[0-3][0-9])-(0[1-9]|1[0-2])",cohort):
+        abort(400)
+    rows=sql("""SELECT p.title,p.body,p.year_text,p.album_cohort,
+                       u.name,f.id media_id
+        FROM b2_posts p JOIN b2_media f ON f.post_id=p.id
+        JOIN b2_users u ON u.id=p.author
+        WHERE p.kind='voice' AND p.status='published' AND u.approved=TRUE
+          AND f.kind='audio' AND (%s='' OR p.album_cohort=%s)
+        ORDER BY p.created DESC,p.id DESC LIMIT 60""",(cohort,cohort))
+    cohorts=sql("""SELECT p.album_cohort,COUNT(DISTINCT p.id) AS n
+        FROM b2_posts p JOIN b2_media f ON f.post_id=p.id
+        JOIN b2_users u ON u.id=p.author
+        WHERE p.kind='voice' AND p.status='published' AND u.approved=TRUE
+          AND f.kind='audio' AND p.album_cohort<>''
+        GROUP BY p.album_cohort ORDER BY p.album_cohort DESC LIMIT 120""")
+    opts=''.join('<option value="'+e(r["album_cohort"])+'"'+
+                 (' selected' if cohort==r["album_cohort"] else '')+'>'+
+                 e(r["album_cohort"])+' ('+str(r["n"])+')</option>' for r in cohorts)
+    cards=''.join('<article class="post"><span class="tag">מורשת קולית</span><h2>'+
+        e(row["title"])+'</h2><p>'+e(row["name"])+' · '+e(row["album_cohort"] or row["year_text"] or "כללי")+
+        '</p><p>'+e(row["body"])+'</p>'+
+        '<audio controls preload="none" src="/media/'+str(row["media_id"])+
+        '">נגן הקול אינו זמין בדפדפן זה.</audio></article>' for row in rows)
+    form=('<form action="/voices" method="get" class="search"><label>סינון מחזור גיוס'
+          '<select name="cohort"><option value="">כל המחזורים</option>'+
+          opts+'</select></label><button class="primary">הצגת הקלטות</button></form>')
+    return layout("מורשת קולית",'<div class="pagehead"><h1>הקולות והסיפורים של הפלוגה</h1><p>סיפורי שירות מוקלטים של חברים מאושרים, רק לאחר בדיקת תוכן. אין להקליט אחרים ללא הסכמתם או לחשוף מידע צבאי רגיש.</p><a class="primary" href="/new">שיתוף זיכרון קולי</a></div>'+form+
+         (cards or '<div class="note">אין עדיין הקלטות מאושרות במחזור שנבחר.</div>'))
 
 @app.get("/find")
 @require_approved
