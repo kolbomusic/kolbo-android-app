@@ -189,9 +189,21 @@ def create_app(config=None):
                 if meta.get('video_status')=='done':
                     pass
                 elif options.get('video_strategy')=='remix_original':
+                    has_video_source=any(
+                        Path(p).suffix.lower() in VIDEO_TYPES for p in paths)
                     meta={'video_status':'unavailable',
-                          'video_error':'לא ניתן לערוך סרטון מקור ללא קובץ וידאו נע תקין. בחר יצירת סיפור חדש כדי לייצר סצנות מהדיבור.',
-                          'storyboard_source':'video_input_required',
+                          'video_error':(
+                              'נבחר מצב עריכת סרטון מקורי, אך התקבל קובץ שמע בלבד. '
+                              'כדי לקבל סרטון מהקול בחר ״סרטון AI חדש לפי הדיבור״ '
+                              'ואשר שימוש בתמלול.'
+                              if not has_video_source else
+                              'הקובץ מכיל וידאו שאינו ניתן לעיבוד כתמונה נעה, '
+                              'או שהרכבת הווידאו נכשלה. '
+                              'אפשר לבחור סרטון MP4 נע אחר או ליצור סיפור חדש מהדיבור.'
+                          ),
+                          'storyboard_source':(
+                              'no_video_track' if not has_video_source else
+                              'original_video_not_usable'),
                           'visual_coverage':'none'}
                 elif not detected_transcript or len(detected_transcript.split())<2:
                     meta={'video_status':'unavailable',
@@ -458,7 +470,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.6',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.7',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():

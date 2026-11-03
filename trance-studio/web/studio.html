@@ -213,7 +213,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </section>
 <section class="panel" id="result"><h2 id="resultTitle">✓ ההפקה מוכנה!</h2>
 <div id="videoNotice" role="alert" hidden></div>
-<div class="actions"><button type="button" id="retryVideo" class="secondary" hidden>נסה שוב ליצור סרטון AI — בלי ליצור מחדש את המיקס</button></div>
+<div class="actions"><button type="button" id="retryVideo" class="secondary" hidden>נסה שוב ליצור סרטון AI — בלי ליצור מחדש את המיקס</button><button type="button" id="switchToAiVideo" class="secondary" hidden>בחר יצירת סרטון חדש מהדיבור (AI ניסיוני)</button></div>
 <details class="advanced" id="videoAlternatives" hidden><summary>פתרון חלופי שאינו יוצר וידאו AI</summary>
 <p class="hint">אפשר להכין סרטון מצילומים חופשיים של אירועים שזוהו, אם קיימים. זה אינו וידאו AI חדש ולא בהכרח יתאים לכל הדיבור.</p>
 <button type="button" id="fallbackIllustration" class="secondary" hidden>חפש צילומים מתאימים לדיבור</button>
@@ -261,6 +261,10 @@ function explainVideoStrategy(){
 }
 $('video_strategy').addEventListener('change',function(){
  videoModeChosenByUser=true;
+ if(this.value==='remix_original'&&files.length&&!files.some(isVideoFile)){
+  selectNewStoryFromVoice('נבחר קובץ שמע בלבד. מצב עריכת סרטון מקורי דורש קובץ וידאו נע; בחר יצירת סרטון חדש מהדיבור.');
+  return;
+ }
  explainVideoStrategy();
 });
 explainVideoStrategy();
@@ -276,20 +280,47 @@ function markStage(stage){
 }
 function message(txt){$('status').textContent=txt}
 function isVideoFile(f){return /^video\//i.test(f.type)||/\.(mp4|webm|3gp|3gpp|mov)$/i.test(f.name)}
+function selectNewStoryFromVoice(explanation){
+ $('video_strategy').value='new_story';
+ videoModeChosenByUser=false;
+ explainVideoStrategy();
+ message(explanation||'מקור שמע בלבד: יצירת סרטון AI חדש לפי הדיבור מחייבת אישור תמלול וזמינות ספק.');
+}
+async function hasDecodableVideoTrack(file){
+ // File extension and MIME type do not prove that the media has video.
+ // Inspect locally: no file bytes leave the phone during preflight.
+ if(!file||!isVideoFile(file))return false;
+ if(!window.URL||!URL.createObjectURL||!document.createElement)return null;
+ return await new Promise(function(resolve){
+  var video=document.createElement('video'),url='',settled=false;
+  function done(result){
+   if(settled)return;settled=true;clearTimeout(timer);
+   video.removeAttribute('src');
+   try{video.load()}catch(error){}
+   if(url)URL.revokeObjectURL(url);
+   resolve(result);
+  }
+  var timer=setTimeout(function(){done(null)},7000);
+  video.preload='metadata';video.muted=true;video.playsInline=true;
+  video.onloadedmetadata=function(){done(video.videoWidth>0&&video.videoHeight>0)};
+  video.onerror=function(){done(null)};
+  try{url=URL.createObjectURL(file);video.src=url;video.load()}
+  catch(error){done(null)}
+ });
+}
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+(isVideoFile(f)?'סרטון':'שמע')+' · '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות או סרטונים מהמכשיר או מתוך WhatsApp'}
 function setFiles(items){
  if(active){message('כבר מתבצעת יצירה. ההקלטה החדשה לא תחליף את ההקלטה שבתהליך.');return;}
  files=Array.from(items||[]).filter(Boolean).slice(0,4);
  socialImported=false;
- // Selecting an actual shared video uses its own motion by default.
- // User-chosen video modes are never overridden.
- if(!videoModeChosenByUser && files.some(isVideoFile)){
-   $('video_strategy').value='remix_original';
-   explainVideoStrategy();
- }else if(!videoModeChosenByUser && $('video_strategy').value==='remix_original'
-          && !files.some(isVideoFile)){
-   $('video_strategy').value='new_story';
-   explainVideoStrategy();
+ // Never allow an old manually selected video-remix mode to survive a
+ // replacement with a WhatsApp voice note.
+ if(files.length&&!files.some(isVideoFile)&&
+    $('video_strategy').value==='remix_original'){
+  selectNewStoryFromVoice('המקור החדש הוא הקלטת קול בלבד. כדי ליצור וידאו נדרש מצב ״סרטון AI חדש״ או צילומי המחשה.');
+ }else if(!videoModeChosenByUser&&files.some(isVideoFile)){
+  $('video_strategy').value='remix_original';
+  explainVideoStrategy();
  }
  syncFiles();
  $('generate').disabled=files.length===0;
@@ -735,6 +766,25 @@ if(socialImported&&!$('linkRights').checked){
 }
 if(files.some(function(f){return !f.size||f.size>(isVideoFile(f)?45:15)*1048576})){message('הגבלת גודל: עד 15MB להקלטה או 45MB לסרטון WhatsApp.');return}
 if(files.reduce(function(total,f){return total+f.size},0)>60*1048576){message('הקבצים גדולים מ־60MB יחד. יש לבחור פחות קבצים.');return}
+if($('video_strategy').value==='remix_original'){
+ if(!files.some(isVideoFile)){
+  selectNewStoryFromVoice('נבחר מצב עריכת סרטון מקורי, אך סופק קול בלבד. בחר סרטון AI חדש, אשר שימוש בתמלול ולחץ שוב על ״צור״.');
+  $('video_strategy').focus();return;
+ }
+ if(window.kolboVideoPreflightActive)return;
+ window.kolboVideoPreflightActive=true;
+ try{
+  var candidates=files.filter(isVideoFile),trackChecks=[];
+  for(var vi=0;vi<candidates.length;vi++)
+   trackChecks.push(await hasDecodableVideoTrack(candidates[vi]));
+  // Only definitive no-track metadata blocks the upload. On unsupported
+  // codecs, null leaves the final decision to the server's FFmpeg decoder.
+  if(trackChecks.length&&trackChecks.every(function(v){return v===false})){
+   selectNewStoryFromVoice('קובץ ה־MP4 שסופק אינו כולל ערוץ תמונה תקין. בחר קובץ וידאו אחר או סרטון AI חדש מהדיבור.');
+   $('video_strategy').focus();return;
+  }
+ }finally{window.kolboVideoPreflightActive=false}
+}
 if($('make_video').checked&&$('video_strategy').value==='new_story'&&!$('ai_video_consent').checked){
  message('לסרטון AI חדש נדרשת הסכמתך לשליחת התמלול העברי (לא הקול) לשירות AI חיצוני. סמן את אפשרות ה־AI ונסה שוב.');
  $('ai_video_consent').focus();
@@ -840,7 +890,7 @@ if(!mp3.ok)throw new Error('נוצר מיקס אך לא ניתן להוריד א
 if(resultUrl)URL.revokeObjectURL(resultUrl);
 if(voiceUrl)URL.revokeObjectURL(voiceUrl);
 if(originalUrl)URL.revokeObjectURL(originalUrl);
-videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;$('retryVideo').hidden=true;$('fallbackIllustration').hidden=true;$('videoAlternatives').hidden=true;
+videoUrl='';videoBlob=null;videoServerUrl='';$('videoResult').hidden=true;$('videoNotice').hidden=true;$('retryVideo').hidden=true;$('fallbackIllustration').hidden=true;$('videoAlternatives').hidden=true;$('switchToAiVideo').hidden=true;
 resultBlob=await mp3.blob();resultUrl=URL.createObjectURL(resultBlob);resultServerUrl=j.download_url;
 if(j.voice_url){
   var voiceResponse=await fetch(j.voice_url,{credentials:'same-origin'});
@@ -924,6 +974,18 @@ if(wantsVideo&&!j.video_url){
   '\nבמצב הזה המערכת לא תחליף את הצילום המקורי ולא תייצר תמונות סטטיות.' :
   '');
  $('videoNotice').hidden=false;
+ if($('video_strategy').value==='remix_original'){
+  var switchButton=$('switchToAiVideo');
+  switchButton.hidden=false;
+  switchButton.onclick=function(){
+   if(active)return;
+   selectNewStoryFromVoice('מסלול עריכת סרטון מקורי אינו מתאים למקור הנוכחי. מצב סרטון AI חדש נבחר; הוא ניסיוני ואינו מבטיח MP4. אשר העברת תמלול ולחץ שוב על ״צור״.');
+   videoModeChosenByUser=true;
+   $('sourcePanel').scrollIntoView({behavior:'smooth',block:'start'});
+   if(!$('ai_video_consent').checked)$('ai_video_consent').focus();
+   else $('generate').focus();
+  };
+ }
  // Make a failed AI attempt actionable without losing the WhatsApp upload.
  // This button explicitly selects a DIFFERENT mode: licensed real footage
  // is not falsely presented as new AI-generated events.

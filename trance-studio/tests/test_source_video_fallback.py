@@ -198,6 +198,33 @@ class OriginalMovingVideoTests(unittest.TestCase):
                 compose_original_video_with_mix([music],music,root/'out.mp4',
                                                 root/'work')
 
+    def test_still_intro_does_not_hide_real_motion_later_in_video(self):
+        # A news/WhatsApp clip may start with an immobile title card, then
+        # move normally. The older initial-3-second-only check incorrectly
+        # treated this as an audio-only/invalid video.
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp);source=root/'intro-then-moving.mp4'
+            music=root/'mix.mp3';result=root/'story.mp4'
+            subprocess.run([
+                'ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i',
+                'color=c=black:size=320x240:rate=12:duration=3.6',
+                '-f','lavfi','-i',
+                'testsrc2=size=320x240:rate=12:duration=3.6',
+                '-filter_complex','[0:v][1:v]concat=n=2:v=1:a=0[v]',
+                '-map','[v]','-c:v','libx264','-preset','ultrafast',
+                '-pix_fmt','yuv420p',str(source)
+            ],check=True,timeout=30)
+            from motion_quality import motion_score
+            self.assertLess(motion_score(source),.30)
+            self.assertGreater(motion_score(source,start_seconds=3),.30)
+            self.make_music(music)
+            meta=compose_original_video_with_mix(
+                [source],music,result,root/'work')
+            self.assertEqual(meta['video_status'],'done')
+            self.assertTrue(result.exists())
+            self.assertGreater(result.stat().st_size,20000)
+
     def test_static_mp4_rejected_as_not_real_moving_footage(self):
         with tempfile.TemporaryDirectory() as temp:
             root=pathlib.Path(temp);music=root/'mix.mp3'

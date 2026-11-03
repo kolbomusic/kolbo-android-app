@@ -8,7 +8,7 @@ WAV or static picture cannot qualify; do not claim it is a newly filmed event.
 from pathlib import Path
 import subprocess
 from live_video import _make_segment, _duration, _video_profile, UnavailableVideo
-from motion_quality import require_visible_motion, NoVisibleMotion
+from motion_quality import require_visible_motion_somewhere, NoVisibleMotion
 
 VIDEO_TYPES={".mp4",".webm",".3gp",".3gpp",".mov"}
 
@@ -29,9 +29,10 @@ def compose_original_video_with_mix(original_paths, music_mp3, output_mp4, work_
             continue
         try:
             _video_profile(source)
-            require_visible_motion(source,threshold=.30)
-            if _duration(source)<.8:
+            source_duration=_duration(source)
+            if source_duration<.8:
                 continue
+            require_visible_motion_somewhere(source,duration=source_duration,threshold=.30)
             original=source
             original_index=index
             break
