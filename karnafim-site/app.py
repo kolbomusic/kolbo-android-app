@@ -355,7 +355,7 @@ def safety():
 
 @app.get("/status")
 def status():
-    return layout("מצב המערכת",'<div class="pagehead"><h1>מצב המערכת</h1></div><section class="story"><p>אתר מורשת חדש: פעיל. מערכת חברים: '+("פעילה." if PUBLIC_AUTH else "מושהית עד השלמת בדיקות אבטחה.")+'</p><p>אימות דוא״ל: '+("הוגדר ספק HTTPS; אימות המסירה עדיין נדרש." if MAIL_READY else "אין ספק משלוח מאומת.")+'</p><p>הכתובת הקודמת נשמרה לקריאה בלבד ולא אוספת סיסמאות.</p></section>')
+    return layout("מצב המערכת",'<div class="pagehead"><h1>מצב המערכת</h1></div><section class="story"><p>אתר מורשת חדש: פעיל. מערכת חברים: '+("פעילה." if PUBLIC_AUTH else "מושהית עד השלמת בדיקות אבטחה.")+'</p><p>אימות דוא״ל: '+("הוגדר ספק HTTPS; אימות המסירה עדיין נדרש." if MAIL_READY else "אין ספק משלוח מאומת.")+'</p><p>זוהי כתובת הקהילה הראשית. הכתובת הזמנית מפנה לכאן; התחברות והרשמה אינן פתוחות עד השלמת בדיקות האבטחה.</p></section>')
 
 @app.route("/signup",methods=["GET","POST"])
 def signup():
