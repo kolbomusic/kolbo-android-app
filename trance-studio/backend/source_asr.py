@@ -55,6 +55,24 @@ def _get_model():
     return _MODEL
 
 
+
+def release_model():
+    """Drop the heavy ASR model before the 512 MiB worker renders the mix.
+
+    Only one processing job may run at a time. The preloaded model stays
+    on disk, but native CPU inference weights need not remain resident
+    during stereo mixing and H264 encoding. This is best effort: the OS
+    may still retain some allocator pages.
+    """
+    global _MODEL
+    with _LOCK:
+        previous = _MODEL
+        _MODEL = None
+    del previous
+    import gc
+    gc.collect()
+
+
 def _recognize(model, path, *, use_vad, return_segments=False):
     # No prompting with specific actors or events: this could hallucinate
     # the user's intended movie instead of recognizing the actual recording.
