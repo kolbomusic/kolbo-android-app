@@ -291,7 +291,7 @@ def layout(title,body):
         if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
         if permissions["invite"]:menu += [("/invite","הזמנת חברים")]
-        if admin():menu += [("/team","הרשאות ניהול")]
+        if admin():menu += [("/dashboard","לוח בקרה"),("/team","הרשאות ניהול")]
     elif PUBLIC_AUTH:
         menu += [("/login","כניסה")]
         if ALLOW_SIGNUP:menu += [("/signup","הצטרפות")]
@@ -1223,6 +1223,52 @@ def meetup_manage():
     result=sql("UPDATE b2_meetups SET cancelled=TRUE WHERE id=%s AND cancelled=FALSE RETURNING id",(int(eid),),True)
     if not result:abort(404)
     return redirect("/meetups",303)
+
+
+@app.get("/dashboard")
+@require_approved
+def dashboard():
+    """Owner-only operational overview without exposing account information publicly."""
+    if not admin():abort(403)
+    summary=sql("""SELECT
+        (SELECT COUNT(*) FROM b2_users) AS total_members,
+        (SELECT COUNT(*) FROM b2_users WHERE approved=TRUE) AS approved_members,
+        (SELECT COUNT(*) FROM b2_users WHERE approved=FALSE) AS pending_members,
+        (SELECT COUNT(*) FROM b2_posts WHERE status='pending') AS pending_posts,
+        (SELECT COUNT(*) FROM b2_photo_memories WHERE status='pending') AS pending_memories,
+        (SELECT COUNT(*) FROM b2_photo_reports WHERE status='open') AS privacy_requests,
+        (SELECT COUNT(*) FROM b2_meetups WHERE starts_at>NOW() AND cancelled=FALSE) AS upcoming_meetups,
+        (SELECT COUNT(*) FROM b2_posts WHERE status='published') AS published_posts,
+        (SELECT COUNT(*) FROM b2_staff_roles
+            WHERE can_approve OR can_moderate OR can_invite) AS delegates""",one=True)
+    items=[
+        ("בקשות הצטרפות",summary["pending_members"],"/members","חברים הממתינים לאימות ואישור"),
+        ("פרסומים לביקורת",summary["pending_posts"],"/moderation","סיפורים, תמונות והקלטות שממתינים לאישור"),
+        ("זיכרונות לתמונות",summary["pending_memories"],"/photo-review","תגובות וזיכרונות הממתינים לבקרה"),
+        ("בקשות פרטיות",summary["privacy_requests"],"/photo-review","בקשות להסרה או לבדיקת תמונות"),
+        ("מפגשים מתוכננים",summary["upcoming_meetups"],"/meetups","מפגשי פלוגה עתידיים"),
+        ("חברי צוות מורשים",summary["delegates"],"/team","חברים בעלי תפקידי ניהול מוגבלים")
+    ]
+    tiles=''.join('<a class="person" href="'+url+'"><h2>'+e(label)+'</h2>'
+        '<p><strong>'+str(value)+'</strong> · '+e(description)+'</p></a>'
+        for label,value,url,description in items)
+    recent=sql("""SELECT action,created,actor.name actor_name,subject.name subject_name
+        FROM b2_admin_audit audit JOIN b2_users actor ON actor.id=audit.actor
+        JOIN b2_users subject ON subject.id=audit.subject
+        ORDER BY audit.created DESC,audit.id DESC LIMIT 10""")
+    labels={"roles_saved":"עדכון הרשאות","roles_revoked":"ביטול הרשאות",
+        "member_approved":"אישור חבר","member_rejected":"דחיית בקשה"}
+    history=''.join('<li>'+e(labels.get(row["action"],"פעולת ניהול"))+
+                    ' · '+e(row["subject_name"])+' · '+e(row["actor_name"])+
+                    ' · '+e(row["created"].strftime("%d/%m/%Y %H:%M"))+'</li>' for row in recent)
+    overview=('<section class="story"><h2>מצב הקהילה</h2><p>חברים רשומים: <strong>'+
+        str(summary["total_members"])+'</strong> · חברים מאושרים: <strong>'+
+        str(summary["approved_members"])+'</strong> · פרסומים מאושרים: <strong>'+
+        str(summary["published_posts"])+'</strong></p></section>')
+    activity=('<section class="story"><h2>פעילות ניהול אחרונה</h2><ol>'+
+             (history or '<li>אין פעולות חדשות.</li>')+'</ol></section>')
+    return layout("לוח בקרה",'<div class="pagehead"><h1>לוח הבקרה של מנהל הקהילה</h1><p>תמונת מצב עדכנית. הנתונים נגישים למנהל הראשי בלבד ומחושבים מתוך מסד הנתונים.</p></div>'+overview+
+                  '<section class="people" aria-label="משימות ניהול">'+tiles+'</section>'+activity)
 
 @app.errorhandler(404)
 def not_found(err):return layout("העמוד לא נמצא",'<div class="pagehead"><h1>העמוד לא נמצא</h1><a href="/">חזרה לדף הבית</a></div>'),404
