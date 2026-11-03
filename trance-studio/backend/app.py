@@ -192,34 +192,64 @@ def create_app(config=None):
                 any(Path(p).suffix.lower() in ('.mp4','.webm','.3gp','.3gpp','.mov')
                     for p in paths))
             stage='mix'
-            rendered=render_mix(clips,**audio_options,return_voice=True,
-                                   return_video_timeline=bool(options.get('video_requested')),
-                                   progress=lambda p,label:update(job_id,percent=p,label=label))
-            # Older test engines still return (mix,voice). Only the current
-            # renderer exports sample-derived original voice/FX timestamps.
-            if len(rendered)==3:
-                audio,vocal,video_fx_timeline=rendered
+            if app.config.get('TESTING') or os.environ.get('KOLBO_MIX_ISOLATED')=='0':
+                # Preserve the deterministic in-process engine for tests.
+                rendered=render_mix(clips,**audio_options,return_voice=True,
+                                       return_video_timeline=bool(options.get('video_requested')),
+                                       progress=lambda p,label:update(job_id,percent=p,label=label))
+                # Older test engines still return (mix,voice). Only the current
+                # renderer exports sample-derived original voice/FX timestamps.
+                if len(rendered)==3:
+                    audio,vocal,video_fx_timeline=rendered
+                else:
+                    audio,vocal=rendered
+                    video_fx_timeline=[]
+                if options.get('backing_music_path'):
+                    stage='licensed_music'
+                    from licensed_music import mix_licensed_backing
+                    audio=mix_licensed_backing(
+                        options['backing_music_path'],vocal,32000,
+                        transcript_hint=detected_transcript,
+                        bpm=options.get('bpm',145),
+                        humor=options.get('humor','auto'))
+                stage='export'
+                export_mp3(audio,root/job_id/'mix.mp3')
+                export_mp3(vocal,root/job_id/'voice.mp3')
+                audio_duration_seconds=len(audio)/32000
+                del audio, rendered, clips
+                if (not options.get('video_requested') or
+                        options.get('video_strategy') in ('remix_original','new_story')):
+                    del vocal
+                gc.collect()
+                mix_quality='full_dj'
             else:
-                audio,vocal=rendered
-                video_fx_timeline=[]
-            if options.get('backing_music_path'):
-                stage='licensed_music'
-                from licensed_music import mix_licensed_backing
-                audio=mix_licensed_backing(
-                    options['backing_music_path'],vocal,32000,
-                    transcript_hint=detected_transcript,
-                    bpm=options.get('bpm',145),
-                    humor=options.get('humor','auto'))
-            stage='export'
-            export_mp3(audio,root/job_id/'mix.mp3')
-            export_mp3(vocal,root/job_id/'voice.mp3')
-            audio_duration_seconds=len(audio)/32000
-            del audio, rendered, clips
-            if (not options.get('video_requested') or
-                    options.get('video_strategy') in ('remix_original','new_story')):
-                del vocal
-            gc.collect()
-            meta={'video_status':'disabled','storyboard_source':'not_requested'}
+                # Heavy NumPy/FFmpeg rendering runs in a disposable child,
+                # not Gunicorn. A low-RAM/OOM failure can then be rescued
+                # as clearly identified voice-only MP3, retaining EVERY
+                # original word instead of losing the entire job and site.
+                del clips
+                gc.collect()
+                update(job_id,percent=15,label='מפיק מיקס בתהליך עיבוד נפרד וחסכוני בזיכרון')
+                from isolated_mix import process_in_child
+                result=process_in_child(
+                    paths,audio_options,root/job_id,
+                    backing_music_path=options.get('backing_music_path'),
+                    return_video_timeline=bool(options.get('video_requested')))
+                audio_duration_seconds=float(result['audio_seconds'])
+                video_fx_timeline=result['video_fx_timeline']
+                mix_quality=result['mix_quality']
+                if mix_quality=='voice_rescue':
+                    update(job_id,percent=84,
+                           label='המנוע הכבד נעצר; קול ההקלטה נשמר בקובץ חילוץ')
+                # These illustrated branches align video to sample timestamps
+                # and need the voice waveform. Load it only AFTER the heavy
+                # music child has fully exited and returned its memory.
+                vocal=(load_audio(root/job_id/'voice.mp3')
+                       if options.get('video_requested') and
+                       options.get('video_strategy') in
+                       ('illustrated_story','auto_legacy') else None)
+            meta={'video_status':'disabled','storyboard_source':'not_requested',
+                  'mix_quality':mix_quality}
             if options.get('video_requested'):
                 stage='video'
                 update(job_id,percent=87,label='בודק התאמה בין המשפטים לצילומי וידאו',
@@ -563,7 +593,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.19',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.20',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/jobs/capacity')
     def job_capacity():
