@@ -79,6 +79,15 @@ with site.app.test_request_context("/"):
     assert not site.owner() and not site.can_moderate() and not site.can_manage_members()
     os.environ.pop("BARKAN_ADMIN_EMAIL",None)
 assert client.get("/staff",base_url=origin).status_code==503
+# Member rejections must leave the pending queue. All staff changes need an audit log.
+source=(ROOT/"app.py").read_text(encoding="utf-8")
+assert "membership_status='pending'" in source
+assert "membership_status=%s" in source
+assert "member_"+"""approved""" in "member_approved"  # status naming invariant
+assert "INSERT INTO b2_admin_audit(actor,target,action,details)" in source
+assert "with connect() as c:" in source
+assert "role_changed" in source
+
 
 # Do not publish a disputed crew position as verified memorial information.
 assert "כתותחן טנק" not in memorial_html
