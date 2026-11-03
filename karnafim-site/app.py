@@ -141,6 +141,8 @@ def init():
                 year_text TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'pending',
                 created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("ALTER TABLE b2_posts ADD COLUMN IF NOT EXISTS album_cohort TEXT NOT NULL DEFAULT ''")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_posts_album_cohort_idx ON b2_posts(album_cohort,status)")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_posts_status_idx ON b2_posts(status,created DESC)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_media(
                 id BIGSERIAL PRIMARY KEY,post_id BIGINT REFERENCES b2_posts(id) ON DELETE CASCADE,
@@ -398,19 +400,31 @@ def memorial():
 
 @app.get("/photos")
 def photos():
-    intro='<div class="pagehead"><span class="tag">אלבום הפלוגה</span><h1>כל תמונה מחזירה רגע</h1><p>רק תמונות שאושרו לפרסום מוצגות לחברים מאושרים.</p></div>'
+    intro='<div class="pagehead"><span class="tag">אלבומי הפלוגה</span><h1>רגעים שמחזירים את כולנו לשירות</h1><p>תמונות שעברו אישור פרסום, לפי מחזור גיוס או באלבום הכללי.</p></div>'
     if not PUBLIC_AUTH or not g.user or not g.user["approved"]:
-        return layout("תמונות",intro+'<section class="empty-photo"><h2>אלבום החברים פרטי</h2><p>תמונות מאושרות זמינות רק לחברי הקהילה שאושרו.</p></section>')
-    rows=sql("""SELECT f.id,p.title,p.year_text,u.name
-        FROM b2_media f JOIN b2_posts p ON p.id=f.post_id
-        JOIN b2_users u ON u.id=p.author
+        return layout("תמונות",intro+'<section class="empty-photo"><h2>האלבומים פרטיים</h2><p>תמונות משותפות זמינות לחברי קהילה מאושרים בלבד.</p></section>')
+    cohort=request.args.get("cohort","").strip()
+    if cohort and cohort!="general" and not re.fullmatch(r"(19[9][0-9]|20[0-3][0-9])-(0[1-9]|1[0-2])",cohort):
+        abort(400)
+    albums=sql("""SELECT p.album_cohort,COUNT(*) AS total FROM b2_media f
+        JOIN b2_posts p ON p.id=f.post_id JOIN b2_users u ON u.id=p.author
         WHERE f.kind='image' AND p.status='published' AND u.approved=TRUE
-        ORDER BY p.created DESC,f.id DESC LIMIT 80""")
+        GROUP BY p.album_cohort ORDER BY p.album_cohort DESC LIMIT 120""")
+    links=('<a class="outline" href="/photos">כל התמונות</a> '+
+           ''.join('<a class="outline" href="/photos?cohort='+e(c["album_cohort"] or "general")+'">'+
+              e(c["album_cohort"] or "אלבום כללי")+' ('+str(c["total"])+')</a> ' for c in albums))
+    records=sql("""SELECT f.id,p.title,p.year_text,p.album_cohort,u.name FROM b2_media f
+        JOIN b2_posts p ON p.id=f.post_id JOIN b2_users u ON u.id=p.author
+        WHERE f.kind='image' AND p.status='published' AND u.approved=TRUE
+          AND (%s='' OR (%s='general' AND p.album_cohort='')
+               OR p.album_cohort=%s)
+        ORDER BY p.created DESC,f.id DESC LIMIT 80""",(cohort,cohort,cohort))
     tiles=''.join('<article class="post">'+media_html(r["id"],"image")+
-        '<h2>'+e(r["title"])+'</h2><p>'+e(r["name"])+' · '+e(r["year_text"])+'</p></article>'
-        for r in rows)
-    return layout("תמונות",intro+('<section class="media-grid">'+tiles+'</section>' if tiles else
-        '<section class="empty-photo"><h2>עדיין אין תמונות מאושרות</h2><p>תמונות חדשות יופיעו כאן לאחר בדיקת מנהל ואישור פרסום.</p><a href="/new">העלאת זיכרון</a></section>'))
+        '<h2>'+e(r["title"])+'</h2><p>'+e(r["name"])+' · '+e(r["year_text"])+'</p><p>אלבום: '+e(r["album_cohort"] or "כללי")+'</p></article>'
+        for r in records)
+    return layout("תמונות",intro+'<nav class="album-nav" aria-label="בחירת אלבום">'+links+'</nav>'+
+        ('<section class="media-grid">'+tiles+'</section>' if tiles else
+         '<section class="empty-photo"><h2>אין תמונות מאושרות באלבום זה</h2><p>חברים מוזמנים לתרום תמונות שצילמו ושמותר להם לשתף. הפרסום יתבצע רק אחרי ביקורת.</p><a href="/new">העלאת תמונה לביקורת</a></section>'))
 
 @app.get("/about")
 def about():
@@ -640,6 +654,9 @@ def create_post():
         body=request.form.get("body","").strip()[:4000]
         kind=request.form.get("kind","story")
         year=request.form.get("year","").strip()[:30]
+        cohort=request.form.get("album_cohort","").strip()
+        if cohort and not re.fullmatch(r"(19[9][0-9]|20[0-3][0-9])-(0[1-9]|1[0-2])",cohort):
+            abort(400)
         if kind not in ("story","photo","event") or not title or request.form.get("rights")!="yes":abort(400)
         files=[v for v in request.files.getlist("uploads") if v and v.filename]
         if len(files)>4:abort(413)
@@ -648,9 +665,9 @@ def create_post():
         if sum(len(v[2]) for v in safe)>16*1024*1024:abort(413)
         with connect() as c:
             with c.cursor() as cur:
-                cur.execute("""INSERT INTO b2_posts(author,title,body,kind,year_text)
-                    VALUES(%s,%s,%s,%s,%s) RETURNING id""",
-                    (g.user["id"],title,body,kind,year))
+                cur.execute("""INSERT INTO b2_posts(author,title,body,kind,year_text,album_cohort)
+                    VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (g.user["id"],title,body,kind,year,cohort))
                 pid=cur.fetchone()["id"]
                 for mime,typ,data in safe:
                     cur.execute("""INSERT INTO b2_media(post_id,owner,mime,kind,body,length)
@@ -658,7 +675,7 @@ def create_post():
                         (pid,g.user["id"],mime,typ,data,len(data)))
         return redirect("/my-posts",303)
     return layout("שיתוף סיפור",'<div class="pagehead"><h1>משתפים זיכרון</h1><p>הפרסום יישמר פרטי עד אישור חברות וביקורת התוכן.</p></div>'+button_form(
-        '<label>סוג זיכרון<select name="kind"><option value="story">סיפור</option><option value="photo">תמונות או סרטון</option><option value="event">אירוע ומפגש</option></select></label><label>כותרת<input name="title" required maxlength="120"></label><label>שנה (לא חובה)<input name="year" maxlength="30"></label><label>תוכן<textarea name="body" maxlength="4000" rows="6"></textarea></label><label>קבצים (עד ארבעה)<input type="file" name="uploads" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg"></label><p class="muted">עד 8MB לקובץ ו־16MB סך הכול לפרסום. תמונות יעברו כיווץ והסרת נתוני EXIF.</p><label class="check"><input type="checkbox" name="rights" value="yes" required> אני מאשר שיש לי זכויות לפרסם את התוכן</label><button class="primary">שליחה לביקורת</button>',
+        '<label>סוג זיכרון<select name="kind"><option value="story">סיפור</option><option value="photo">תמונות או סרטון</option><option value="event">אירוע ומפגש</option></select></label><label>כותרת<input name="title" required maxlength="120"></label><label>שנה (לא חובה)<input name="year" maxlength="30"></label><label>אלבום מחזור גיוס (אופציונלי)<input type="month" name="album_cohort" min="1990-01" max="2035-12"></label><label>תוכן<textarea name="body" maxlength="4000" rows="6"></textarea></label><label>קבצים (עד ארבעה)<input type="file" name="uploads" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg"></label><p class="muted">עד 8MB לקובץ ו־16MB סך הכול לפרסום. תמונות יעברו כיווץ והסרת נתוני EXIF.</p><label class="check"><input type="checkbox" name="rights" value="yes" required> אני מאשר שיש לי זכויות לפרסם את התוכן</label><button class="primary">שליחה לביקורת</button>',
         "/new",'class="formcard" enctype="multipart/form-data"'))
 
 def media_html(mid,kind):
