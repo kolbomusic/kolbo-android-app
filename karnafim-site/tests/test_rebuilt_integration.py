@@ -617,7 +617,7 @@ assert c.get("/dashboard",base_url=origin).status_code==403
 response=c.get("/application",base_url=origin)
 assert response.status_code==200
 assert "ממתין לבדיקה" in response.get_data(as_text=True)
-assert "קוד אישי" in response.get_data(as_text=True)
+assert "הקוד האישי הבא" in response.get_data(as_text=True)
 assert app.sql("SELECT referral_code FROM b2_users WHERE id=%s",(user["id"],),True)["referral_code"]
 # Rejection/appeal route is tested with a synthetic state, not a real applicant.
 app.sql("UPDATE b2_users SET membership_status='rejected',membership_reason=%s WHERE id=%s",
