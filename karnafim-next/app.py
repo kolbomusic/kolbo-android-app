@@ -66,7 +66,10 @@ def init():
                 show_profile BOOLEAN NOT NULL DEFAULT FALSE,
                 email_verified BOOLEAN NOT NULL DEFAULT FALSE,
                 email_verification_required BOOLEAN NOT NULL DEFAULT FALSE,
+                role TEXT NOT NULL DEFAULT 'member',
                 joined TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            # Idempotent upgrade for existing member databases.
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'member'")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_tokens(
                 user_id BIGINT PRIMARY KEY REFERENCES b2_users(id) ON DELETE CASCADE,
                 digest CHAR(64) NOT NULL UNIQUE,expires TIMESTAMPTZ NOT NULL)""")
@@ -133,7 +136,7 @@ def limit(label, maximum=8, minutes=15):
 def current():
     uid=session.get("uid")
     if not isinstance(uid,int):return None
-    return sql("SELECT id,name,email,approved,show_profile,email_verified,email_verification_required,nickname,unit_year,about FROM b2_users WHERE id=%s",(uid,),True)
+    return sql("SELECT id,name,email,approved,show_profile,email_verified,email_verification_required,nickname,unit_year,about,role FROM b2_users WHERE id=%s",(uid,),True)
 
 @app.before_request
 def before():
@@ -166,9 +169,23 @@ def require_approved(fn):
         return fn(*args,**kwargs)
     return inner
 
+def owner():
+    # The founding administrator is anchored to an environment-owned address,
+    # not to a role that another member can grant.
+    configured=os.environ.get("BARKAN_ADMIN_EMAIL","").strip().lower()
+    return bool(configured and g.user and g.user["approved"]
+                and g.user["email"].lower()==configured)
+
+def can_moderate():
+    return bool(owner() or (g.user and g.user["approved"]
+                 and g.user["role"] in ("moderator","admin")))
+
+def can_manage_members():
+    return bool(owner() or (g.user and g.user["approved"]
+                 and g.user["role"] in ("member_manager","admin")))
+
 def admin():
-    return bool(g.user and g.user["approved"] and
-                g.user["email"].lower()==os.environ.get("BARKAN_ADMIN_EMAIL","").lower())
+    return owner()
 
 def protect():
     if not hmac.compare_digest(str(request.form.get("csrf","")),session.get("csrf","")):abort(400)
@@ -193,7 +210,9 @@ def layout(title,body):
     menu=[("/","בית"),("/heritage","מורשת"),("/memorial","הנצחה"),("/photos","תמונות"),("/about","על הקהילה"),("/help","עזרה")]
     if PUBLIC_AUTH and u:
         menu += [("/feed","הקהילה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
-        if admin():menu += [("/moderation","בקרת פרסומים"),("/members","אישור חברים")]
+        if can_moderate():menu += [("/moderation","בקרת פרסומים")]
+        if can_manage_members():menu += [("/members","אישור חברים")]
+        if owner():menu += [("/staff","הרשאות ניהול")]
     elif PUBLIC_AUTH:
         menu += [("/login","כניסה")]
         if ALLOW_SIGNUP:menu += [("/signup","הצטרפות")]
@@ -554,7 +573,7 @@ def media(mid):
       WHERE f.id=%s""",(mid,),True)
     if not m:abort(404)
     can_post=bool(m["post_id"] and (u["id"]==m["owner"] or
-                  (u["approved"] and (admin() or m["post_status"]=="published"))))
+                  (u["approved"] and (can_moderate() or m["post_status"]=="published"))))
     can_message=bool(m["recipient"] and u["id"] in (m["recipient"],m["owner"]) and u["approved"])
     if not (can_post or can_message):abort(403)
     r=send_file(io.BytesIO(bytes(m["body"])),mimetype=m["mime"],conditional=True,download_name="community-media")
@@ -647,7 +666,7 @@ def chat(peer):
 @app.route("/moderation",methods=["GET","POST"])
 @require_approved
 def moderation():
-    if not admin():abort(403)
+    if not can_moderate():abort(403)
     if request.method=="POST":
         protect()
         pid=request.form.get("id","")
@@ -674,14 +693,16 @@ def moderation():
 @app.route("/members",methods=["GET","POST"])
 @require_approved
 def members():
-    if not admin():abort(403)
+    if not can_manage_members():abort(403)
     if request.method=="POST":
         protect()
         uid=request.form.get("id","")
         if not uid.isdecimal() or request.form.get("action") not in ("approve","reject"):abort(400)
         if int(uid)==g.user["id"]:abort(400)
         approved=request.form["action"]=="approve"
-        sql("UPDATE b2_users SET approved=%s WHERE id=%s",(approved,int(uid)))
+        sql("""UPDATE b2_users SET approved=%s, role=CASE WHEN %s THEN role ELSE 'member' END
+             WHERE id=%s AND lower(email)<>%s""",
+            (approved,approved,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()))
         return redirect("/members",303)
     rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE ORDER BY joined DESC LIMIT 100")
     html=''
@@ -689,6 +710,35 @@ def members():
         html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p>'+button_form(
             '<input type="hidden" name="id" value="'+str(u["id"])+'"><button name="action" value="approve" class="primary">אישור חבר</button><button name="action" value="reject" class="subtle">דחייה</button>','/members')+'</article>'
     return layout("אישור חברים",'<div class="pagehead"><h1>בקשות חברות</h1></div>'+(html or '<div class="note">אין בקשות חברות ממתינות.</div>'))
+
+@app.route("/staff",methods=["GET","POST"])
+@require_approved
+def staff():
+    """Only the founder may delegate or revoke administrative permissions."""
+    if not owner():abort(403)
+    if request.method=="POST":
+        protect();limit("staff:"+str(g.user["id"]),20,60)
+        uid=request.form.get("id","")
+        role=request.form.get("role","")
+        if not uid.isdecimal() or role not in ("member","moderator","member_manager","admin"):abort(400)
+        if int(uid)==g.user["id"]:abort(400)
+        result=sql("""UPDATE b2_users SET role=%s
+            WHERE id=%s AND approved=TRUE AND lower(email)<>%s
+            RETURNING id""",(role,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()),True)
+        if not result:abort(409)
+        return redirect("/staff",303)
+    users=sql("""SELECT id,name,role FROM b2_users WHERE approved=TRUE
+        AND id<>%s ORDER BY name LIMIT 150""",(g.user["id"],))
+    labels={"member":"חבר רגיל","moderator":"בקרת פרסומים",
+            "member_manager":"אישור חברים","admin":"ניהול חברים ופרסומים"}
+    cards=''
+    for u in users:
+        options=''.join('<option value="'+key+'"'+(' selected' if key==u["role"] else '')+'>'+label+'</option>'
+                        for key,label in labels.items())
+        cards+='<article class="person"><h2>'+e(u["name"])+'</h2>'+button_form(
+            '<input type="hidden" name="id" value="'+str(u["id"])+'"><label>הרשאה<select name="role">'+
+            options+'</select></label><button class="primary">שמירת הרשאה</button>',"/staff")+'</article>'
+    return layout("הרשאות ניהול",'<div class="pagehead"><h1>הרשאות מנהלים</h1><p>רק המנהל הראשי יכול להעניק או לבטל הרשאות. מנהלים נוספים אינם רשאים לשנות הרשאות.</p></div>'+ (cards or '<p>אין חברים מאושרים נוספים.</p>'))
 
 @app.errorhandler(404)
 def not_found(err):return layout("העמוד לא נמצא",'<div class="pagehead"><h1>העמוד לא נמצא</h1><a href="/">חזרה לדף הבית</a></div>'),404
