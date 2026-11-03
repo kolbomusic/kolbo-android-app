@@ -102,10 +102,14 @@ def create_app(config=None):
             if asr_recovery_attempted:
                 update(job_id,percent=5,label='מזהה משפטים ותזמון אפקטים מהקלטת המקור')
                 try:
-                    from source_asr import transcribe_original_files
-                    asr_result=transcribe_original_files(
-                        paths,progress=lambda label:update(job_id,label=label),
-                        return_timeline=True)
+                    if app.config.get('TESTING') or os.environ.get('KOLBO_ASR_ISOLATED')=='0':
+                        from source_asr import transcribe_original_files
+                        asr_result=transcribe_original_files(
+                            paths,progress=lambda label:update(job_id,label=label),
+                            return_timeline=True)
+                    else:
+                        from isolated_asr import transcribe_in_child
+                        asr_result=transcribe_in_child(paths)
                     # Preserve compatibility with older source-ASR wrappers
                     # which return text+completion but no timestamp metadata.
                     if len(asr_result)==3:
