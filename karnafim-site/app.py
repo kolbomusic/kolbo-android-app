@@ -91,6 +91,12 @@ def init():
                 joined TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             # Existing accounts retain their values. No directory information
             # is publicly visible until the member explicitly opts in.
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS membership_status TEXT NOT NULL DEFAULT 'pending'")
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS membership_reason TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS membership_summary TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS service_claim TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS membership_appealed BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("UPDATE b2_users SET membership_status='approved' WHERE approved=TRUE AND membership_status<>'approved'")
             cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS enlistment_cohort TEXT NOT NULL DEFAULT ''")
             cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS service_role TEXT NOT NULL DEFAULT ''")
             cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS platoon TEXT NOT NULL DEFAULT ''")
@@ -327,7 +333,7 @@ def layout(title,body):
     u=g.user
     menu=[("/","בית"),("/heritage","מורשת"),("/memorial","הנצחה"),("/photos","תמונות"),("/about","על הקהילה"),("/help","עזרה")]
     if PUBLIC_AUTH and u:
-        menu += [("/feed","הקהילה"),("/cohorts","ספר המחזורים"),("/voices","מורשת קולית"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
+        menu += [("/feed","הקהילה"),("/cohorts","ספר המחזורים"),("/voices","מורשת קולית"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/application","מצב ההצטרפות"),("/profile","הפרופיל שלי")]
         permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
         if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
@@ -676,6 +682,7 @@ def signup():
         protect();limit("signup",4,60)
         if request.form.get("agree")!="yes" or request.form.get("website"):abort(400)
         name=request.form.get("name","").strip()[:90]
+        service_claim=request.form.get("service_claim","").strip()[:500]
         email=request.form.get("email","").strip().lower()[:200]
         password=request.form.get("password","")
         if len(name)<2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) or not 12<=len(password)<=200:
@@ -683,8 +690,12 @@ def signup():
         with connect() as c:
             with c.cursor() as cur:
                 try:
-                    cur.execute("""INSERT INTO b2_users(name,email,passhash,email_verification_required)
-                        VALUES(%s,%s,%s,%s) RETURNING id""",(name,email,hashpw(password),not MANUAL_SIGNUP))
+                    cur.execute("""INSERT INTO b2_users(name,email,passhash,email_verification_required,
+                        service_claim,membership_status,membership_reason,membership_summary)
+                        VALUES(%s,%s,%s,%s,%s,'pending',%s,%s) RETURNING id""",
+                        (name,email,hashpw(password),not MANUAL_SIGNUP,service_claim,
+                        'ממתין לאימות זהות ושייכות לפלוגה.',
+                        'בקשת הצטרפות של '+name+(' · פרטי שירות שמסר: '+service_claim[:220] if service_claim else ' · פרטי שירות טרם נמסרו.')))
                     uid=cur.fetchone()["id"]
                 except psycopg.errors.UniqueViolation:
                     c.rollback()
@@ -695,7 +706,7 @@ def signup():
             return layout("משלוח אימות",'<div class="pagehead"><h1>ההרשמה נשמרה, אבל המייל לא נשלח</h1><p>אפשר לנסות שוב דרך שליחת אימות מחדש. החשבון חסום לכניסה עד אימות הכתובת.</p><a href="/resend-verification" class="primary">שליחת אימות מחדש</a></div>'),503
         return layout("בקשת הצטרפות",'<div class="pagehead"><h1>בקשת ההצטרפות נשמרה</h1><p>הודעת האימות התקבלה במערכת השליחה. יש לאמת את הדוא״ל לפני הכניסה לחשבון.</p><a class="primary" href="/login">מעבר לכניסה</a></div>')
     return layout("הרשמה",'<section class="auth-page"><div class="pagehead"><span class="tag">חברות בקהילה</span><h1>מצטרפים לקרנפים</h1><p>חשבון אישי ומאובטח ליוצאי פלוגה ב׳. בקשת ההצטרפות תישלח לאישור מנהל. זהות החבר ובעלות על הדוא״ל יאומתו באופן אישי לפני מתן גישה לתוכן הפרטי.</p></div><div class="auth-trust"><span>🔒 חיבור מוצפן</span><span>◈ אישור מנהל לאחר אימות זהות</span><span>◈ קהילה לחברים מאושרים</span></div>'+
-        button_form('<label>שם מלא<input name="name" required maxlength="90" autocomplete="name" placeholder="איך קוראים לך?"></label><label>כתובת דוא״ל<input name="email" type="email" inputmode="email" dir="ltr" required autocomplete="email" placeholder="you@example.com"></label>' + password_control("password","new-password") + '<p id="password-help" class="muted">לפחות 12 תווים. מומלץ להשתמש בסיסמה ייחודית.</p><input name="website" tabindex="-1" class="honeypot" aria-hidden="true"><label class="check"><input type="checkbox" name="agree" value="yes" required> אני מסכים לשמירת הפרטים לצורך קבלה לקהילה</label><button class="primary">שליחת בקשת הצטרפות</button>','/signup','class="formcard"')+'</section>')
+        button_form('<label>שם מלא<input name="name" required maxlength="90" autocomplete="name" placeholder="איך קוראים לך?"></label><label>כתובת דוא״ל<input name="email" type="email" inputmode="email" dir="ltr" required autocomplete="email" placeholder="you@example.com"></label>' + password_control("password","new-password") + '<p id="password-help" class="muted">לפחות 12 תווים. מומלץ להשתמש בסיסמה ייחודית.</p><label>פרטים מהשירות (לצורך זיהוי)<textarea name="service_claim" maxlength="500" rows="3" placeholder="מחזור גיוס, מחלקה, תפקיד או מפקדים שאתם זוכרים. אין לשתף מידע מסווג או רגיש."></textarea></label><input name="website" tabindex="-1" class="honeypot" aria-hidden="true"><label class="check"><input type="checkbox" name="agree" value="yes" required> אני מסכים לשמירת הפרטים לצורך קבלה לקהילה</label><button class="primary">שליחת בקשת הצטרפות</button>','/signup','class="formcard"')+'</section>')
 
 def send_verification(email,uid):
     """Send a single-use email link with an explicitly selected API provider.
@@ -1197,24 +1208,66 @@ def members():
         approved=request.form["action"]=="approve"
         if approved and request.form.get("identity_checked")!="yes":
             return layout("נדרש אימות",'<div class="note error">לפני אישור חבר יש לאמת מחוץ לאתר את זהותו, שייכותו לפלוגה ואת בעלותו על כתובת הדוא״ל. <a href="/members">חזרה לבקשות</a></div>'),400
+        reason=request.form.get("reason","").strip()[:700]
+        if not approved and len(reason)<12:
+            return layout("נדרש הסבר",'<div class="note error">יש להסביר מדוע בקשת החברות לא אושרה ומה אפשר לעשות כדי לתקן או לערער.</div>'),400
         with connect() as c:
             with c.cursor() as cur:
-                cur.execute("""UPDATE b2_users SET approved=%s WHERE id=%s
-                    AND approved=FALSE RETURNING id""",(approved,int(uid)))
+                cur.execute("""UPDATE b2_users SET approved=%s,
+                    membership_status=%s,membership_reason=%s
+                    WHERE id=%s AND approved=FALSE AND membership_status='pending'
+                    RETURNING id""",(approved,
+                     "approved" if approved else "rejected",
+                     "זהות ושייכות נבדקו ואושרו על ידי מנהל." if approved else reason,int(uid)))
                 changed=cur.fetchone()
                 if not changed:abort(409)
                 cur.execute("""INSERT INTO b2_admin_audit(actor,subject,action,detail)
                     VALUES(%s,%s,%s,%s)""",(g.user["id"],int(uid),
                     "member_approved" if approved else "member_rejected",
-                    "identity manually checked" if approved else "application rejected"))
+                    "identity manually checked" if approved else "application rejected with explanation"))
         return redirect("/members",303)
-    rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE ORDER BY joined DESC LIMIT 100")
+    rows=sql("""SELECT id,name,email,joined,service_claim,membership_status,
+                   membership_reason,membership_summary
+                   FROM b2_users WHERE approved=FALSE
+                   ORDER BY joined DESC LIMIT 100""")
     html=''
     for u in rows:
-        html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p>'+button_form(
-            '<input type="hidden" name="id" value="'+str(u["id"])+'"><label class="check"><input type="checkbox" name="identity_checked" value="yes"> אימתתי באופן אישי את זהות החבר, שייכותו לפלוגה ובעלותו על כתובת הדוא״ל</label><button name="action" value="approve" class="primary">אישור חבר</button><button name="action" value="reject" class="subtle">דחייה</button>','/members')+'</article>'
+        html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p><p><strong>פרטי שירות שנמסרו:</strong> '+e(u["service_claim"] or "לא נמסרו")+'</p><p><strong>סטטוס:</strong> '+e(u["membership_status"])+'</p><p><strong>תקציר הבקשה:</strong> '+e(u["membership_summary"])+'</p>'+button_form(
+            '<input type="hidden" name="id" value="'+str(u["id"])+'"><label class="check"><input type="checkbox" name="identity_checked" value="yes"> אימתתי באופן אישי את זהות החבר, שייכותו לפלוגה ובעלותו על כתובת הדוא״ל</label><button name="action" value="approve" class="primary">אישור חבר</button><label>סיבת דחייה (חובה בדחייה)<textarea name="reason" maxlength="700" rows="2" placeholder="מה חסר, וכיצד ניתן לערער?"></textarea></label><button name="action" value="reject" class="subtle">דחייה עם הסבר</button>','/members')+'</article>'
     return layout("אישור חברים",'<div class="pagehead"><h1>בקשות חברות</h1></div>'+(html or '<div class="note">אין בקשות חברות ממתינות.</div>'))
 
+
+
+@app.route("/application",methods=["GET","POST"])
+@require_login
+def application_status():
+    """Private application review and one appeal; no personal data in public URLs."""
+    u=g.user
+    if request.method=="POST":
+        protect();limit("membership-appeal:"+str(u["id"]),3,3600)
+        note=request.form.get("appeal","").strip()[:500]
+        if len(note)<12:abort(400)
+        with connect() as c:
+            with c.cursor() as cur:
+                cur.execute("""UPDATE b2_users SET membership_status='pending',
+                    membership_reason=%s,membership_appealed=TRUE,
+                    service_claim=LEFT(COALESCE(service_claim,'')||' / ערעור: '||%s,500)
+                    WHERE id=%s AND approved=FALSE AND membership_status='rejected'
+                    AND membership_appealed=FALSE RETURNING id""",
+                    ("הוגש ערעור; הבקשה ממתינה לבדיקה חוזרת.",note,u["id"]))
+                if not cur.fetchone():abort(409)
+        return redirect("/application",303)
+    details=sql("""SELECT membership_status,membership_reason,
+              membership_summary,membership_appealed,approved
+              FROM b2_users WHERE id=%s""",(u["id"],),True)
+    state=details["membership_status"]
+    label={"pending":"ממתין לבדיקה ולאימות זהות","rejected":"לא אושר","approved":"חבר מאושר"}.get(state,"בבדיקה")
+    appeal=button_form('<label>בקשה לבדיקה חוזרת<textarea name="appeal" required maxlength="500" rows="4" placeholder="פרטו מידע נוסף שיסייע באימות הבקשה."></textarea></label><button class="primary">הגשת ערעור</button>',
+       '/application','class="formcard"') if state=="rejected" and not details["membership_appealed"] else ''
+    return layout("מצב ההצטרפות שלי",'<div class="pagehead"><h1>בקשת החברות שלי</h1><p>סטטוס: '+e(label)+'</p></div>'+
+        '<section class="story"><h2>סיכום הבקשה</h2><p>'+e(details["membership_summary"])+'</p>'+
+        '<h2>הסבר להחלטה</h2><p>'+e(details["membership_reason"] or "טרם התקבלה החלטה.")+'</p>'+
+        '<p>הבדיקה הראשונית נעשית אוטומטית, אך גישה לחומר פרטי של הפלוגה ניתנת רק לאחר אימות זהות וחברות.</p></section>'+appeal)
 
 @app.route("/team",methods=["GET","POST"])
 @require_approved
