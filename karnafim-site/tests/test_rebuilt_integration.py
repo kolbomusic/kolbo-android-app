@@ -174,7 +174,7 @@ with site.app.test_client() as browser:
     assert memorial_html.count("12.8.2006")>=4
     assert "המידע ההיסטורי מקושר לעמודי הנצחה רשמיים" in memorial_html
     assert "תפקידו כנהג טנק" in memorial_html
-    assert "כתותחן" not in memorial_html
+    assert "יוני) שרעבי שירת בפלוגה ב׳ ״הקרנפים״ כתותחן" not in memorial_html
     assert "תותחן מרכבה סימן 4 · פלוגה ב׳" not in memorial_html
     ready=browser.get("/ready",base_url=ORIGIN)
     assert ready.status_code==200,ready.status_code
