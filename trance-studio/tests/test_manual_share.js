@@ -70,7 +70,7 @@ assert.equal(context.files[0].name,voice.name,'An active job must not silently o
 assert.equal(count,0);
 context.active=false;
 context.window.kolboImportSharedAudio([{name:'WA-person-speaking.mp4',type:'video/mp4',size:20480}]);
-assert.equal(strategy.value,'remix_original',
- 'Shared moving video automatically chooses audio-synchronized source editing');
+assert.equal(strategy.value,'smart_story',
+ 'Shared moving video automatically chooses the source-first resilient video route');
 assert.equal(count,0,'Switching to original video effects never auto-generates');
 console.log('MANUAL_WHATSAPP_SHARE_ONLY_WAITS_FOR_EXPLICIT_CREATE_BUTTON_PASS');
