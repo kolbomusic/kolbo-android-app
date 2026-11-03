@@ -126,9 +126,12 @@ def create_app(config=None):
             # Recognize source speech for timestamped music/DJ direction even
             # when MP4 was not requested. If ASR fails, still return audio.
             audio_director=options.get('humor','auto')!='off'
+            # Browser-recognized original words already exist. Do not
+            # override them with a second expensive server ASR pass.
+            # Reserve the 512MiB local model for genuinely missing speech.
             asr_recovery_attempted=bool(
                 (audio_director or options.get('video_requested')) and
-                (audio_director or len(detected_transcript.split())<2))
+                len(detected_transcript.split())<2)
             transcript_timeline=None
             # A decoded 300-second float32 track can hold ~38 MiB (plus
             # Python/NumPy allocator overhead) while multilingual Whisper
@@ -188,7 +191,7 @@ def create_app(config=None):
             audio_options['transcript_timeline']=transcript_timeline
             audio_options['source_video_length']=bool(
                 options.get('video_requested') and
-                options.get('video_strategy') in ('remix_original','auto_legacy') and
+                options.get('video_strategy') in ('remix_original','auto_legacy','smart_story') and
                 any(Path(p).suffix.lower() in ('.mp4','.webm','.3gp','.3gpp','.mov')
                     for p in paths))
             stage='mix'
@@ -232,7 +235,7 @@ def create_app(config=None):
                 from source_video_fallback import VIDEO_TYPES
                 original_video_issue=''
                 original_video_error_code=''
-                if options.get('video_strategy') in ('remix_original','auto_legacy') and any(Path(p).suffix.lower() in VIDEO_TYPES for p in paths):
+                if options.get('video_strategy') in ('remix_original','auto_legacy','smart_story') and any(Path(p).suffix.lower() in VIDEO_TYPES for p in paths):
                     try:
                         from source_video_fallback import compose_original_video_with_mix
                         remixed=compose_original_video_with_mix(
@@ -563,7 +566,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.20',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.21',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/jobs/capacity')
     def job_capacity():
@@ -680,7 +683,7 @@ def create_app(config=None):
         if not 1<=len(files)<=4:return jsonify(error='יש לבחור בין הקלטה אחת לארבע הקלטות'),400
         try:
             bpm=int(request.form.get('bpm',145));seconds=int(request.form.get('seconds',0));style=request.form.get('style','mixed');voice_level=float(request.form.get('voice_level',1));melody=request.form.get('melody','auto');humor=request.form.get('humor','auto');fx_intensity=int(request.form.get('fx_intensity',2));fx_gain=float(request.form.get('fx_gain',1.15));mix_variation=int(request.form.get('mix_variation',0));make_video=request.form.get('make_video','off')=='on';video_requested=request.form.get('video_requested','on' if make_video else 'off')=='on';transcription_failed=request.form.get('transcription_failed','off')=='on';transcript=request.form.get('transcript','')[:4000].strip();transcript_origin=request.form.get('transcript_origin','manual');source_hashes=request.form.get('source_hashes','');ai_video_consent=request.form.get('ai_video_consent','off')=='on';video_strategy=request.form.get('video_strategy','auto_legacy');music_license_ack=request.form.get('music_license_ack','off')=='on'
-            if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto','israeli') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','helium','monster','yo_yo','comic_roll','rewind','telephone','echo','flanger','gate','ring','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or video_strategy not in ('new_story','illustrated_story','remix_original','auto_legacy'):raise ValueError()
+            if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in ('melodic','psy','progressive','goa','acid','uplifting','eurodance','hard','rave','mixed','auto','israeli') or humor not in ('auto','classic','cartoon','scratch','robot','chaos','stretch','tape','pitch','glitch','vinyl','dj','helium','monster','yo_yo','comic_roll','rewind','telephone','echo','flanger','gate','ring','off') or melody not in ('auto','1','2','3','4','5','6') or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or video_strategy not in ('smart_story','new_story','illustrated_story','remix_original','auto_legacy'):raise ValueError()
         except (ValueError,TypeError):return jsonify(error='הגדרות המיקס אינן תקינות'),400
         # Never reject the upload before trying original-file server ASR.
         # If both ASR paths fail, finish the MP3 and report the MP4 limitation.
