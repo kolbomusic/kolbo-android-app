@@ -561,11 +561,17 @@ c=app.app.test_client()
 c.get("/signup",base_url=origin)
 with c.session_transaction(base_url=origin) as ses: csrf=ses["csrf"]
 r=c.post("/signup",base_url=origin,data={"csrf":csrf,"name":"חבר הרשמה ידנית",
+  "service_claim":"נובמבר 2003, פלוגה ב, תפקיד נהג מרכבה",
   "email":"manual-pending@example.test","password":"SyntheticOnlyManualPassword!2026","agree":"yes"})
 assert r.status_code==202,r.status_code
 user=app.sql("SELECT id,approved,email_verification_required FROM b2_users WHERE email=%s",
              ("manual-pending@example.test",),True)
 assert user and not user["approved"] and not user["email_verification_required"]
+review=app.sql("SELECT membership_status,membership_reason,membership_summary,service_claim FROM b2_users WHERE id=%s",
+               (user["id"],),True)
+assert review["membership_status"]=="pending"
+assert "נובמבר 2003" in review["service_claim"]
+assert "חבר הרשמה ידנית" in review["membership_summary"]
 assert app.sql("SELECT COUNT(*) AS n FROM b2_tokens WHERE user_id=%s",(user["id"],),True)["n"]==0
 c.get("/login",base_url=origin)
 with c.session_transaction(base_url=origin) as ses: csrf=ses["csrf"]
@@ -575,6 +581,21 @@ assert c.get("/feed",base_url=origin).status_code==403
 assert c.get("/voices",base_url=origin).status_code==403
 assert c.get("/cohorts",base_url=origin).status_code==403
 assert c.get("/dashboard",base_url=origin).status_code==403
+response=c.get("/application",base_url=origin)
+assert response.status_code==200
+assert "ממתין לבדיקה" in response.get_data(as_text=True)
+# Rejection/appeal route is tested with a synthetic state, not a real applicant.
+app.sql("UPDATE b2_users SET membership_status='rejected',membership_reason=%s WHERE id=%s",
+        ("דרוש מידע נוסף על שנות השירות והמחלקה לצורך אימות.",user["id"]))
+response=c.get("/application",base_url=origin)
+assert "דרוש מידע נוסף" in response.get_data(as_text=True)
+with c.session_transaction(base_url=origin) as ses: csrf=ses["csrf"]
+assert c.post("/application",base_url=origin,data={
+ "csrf":csrf,"appeal":"שירתתי בפלוגה ב במחזור נובמבר 2003, אוסיף פרטים לאימות"}).status_code==303
+assert app.sql("SELECT membership_status,membership_appealed FROM b2_users WHERE id=%s",
+               (user["id"],),True)=={"membership_status":"pending","membership_appealed":True}
+assert c.post("/application",base_url=origin,data={
+ "csrf":csrf,"appeal":"בקשה חוזרת נוספת עם פרטי זיהוי"}).status_code==409
 assert c.get("/find",base_url=origin).status_code==403
 assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
 assert c.get("/inbox",base_url=origin).status_code==403
