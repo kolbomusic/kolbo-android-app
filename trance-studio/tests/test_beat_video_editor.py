@@ -131,15 +131,20 @@ class BeatVideoEditTests(unittest.TestCase):
             # Prove real FFmpeg motion ramps do NOT change a shot's reserved
             # screen time or move the NEXT sound effect off its beat.
             from beat_video_editor import sync_edit_decisions
-            planned=sync_edit_decisions(8.,145,5.,cues,humor='stretch',
-                                        fx_intensity=3)
+            from live_video import _duration
+            # The generated MP3 can include encoder padding beyond 8.000s.
+            # Rendering uses ffprobe's actual soundtrack duration, so the
+            # frame budget must be validated against that same clock.
+            measured_duration=_duration(music)
+            planned=sync_edit_decisions(measured_duration,145,5.,cues,
+                                        humor='stretch',fx_intensity=3)
             parts=sorted((root/'work').glob('shot-*.mp4'))
             self.assertEqual(len(parts),len(planned))
             expected_frames=[
                 round((item['start']+item['duration'])*12)-
                 round(item['start']*12) for item in planned]
-            self.assertEqual(sum(expected_frames),round(8*12))
-            self.assertEqual(meta['video_edit_frames'],round(8*12))
+            self.assertEqual(sum(expected_frames),round(measured_duration*12))
+            self.assertEqual(meta['video_edit_frames'],round(measured_duration*12))
             self.assertEqual(meta['video_edit_fps'],12)
             for part,frames in zip(parts,expected_frames):
                 actual=int(subprocess.check_output([
