@@ -1,5 +1,5 @@
 """Bounded, temporary audio jobs. Run one WSGI worker; threads share admission state."""
-import os, time, secrets, shutil, threading, json, subprocess, hashlib, re, tempfile
+import os, time, secrets, shutil, threading, json, subprocess, hashlib, re, tempfile, gc
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, send_file, send_from_directory, Response
@@ -165,6 +165,12 @@ def create_app(config=None):
             stage='export'
             export_mp3(audio,root/job_id/'mix.mp3')
             export_mp3(vocal,root/job_id/'voice.mp3')
+            audio_duration_seconds=len(audio)/32000
+            del audio, rendered, clips
+            if (not options.get('video_requested') or
+                    options.get('video_strategy') in ('remix_original','new_story')):
+                del vocal
+            gc.collect()
             meta={'video_status':'disabled','storyboard_source':'not_requested'}
             if options.get('video_requested'):
                 stage='video'
@@ -298,7 +304,7 @@ def create_app(config=None):
                                       'נוצרו '+str(board.get('ai_clips_generated',1))+
                                       ' סצנות AI עם '+str(board.get('ai_clip_seconds',0))+
                                       ' שניות של תנועה מקורית מתוך '+
-                                      str(round(len(audio)/32000,1))+
+                                      str(round(audio_duration_seconds,1))+
                                       ' שניות מיקס, ללא חזרה על קליפ קצר. '+
                                       'התאמה סמנטית מלאה אינה מובטחת.')}
                         except AIVideoUnavailable as err:
@@ -329,7 +335,7 @@ def create_app(config=None):
                     if (meta.get('video_status')!='done' and
                             options.get('video_strategy')!='new_story'):
                         try:
-                            board=visual_plan(detected_transcript,len(audio)/32000)
+                            board=visual_plan(detected_transcript,audio_duration_seconds)
                             board['transcript_origin']=detected_origin
                             board['transcript_complete']=transcript_complete
                             # A clip must depict every uttered event; do not hide
@@ -414,16 +420,16 @@ def create_app(config=None):
                     from narrative_plan import scene_prompts, scene_weights
                     # All prompts are based on the ACTUAL recognized Hebrew,
                     # never on what the application guesses was spoken.
-                    beats=scene_prompts(detected_transcript,duration=len(audio)/32000)
+                    beats=scene_prompts(detected_transcript,duration=audio_duration_seconds)
                     if beats:
                         meta['client_ai_prompt']=cinematic_prompt(detected_transcript)
                         meta['client_ai_scene_prompts']=beats
-                        meta['client_ai_scene_weights']=scene_weights(detected_transcript,duration=len(audio)/32000)
+                        meta['client_ai_scene_weights']=scene_weights(detected_transcript,duration=audio_duration_seconds)
                         meta['client_ai_scene_count']=len(beats)
                         meta['client_ai_fallback']=True
                 except AIVideoUnavailable:
                     pass
-            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',speech_timed=bool(transcript_timeline and any(transcript_timeline)),preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
+            update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(audio_duration_seconds,2),voice_coverage='full',speech_timed=bool(transcript_timeline and any(transcript_timeline)),preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
         except AudioDecodeError as exc:
             # The decoder supplies only vetted Hebrew UI text, never raw
             # FFmpeg stderr or uploaded filenames.
@@ -508,7 +514,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.14',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.15',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():
