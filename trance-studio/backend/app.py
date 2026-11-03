@@ -497,7 +497,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.10',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.11',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():
@@ -675,6 +675,37 @@ def create_app(config=None):
             if (root/job_id/'storyboard.json').exists():
                 job['storyboard_url']='/api/jobs/'+job_id+'/storyboard'
         return jsonify(job)
+
+    @app.get('/api/jobs/<job_id>/ai-plan')
+    def ai_scene_plan(job_id):
+        """Recover the ORIGINAL consented shot plan without re-uploading audio.
+
+        A caller cannot request a plan for an unconsented job, and no remote
+        AI provider is contacted by this read-only route. Job IDs are opaque
+        high-entropy values, protected by the same session gate as status.
+        """
+        cleanup()
+        if not re.fullmatch(r'[a-f0-9]{48}',job_id):
+            return jsonify(error='מזהה המיקס אינו תקין'),404
+        with lock:
+            job=jobs.get(job_id)
+            if not job:return jsonify(error='המיקס לא נמצא או שתוקפו פג'),404
+            if job.get('state')!='done':
+                return jsonify(error='המיקס עדיין בעיבוד'),409
+            if (not job.get('client_ai_fallback') or
+                    not job.get('client_ai_prompt') or
+                    job.get('video_status')=='done'):
+                return jsonify(error='אין תוכנית וידאו בהסכמת המשתמש למשימה זו'),403
+            prompts=job.get('client_ai_scene_prompts',[])
+            weights=job.get('client_ai_scene_weights',[])
+            count=job.get('client_ai_scene_count',0)
+        if (not isinstance(prompts,list) or not 1<=len(prompts)<=24 or
+                count!=len(prompts) or
+                any(not isinstance(p,str) or not 20<len(p)<2000 for p in prompts) or
+                not isinstance(weights,list) or len(weights)!=len(prompts)):
+            return jsonify(error='תוכנית סצנות מקורית אינה זמינה'),422
+        return jsonify(prompts=prompts,scene_count=len(prompts),
+                       weights=weights),200
 
     @app.post('/api/jobs/<job_id>/ai-clips')
     def accept_direct_phone_generated_clips(job_id):

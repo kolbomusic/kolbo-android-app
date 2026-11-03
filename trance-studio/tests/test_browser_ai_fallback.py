@@ -56,10 +56,42 @@ class BrowserAIQuotaTests(unittest.TestCase):
                 state=self.wait(client,data['status_url'])
             self.assertEqual(state['state'],'done',state)
             self.assertNotIn('client_ai_prompt',state)
+            self.assertEqual(client.get('/api/jobs/'+data['id']+'/ai-plan').status_code,403)
             result=client.post('/api/jobs/'+data['id']+'/generated-video',
                 json={'video_url':'https://lightricks-ltx-2-5.hf.space/gradio_api/file=/tmp/gradio/x.mp4'})
             self.assertEqual(result.status_code,403)
             self.assertEqual(client.get(state['download_url']).status_code,200)
+
+    def test_ai_plan_recovery_uses_consented_original_shots_not_prompt_rewrite(self):
+        spoken='האיש זורק כוס זכוכית על הרצפה. הכוס נשברת לרסיסים.'
+        with tempfile.TemporaryDirectory() as folder:
+            client=create_app({'TESTING':True,'JOB_DIR':folder,
+                               'API_TOKEN':'test'}).test_client()
+            with patch('source_asr.transcribe_original_files',
+                       return_value=(spoken,True,[])), patch(
+                'ai_video.generate_ai_story',
+                side_effect=AIVideoUnavailable('quota unavailable')):
+                response=client.post('/api/jobs',data={
+                    'audio':(self.sample(),'speech.wav'),
+                    'make_video':'on','video_requested':'on',
+                    'ai_video_consent':'on','video_strategy':'new_story',
+                    'transcript_origin':'auto','seconds':'30'})
+                self.assertEqual(response.status_code,202,response.get_json())
+                data=response.get_json()
+                state=self.wait(client,data['status_url'])
+            self.assertEqual(state['state'],'done')
+            self.assertEqual(state['video_status'],'unavailable')
+            endpoint='/api/jobs/'+data['id']+'/ai-plan'
+            plan=client.get(endpoint)
+            self.assertEqual(plan.status_code,200,plan.get_json())
+            result=plan.get_json()
+            self.assertEqual(result['prompts'],state['client_ai_scene_prompts'])
+            self.assertEqual(result['weights'],state['client_ai_scene_weights'])
+            self.assertEqual(result['scene_count'],len(result['prompts']))
+            self.assertGreater(result['scene_count'],1)
+            self.assertIn('הכוס',result['prompts'][-1])
+            self.assertFalse(any('video_url' in p for p in result))
+            self.assertEqual(client.get('/api/jobs/'+'a'*48+'/ai-plan').status_code,404)
 
     def test_phone_clip_can_complete_failed_automatic_hebrew_video(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -190,24 +190,26 @@ async function getPlan(id,passedPrompt,passedScenes){
     var grounded=passedScenes.slice(0,MAX_SHOTS).filter(function(p){
       return typeof p==='string'&&p.length>20&&p.length<2000&&HEBREW.test(p);
     });
-    if(grounded.length)return grounded;
+    // A partially filtered plan would upload fewer clips than the backend
+    // reserved and either fail 422 or conceal missing spoken events.
+    if(grounded.length===passedScenes.length)return grounded;
   }
-  if(passedPrompt){
-    var local=splitPromptIntoBeats(passedPrompt).filter(function(p){
-      return p.length>20&&p.length<2000&&HEBREW.test(p);
-    });
-    if(local.length)return local;
-  }
-
+  // A full cinematic prompt is NOT a scene plan. Splitting it locally
+  // can make one 5-second clip for a six-shot soundtrack, later rejected by
+  // the server's anti-loop safeguard. Recover the exact approved server plan.
   var response=await fetch('/api/jobs/'+encodeURIComponent(id)+'/ai-plan',
     {credentials:'same-origin',cache:'no-store'});
   var data=await response.json();
-  if(!response.ok)throw fail(data.error||'לא ניתן לבנות סיפור מתוך ההקלטה המקורית');
+  if(!response.ok)throw fail(data.error||'לא ניתן לשחזר סצנות מההקלטה המקורית');
   if(!data||!Array.isArray(data.prompts)||!data.prompts.length)
-    throw fail('אין תמלול מספיק ברור להפקת סצנה');
-  return data.prompts.slice(0,MAX_SHOTS).filter(function(p){
+    throw fail('אין תוכנית סצנות זמינה למשימה המקורית');
+  var grounded=data.prompts.slice(0,MAX_SHOTS).filter(function(p){
     return typeof p==='string'&&p.length>20&&p.length<2000&&HEBREW.test(p);
   });
+  if(grounded.length!==data.prompts.length||
+     grounded.length!==Number(data.scene_count||0))
+    throw fail('תוכנית הסצנות אינה שלמה; אין לייצר קליפ חוזר או חלקי');
+  return grounded;
 }
 async function generate(jobId,onStage,passedPrompt,passedScenes){
   if(!document.getElementById('ai_video_consent').checked)

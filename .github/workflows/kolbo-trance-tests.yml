@@ -92,7 +92,9 @@ jobs:
       - name: Verify Android and PWA direct WhatsApp video share limits
         run: node trance-studio/tests/test_pwa_video_share.js
       - name: Verify free AI phone retry keeps MP4 without regenerating
-        run: node trance-studio/tests/test_ai_phone_retry.js
+        run: |
+          node trance-studio/tests/test_ai_phone_retry.js
+          node trance-studio/tests/test_ai_plan_recovery.js
       - name: Verify public AI video errors are safe and actionable
         run: node trance-studio/tests/test_provider_diagnostics.js
       - name: Run audio and API tests
