@@ -30,6 +30,6 @@ with site.app.test_request_context("/new"):
     output=io.BytesIO()
     im.save(output,format="PNG")
     mime,kind,clean=site.image_or_video(upload(output.getvalue(),"image/png"))
-    assert mime=="image/jpeg" and kind=="image" and clean.startswith(b"\\xff\\xd8")
+    assert mime=="image/jpeg" and kind=="image" and clean.startswith(bytes.fromhex("ffd8"))
     assert len(clean)<8*1024*1024
 print("PASS: upload size and file integrity checks")
