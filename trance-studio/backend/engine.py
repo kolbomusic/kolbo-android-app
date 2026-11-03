@@ -718,6 +718,40 @@ def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
     smoothed=np.convolve(voiced,np.array([.12,.20,.36,.20,.12],np.float32),mode='same')
     return smoothed.astype(np.float32),fill_locations
 
+def _duck_music_in_chunks(music, vocal, fx_highlight, sr, chunk_frames=32768):
+    """Apply the same 25ms speech sidechain without full-length temp arrays.
+
+    maximum_filter1d needs neighboring samples; overlap each chunk to retain
+    identical results at boundaries. Carry the IIR filter state between chunks.
+    Render Free has a strict 512 MiB combined cgroup limit.
+    """
+    from scipy.ndimage import maximum_filter1d
+    window=max(1,int(sr*.025))
+    state=np.zeros(1,dtype=np.float64)
+    for start in range(0,len(vocal),chunk_frames):
+        end=min(len(vocal),start+chunk_frames)
+        left=max(0,start-window)
+        right=min(len(vocal),end+window)
+        peaks=maximum_filter1d(np.abs(vocal[left:right]),size=window)
+        center=peaks[start-left:end-left]
+        smoothed,state=lfilter([.003],[1,-.997],center,zi=state)
+        duck=np.asarray(smoothed,dtype=np.float32)
+        duck*=np.float32(1/.18)
+        np.clip(duck,0,1,out=duck)
+        duck*=np.float32(-.67)
+        duck+=np.float32(1)
+        duck*=np.float32(1)-np.float32(.20)*fx_highlight[start:end]
+        music[start:end]*=duck[:,None]
+
+
+def _peak_abs_in_chunks(audio, chunk_frames=65536):
+    """Compute master limiter peak without a full stereo abs() copy."""
+    peak=0.
+    for start in range(0,len(audio),chunk_frames):
+        peak=max(peak,float(np.max(np.abs(audio[start:start+chunk_frames]))))
+    return peak
+
+
 def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint='',transcript_timeline=None,return_video_timeline=False,
                source_video_length=False):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
@@ -1072,14 +1106,9 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     progress(80,'מבצע מיקס כשהקול המעובד בחזית')
     # The synth is independent. Duck only its volume during speech so the
     # user's *treated* words remain in front, not drowned by the melody.
-    from scipy.ndimage import maximum_filter1d
-    env=maximum_filter1d(np.abs(vocal),size=max(1,int(sr*.025)))
-    env=lfilter([.003],[1,-.997],env).astype(np.float32)
-    # Keep a quiet rhythmic bed through the punchline instead of dropping
-    # the instrumental almost to silence and then suddenly bringing it back.
-    # Short voice samples and their story punctuation must remain a single
-    # cohesive arrangement, especially on small phone loudspeakers.
-    music*= ((1-.67*np.clip(env/.18,0,1))*(1-.20*fx_highlight))[:,None]
+    # A 300s backing+vocal mix must not allocate several 40–90 MiB sidechain
+    # temporaries just to preserve the spoken words at the front of the track.
+    _duck_music_in_chunks(music,vocal,fx_highlight,sr)
     # At a copied-voice comic punchline, create a short, intentional backing
     # break before its entrance. This leaves the spoken original untouched.
     # No arbitrary swooshes or cartoon noises are inserted here.
@@ -1105,30 +1134,37 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         # The score contains intro/outro padding. Locate the actual
         # performed voice span before approximately mapping spoken Hebrew
         # clauses to comic events. Never pretend this is word alignment.
-        active_voice=np.flatnonzero(np.abs(vocal)>.009)
-        first=int(active_voice[0]) if len(active_voice) else 0
-        last=int(active_voice[-1]) if len(active_voice) else len(vocal)-1
+        first=0
+        last=len(vocal)-1
+        found=False
+        for offset in range(0,len(vocal),65536):
+            active=np.flatnonzero(np.abs(vocal[offset:offset+65536])>.009)
+            if len(active):
+                if not found:
+                    first=offset+int(active[0])
+                    found=True
+                last=offset+int(active[-1])
         span=max(1,last-first)
         music=add_comic_stings(
             music,fx_highlight,sr,bpm,
             lambda fraction:_semantic_comedy_cue(
                 transcript_hint,max(0.,min(.999,
                     ((fraction*len(vocal))-first)/span))))
-    music+=vocal[:,None]*1.13
+    for offset in range(0,n,65536):
+        end=min(n,offset+65536)
+        music[offset:end]+=vocal[offset:end,None]*np.float32(1.13)
     # Keep the voice solo clean, including in the reserved FX slots.
     # Echo and other delayed copies previously collided with the next line.
     # Conservative master gain / limiter: no global overdrive or loudness pumping.
     # Shape the same intro/outro in float32, without two full-length
     # float64 arange/clipping arrays (up to >170 MiB transient on 6m).
     # Only the short fade boundaries need ramps; the middle is unity.
-    fade=np.ones(n,dtype=np.float32)
     attack=min(n,max(1,int(round(sr*.025))))
     release=min(n,max(1,int(round(sr*.65))))
-    fade[:attack]*=np.arange(attack,dtype=np.float32)/(sr*.025)
-    fade[-release:]*=np.arange(release-1,-1,-1,dtype=np.float32)/(sr*.65)
-    music*=fade[:,None]
+    music[:attack]*=(np.arange(attack,dtype=np.float32)/(sr*.025))[:,None]
+    music[-release:]*=(np.arange(release-1,-1,-1,dtype=np.float32)/(sr*.65))[:,None]
     np.nan_to_num(music,copy=False)
-    music*=.91/max(.91,float(np.max(np.abs(music))))
+    music*=.91/max(.91,_peak_abs_in_chunks(music))
     progress(92,'מכין קובץ להורדה')
     if return_voice and return_video_timeline:
         return music,vocal,sorted(video_fx_timeline,key=lambda e:e['start'])

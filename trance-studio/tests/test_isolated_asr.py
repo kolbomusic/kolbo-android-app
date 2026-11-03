@@ -12,34 +12,58 @@ sys.path.insert(0, str(ROOT / "backend"))
 from isolated_asr import transcribe_in_child, IsolatedAsrUnavailable
 
 
+class FakeAsrChild:
+    def __init__(self, payload="", timeout_first=False):
+        self.payload=payload
+        self.timeout_first=timeout_first
+        self.calls=0
+        self.returncode=None
+        self.killed=False
+
+    def communicate(self, timeout=None):
+        self.calls+=1
+        if self.timeout_first and self.calls==1:
+            raise subprocess.TimeoutExpired("isolated_asr", timeout or 1)
+        if self.returncode is None:
+            self.returncode=0
+        return self.payload,""
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        self.killed=True
+        self.returncode=-9
+
+
 class IsolatedAsrTests(unittest.TestCase):
     def test_transcript_and_word_timestamps_return_without_resident_model(self):
         payload={"text":"המשאית נוסעת עכשיו","complete":True,
                  "timeline":[[{"start":0.5,"end":1.3,"text":"המשאית"}]]}
-        with mock.patch("isolated_asr.subprocess.run",
-                        return_value=SimpleNamespace(stdout=json.dumps(payload))) as run:
+        child=FakeAsrChild(json.dumps(payload))
+        with mock.patch("isolated_asr.subprocess.Popen",return_value=child) as launch:
             words,complete,timeline=transcribe_in_child(
                 [ROOT/"tests"/"example.opus"])
         self.assertEqual(words,"המשאית נוסעת עכשיו")
         self.assertTrue(complete)
         self.assertEqual(timeline[0][0]["start"],0.5)
-        args,kwargs=run.call_args
+        args,kwargs=launch.call_args
         self.assertEqual(args[0][0],sys.executable)
         self.assertTrue(args[0][1].endswith("isolated_asr.py"))
         self.assertNotIn("shell",kwargs)
-        self.assertTrue(kwargs["check"])
-        self.assertTrue(kwargs["capture_output"])
+        self.assertEqual(kwargs["stdout"],subprocess.PIPE)
+        self.assertEqual(kwargs["stderr"],subprocess.PIPE)
 
     def test_failed_model_worker_does_not_cancel_audio_mixing(self):
-        with mock.patch("isolated_asr.subprocess.run",
-                        side_effect=subprocess.TimeoutExpired("asr",240)):
+        with mock.patch("isolated_asr.subprocess.Popen",
+                        side_effect=OSError("ASR worker failed")):
             with self.assertRaises(IsolatedAsrUnavailable):
                 transcribe_in_child([ROOT/"tests"/"example.opus"])
 
     def test_rejects_oversized_or_mismatched_child_timing(self):
         invalid={"text":"דיבור אמיתי","complete":True,"timeline":[[],[]]}
-        with mock.patch("isolated_asr.subprocess.run",
-                        return_value=SimpleNamespace(stdout=json.dumps(invalid))):
+        with mock.patch("isolated_asr.subprocess.Popen",
+                        return_value=FakeAsrChild(json.dumps(invalid))):
             with self.assertRaises(IsolatedAsrUnavailable):
                 transcribe_in_child([ROOT/"tests"/"example.opus"])
 
@@ -49,7 +73,7 @@ class IsolatedAsrTests(unittest.TestCase):
         self.assertIn("del audio, rendered, clips",src)
         self.assertLess(src.index("del audio, rendered, clips"),
                         src.index("if options.get('video_requested'):",src.index("del audio, rendered, clips")))
-        self.assertIn("version='1.16.19'",src)
+        self.assertIn("version='1.16.20'",src)
 
     def test_original_audio_is_unloaded_while_local_whisper_child_runs(self):
         src=(ROOT/"backend"/"app.py").read_text(encoding="utf-8")
@@ -75,10 +99,21 @@ class IsolatedAsrTests(unittest.TestCase):
     def test_memory_guard_avoids_oom_kill_before_asr_child(self):
         import isolated_asr
         with mock.patch.object(isolated_asr,"_safe_memory_for_asr",return_value=False):
-            with mock.patch("isolated_asr.subprocess.run") as run:
+            with mock.patch("isolated_asr.subprocess.Popen") as launch:
                 with self.assertRaises(IsolatedAsrUnavailable):
                     transcribe_in_child([ROOT/"tests"/"example.opus"])
-                run.assert_not_called()
+                launch.assert_not_called()
+
+    def test_running_asr_is_killed_before_the_entire_server_runs_out_of_ram(self):
+        import isolated_asr
+        child=FakeAsrChild(timeout_first=True)
+        with mock.patch.object(isolated_asr,"_safe_memory_for_asr",return_value=True):
+            with mock.patch.object(isolated_asr,"_cgroup_remaining_bytes",
+                                   side_effect=[300*1024*1024,64*1024*1024]):
+                with mock.patch("isolated_asr.subprocess.Popen",return_value=child):
+                    with self.assertRaises(IsolatedAsrUnavailable):
+                        transcribe_in_child([ROOT/"tests"/"example.opus"])
+        self.assertTrue(child.killed)
 
     def test_cgroup_memory_guard_uses_read_only_usage_and_limit(self):
         import isolated_asr
