@@ -238,6 +238,25 @@ with site.app.test_client() as browser:
         "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve",
         "identity_checked":"yes"}).status_code==403
 
+    # Audio is a single file and stays pending until moderation.
+    assert browser.get("/voices",base_url=ORIGIN).status_code==403
+    invalid=browser.post("/new",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"rights":"yes","title":"הקלטה שגויה",
+        "kind":"voice","uploads":(jpeg(),"picture.jpg","image/jpeg")
+    },content_type="multipart/form-data")
+    assert invalid.status_code==400
+    recording=io.BytesIO(b"\\x1a\\x45\\xdf\\xa3"+b"synthetic opus audio payload")
+    saved=browser.post("/new",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"rights":"yes","title":"סיפור מוקלט ניסיוני",
+        "body":"זיכרון קצר ולא מזהה","kind":"voice","album_cohort":"2003-11",
+        "uploads":(recording,"voice.webm","audio/webm")
+    },content_type="multipart/form-data")
+    assert saved.status_code==303,(saved.status_code,saved.get_data(as_text=True)[:240])
+    voice_post=site.sql("SELECT id,status FROM b2_posts WHERE kind='voice' ORDER BY id DESC LIMIT 1",one=True)
+    assert voice_post["status"]=="pending"
+    voice_media=site.sql("SELECT id,mime FROM b2_media WHERE post_id=%s",(voice_post["id"],),True)
+    assert voice_media["mime"]=="audio/webm"
+
     admin_email="admin@example.test"
     row=site.sql("""INSERT INTO b2_users(name,email,passhash,approved)
         VALUES(%s,%s,%s,TRUE) RETURNING id""",
@@ -268,6 +287,16 @@ with site.app.test_client() as browser:
     assert r.status_code==303
     assert site.sql("SELECT status FROM b2_posts WHERE id=%s",(post["id"],),True)["status"]=="published"
     assert browser.get("/feed",base_url=ORIGIN).status_code==200
+    assert "סיפור מוקלט ניסיוני" not in browser.get("/voices",base_url=ORIGIN).get_data(as_text=True)
+    assert browser.post("/moderation",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(voice_post["id"]),"action":"publish"}).status_code==303
+    archive=browser.get("/voices?cohort=2003-11",base_url=ORIGIN)
+    assert archive.status_code==200
+    assert "סיפור מוקלט ניסיוני" in archive.get_data(as_text=True)
+    assert "/media/"+str(voice_media["id"]) in archive.get_data(as_text=True)
+    assert "סיפור מוקלט ניסיוני" not in browser.get("/voices?cohort=2004-03",base_url=ORIGIN).get_data(as_text=True)
+    assert browser.get("/voices?cohort=2004-99",base_url=ORIGIN).status_code==400
+
     # Only approved members see media from published, approved authors.
     gallery=browser.get("/photos",base_url=ORIGIN).get_data(as_text=True)
     assert "/media/"+str(photo["id"]) in gallery
@@ -454,6 +483,7 @@ with c.session_transaction(base_url=origin) as ses: csrf=ses["csrf"]
 assert c.post("/login",base_url=origin,data={"csrf":csrf,
   "email":"manual-pending@example.test","password":"SyntheticOnlyManualPassword!2026"}).status_code==303
 assert c.get("/feed",base_url=origin).status_code==403
+assert c.get("/voices",base_url=origin).status_code==403
 assert c.get("/find",base_url=origin).status_code==403
 assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
 assert c.get("/inbox",base_url=origin).status_code==403
