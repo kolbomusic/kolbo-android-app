@@ -127,8 +127,16 @@ def init():
                            FALSE,FALSE,FALSE FROM members
                     WHERE email IS NOT NULL AND password IS NOT NULL
                     ON CONFLICT(email) DO NOTHING""")
+            # Imported legacy approvals must match the status field.
+            cur.execute("UPDATE b2_users SET membership_status='approved' WHERE approved=TRUE AND membership_status='pending'")
 if DB:
-    init()
+    try:
+        init()
+    except (psycopg.Error, OSError, TimeoutError):
+        # Public pages may remain available, but no member access on DB failure.
+        app.logger.exception("Member database initialization failed; portal disabled")
+        PUBLIC_AUTH=False
+        ALLOW_SIGNUP=False
 
 def e(value): return escape(str(value if value is not None else ""),quote=True)
 
@@ -525,8 +533,10 @@ def save_profile():
 
 def image_or_video(f):
     if not f or not f.filename:return None
-    data=f.read(9*1024*1024)
-    mime=f.mimetype.split(";")[0].lower()
+    # Reject large original files before decoding or compressing images.
+    data=f.read(8*1024*1024+1)
+    if len(data)>8*1024*1024:abort(413)
+    mime=(f.mimetype or "").split(";")[0].lower()
     kind=None
     if mime in ("image/jpeg","image/png","image/webp"):
         try:
@@ -537,7 +547,7 @@ def image_or_video(f):
             im.thumbnail((1600,1600))
             b=io.BytesIO();im.save(b,format="JPEG",quality=83,optimize=True)
             data=b.getvalue();mime="image/jpeg";kind="image"
-        except (OSError,UnidentifiedImageError,ValueError):abort(400)
+        except (OSError,UnidentifiedImageError,ValueError,Image.DecompressionBombError):abort(400)
     elif mime in ("video/mp4","video/quicktime") and len(data)>12 and data[4:8]==b"ftyp":
         kind="video"
     elif mime=="video/webm" and data[:4]==b"\x1a\x45\xdf\xa3":
