@@ -590,12 +590,16 @@ def media_html(mid,kind):
 @require_login
 def media(mid):
     u=g.user
-    m=sql("""SELECT f.*,p.status post_status
+    m=sql("""SELECT f.*,p.status post_status,a.approved author_approved
       FROM b2_media f LEFT JOIN b2_posts p ON p.id=f.post_id
+      LEFT JOIN b2_users a ON a.id=p.author
       WHERE f.id=%s""",(mid,),True)
     if not m:abort(404)
+    # A published post becomes inaccessible to other members if its author
+    # is no longer approved. Reviewers may still inspect pending media.
     can_post=bool(m["post_id"] and (u["id"]==m["owner"] or
-                  (u["approved"] and (can_moderate() or m["post_status"]=="published"))))
+                  (u["approved"] and (can_moderate() or
+                   (m["post_status"]=="published" and m["author_approved"] is True)))))
     can_message=bool(m["recipient"] and u["id"] in (m["recipient"],m["owner"]) and u["approved"])
     if not (can_post or can_message):abort(403)
     r=send_file(io.BytesIO(bytes(m["body"])),mimetype=m["mime"],conditional=True,download_name="community-media")
