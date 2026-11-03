@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from functools import wraps
 from html import escape
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import psycopg
 from psycopg.rows import dict_row
@@ -105,6 +106,20 @@ def init():
                 action TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',
                 created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_admin_audit_created_idx ON b2_admin_audit(created DESC)")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_memorial_sources(
+                id BIGSERIAL PRIMARY KEY,
+                person_key TEXT NOT NULL,
+                izkor_id TEXT NOT NULL,
+                submitted_by BIGINT NOT NULL REFERENCES b2_users(id),
+                source_url TEXT NOT NULL,
+                context TEXT NOT NULL,
+                permission_details TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                review_note TEXT NOT NULL DEFAULT '',
+                reviewed_by BIGINT REFERENCES b2_users(id),
+                submitted TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                reviewed TIMESTAMPTZ)""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_memorial_sources_status_idx ON b2_memorial_sources(status,submitted DESC)")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_posts_status_idx ON b2_posts(status,created DESC)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_media(
                 id BIGSERIAL PRIMARY KEY,post_id BIGINT REFERENCES b2_posts(id) ON DELETE CASCADE,
@@ -240,8 +255,8 @@ def layout(title,body):
     u=g.user
     menu=[("/","בית"),("/heritage","מורשת"),("/memorial","הנצחה"),("/photos","תמונות"),("/about","על הקהילה"),("/help","עזרה")]
     if PUBLIC_AUTH and u:
-        menu += [("/feed","הקהילה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
-        if can_moderate():menu += [("/moderation","בקרת פרסומים")]
+        menu += [("/feed","הקהילה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי"),("/memorial-sources","הצעת מקור הנצחה")]
+        if can_moderate():menu += [("/moderation","בקרת פרסומים"),("/memorial-source-review","מקורות הנצחה")]
         if can_manage_members():menu += [("/members","אישור חברים")]
         if owner():menu += [("/staff","הרשאות ניהול"),("/admin-audit","יומן ניהול")]
     elif PUBLIC_AUTH:
@@ -377,6 +392,86 @@ def memorial():
         '<section class="memories" aria-label="הנצחת יהונתן שרעבי">'+yoni+'</section>'
         '<div class="note">המידע ההיסטורי מקושר לעמודי הנצחה רשמיים.'
         ' יש לכבד את פרטיות המשפחות לפני פרסום תמונות או סיפורים אישיים.</div>')
+
+def accepted_source_url(value):
+    """Validate submitted link shape; deliberately do not fetch user URLs."""
+    if not isinstance(value,str) or not 12<=len(value)<=500:
+        return False
+    try:
+        u=urlsplit(value)
+        return (u.scheme=="https" and bool(u.hostname) and
+                u.port in (None,443) and u.username is None and
+                u.password is None and not u.fragment and
+                not u.hostname.endswith(".local") and
+                u.hostname not in ("localhost","127.0.0.1","0.0.0.0","::1"))
+    except ValueError:
+        return False
+
+@app.route("/memorial-sources",methods=["GET","POST"])
+@require_approved
+def memorial_sources():
+    """Members suggest a photo source; no image is copied or published."""
+    if request.method=="POST":
+        protect();limit("memorial-source:"+str(g.user["id"]),4,60)
+        key=request.form.get("person_key","")
+        url=request.form.get("source_url","").strip()
+        context=request.form.get("context","").strip()[:600]
+        permission=request.form.get("permission","").strip()[:300]
+        if key not in MEMORIAL_PEOPLE or not accepted_source_url(url) or len(context)<10:
+            abort(400)
+        sql("""INSERT INTO b2_memorial_sources(
+            person_key,izkor_id,submitted_by,source_url,context,permission_details)
+            VALUES(%s,%s,%s,%s,%s,%s)""",
+            (key,MEMORIAL_PEOPLE[key]["izkor_id"],g.user["id"],url,context,permission))
+        return layout("המקור התקבל",'<div class="pagehead"><h1>ההצעה נשמרה לבדיקה</h1><p>הקישור לא נפתח אוטומטית, התמונה לא הועתקה ולא פורסמה. נדרשים אימות זהות וזכויות לפני פרסום.</p></div>')
+    options=''.join('<option value="'+e(key)+'">'+e(rec["name"])+'</option>'
+                    for key,rec in MEMORIAL_PEOPLE.items())
+    return layout("הצעת תמונת הנצחה",
+        '<div class="pagehead"><h1>הצעת מקור תמונה לחלל</h1><p>חברי קהילה מאושרים יכולים להציע מקור לבדיקה. אין להגיש כאן מידע אישי או מסמכי אישור פרטיים.</p></div>'+
+        button_form('<label>החלל<select name="person_key" required>'+options+'</select></label>'+
+        '<label>קישור HTTPS למקור<input type="url" name="source_url" maxlength="500" required placeholder="https://..."></label>'+
+        '<label>כיצד אומת השיוך לאדם המצולם?<textarea name="context" maxlength="600" required></textarea></label>'+
+        '<label>מידע כללי על זכויות שימוש (לא לצרף מסמכים פרטיים)<textarea name="permission" maxlength="300"></textarea></label>'+
+        '<button class="primary">שליחת מקור לבדיקת מנהל</button>',
+        "/memorial-sources",'class="formcard"'))
+
+@app.route("/memorial-source-review",methods=["GET","POST"])
+@require_approved
+def memorial_source_review():
+    if not can_moderate():abort(403)
+    if request.method=="POST":
+        protect();limit("memorial-review:"+str(g.user["id"]),30,60)
+        sid=request.form.get("id","")
+        decision=request.form.get("action","")
+        reason=request.form.get("reason","").strip()[:400]
+        if not sid.isdecimal() or decision not in ("reviewed","rejected") or len(reason)<8:
+            abort(400)
+        result=sql("""UPDATE b2_memorial_sources
+            SET status=%s,review_note=%s,reviewed_by=%s,reviewed=NOW()
+            WHERE id=%s AND status='pending' RETURNING id""",
+            (decision,reason,g.user["id"],int(sid)),True)
+        if not result:abort(409)
+        return redirect("/memorial-source-review",303)
+    rows=sql("""SELECT s.id,s.person_key,s.izkor_id,s.source_url,s.context,
+                s.permission_details,u.name
+                FROM b2_memorial_sources s JOIN b2_users u ON u.id=s.submitted_by
+                WHERE s.status='pending' ORDER BY s.submitted DESC LIMIT 50""")
+    cards=''
+    for r in rows:
+        record=MEMORIAL_PEOPLE.get(r["person_key"])
+        if not record or record["izkor_id"]!=r["izkor_id"]:
+            continue
+        cards+='<article class="post"><h2>'+e(record["name"])+'</h2><p>הוגש על ידי: '+e(r["name"])+
+            '</p><p>מקור: '+e(r["source_url"])+'</p><p>'+e(r["context"])+
+            '</p><p>זכויות: '+e(r["permission_details"])+'</p>'+button_form(
+            '<input type="hidden" name="id" value="'+str(r["id"])+'">'+
+            '<label>נימוק ההחלטה<input name="reason" required minlength="8" maxlength="400"></label>'+
+            '<button name="action" value="reviewed" class="primary">נבדק — לא לפרסום אוטומטי</button>'+
+            '<button name="action" value="rejected" class="subtle">דחייה</button>',
+            "/memorial-source-review")+'</article>'
+    return layout("בקרת מקורות הנצחה",
+        '<div class="pagehead"><h1>מקורות תמונות לבדיקה</h1><p>אישור בדיקת מקור אינו מעניק רישיון לפרסום תמונה ולא מפעיל את תצוגת התמונות.</p></div>'+
+        (cards or '<p>אין מקורות ממתינים.</p>'))
 
 @app.get("/photos")
 def photos():
