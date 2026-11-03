@@ -49,7 +49,55 @@ class IsolatedAsrTests(unittest.TestCase):
         self.assertIn("del audio, rendered, clips",src)
         self.assertLess(src.index("del audio, rendered, clips"),
                         src.index("if options.get('video_requested'):",src.index("del audio, rendered, clips")))
-        self.assertIn("version='1.16.17'",src)
+        self.assertIn("version='1.16.18'",src)
+
+    def test_original_audio_is_unloaded_while_local_whisper_child_runs(self):
+        src=(ROOT/"backend"/"app.py").read_text(encoding="utf-8")
+        first=src.index("clips=[load_audio(p) for p in paths]")
+        unload=src.index("del clips",first)
+        asr=src.index("asr_result=transcribe_in_child(paths)",unload)
+        reload=src.index("clips=[load_audio(p) for p in paths]",asr)
+        mixer=src.index("rendered=render_mix(clips",reload)
+        self.assertLess(first,unload)
+        self.assertLess(unload,asr)
+        self.assertLess(asr,reload)
+        self.assertLess(reload,mixer)
+        self.assertIn("isolated_original_asr",src)
+        self.assertIn("app.config.get('TESTING')",src)
+
+    def test_free_docker_preloads_small_multilingual_model_offline(self):
+        docker=(ROOT/"Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("KOLBO_ASR_MODEL=tiny",docker)
+        self.assertIn("KOLBO_ASR_DIR=/opt/kolbo-asr/tiny",docker)
+        self.assertIn("download_model('tiny'",docker)
+        self.assertNotIn("download_model('base'",docker)
+
+    def test_memory_guard_avoids_oom_kill_before_asr_child(self):
+        import isolated_asr
+        with mock.patch.object(isolated_asr,"_safe_memory_for_asr",return_value=False):
+            with mock.patch("isolated_asr.subprocess.run") as run:
+                with self.assertRaises(IsolatedAsrUnavailable):
+                    transcribe_in_child([ROOT/"tests"/"example.opus"])
+                run.assert_not_called()
+
+    def test_cgroup_memory_guard_uses_read_only_usage_and_limit(self):
+        import isolated_asr
+        def contents(self):
+            if str(self).endswith("memory.max"):
+                return str(512*1024*1024)
+            if str(self).endswith("memory.current"):
+                return str(330*1024*1024)
+            raise OSError("unknown cgroup path")
+        with mock.patch.object(pathlib.Path,"read_text",contents):
+            self.assertFalse(isolated_asr._safe_memory_for_asr())
+        def roomy(self):
+            if str(self).endswith("memory.max"):
+                return str(512*1024*1024)
+            if str(self).endswith("memory.current"):
+                return str(150*1024*1024)
+            raise OSError("unknown cgroup path")
+        with mock.patch.object(pathlib.Path,"read_text",roomy):
+            self.assertTrue(isolated_asr._safe_memory_for_asr())
 
 
 if __name__=="__main__":
