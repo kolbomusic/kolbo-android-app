@@ -6,6 +6,13 @@ import subprocess
 import numpy as np
 from scipy.signal import butter, sosfilt, lfilter, stft, istft
 
+# The free Render instance renders at most five minutes of source audio
+# per job. A single long WhatsApp voice note is accepted without truncating
+# any of its words. Keep per-file and per-job caps aligned.
+MAX_SOURCE_SECONDS=300
+MAX_COMBINED_SOURCE_SECONDS=300
+
+
 class AudioDecodeError(ValueError):
     """Safe, user-facing errors for input media, without exposing file contents."""
     def __init__(self, code, message):
@@ -14,7 +21,7 @@ class AudioDecodeError(ValueError):
 
 
 def load_audio(path, sample_rate=32000):
-    command=['ffmpeg','-v','error','-nostdin','-protocol_whitelist','file,pipe','-i',str(path),'-t','120.02','-ac','1','-ar',str(sample_rate),'-f','f32le','-']
+    command=['ffmpeg','-v','error','-nostdin','-protocol_whitelist','file,pipe','-i',str(path),'-t',str(MAX_SOURCE_SECONDS+.25),'-ac','1','-ar',str(sample_rate),'-f','f32le','-']
     try:
         result=subprocess.run(command,check=True,capture_output=True,timeout=45)
     except subprocess.TimeoutExpired as exc:
@@ -24,13 +31,13 @@ def load_audio(path, sample_rate=32000):
     x=np.frombuffer(result.stdout,dtype='<f4').copy()
     if not len(x):
         raise AudioDecodeError('no_audio_stream','בקובץ המקור לא נמצא ערוץ שמע שניתן לעבד. בדוק שהסרטון או ההקלטה כוללים קול.')
-    if len(x)>sample_rate*120:
-        raise AudioDecodeError('recording_too_long','ההקלטה חורגת מ־120 שניות. מגבלה זו חלה על כל קובץ בנפרד.')
+    if len(x)>sample_rate*MAX_SOURCE_SECONDS:
+        raise AudioDecodeError('recording_too_long','ההקלטה חורגת מחמש דקות (300 שניות). נא לבחור קובץ קצר יותר.')
     return x
 
 def prepare_voice(x,sr):
     x=np.asarray(x,dtype=np.float32)
-    if not len(x) or len(x)>sr*120 or not np.isfinite(x).all():raise ValueError('הקלטה ריקה או לא תקינה')
+    if not len(x) or len(x)>sr*MAX_SOURCE_SECONDS or not np.isfinite(x).all():raise ValueError('הקלטה ריקה או לא תקינה')
     peak=float(np.max(np.abs(x)))
     if peak<.001:raise ValueError('לא נמצא קול בהקלטה')
     frame=max(1,int(sr*.01));rms=np.array([np.sqrt(np.mean(x[i:i+frame]**2)) for i in range(0,len(x),frame)])
@@ -709,6 +716,8 @@ def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
 def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint='',transcript_timeline=None):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
+    if sum(len(clip)/sample_rate for clip in clips)>MAX_COMBINED_SOURCE_SECONDS:
+        raise ValueError('סך הקלטות המקור חורג מחמש דקות')
     sr=sample_rate;beat=60/bpm
     voices=[prepare_voice(c,sr) for c in clips]
     signature=hashlib.blake2b(digest_size=8)
