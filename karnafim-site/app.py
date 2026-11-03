@@ -142,6 +142,18 @@ def init():
                 status TEXT NOT NULL DEFAULT 'pending',
                 created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             cur.execute("ALTER TABLE b2_posts ADD COLUMN IF NOT EXISTS album_cohort TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_posts ADD COLUMN IF NOT EXISTS moderation_reason TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_posts ADD COLUMN IF NOT EXISTS moderation_summary TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_posts ADD COLUMN IF NOT EXISTS moderation_source TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_posts ADD COLUMN IF NOT EXISTS appealed BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_moderation_events(
+                id BIGSERIAL PRIMARY KEY,
+                post_id BIGINT NOT NULL REFERENCES b2_posts(id) ON DELETE CASCADE,
+                decision TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                summary TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL,
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_posts_album_cohort_idx ON b2_posts(album_cohort,status)")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_posts_status_idx ON b2_posts(status,created DESC)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_media(
@@ -262,6 +274,35 @@ def staff_permissions():
     return {"approve":bool(role and role["can_approve"]),
             "moderate":bool(role and role["can_moderate"]),
             "invite":bool(role and role["can_invite"])}
+
+
+def moderate_submission(title,body,kind,files,author_approved):
+    """Conservative free local policy engine, not an LLM or a proof of identity.
+
+    Only low-risk text stories from approved members are automatically approved.
+    Ambiguous/sensitive materials require human review. Explicit commercial
+    solicitation is declined with a reason and an appeal route.
+    """
+    if not author_approved:
+        return ("pending","נדרש אישור זהות וחברות בידי מנהל לפני פרסום.","")
+    text_content=(title+" "+body).strip()
+    compact=" ".join(text_content.split())
+    summary=(compact[:197].rstrip()+"…" if len(compact)>200 else compact)
+    if files or kind!="story":
+        return ("pending","קובץ קול, תמונה, סרטון או סוג תוכן רגיש מחייבים בדיקת תוכן אנושית.","")
+    # Never inspect and infer intent from image/audio bytes in this lightweight engine.
+    if re.search(r"(?:https?://|www\\.|t\\.me/|wa\\.me/|קנו עכשיו|להזמנות|מבצע מיוחד)",compact,re.I):
+        return ("rejected","הפרסום כולל קישור או ביטוי מסחרי שאינו מתאים לארכיון הפלוגה. אפשר לערער אם זו הפניה למקור מורשת.", "")
+    if len(body.strip())<80:
+        return ("pending","נדרש הקשר נוסף כדי לבדוק באופן מהימן את הסיפור.","")
+    if re.search(r"(?:\\b(?:05[0-9][\\s-]?[0-9]{7}|[0-9]{2,3}[\\s-]?[0-9]{7})\\b|"
+                 r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|"
+                 r"כתובת מגורים|תעודת זהות|סיסמה|מסווג|סודי ביותר|מיקום כוח|"
+                 r"נפל בקרב|נהרג|חלל|פצוע|התאבדות|אונס|הטרדה|אלימות|"
+                 r"לשון הרע|שם מלא)",compact,re.I):
+        return ("pending","זוהו נושאי פרטיות, בטיחות או הנצחה המחייבים בדיקה אנושית לפני פרסום.","")
+    # Explicitly labeled machine-generated excerpt, not a claim of factual verification.
+    return ("published","עמד בכללי הסינון האוטומטי הבסיסיים. דיוק היסטורי לא אומת.",summary)
 
 
 def protect():
@@ -828,16 +869,24 @@ def create_post():
         if kind=="voice" and (len(safe)!=1 or safe[0][1]!="audio"):abort(400)
         if not body and not safe:abort(400)
         if sum(len(v[2]) for v in safe)>16*1024*1024:abort(413)
+        decision,explanation,summary=("pending","ממתין לביקורת מנהל.","")
+        if os.environ.get("BARKAN_AUTO_MODERATION","0")=="1":
+            decision,explanation,summary=moderate_submission(title,body,kind,safe,bool(g.user["approved"]))
         with connect() as c:
             with c.cursor() as cur:
-                cur.execute("""INSERT INTO b2_posts(author,title,body,kind,year_text,album_cohort)
-                    VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (g.user["id"],title,body,kind,year,cohort))
+                cur.execute("""INSERT INTO b2_posts(author,title,body,kind,year_text,album_cohort,
+                    status,moderation_reason,moderation_summary,moderation_source)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (g.user["id"],title,body,kind,year,cohort,decision,explanation,summary,
+                     "rules-v1" if os.environ.get("BARKAN_AUTO_MODERATION","0")=="1" else "human-queue"))
                 pid=cur.fetchone()["id"]
                 for mime,typ,data in safe:
                     cur.execute("""INSERT INTO b2_media(post_id,owner,mime,kind,body,length)
                         VALUES(%s,%s,%s,%s,%s,%s)""",
                         (pid,g.user["id"],mime,typ,data,len(data)))
+                cur.execute("""INSERT INTO b2_moderation_events(post_id,decision,reason,summary,source)
+                    VALUES(%s,%s,%s,%s,%s)""",(pid,decision,explanation,summary,
+                    "rules-v1" if os.environ.get("BARKAN_AUTO_MODERATION","0")=="1" else "human-queue"))
         return redirect("/my-posts",303)
     return layout("שיתוף סיפור",'<div class="pagehead"><h1>משתפים זיכרון</h1><p>הפרסום יישמר פרטי עד אישור חברות וביקורת התוכן.</p></div>'+button_form(
         '<label>סוג זיכרון<select name="kind"><option value="story">סיפור</option><option value="photo">תמונות או סרטון</option><option value="event">אירוע ומפגש</option><option value="voice">זיכרון קולי</option></select></label><label>כותרת<input name="title" required maxlength="120"></label><label>שנה (לא חובה)<input name="year" maxlength="30"></label><label>אלבום מחזור גיוס (אופציונלי)<input type="month" name="album_cohort" min="1990-01" max="2035-12"></label><label>תוכן<textarea name="body" maxlength="4000" rows="6"></textarea></label><label>קבצים (עד ארבעה)<input id="story-uploads" type="file" name="uploads" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg"></label><section class="story" data-voice-recorder hidden><h2>הקלטת זיכרון מהמיקרופון</h2><p>ההקלטה מתחילה רק בלחיצה על התחלה. ניתן להאזין לפני שליחה. הקובץ לא נשלח עד ללחיצה על ״שליחה לביקורת״.</p><div class="hero-actions"><button type="button" class="outline" data-record-start>התחלת הקלטה</button><button type="button" class="subtle" data-record-stop disabled>עצירת הקלטה</button></div><p role="status" aria-live="polite" data-record-status>לא הוקלט עדיין.</p><audio controls preload="none" data-record-preview hidden></audio></section><p class="muted">עד 8MB לקובץ ו־16MB סך הכול לפרסום. תמונות יעברו כיווץ והסרת נתוני EXIF. להקלטות קוליות יש לבחור ״זיכרון קולי״ ולצרף קובץ WebM או OGG אחד, או להשתמש בהקלטה הישירה אם הדפדפן תומך.</p><label class="check"><input type="checkbox" name="rights" value="yes" required> אני מאשר שיש לי זכויות לפרסם את התוכן</label><button class="primary">שליחה לביקורת</button>',
@@ -878,9 +927,30 @@ def myposts():
     items=''
     for p in posts:
         files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
-        status="פורסם" if p["status"]=="published" else "ממתין לבדיקת מנהל"
-        items+='<article class="post"><span class="tag">'+status+'</span><h2>'+e(p["title"])+'</h2><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div></article>'
+        status=({"published":"פורסם","pending":"ממתין לבדיקה","rejected":"לא אושר","hidden":"הוסתר לבדיקת פרטיות"}).get(p["status"],"בבדיקה")
+        reasoning=('<p><strong>הסבר החלטה: </strong>'+e(p["moderation_reason"])+'</p>' if p["moderation_reason"] else '')
+        digest=('<p><strong>תקציר שנוצר אוטומטית: </strong>'+e(p["moderation_summary"])+'</p>' if p["moderation_summary"] else '')
+        appeal=(button_form('<input type="hidden" name="id" value="'+str(p["id"])+'"><button class="subtle">בקשת בדיקה חוזרת</button>','/my-posts/appeal')
+                if p["status"]=="rejected" and not p["appealed"] else '')
+        items+='<article class="post"><span class="tag">'+status+'</span><h2>'+e(p["title"])+'</h2><p>'+e(p["body"])+'</p>'+reasoning+digest+'<div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div>'+appeal+'</article>'
     return layout("הפרסומים שלי",'<div class="pagehead"><h1>הפרסומים שלי</h1><p>רק אתה והמנהל רואים פרסומים שעדיין לא אושרו.</p><a class="primary" href="/new">פרסום חדש</a></div>'+(items or '<div class="note">אין לך עדיין פרסומים.</div>'))
+
+@app.post("/my-posts/appeal")
+@require_login
+def moderation_appeal():
+    protect();limit("moderation-appeal:"+str(g.user["id"]),5,3600)
+    raw=request.form.get("id","")
+    if not raw.isdecimal():abort(400)
+    with connect() as c:
+        with c.cursor() as cur:
+            cur.execute("""UPDATE b2_posts SET status='pending',appealed=TRUE,
+                moderation_reason='המשתמש ביקש בדיקה חוזרת; ממתין לבקרת מנהל.'
+                WHERE id=%s AND author=%s AND status='rejected' AND appealed=FALSE RETURNING id""",
+                (int(raw),g.user["id"]))
+            if not cur.fetchone():abort(409)
+            cur.execute("""INSERT INTO b2_moderation_events(post_id,decision,reason,source)
+                VALUES(%s,'pending','Appeal requested by author','appeal')""",(int(raw),))
+    return redirect("/my-posts",303)
 
 @app.get("/feed")
 @require_approved
