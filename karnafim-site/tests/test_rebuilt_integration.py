@@ -596,6 +596,11 @@ with site.app.test_client() as browser:
     # The moderator can still inspect the evidence for appeals/decisions.
     assert browser.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==200
 
+    # Verified memorial claims always require a real human, even if the
+    # optional local rule-based auto-publication switch is on.
+    assert site.moderate_submission(
+        "לזכר יוני שרעבי", "סיפור היסטורי על חבר שנפל בקרב. "*9,
+        "story", [], True)[0]=="pending"
     # Conservative zero-cost automated moderator: explicit, explainable,
     # no automatic identity approval or image/audio content moderation.
     assert site.moderate_submission("טקסט", "קצר", "story", [], True)[0]=="pending"
