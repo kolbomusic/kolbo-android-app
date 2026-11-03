@@ -305,7 +305,7 @@ def layout(title,body):
 <link rel="stylesheet" href="/static/site.css"><title>'''+e(title)+''' · הקרנפים / ברקן</title></head>
 <body><a class="skip" href="#main">דלג לתוכן</a>
 <header><div class="bar"><a class="logo" href="/">◈ הקרנפים <span>ברקן · פלוגה ב׳</span></a>
-<button id="toggle" type="button" aria-expanded="false" aria-controls="nav">☰ תפריט</button>
+<button id="toggle" type="button" aria-expanded="false" aria-controls="nav" aria-label="פתיחת תפריט הניווט">☰ תפריט</button>
 <nav id="nav" aria-label="ניווט ראשי">'''+nav+'''</nav></div></header>
 <main id="main" tabindex="-1">'''+banner+str(body)+'''</main>
 <footer><div><strong>הקרנפים / ברקן</strong><p>מיזם עצמאי של יוצאי פלוגה ב׳, גדוד 46, חטיבה 401. אינו אתר רשמי של צה״ל.</p></div>
@@ -854,12 +854,16 @@ def media_html(mid,kind):
 @require_login
 def media(mid):
     u=g.user
-    m=sql("""SELECT f.*,p.status post_status
+    m=sql("""SELECT f.*,p.status post_status,
+             author.approved author_approved
       FROM b2_media f LEFT JOIN b2_posts p ON p.id=f.post_id
+      LEFT JOIN b2_users author ON author.id=p.author
       WHERE f.id=%s""",(mid,),True)
     if not m:abort(404)
     can_post=bool(m["post_id"] and (u["id"]==m["owner"] or
-                  (u["approved"] and (staff_permissions()["moderate"] or m["post_status"]=="published"))))
+                  (u["approved"] and
+                   (staff_permissions()["moderate"] or
+                    (m["post_status"]=="published" and m["author_approved"])))))
     can_message=bool(m["recipient"] and u["id"] in (m["recipient"],m["owner"]) and u["approved"])
     if not (can_post or can_message):abort(403)
     r=send_file(io.BytesIO(bytes(m["body"])),mimetype=m["mime"],conditional=True,download_name="community-media")
