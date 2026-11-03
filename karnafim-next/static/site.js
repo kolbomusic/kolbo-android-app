@@ -2,6 +2,18 @@
   "use strict";
   const toggle = document.getElementById("toggle");
   const nav = document.getElementById("nav");
+  for (const control of document.querySelectorAll("[data-password-toggle]")) {
+    const field = document.getElementById(control.getAttribute("aria-controls"));
+    if (!field) continue;
+    control.addEventListener("click", () => {
+      const reveal = field.type === "password";
+      field.type = reveal ? "text" : "password";
+      control.setAttribute("aria-pressed", String(reveal));
+      control.setAttribute("aria-label", reveal ? "הסתרת הסיסמה" : "הצגת הסיסמה");
+      control.textContent = reveal ? "הסתרה" : "הצגה";
+      field.focus({ preventScroll: true });
+    });
+  }
   if (!toggle || !nav) return;
   const close = () => {
     nav.classList.remove("open");
@@ -15,6 +27,6 @@
     toggle.textContent = open ? "✕ סגירה" : "☰ תפריט";
   });
   nav.addEventListener("click", e => { if (e.target.closest("a")) close(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && nav.classList.contains("open")) { close(); toggle.focus(); } });
   window.addEventListener("resize", () => { if (window.innerWidth > 680) close(); });
 })();
