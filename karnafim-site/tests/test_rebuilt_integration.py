@@ -235,7 +235,7 @@ with site.app.test_client() as browser:
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
     assert r.status_code==409,"Publishing unapproved member's post must fail"
     r=browser.post("/members",base_url=ORIGIN,data={
-        "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve"})
+        "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve","identity_checked":"yes"})
     assert r.status_code==303
     r=browser.post("/moderation",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
@@ -255,6 +255,40 @@ with site.app.test_client() as browser:
     assert browser.get("/inbox",base_url=ORIGIN).status_code==200
     browser.post("/logout",base_url=ORIGIN,data={"csrf":get_csrf(browser)})
     assert browser.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==303
+
+# Manual registration uses no external mail; it creates an unapproved
+# member who cannot access community content before an admin checks identity.
+manual_env=dict(os.environ)
+manual_env["BARKAN_MANUAL_SIGNUP"]="1"
+manual_env["BARKAN_ALLOW_SIGNUP"]="0"
+manual_env["BARKAN_MAIL_DELIVERY_VERIFIED"]="0"
+manual_env.pop("BARKAN_BREVO_API_KEY",None)
+manual_env.pop("BARKAN_RESEND_API_KEY",None)
+manual=subprocess.run([sys.executable,"-c",'''
+import app
+origin="https://karnafim-community-46.onrender.com"
+assert app.PUBLIC_AUTH and app.MANUAL_SIGNUP and app.ALLOW_SIGNUP
+assert not app.MAIL_READY and not app.MAIL_DELIVERY_VERIFIED
+c=app.app.test_client()
+c.get("/signup",base_url=origin)
+with c.session_transaction(base_url=origin) as ses: csrf=ses["csrf"]
+r=c.post("/signup",base_url=origin,data={"csrf":csrf,"name":"חבר הרשמה ידנית",
+  "email":"manual-pending@example.test","password":"SyntheticOnlyManualPassword!2026","agree":"yes"})
+assert r.status_code==202,r.status_code
+user=app.sql("SELECT id,approved,email_verification_required FROM b2_users WHERE email=%s",
+             ("manual-pending@example.test",),True)
+assert user and not user["approved"] and not user["email_verification_required"]
+assert app.sql("SELECT COUNT(*) AS n FROM b2_tokens WHERE user_id=%s",(user["id"],),True)["n"]==0
+c.get("/login",base_url=origin)
+with c.session_transaction(base_url=origin) as ses: csrf=ses["csrf"]
+assert c.post("/login",base_url=origin,data={"csrf":csrf,
+  "email":"manual-pending@example.test","password":"SyntheticOnlyManualPassword!2026"}).status_code==303
+assert c.get("/feed",base_url=origin).status_code==403
+assert c.get("/find",base_url=origin).status_code==403
+assert c.get("/new",base_url=origin).status_code==403
+assert c.get("/inbox",base_url=origin).status_code==403
+'''],cwd=APP,env=manual_env,capture_output=True,text=True,timeout=50)
+assert manual.returncode==0,(manual.stdout,manual.stderr[-1500:])
 
 # The exact same app is public-information-only until explicitly safety approved.
 off_env=dict(os.environ)
