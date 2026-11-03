@@ -59,8 +59,13 @@ MAIL_READY=bool(EMAIL_TRANSPORT and MAIL_FROM and
 # that a real end-to-end verification message reached a controlled mailbox.
 MAIL_DELIVERY_VERIFIED=(MAIL_READY and
                         os.environ.get("BARKAN_MAIL_DELIVERY_VERIFIED","0")=="1")
-ALLOW_SIGNUP=(PUBLIC_AUTH and os.environ.get("BARKAN_ALLOW_SIGNUP","0")=="1"
-              and MAIL_DELIVERY_VERIFIED)
+# An optional application-only path accepts requests without outgoing mail.
+# Such accounts stay unapproved until a human administrator verifies the
+# applicant's membership and email ownership outside the website.
+MANUAL_SIGNUP=(PUBLIC_AUTH and os.environ.get("BARKAN_MANUAL_SIGNUP","0")=="1")
+ALLOW_SIGNUP=(MANUAL_SIGNUP or
+              (PUBLIC_AUTH and os.environ.get("BARKAN_ALLOW_SIGNUP","0")=="1"
+               and MAIL_DELIVERY_VERIFIED))
 
 def connect():
     return psycopg.connect(DB,row_factory=dict_row,connect_timeout=8)
@@ -247,7 +252,9 @@ def health():
     return {"status":"ok","generation":"new-build","auth_enabled":PUBLIC_AUTH,
             "database_configured":bool(DB),
             "signup_enabled":ALLOW_SIGNUP,"email_sender_configured":MAIL_READY,
-            "email_delivery_release_verified":MAIL_DELIVERY_VERIFIED},200
+            "email_delivery_release_verified":MAIL_DELIVERY_VERIFIED,
+            "registration_mode":"manual_review" if MANUAL_SIGNUP else
+                                "email_verified" if ALLOW_SIGNUP else "closed"},200
 
 @app.get("/ready")
 def ready():
@@ -399,15 +406,17 @@ def signup():
             with c.cursor() as cur:
                 try:
                     cur.execute("""INSERT INTO b2_users(name,email,passhash,email_verification_required)
-                        VALUES(%s,%s,%s,%s) RETURNING id""",(name,email,hashpw(password),True))
+                        VALUES(%s,%s,%s,%s) RETURNING id""",(name,email,hashpw(password),not MANUAL_SIGNUP))
                     uid=cur.fetchone()["id"]
                 except psycopg.errors.UniqueViolation:
                     c.rollback()
                     return layout("הרשמה",'<div class="note">אם הבקשה כבר קיימת, אין צורך להגיש אותה שוב.</div>')
+        if MANUAL_SIGNUP:
+            return layout("בקשת הצטרפות",'<div class="pagehead"><h1>בקשת ההצטרפות נקלטה</h1><p>החשבון ממתין לאישור מנהל הקהילה לאחר אימות זהות ושייכות לפלוגה. לא נשלח דוא״ל ולא אומתה כתובת הדוא״ל שהוזנה. עד לאישור, אין גישה לתכנים ולהודעות של חברים.</p><a class="primary" href="/login">מעבר לכניסה לחשבון</a></div>'),202
         if not send_verification(email,uid):
             return layout("משלוח אימות",'<div class="pagehead"><h1>ההרשמה נשמרה, אבל המייל לא נשלח</h1><p>אפשר לנסות שוב דרך שליחת אימות מחדש. החשבון חסום לכניסה עד אימות הכתובת.</p><a href="/resend-verification" class="primary">שליחת אימות מחדש</a></div>'),503
         return layout("בקשת הצטרפות",'<div class="pagehead"><h1>בקשת ההצטרפות נשמרה</h1><p>הודעת האימות התקבלה במערכת השליחה. יש לאמת את הדוא״ל לפני הכניסה לחשבון.</p><a class="primary" href="/login">מעבר לכניסה</a></div>')
-    return layout("הרשמה",'<section class="auth-page"><div class="pagehead"><span class="tag">חברות בקהילה</span><h1>מצטרפים לקרנפים</h1><p>חשבון אישי ומאובטח ליוצאי פלוגה ב׳. לאחר אימות כתובת הדוא״ל, בקשת החברות תיבדק לפני גישה לתכנים של חברים.</p></div><div class="auth-trust"><span>🔒 חיבור מוצפן</span><span>✉ אימות דוא״ל</span><span>◈ קהילה לחברים מאושרים</span></div>'+
+    return layout("הרשמה",'<section class="auth-page"><div class="pagehead"><span class="tag">חברות בקהילה</span><h1>מצטרפים לקרנפים</h1><p>חשבון אישי ומאובטח ליוצאי פלוגה ב׳. בקשת ההצטרפות תישלח לאישור מנהל. זהות החבר ובעלות על הדוא״ל יאומתו באופן אישי לפני מתן גישה לתוכן הפרטי.</p></div><div class="auth-trust"><span>🔒 חיבור מוצפן</span><span>◈ אישור מנהל לאחר אימות זהות</span><span>◈ קהילה לחברים מאושרים</span></div>'+
         button_form('<label>שם מלא<input name="name" required maxlength="90" autocomplete="name" placeholder="איך קוראים לך?"></label><label>כתובת דוא״ל<input name="email" type="email" inputmode="email" dir="ltr" required autocomplete="email" placeholder="you@example.com"></label>' + password_control("password","new-password") + '<p id="password-help" class="muted">לפחות 12 תווים. מומלץ להשתמש בסיסמה ייחודית.</p><input name="website" tabindex="-1" class="honeypot" aria-hidden="true"><label class="check"><input type="checkbox" name="agree" value="yes" required> אני מסכים לשמירת הפרטים לצורך קבלה לקהילה</label><button class="primary">שליחת בקשת הצטרפות</button>','/signup','class="formcard"')+'</section>')
 
 def send_verification(email,uid):
@@ -546,7 +555,7 @@ def image_or_video(f):
     return (mime,kind,data)
 
 @app.route("/new",methods=["GET","POST"])
-@require_login
+@require_approved
 def create_post():
     if request.method=="POST":
         protect();limit("post:"+str(g.user["id"]),8,60)
@@ -718,13 +727,15 @@ def members():
         if not uid.isdecimal() or request.form.get("action") not in ("approve","reject"):abort(400)
         if int(uid)==g.user["id"]:abort(400)
         approved=request.form["action"]=="approve"
+        if approved and request.form.get("identity_checked")!="yes":
+            return layout("נדרש אימות",'<div class="note error">לפני אישור חבר יש לאמת מחוץ לאתר את זהותו, שייכותו לפלוגה ואת בעלותו על כתובת הדוא״ל. <a href="/members">חזרה לבקשות</a></div>'),400
         sql("UPDATE b2_users SET approved=%s WHERE id=%s",(approved,int(uid)))
         return redirect("/members",303)
     rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE ORDER BY joined DESC LIMIT 100")
     html=''
     for u in rows:
         html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p>'+button_form(
-            '<input type="hidden" name="id" value="'+str(u["id"])+'"><button name="action" value="approve" class="primary">אישור חבר</button><button name="action" value="reject" class="subtle">דחייה</button>','/members')+'</article>'
+            '<input type="hidden" name="id" value="'+str(u["id"])+'"><label class="check"><input type="checkbox" name="identity_checked" value="yes"> אימתתי באופן אישי את זהות החבר, שייכותו לפלוגה ובעלותו על כתובת הדוא״ל</label><button name="action" value="approve" class="primary">אישור חבר</button><button name="action" value="reject" class="subtle">דחייה</button>','/members')+'</article>'
     return layout("אישור חברים",'<div class="pagehead"><h1>בקשות חברות</h1></div>'+(html or '<div class="note">אין בקשות חברות ממתינות.</div>'))
 
 @app.errorhandler(404)
