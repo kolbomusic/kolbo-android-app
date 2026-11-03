@@ -54,7 +54,7 @@ MAIL_FROM=os.environ.get("BARKAN_MAIL_FROM","").strip()
 EMAIL_TRANSPORT=("brevo" if BREVO_API_KEY and not EMAIL_PROVIDER else
                  "resend" if EMAIL_PROVIDER and not BREVO_API_KEY else "")
 MAIL_READY=bool(EMAIL_TRANSPORT and MAIL_FROM and
-                re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+",MAIL_FROM))
+                re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",MAIL_FROM))
 # Configuration is not proof of delivery. A separate explicit release attests
 # that a real end-to-end verification message reached a controlled mailbox.
 MAIL_DELIVERY_VERIFIED=(MAIL_READY and
