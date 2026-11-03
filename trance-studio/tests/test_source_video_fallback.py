@@ -271,6 +271,29 @@ class OriginalMovingVideoTests(unittest.TestCase):
             self.assertTrue(result.exists())
             self.assertGreater(result.stat().st_size,20000)
 
+    def test_delayed_visual_action_reaches_real_source_editor(self):
+        # Movement appearing after the old 18-second scan boundary must
+        # reach the original-video editor, rather than declaring no MP4.
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            movie=root/'late-moving.mp4'
+            music=root/'mix.mp3'
+            subprocess.run([
+                'ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i','color=c=black:s=256x256:r=12:d=23',
+                '-f','lavfi','-i','testsrc=size=256x256:rate=12:duration=7',
+                '-filter_complex','[0:v][1:v]concat=n=2:v=1:a=0[v]',
+                '-map','[v]','-c:v','libx264','-preset','ultrafast',
+                '-pix_fmt','yuv420p',str(movie)],check=True,timeout=40)
+            self.make_music(music)
+            expected={'video_status':'done','video_mode':'original_input_video'}
+            with mock.patch('beat_video_editor.compose_edited_original_video',
+                            return_value=expected) as edit:
+                meta=compose_original_video_with_mix(
+                    [movie],music,root/'final.mp4',root/'work')
+            self.assertEqual(meta,expected)
+            edit.assert_called_once()
+
     def test_static_mp4_rejected_as_not_real_moving_footage(self):
         with tempfile.TemporaryDirectory() as temp:
             root=pathlib.Path(temp);music=root/'mix.mp3'
