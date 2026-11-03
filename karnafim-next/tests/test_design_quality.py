@@ -79,6 +79,7 @@ with site.app.test_request_context("/"):
     assert not site.owner() and not site.can_moderate() and not site.can_manage_members()
     os.environ.pop("BARKAN_ADMIN_EMAIL",None)
 assert client.get("/staff",base_url=origin).status_code==503
+assert client.get("/admin-audit",base_url=origin).status_code==503
 # Member rejections must leave the pending queue. All staff changes need an audit log.
 source=(ROOT/"app.py").read_text(encoding="utf-8")
 assert "membership_status='pending'" in source
