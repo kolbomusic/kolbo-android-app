@@ -1,0 +1,89 @@
+name: Barkan public live endpoint diagnostic
+on:
+  push:
+    branches: [karnafim-barkan-rebuild-20261102]
+    paths:
+      - '.github/workflows/barkan-live-readonly-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Check public Render HTTP endpoints (read-only)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          sites = [
+              "karnafim-community-46.onrender.com",
+              "karnafim-barkan-46.onrender.com",
+          ]
+          results = []
+          for host in sites:
+              for path in ("/health", "/ready", "/"):
+                  url = "https://" + host + path
+                  result = {"url": url, "http_status": None, "final_url": None}
+                  request = urllib.request.Request(
+                      url, headers={"User-Agent": "KarnafimReadOnlyHealth/1.0"}
+                  )
+                  try:
+                      with urllib.request.urlopen(request, timeout=32) as response:
+                          result["http_status"] = response.status
+                          result["final_url"] = response.url
+                          result["content_type"] = response.headers.get("Content-Type","")
+                          body = response.read(4096)
+                          if path in ("/health","/ready"):
+                              try:
+                                  data=json.loads(body)
+                                  if isinstance(data, dict):
+                                      for field in ("status","auth_enabled",
+                                                    "member_portal","database_configured",
+                                                    "signup_enabled"):
+                                          if field in data:
+                                              result[field]=data[field]
+                              except (ValueError, UnicodeError, TypeError):
+                                  pass
+                  except urllib.error.HTTPError as exc:
+                      result["http_status"] = exc.code
+                      result["final_url"] = exc.url
+                      result["error"] = "HTTPError"
+                  except (OSError, TimeoutError) as exc:
+                      result["error"] = type(exc).__name__
+                  results.append(result)
+                  print(json.dumps(result, ensure_ascii=False), flush=True)
+
+          Path("barkan-live-readonly-report.json").write_text(
+              json.dumps(results, ensure_ascii=False, indent=2)+"\n",
+              encoding="utf-8"
+          )
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary,"a",encoding="utf-8") as file:
+                  file.write("## Barkan read-only production endpoint report\n\n")
+                  file.write("| Endpoint | HTTP | Status |\n|---|---:|---|\n")
+                  for x in results:
+                      status=x.get("status",x.get("member_portal",x.get("error","")))
+                      file.write(f'| {x["url"]} | {x["http_status"]} | {status} |\n')
+                  file.write("\nNo authentication or private data access attempted.\n")
+
+          new_health=next(x for x in results if x["url"]==
+              "https://karnafim-barkan-46.onrender.com/health")
+          if new_health.get("http_status")!=200 or new_health.get("status")!="ok":
+              raise SystemExit("New dynamic Render service is not verified healthy")
+          PY
+      - name: Keep safe diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: barkan-live-readonly-report
+          path: barkan-live-readonly-report.json
+          retention-days: 7
+          if-no-files-found: warn
