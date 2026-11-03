@@ -320,7 +320,11 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
     # Check per-scene target length BEFORE consuming public GPU credits.
     # If six clips cannot fill a long track, do not generate the first clip
     # and then repeatedly attempt impossible later segments.
-    weights=[max(1,len(HEBREW.findall(beat.spoken_text))) for beat in beats]
+    # Duration planner already divided long spoken moments into distinct
+    # camera shots and apportioned their word weight among those shots.
+    # Counting the full repeated Hebrew clause for EVERY camera angle here
+    # wrongly inflates that beat's runtime and triggers the >5s rejection.
+    weights=[beat.word_count for beat in beats]
     total_weight=sum(weights)
     allocations=[audio_length*w/total_weight for w in weights] if total_weight else []
     if any(seconds>5.12 for seconds in allocations):
@@ -350,7 +354,7 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                     # older distilled Space that returned static frames.
                     url=_request_ltx25_generation(prompt,duration=5.0,max_wait=72)
                 except AIVideoUnavailable:
-                    url=_request_video_generation(prompt,duration=4.5,max_wait=72)
+                    url=_request_video_generation(prompt,duration=5.0,max_wait=72)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             if seconds+.12<allocations[index]:
@@ -383,11 +387,9 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
         encoded.append(segment)
         sources.append({
             "action":"ai_generated_narrative",
-            "start":round(audio_length*sum(
-                max(1,len(HEBREW.findall(x[0]))) for x in prepared[:index]) /
+            "start":round(audio_length*sum(weights[:index]) /
                 duration_seconds,2),
-            "end":round(audio_length*sum(
-                max(1,len(HEBREW.findall(x[0]))) for x in prepared[:index+1]) /
+            "end":round(audio_length*sum(weights[:index+1]) /
                 duration_seconds,2),
             "basis":"experimental_text_to_video",
             "original_motion_seconds":round(source_seconds,2)

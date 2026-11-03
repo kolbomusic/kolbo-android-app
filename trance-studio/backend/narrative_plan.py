@@ -197,6 +197,23 @@ def duration_beats(transcript, duration_seconds, *, max_scenes=MAX_DURATION_SCEN
         index=max(range(len(beats)),
                   key=lambda i:(beats[i].word_count/slots[i],-i))
         slots[index]+=1
+    # Allocations are based on the same rounded per-shot word weights used
+    # by the server encoder and the phone's AI-clip upload endpoint. Merely
+    # choosing ceil(duration/5) shots is insufficient: an uneven two-clause
+    # story can still assign seven seconds to one five-second GPU clip.
+    # Split the longest remaining spoken moment into a NEW camera shot
+    # before spending the first public GPU request; never loop its frames.
+    while sum(slots)<max_scenes:
+        split_weights=[
+            max(1,round(beat.word_count/count))
+            for beat,count in zip(beats,slots) for _ in range(count)
+        ]
+        total=sum(split_weights)
+        if not total or max(duration_seconds*w/total for w in split_weights)<=5.0:
+            break
+        index=max(range(len(beats)),
+                  key=lambda i:(beats[i].word_count/slots[i],-i))
+        slots[index]+=1
     expanded=[]
     for beat,count in zip(beats,slots):
         for index in range(count):
