@@ -171,7 +171,8 @@ def password_control(name, autocomplete):
     return ('<div class="password-field"><label for="account-password">סיסמה</label>'
             '<span class="password-wrap">'
             '<input id="account-password" type="password" name="'+name+'" '
-            'minlength="12" maxlength="200" autocomplete="'+autocomplete+'" required '
+            + ('minlength="12" ' if autocomplete=="new-password" else '') +
+            'maxlength="200" autocomplete="'+autocomplete+'" required '
             'aria-describedby="password-help">'
             '<button type="button" class="password-toggle" data-password-toggle '
             'aria-controls="account-password" aria-pressed="false" '
