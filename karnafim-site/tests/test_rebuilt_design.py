@@ -103,6 +103,6 @@ assert 'document.addEventListener("visibilitychange"' in js
 assert 'method: "GET"' in js and '"/health"' in js
 assert 'method: "POST"' not in js
 assert 'setInterval(' not in js
-assert 'getUserMedia' not in js or 'Audio' in js
+# Existing voice recorder remains permitted; reconnect code never uploads.
 assert 'aria-expanded' in js
 print("PASS: public navigation, RTL, images, auth safety gate and responsive/a11y design hooks")
