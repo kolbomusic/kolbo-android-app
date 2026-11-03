@@ -1,8 +1,10 @@
 name: Karnafim encrypted production recovery backup (guarded)
-# Manual-only until a protected source secret and an independent archive
-# passphrase have been configured. Never enable on pull_request or on push.
+# Daily checks are no-op unless both protected secrets are configured.
+# Never enable on pull_request or push; never upload unencrypted data.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '37 2 * * *'
 permissions:
   contents: read
 jobs:
@@ -14,27 +16,32 @@ jobs:
       KARNAFIM_BACKUP_PASSPHRASE: ${{ secrets.KARNAFIM_BACKUP_PASSPHRASE }}
       KARNAFIM_BACKUP_OUTPUT_DIR: ${{ runner.temp }}/karnafim-encrypted
     steps:
-      - name: Abort without both protected secrets
+      - name: Check protected prerequisites without exposing them
+        id: gate
         shell: bash
         run: |
-          if [ -z "$KARNAFIM_BACKUP_DATABASE_URL" ] || [ -z "$KARNAFIM_BACKUP_PASSPHRASE" ]; then
-            echo "::error::NOT_CONFIGURED: Protected backup DB URL or encryption secret missing. No production data was read."
-            exit 1
-          fi
-          if [ "${#KARNAFIM_BACKUP_PASSPHRASE}" -lt 32 ]; then
-            echo "::error::NOT_CONFIGURED: The encryption passphrase is too short. No production data was read."
-            exit 1
+          if [ -n "$KARNAFIM_BACKUP_DATABASE_URL" ] &&
+             [ -n "$KARNAFIM_BACKUP_PASSPHRASE" ] &&
+             [ "${#KARNAFIM_BACKUP_PASSPHRASE}" -ge 32 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "Encrypted production backup prerequisites are configured."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SKIPPED: Protected backup prerequisites are not configured; no production data read."
           fi
       - name: Checkout the immutable validated backup implementation
+        if: steps.gate.outputs.ready == 'true'
         uses: actions/checkout@v4
         with:
           # Squash-merged commit validated by isolated PostgreSQL 18 CI.
           ref: e914d52bbe4b070ac4e3a5a1b731f8fdcb23d373
           persist-credentials: false
       - name: Create encrypted community recovery archive
+        if: steps.gate.outputs.ready == 'true'
         shell: bash
         run: bash karnafim-site/ops/backup_encrypted.sh
       - name: Upload ciphertext only (seven-day retention)
+        if: steps.gate.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: karnafim-recovery-ciphertext-${{ github.run_id }}
@@ -44,5 +51,5 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - name: Remove remaining encrypted local files
-        if: always()
+        if: steps.gate.outputs.ready == 'true' && always()
         run: rm -rf -- "${{ runner.temp }}/karnafim-encrypted"
