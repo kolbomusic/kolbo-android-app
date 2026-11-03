@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 
 class IsolatedAsrUnavailable(RuntimeError):
@@ -46,6 +47,28 @@ def _safe_memory_for_asr():
     return True
 
 
+
+def _cgroup_remaining_bytes():
+    """Report actual shared container headroom, not child-only RSS."""
+    for limit_file, usage_file in (
+        ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+        ("/sys/fs/cgroup/memory/memory.limit_in_bytes",
+         "/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+    ):
+        try:
+            maximum=Path(limit_file).read_text().strip()
+            if maximum=="max":
+                return None
+            limit=int(maximum)
+            if not 0<limit<=768*1024*1024:
+                return None
+            usage=int(Path(usage_file).read_text().strip())
+            return max(0,limit-usage)
+        except (OSError,ValueError):
+            continue
+    return None
+
+
 def transcribe_in_child(paths, *, timeout=240):
     """Return (original Hebrew words, complete, per-file timestamp lists).
 
@@ -58,15 +81,37 @@ def transcribe_in_child(paths, *, timeout=240):
         raise IsolatedAsrUnavailable("Insufficient local ASR memory budget")
     safe_paths = [str(Path(p).resolve()) for p in paths]
     try:
-        response = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve()), *safe_paths],
-            capture_output=True, text=True, check=True, timeout=timeout,
-        )
+        # An ASR child can exceed the 512 MiB Render container even when it
+        # had enough free memory at launch. Inspect the shared cgroup during
+        # inference; cancel only the child before the kernel kills Gunicorn.
+        command=[sys.executable, str(Path(__file__).resolve()), *safe_paths]
+        child=subprocess.Popen(command,stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,text=True)
+        started=time.monotonic()
+        try:
+            while True:
+                remaining=timeout-(time.monotonic()-started)
+                if remaining<=0:
+                    raise subprocess.TimeoutExpired(command,timeout)
+                headroom=_cgroup_remaining_bytes()
+                if headroom is not None and headroom<96*1024*1024:
+                    raise IsolatedAsrUnavailable("Local ASR memory safety guard")
+                try:
+                    stdout,_=child.communicate(timeout=min(.25,remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            if child.returncode!=0:
+                raise IsolatedAsrUnavailable("Local ASR worker exited")
+        finally:
+            if child.poll() is None:
+                child.kill()
+            child.communicate()
         # Cap unexpected output from a compromised or broken child; no
         # transcript is ever logged by this wrapper.
-        if len(response.stdout) > 320_000:
+        if len(stdout)>320_000:
             raise IsolatedAsrUnavailable("ASR response too large")
-        result = json.loads(response.stdout)
+        result=json.loads(stdout)
         words = result["text"]
         complete = result["complete"]
         timeline = result["timeline"]
