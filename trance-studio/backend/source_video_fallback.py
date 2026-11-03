@@ -8,7 +8,7 @@ WAV or static picture cannot qualify; do not claim it is a newly filmed event.
 from pathlib import Path
 import subprocess
 from live_video import _make_segment, _duration, _video_profile, UnavailableVideo
-from motion_quality import require_visible_motion, NoVisibleMotion
+from motion_quality import require_visible_motion_somewhere, NoVisibleMotion
 
 VIDEO_TYPES={".mp4",".webm",".3gp",".3gpp",".mov"}
 
@@ -32,24 +32,7 @@ def compose_original_video_with_mix(original_paths, music_mp3, output_mp4, work_
             source_duration=_duration(source)
             if source_duration<.8:
                 continue
-            # A real WhatsApp/TikTok clip can start with a frozen title
-            # screen before moving footage. Check a FEW bounded segments
-            # from the original source rather than treating the intro as
-            # proof that the entire video is static. Totally still videos
-            # continue to be rejected; no fabricated motion is invented.
-            moving=False
-            for start_seconds in (0,3,8,15):
-                if source_duration<start_seconds+1:
-                    continue
-                try:
-                    require_visible_motion(source,threshold=.30,
-                                           start_seconds=start_seconds)
-                    moving=True
-                    break
-                except NoVisibleMotion:
-                    continue
-            if not moving:
-                continue
+            require_visible_motion_somewhere(source,duration=source_duration,threshold=.30)
             original=source
             original_index=index
             break
