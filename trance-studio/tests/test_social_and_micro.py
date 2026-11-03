@@ -48,6 +48,82 @@ class SocialImportAndMicroRemixTests(unittest.TestCase):
                 with self.assertRaises(link_import.LinkImportError):
                     link_import.validate_public_link(url)
 
+    def test_tiktok_short_redirect_is_canonicalized_only_on_trusted_hosts(self):
+        short='https://vt.tiktok.com/ZDemo2026/'
+        canonical='https://www.tiktok.com/@test_news/video/1234567890123456789'
+        class PublicRedirect:
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def geturl(self):
+                return canonical+'?_r=1&_t=fake'
+        opener=mock.Mock()
+        opener.open.return_value=PublicRedirect()
+        urls=link_import._public_tiktok_candidates(short,opener=opener)
+        self.assertEqual(urls,[canonical,short])
+        self.assertEqual(opener.open.call_count,1)
+        self.assertEqual(opener.open.call_args.args[0].get_method(),'HEAD')
+        self.assertIsNone(link_import._canonical_tiktok_video(
+            'https://tiktok.com.evil.example/@test/video/1234567890123456789'))
+        with self.assertRaises(link_import.LinkImportError) as bad:
+            link_import._TikTokOnlyRedirects().redirect_request(
+                None,None,302,'Found',{},
+                'http://127.0.0.1/private.mp4')
+        self.assertEqual(bad.exception.code,'unsafe_redirect')
+
+    def test_successful_ytdlp_exit_with_no_media_is_not_a_success(self):
+        class FinishedWithoutFile:
+            returncode=0
+            def poll(self):return 0
+        def test_with_message(message):
+            def fake_popen(command,stdout,stderr):
+                self.assertIn('--match-filter',command)
+                stderr.write(message.encode('utf-8'))
+                return FinishedWithoutFile()
+            with tempfile.TemporaryDirectory() as folder:
+                with mock.patch.object(link_import.subprocess,'Popen',
+                                       side_effect=fake_popen):
+                    return link_import._try_public_download(
+                        'https://www.tiktok.com/@test/video/1234567890123456789',
+                        pathlib.Path(folder),deadline=link_import.time.monotonic()+8,
+                        format_spec='best')
+        self.assertEqual(test_with_message(
+            '[download] example does not pass filter (duration > 120)'),
+            'duration')
+        self.assertEqual(test_with_message(''),'invalid_file')
+
+    def test_verified_tiktok_public_permalink_attempted_first(self):
+        short='https://vt.tiktok.com/ZDemo2026/'
+        full='https://www.tiktok.com/@test_news/video/1234567890123456789'
+        attempted=[]
+        def public_video(url, folder, **kwargs):
+            attempted.append(url)
+            if url!=full:return 'unavailable'
+            (pathlib.Path(folder)/'shared.mp4').write_bytes(b'video'*1024)
+            return 'ok'
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(link_import,'_public_tiktok_candidates',
+                                   return_value=[full,short]),mock.patch.object(
+                    link_import,'_try_public_download',
+                    side_effect=public_video),mock.patch.object(
+                    link_import,'_media_probe',return_value=18.):
+                result,mime=link_import.fetch_public_social_media(short,directory)
+                self.assertEqual(attempted,[full])
+                self.assertEqual(result.name,'shared.mp4')
+                self.assertEqual(mime,'video/mp4')
+
+    def test_tiktok_audio_only_is_rejected_as_video(self):
+        link='https://www.tiktok.com/@test_news/video/1234567890123456789'
+        def incomplete_video(url, folder, **kwargs):
+            (pathlib.Path(folder)/'shared.m4a').write_bytes(b'audio'*1024)
+            return 'ok'
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(link_import,'_try_public_download',
+                                   side_effect=incomplete_video):
+                with self.assertRaises(link_import.LinkImportError) as error:
+                    link_import.fetch_public_social_media(link,directory)
+                self.assertEqual(error.exception.code,'no_public_media')
+                self.assertIn('tiktok:audio_only',error.exception.steps)
+
     def test_import_endpoint_authenticated_and_never_generates(self):
         with tempfile.TemporaryDirectory() as folder:
             instance=app.create_app({'TESTING':True,'JOB_DIR':folder,'API_TOKEN':'test-secret'})
