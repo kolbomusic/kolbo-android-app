@@ -15,7 +15,7 @@ VIDEO_TYPES={".mp4",".webm",".3gp",".3gpp",".mov"}
 def compose_original_video_with_mix(original_paths, music_mp3, output_mp4, work_dir,
                                     bpm=145, transcript_hint="",
                                     fx_timeline=None,humor="auto",
-                                    fx_intensity=2):
+                                    fx_intensity=2,progress=None):
     work=Path(work_dir)
     work.mkdir(parents=True,exist_ok=True)
     audio_duration=_duration(music_mp3)
@@ -46,4 +46,4 @@ def compose_original_video_with_mix(original_paths, music_mp3, output_mp4, work_
         original,music_mp3,output_mp4,work/"beat-edit",
         bpm=bpm,transcript_hint=transcript_hint,
         fx_timeline=fx_timeline,humor=humor,fx_intensity=fx_intensity,
-        source_file_index=original_index)
+        source_file_index=original_index,progress=progress)
