@@ -5,10 +5,15 @@ are used by this build. It is a first-party public-only mirror of the Flask UI.
 """
 import os
 import shutil
+import re
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
 OUT=ROOT/"public"
+# GitHub Pages repository sites live under /<repository>; Render static lives at /.
+URL_PREFIX=os.getenv("BARKAN_STATIC_BASE_PATH","").strip().rstrip("/")
+if URL_PREFIX and not re.fullmatch(r"/[A-Za-z0-9_-]+",URL_PREFIX):
+    raise ValueError("Only a single clean GitHub Pages repository base path is supported")
 if os.getenv("BARKAN_PUBLIC_AUTH","0")=="1":
     raise RuntimeError("Static build must not export authenticated routes")
 os.environ.pop("DATABASE_URL",None)
@@ -36,9 +41,15 @@ for route in PAGES:
         raise RuntimeError(f"Private or unexpected content in public export {route}")
     folder=OUT if route=="/" else OUT/route.lstrip("/")
     folder.mkdir(parents=True,exist_ok=True)
-    (folder/"index.html").write_bytes(response.data)
+    markup=response.data.decode("utf-8")
+    if URL_PREFIX:
+        # Scope every internal public link and local asset to the project site.
+        markup=re.sub(r'(href|src)="/',lambda m:m.group(1)+'="'+URL_PREFIX+'/',markup)
+    (folder/"index.html").write_text(markup,encoding="utf-8")
 
 shutil.copytree(ROOT/"static",OUT/"static",dirs_exist_ok=True)
+# GitHub Pages does not run Jekyll or process Flask templates.
+(OUT/".nojekyll").write_text("",encoding="utf-8")
 (OUT/"robots.txt").write_text("User-agent: *\nAllow: /\nDisallow: /signup\nDisallow: /login\nDisallow: /verify-email\nDisallow: /media/\n",encoding="utf-8")
 (OUT/"404.html").write_text(
     '<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8">'
@@ -46,6 +57,6 @@ shutil.copytree(ROOT/"static",OUT/"static",dirs_exist_ok=True)
     '<link rel="stylesheet" href="/static/site.css"><main>'
     '<section class="pagehead"><h1>העמוד לא נמצא</h1>'
     '<p>אפשר לחזור לעמוד הבית ולבקר בארכיון המורשת.</p>'
-    '<a class="primary" href="/">חזרה לבית</a></section></main></html>',encoding="utf-8")
+    '<a class="primary" href="'+(URL_PREFIX or "")+'/">חזרה לבית</a></section></main></html>',encoding="utf-8")
 # These are deliberately public pages only; there is no login form on static.
 print(f"Exported {len(PAGES)} public pages to {OUT}")
