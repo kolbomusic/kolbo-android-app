@@ -44,6 +44,16 @@ class StreamingUploadTests(unittest.TestCase):
                 _save_upload_stream(io.BytesIO(b'voice'),path,100,100,
                                     expected_sha256='0'*64)
 
+    def test_disk_queue_does_not_enable_concurrent_cpu_or_phone_mux(self):
+        server=(ROOT/'backend'/'app.py').read_text(encoding='utf-8')
+        self.assertIn('admission=threading.BoundedSemaphore(1)',server)
+        self.assertIn('queue_slots=threading.BoundedSemaphore(2)',server)
+        self.assertIn("admission.acquire()\n        stage='decode'",server)
+        self.assertIn("admission.release()\n            queue_slots.release()",server)
+        self.assertIn("available=queue_slots.acquire(blocking=False)",server)
+        self.assertIn("if not queue_slots.acquire(blocking=False):",server)
+        self.assertIn("if not admission.acquire(blocking=False):",server)
+
     def test_total_limit_with_one_existing_upload(self):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaisesRegex(ValueError,'upload_limit'):
