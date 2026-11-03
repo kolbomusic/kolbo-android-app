@@ -163,14 +163,19 @@ with site.app.test_client() as browser:
     assert "יהונתן (יוני) שרעבי" in memorial_html
     assert "לוחם שריון · פלוגה ב׳ הקרנפים, גדוד 46" in memorial_html
     assert "3.8.2006" in memorial_html or "3 באוגוסט 2006" in memorial_html
-    for name,role in (
-        ("בניה ריין","מפקד כוח בניה"),
-        ("אורי גרוסמן","מפקד טנק ששימש כתותחן בכוח בניה"),
-        ("אדם גורן","טען־קשר בכוח בניה"),
-        ("אלכסנדר (סשה) בונימוביץ","נהג הטנק בכוח בניה")
-    ):
-        assert name in memorial_html,(name,"missing memorial entry")
+    verified_memorials=(
+        ("רס״ן בניה ריין ז״ל","מפקד כוח בניה","en_f5ccba845584f96f9b9334cf335d2e78"),
+        ("סמ״ר אורי גרוסמן ז״ל","מפקד טנק ששימש כתותחן בכוח בניה","en_f53b79619b3f27184812b11f14e635a8"),
+        ("סמ״ר אדם גורן ז״ל","טען־קשר בכוח בניה","en_e6446f8f52c2b18e0ec560602482bdda"),
+        ("סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל","נהג הטנק בכוח בניה","en_34b2955a02b6a81f8ba932dbf6228e61"),
+    )
+    for name,role,official_record_id in verified_memorials:
+        assert name in memorial_html,(name,"name or rank differs from official record")
         assert role in memorial_html,(name,"crew role mismatch")
+        assert official_record_id in memorial_html,(name,"missing or changed Ministry of Defense record")
+    assert "סמל יהונתן (יוני) שרעבי ז״ל" in memorial_html
+    assert "en_53e66dd727188835acbe02a1f641a882" in memorial_html
+    assert memorial_html.count('סיפור החיים באתר יזכור')>=5
     assert memorial_html.count("12.8.2006")>=4
     assert "המידע ההיסטורי מקושר לעמודי הנצחה רשמיים" in memorial_html
     assert "תפקידו כנהג טנק" in memorial_html
