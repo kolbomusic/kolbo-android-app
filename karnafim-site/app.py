@@ -347,6 +347,7 @@ def layout(title,body):
         menu += [("/feed","הקהילה"),("/cohorts","ספר המחזורים"),("/voices","מורשת קולית"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/application","מצב ההצטרפות"),("/profile","הפרופיל שלי")]
         permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
         if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות")]
+        if permissions["approve"] or permissions["moderate"]:menu += [("/decisions","מרכז החלטות")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
         if u["approved"]:menu += [("/recommend","המלצה על חבר")]
         if permissions["invite"]:menu += [("/invite","הזמנת חברים")]
@@ -1329,6 +1330,76 @@ def recommend_member():
     return layout("ממליצים על חבר",'<div class="pagehead"><h1>מכירים חבר מהפלוגה?</h1><p>בקשו ממנו את קוד ההמלצה האישי. תוכלו לציין באיזה מחזור או צוות הכרתם אותו. ההמלצה לא תעניק לו גישה ללא אימות זהות, שייכות לפלוגה ובעלות על כתובת הדוא״ל.</p></div>'+
         button_form('<label>קוד המלצה שהמועמד מסר<input name="code" maxlength="80" required autocomplete="off" dir="ltr"></label><label>כיצד אתם מכירים אותו מהשירות?<textarea name="context" required maxlength="600" rows="4" placeholder="למשל: שירתנו באותה מחלקה, היכן ומתי. אין לפרסם מידע מסווג."></textarea></label><button class="primary">שליחת המלצה לצוות הקבלה</button>','/recommend','class="formcard"'))
 
+
+@app.get("/decisions")
+@require_approved
+def decision_center():
+    """Prioritize review work transparently. Heuristics are not identity proof,
+    and there is no unattended automatic admission or sensitive media release.
+    """
+    rights=staff_permissions()
+    if not (rights["approve"] or rights["moderate"]):abort(403)
+    members=[]
+    if rights["approve"]:
+        members=sql("""SELECT u.id,u.name,u.service_claim,u.membership_summary,
+            u.membership_appealed,u.joined,
+            (SELECT COUNT(*) FROM b2_membership_recommendations r
+             JOIN b2_users signer ON signer.id=r.recommender
+             WHERE r.applicant=u.id AND signer.approved=TRUE) endorsements
+            FROM b2_users u
+            WHERE u.approved=FALSE AND u.membership_status='pending'
+            ORDER BY u.membership_appealed DESC,u.joined ASC LIMIT 80""")
+    submissions=[]
+    complaints=[]
+    if rights["moderate"]:
+        submissions=sql("""SELECT p.id,p.title,p.kind,p.created,u.name,u.approved
+            FROM b2_posts p JOIN b2_users u ON u.id=p.author
+            WHERE p.status='pending' ORDER BY p.created ASC LIMIT 80""")
+        complaints=sql("""SELECT r.id,r.created,p.title FROM b2_photo_reports r
+            JOIN b2_media f ON f.id=r.media_id
+            JOIN b2_posts p ON p.id=f.post_id
+            WHERE r.status='open' ORDER BY r.created ASC LIMIT 50""")
+    tasks=[]
+    for m in members:
+        complete=len((m["service_claim"] or "").strip())>=18
+        referrals=int(m["endorsements"])
+        appeal=bool(m["membership_appealed"])
+        # Priority is operational attention only, not a predicted identity score.
+        priority=0 if appeal else 1 if referrals>0 else 2 if not complete else 3
+        rationale=("ערעור על החלטה קודמת; נדרשת בדיקה חוזרת. " if appeal else "")+(
+           "קיימות "+str(referrals)+" המלצות של חברים מאושרים; לא אומתה זהות. " if referrals else
+           "לא התקבלו המלצות חברים. ")+(
+           "חסרים פרטי שירות מספקים. " if not complete else "פרטי שירות נמסרו לבדיקה. ")+
+           "אין לאשר חברות לפני אימות עצמאי של זהות, שייכות לפלוגה ובעלות על הדוא״ל."
+        tasks.append((priority,"בקשת חברות",m["name"],rationale,"/members",
+                     (m["membership_summary"] or "")[:240]))
+    for report in complaints:
+        tasks.append((-1,"פניית פרטיות",report["title"],
+            "בקשת הסרה או פרטיות פתוחה: רצוי לבדוק במהירות ולשקול הסתרת התוכן עד הבירור.",
+            "/photo-review","פרטי התלונה זמינים לצוות בקרת התוכן בלבד."))
+    for p in submissions:
+        priority=1 if not p["approved"] else 2 if p["kind"] in ("photo","voice","event") else 3
+        rationale=("המפרסם טרם אושר כחבר. " if not p["approved"] else "")+(
+           "קובץ או תוכן רגיש מחייב בדיקה פרטנית." if p["kind"]!="story" else
+           "סיפור טקסט ממתין להחלטת צוות הבקרה.")
+        tasks.append((priority,"בקרת פרסום",p["title"],rationale,
+                      "/moderation","מאת "+p["name"]))
+    tasks.sort(key=lambda x:x[0])
+    priorities={-1:"דחוף — פרטיות",0:"גבוה — ערעור",1:"גבוה — אימות",2:"בינוני",3:"רגיל"}
+    rows=''.join('<article class="person"><span class="tag">'+e(priorities.get(priority,"בדיקה"))+
+        '</span><h3>'+e(kind)+': '+e(title)+'</h3><p>'+e(summary)+
+        '</p><p><strong>המלצת מנגנון התעדוף: </strong>'+e(reason)+
+        '</p><a class="primary" href="'+href+'">מעבר לטיפול</a></article>'
+        for priority,kind,title,reason,href,summary in tasks[:120])
+    count_line=('<p>בקשות חברות: '+str(len(members))+' · פרסומים לבדיקה: '+
+                str(len(submissions))+' · פניות פרטיות: '+str(len(complaints))+'</p>')
+    return layout("מרכז החלטות",
+        '<div class="pagehead"><h1>מרכז ההחלטות של הקהילה</h1>'+
+        '<p>תור משימות מתועדף לפי כללים גלויים. הסיווג עוזר לארגן עבודה ואינו ציון אמינות, הוכחת זהות או החלטת AI.</p>'+
+        count_line+'</div><section class="people">'+
+        (rows or '<div class="note">אין כרגע בקשות המחייבות טיפול בהתאם להרשאותיך.</div>')+
+        '</section><p><a href="/dashboard">לוח הבקרה הראשי</a></p>')
+
 @app.route("/team",methods=["GET","POST"])
 @require_approved
 def manage_team():
@@ -1506,7 +1577,7 @@ def dashboard():
         (SELECT COUNT(*) FROM b2_staff_roles
             WHERE can_approve OR can_moderate OR can_invite) AS delegates""",one=True)
     items=[
-        ("בקשות הצטרפות",summary["pending_members"],"/members","חברים הממתינים לאימות ואישור"),
+        ("בקשות הצטרפות",summary["pending_members"],"/decisions","חברים הממתינים לאימות ואישור"),
         ("בקשות חברות שלא אושרו",summary["rejected_members"],"/dashboard","בקשות עם הסבר אישי ואפשרות לערער"),
         ("פרסומים לביקורת",summary["pending_posts"],"/moderation","סיפורים, תמונות והקלטות שממתינים לאישור"),
         ("פרסומים אוטומטיים",summary["auto_published"],"/feed","סיפורים טקסטואליים שעברו סינון אוטומטי"),
