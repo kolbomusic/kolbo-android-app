@@ -94,7 +94,7 @@ def _voice_only_rescue(paths, output_dir):
 
 
 def process_in_child(paths, options, output_dir, *, backing_music_path=None,
-                     timeout=720):
+                     return_video_timeline=False, timeout=720):
     """Return only bounded metadata; the two MP3 files remain on local disk."""
     if not 1 <= len(paths) <= 4:
         raise IsolatedMixUnavailable("Invalid original media count")
@@ -105,6 +105,7 @@ def process_in_child(paths, options, output_dir, *, backing_music_path=None,
         "options":options,
         "backing_music_path":(str(Path(backing_music_path).resolve())
                               if backing_music_path else None),
+        "return_video_timeline":bool(return_video_timeline),
         "output_dir":str(output_dir.resolve()),
     }
     # A manifest contains source-derived speech hints and is private and
@@ -165,7 +166,7 @@ def _child_main(manifest_path):
     clips=[load_audio(p) for p in paths]
     result=render_mix(
         clips,**options,return_voice=True,
-        return_video_timeline=bool(options.get("source_video_length")),
+        return_video_timeline=payload["return_video_timeline"],
         progress=lambda *_:None,
     )
     if len(result)==3:
