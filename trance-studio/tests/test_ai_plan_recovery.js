@@ -12,7 +12,7 @@ const scenes=[
 ];
 const env={
   MAX_SHOTS:24,
-  HEBREW:/[\\u0590-\\u05ff]/,
+  HEBREW:/[\u0590-\u05ff]/,
   fail:message=>new Error(message),
   encodeURIComponent,
   fetch:async url=>{
