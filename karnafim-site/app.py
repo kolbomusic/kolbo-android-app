@@ -155,6 +155,25 @@ def init():
                 user_id BIGINT NOT NULL REFERENCES b2_users(id) ON DELETE CASCADE,
                 created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY(media_id,user_id))""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_photo_memories(
+                id BIGSERIAL PRIMARY KEY,
+                media_id BIGINT NOT NULL REFERENCES b2_media(id) ON DELETE CASCADE,
+                author BIGINT NOT NULL REFERENCES b2_users(id) ON DELETE CASCADE,
+                body TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending','published','rejected')),
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_photo_memories_review ON b2_photo_memories(status,created)")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_photo_reports(
+                id BIGSERIAL PRIMARY KEY,
+                media_id BIGINT NOT NULL REFERENCES b2_media(id) ON DELETE CASCADE,
+                reporter BIGINT NOT NULL REFERENCES b2_users(id),
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open'
+                    CHECK(status IN ('open','resolved','hidden')),
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(media_id,reporter))""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_photo_reports_review ON b2_photo_reports(status,created)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_messages(
                 id BIGSERIAL PRIMARY KEY,sender BIGINT NOT NULL REFERENCES b2_users(id),
                 recipient BIGINT NOT NULL REFERENCES b2_users(id),
@@ -269,7 +288,7 @@ def layout(title,body):
     if PUBLIC_AUTH and u:
         menu += [("/feed","הקהילה"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
         permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
-        if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים")]
+        if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
         if permissions["invite"]:menu += [("/invite","הזמנת חברים")]
         if admin():menu += [("/team","הרשאות ניהול")]
@@ -432,13 +451,27 @@ def photos():
         mine=any(t["user_id"]==g.user["id"] for t in tags)
         names=', '.join(e(t["name"]) for t in tags)
         label='<p>זיהוי עצמי מרצון: '+names+'</p>' if names else ''
+        comments=sql("""SELECT m.body,u.name FROM b2_photo_memories m
+                     JOIN b2_users u ON u.id=m.author
+                     WHERE m.media_id=%s AND m.status='published' AND u.approved=TRUE
+                     ORDER BY m.created ASC LIMIT 15""",(r["id"],))
+        notes=''.join('<blockquote><p>'+e(c["body"])+'</p><p>— '+e(c["name"])+'</p></blockquote>'
+                       for c in comments)
+        memory_form=button_form('<input type="hidden" name="id" value="'+str(r["id"])+'">'
+                      '<label>הוספת זיכרון לתמונה<textarea name="body" maxlength="1200" required rows="3"></textarea></label>'
+                      '<button class="subtle">שליחת זיכרון לביקורת</button>',
+                      '/photos/memory','class="formcard"')
+        report_form=button_form('<input type="hidden" name="id" value="'+str(r["id"])+'">'
+                      '<label>בקשת הסרה או בדיקת פרטיות<textarea name="reason" maxlength="700" required rows="2"></textarea></label>'
+                      '<button class="subtle">שליחת בקשה פרטית למנהל</button>',
+                      '/photos/report','class="formcard"')
         toggle=button_form('<input type="hidden" name="id" value="'+str(r["id"])+'">'+
              ('<button class="subtle" name="action" value="remove">הסרת הזיהוי שלי</button>'
               if mine else '<button class="subtle" name="action" value="add">אני מופיע/ה בתמונה — אישור הצגת שמי</button>'),
              '/photos/self-tag')
         tiles= (tiles+'<article class="post">'+media_html(r["id"],"image")+'<h2>'+e(r["title"])+
               '</h2><p>'+e(r["name"])+' · '+e(r["year_text"])+'</p><p>אלבום: '+
-              e(r["album_cohort"] or "כללי")+'</p>'+label+toggle+'</article>')
+              e(r["album_cohort"] or "כללי")+'</p>'+label+toggle+notes+memory_form+report_form+'</article>')
     return layout("תמונות",intro+'<nav class="album-nav" aria-label="בחירת אלבום">'+links+'</nav>'+
         ('<section class="media-grid">'+tiles+'</section>' if tiles else
          '<section class="empty-photo"><h2>אין תמונות מאושרות באלבום זה</h2><p>חברים מוזמנים לתרום תמונות שצילמו ושמותר להם לשתף. הפרסום יתבצע רק אחרי ביקורת.</p><a href="/new">העלאת תמונה לביקורת</a></section>'))
@@ -465,6 +498,97 @@ def photo_self_tag():
     else:
         sql("DELETE FROM b2_photo_self_tags WHERE media_id=%s AND user_id=%s",(mid,g.user["id"]))
     return redirect("/photos",303)
+
+
+def published_photo(mid):
+    return sql("""SELECT f.id,f.post_id FROM b2_media f
+        JOIN b2_posts p ON p.id=f.post_id
+        JOIN b2_users u ON u.id=p.author
+        WHERE f.id=%s AND f.kind='image' AND p.status='published'
+          AND u.approved=TRUE""",(mid,),True)
+
+@app.post("/photos/memory")
+@require_approved
+def photo_memory():
+    protect();limit("photo-memory:"+str(g.user["id"]),12,60)
+    raw=request.form.get("id","")
+    body=request.form.get("body","").strip()
+    if not raw.isdecimal() or not 5<=len(body)<=1200:abort(400)
+    if not published_photo(int(raw)):abort(404)
+    sql("INSERT INTO b2_photo_memories(media_id,author,body) VALUES(%s,%s,%s)",
+        (int(raw),g.user["id"],body))
+    return redirect("/photos",303)
+
+@app.post("/photos/report")
+@require_approved
+def photo_report():
+    protect();limit("photo-report:"+str(g.user["id"]),10,60)
+    raw=request.form.get("id","")
+    reason=request.form.get("reason","").strip()
+    if not raw.isdecimal() or not 10<=len(reason)<=700:abort(400)
+    if not published_photo(int(raw)):abort(404)
+    sql("""INSERT INTO b2_photo_reports(media_id,reporter,reason)
+        VALUES(%s,%s,%s) ON CONFLICT(media_id,reporter)
+        DO UPDATE SET reason=EXCLUDED.reason,status='open',created=NOW()""",
+        (int(raw),g.user["id"],reason))
+    return redirect("/photos",303)
+
+@app.route("/photo-review",methods=["GET","POST"])
+@require_approved
+def photo_review():
+    if not staff_permissions()["moderate"]:abort(403)
+    if request.method=="POST":
+        protect();limit("photo-review:"+str(g.user["id"]),35,60)
+        raw=request.form.get("id","")
+        action=request.form.get("action","")
+        if not raw.isdecimal() or action not in ("publish_memory","reject_memory","resolve_report","hide_photo"):
+            abort(400)
+        ident=int(raw)
+        if action in ("publish_memory","reject_memory"):
+            status="published" if action=="publish_memory" else "rejected"
+            result=sql("""UPDATE b2_photo_memories SET status=%s
+                WHERE id=%s AND status='pending' RETURNING id""",(status,ident),True)
+        elif action=="resolve_report":
+            result=sql("""UPDATE b2_photo_reports SET status='resolved'
+                WHERE id=%s AND status='open' RETURNING id""",(ident,),True)
+        else:
+            # A confirmed privacy complaint hides the entire post and media
+            # from members, pending further review; no permanent deletion.
+            with connect() as c:
+                with c.cursor() as cur:
+                    cur.execute("""UPDATE b2_posts SET status='hidden'
+                        WHERE id=(SELECT f.post_id FROM b2_photo_reports r
+                                  JOIN b2_media f ON f.id=r.media_id WHERE r.id=%s)
+                        AND status='published' RETURNING id""",(ident,))
+                    changed=cur.fetchone()
+                    if not changed:abort(409)
+                    cur.execute("UPDATE b2_photo_reports SET status='hidden' WHERE id=%s",(ident,))
+            result=changed
+        if not result:abort(409)
+        return redirect("/photo-review",303)
+    memories=sql("""SELECT m.id,m.body,m.created,u.name,post.title FROM b2_photo_memories m
+        JOIN b2_users u ON u.id=m.author
+        JOIN b2_media f ON f.id=m.media_id
+        JOIN b2_posts post ON post.id=f.post_id
+        WHERE m.status='pending' ORDER BY m.created LIMIT 60""")
+    reports=sql("""SELECT r.id,r.reason,r.created,u.name,post.title,f.id media_id
+        FROM b2_photo_reports r
+        JOIN b2_users u ON u.id=r.reporter
+        JOIN b2_media f ON f.id=r.media_id
+        JOIN b2_posts post ON post.id=f.post_id
+        WHERE r.status='open' ORDER BY r.created LIMIT 60""")
+    cards=''
+    for item in memories:
+        fields=('<input type="hidden" name="id" value="'+str(item["id"])+'">'
+                '<button class="primary" name="action" value="publish_memory">אישור זיכרון</button>'
+                '<button class="subtle" name="action" value="reject_memory">דחיית זיכרון</button>')
+        cards+='<article class="person"><h3>'+e(item["title"])+'</h3><p>'+e(item["name"])+': '+e(item["body"])+'</p>'+button_form(fields,"/photo-review")+'</article>'
+    for item in reports:
+        fields=('<input type="hidden" name="id" value="'+str(item["id"])+'">'
+                '<button class="subtle" name="action" value="resolve_report">סימון כטופל</button>'
+                '<button class="primary" name="action" value="hide_photo">הסתרת הפרסום לבדיקה</button>')
+        cards+='<article class="person"><h3>בקשת פרטיות — '+e(item["title"])+'</h3><p>'+e(item["name"])+': '+e(item["reason"])+'</p>'+button_form(fields,"/photo-review")+'</article>'
+    return layout("בדיקת תמונות וזיכרונות",'<div class="pagehead"><h1>בקרת זיכרונות ובקשות פרטיות</h1><p>הבקשות גלויות לצוות הבקרה בלבד. הסתרת תמונה משביתה את הפרסום עד החלטה נוספת.</p></div>'+(cards or '<p>אין פניות ממתינות.</p>'))
 
 @app.get("/about")
 def about():
