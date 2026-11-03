@@ -5,7 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const src=fs.readFileSync('trance-studio/web/studio.html','utf8');
-const begin=src.indexOf('async function submitMixJob(form){');
+const begin=src.indexOf('function studioResponseIsJson(response){');
 const end=src.indexOf('async function run(){',begin);
 assert.ok(begin>0&&end>begin,'bounded submission helper exists');
 const helper=src.slice(begin,end);
