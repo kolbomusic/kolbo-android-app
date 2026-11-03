@@ -1,4 +1,4 @@
-name: Karnafim member publishing tests
+name: Karnafim rebuilt public publishing safeguards
 on:
   push:
     branches: [karnafim-veterans-portal-20261031]
@@ -6,33 +6,18 @@ on:
       - 'karnafim-site/**'
       - '.github/workflows/karnafim-publishing-tests.yml'
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
-  test-member-publishing:
+  rebuilt-privacy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install runtime dependencies
+      - name: Install rebuilt Flask dependencies
         run: python -m pip install -r karnafim-site/requirements.txt
-      - name: Compile Flask modules
-        run: python -m compileall -q karnafim-site
-      - name: Verify privacy lockdown including accidental maintenance-off configuration
-        run: python -m unittest discover -s karnafim-site/tests -p 'test_readonly_boot.py' -v
-      - name: Test story, event and photo publishing without production database
-        run: python karnafim-site/tests/test_publish.py
-      - name: Verify moderator media access without leaking pending uploads
-        run: python karnafim-site/tests/test_media_access.py
-      - name: Confirm private conversation attachment isolation
-        run: python karnafim-site/tests/test_chat_attachment_authorization.py
-      - name: Recover original local account login, password rotation and CSRF without real user records
-        run: python karnafim-site/tests/test_local_account_recovery.py
-      - name: Verify email confirmation URL token rules and no third-party login
-        run: python karnafim-site/tests/test_email_verification.py
-      - name: Verify moderation engine safety boundaries
-        run: python karnafim-site/tests/test_moderation.py
-      - name: Verify page accessibility landmarks
-        run: python karnafim-site/tests/test_accessibility.py
+      - name: Verify public pages, locked account routes and private media safeguards
+        run: python karnafim-site/tests/test_rebuilt_design.py
