@@ -888,7 +888,8 @@ def create_post():
                     VALUES(%s,%s,%s,%s,%s)""",(pid,decision,explanation,summary,
                     "rules-v1" if os.environ.get("BARKAN_AUTO_MODERATION","0")=="1" else "human-queue"))
         return redirect("/my-posts",303)
-    return layout("שיתוף סיפור",'<div class="pagehead"><h1>משתפים זיכרון</h1><p>הפרסום יישמר פרטי עד אישור חברות וביקורת התוכן.</p></div>'+button_form(
+    moderation_notice=('סיפורים כתובים ופשוטים של חברים מאושרים יכולים להתפרסם אחרי סינון אוטומטי. תמונות, סרטונים, הקלטות ותוכן רגיש מועברים לבדיקת צוות. לכל החלטה יוצג הסבר, ואפשר לבקש בדיקה חוזרת.' if os.environ.get("BARKAN_AUTO_MODERATION","0")=="1" else 'הפרסום יישמר פרטי עד אישור חברות וביקורת התוכן.')
+    return layout("שיתוף סיפור",'<div class="pagehead"><h1>משתפים זיכרון</h1><p>'+e(moderation_notice)+'</p></div>'+button_form(
         '<label>סוג זיכרון<select name="kind"><option value="story">סיפור</option><option value="photo">תמונות או סרטון</option><option value="event">אירוע ומפגש</option><option value="voice">זיכרון קולי</option></select></label><label>כותרת<input name="title" required maxlength="120"></label><label>שנה (לא חובה)<input name="year" maxlength="30"></label><label>אלבום מחזור גיוס (אופציונלי)<input type="month" name="album_cohort" min="1990-01" max="2035-12"></label><label>תוכן<textarea name="body" maxlength="4000" rows="6"></textarea></label><label>קבצים (עד ארבעה)<input id="story-uploads" type="file" name="uploads" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg"></label><section class="story" data-voice-recorder hidden><h2>הקלטת זיכרון מהמיקרופון</h2><p>ההקלטה מתחילה רק בלחיצה על התחלה. ניתן להאזין לפני שליחה. הקובץ לא נשלח עד ללחיצה על ״שליחה לביקורת״.</p><div class="hero-actions"><button type="button" class="outline" data-record-start>התחלת הקלטה</button><button type="button" class="subtle" data-record-stop disabled>עצירת הקלטה</button></div><p role="status" aria-live="polite" data-record-status>לא הוקלט עדיין.</p><audio controls preload="none" data-record-preview hidden></audio></section><p class="muted">עד 8MB לקובץ ו־16MB סך הכול לפרסום. תמונות יעברו כיווץ והסרת נתוני EXIF. להקלטות קוליות יש לבחור ״זיכרון קולי״ ולצרף קובץ WebM או OGG אחד, או להשתמש בהקלטה הישירה אם הדפדפן תומך.</p><label class="check"><input type="checkbox" name="rights" value="yes" required> אני מאשר שיש לי זכויות לפרסם את התוכן</label><button class="primary">שליחה לביקורת</button>',
         "/new",'class="formcard" enctype="multipart/form-data"'))
 
@@ -1385,11 +1386,16 @@ def dashboard():
         (SELECT COUNT(*) FROM b2_photo_reports WHERE status='open') AS privacy_requests,
         (SELECT COUNT(*) FROM b2_meetups WHERE starts_at>NOW() AND cancelled=FALSE) AS upcoming_meetups,
         (SELECT COUNT(*) FROM b2_posts WHERE status='published') AS published_posts,
+        (SELECT COUNT(*) FROM b2_posts WHERE status='rejected') AS rejected_posts,
+        (SELECT COUNT(*) FROM b2_posts WHERE moderation_source='rules-v1'
+            AND status='published') AS auto_published,
         (SELECT COUNT(*) FROM b2_staff_roles
             WHERE can_approve OR can_moderate OR can_invite) AS delegates""",one=True)
     items=[
         ("בקשות הצטרפות",summary["pending_members"],"/members","חברים הממתינים לאימות ואישור"),
         ("פרסומים לביקורת",summary["pending_posts"],"/moderation","סיפורים, תמונות והקלטות שממתינים לאישור"),
+        ("פרסומים אוטומטיים",summary["auto_published"],"/feed","סיפורים טקסטואליים שעברו סינון אוטומטי"),
+        ("פרסומים שנדחו",summary["rejected_posts"],"/moderation","החלטות שתועדו עם נימוק; ערעורים חוזרים לתור הבקרה"),
         ("זיכרונות לתמונות",summary["pending_memories"],"/photo-review","תגובות וזיכרונות הממתינים לבקרה"),
         ("בקשות פרטיות",summary["privacy_requests"],"/photo-review","בקשות להסרה או לבדיקת תמונות"),
         ("מפגשים מתוכננים",summary["upcoming_meetups"],"/meetups","מפגשי פלוגה עתידיים"),
