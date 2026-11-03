@@ -1,0 +1,60 @@
+name: Publish Barkan public website on GitHub Pages
+on:
+  push:
+    branches: [karnafim-barkan-rebuild-20261102]
+    paths:
+      - 'karnafim-next/**'
+      - '.github/workflows/barkan-github-pages.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: barkan-github-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build dependencies
+        run: python -m pip install -r karnafim-next/requirements.txt
+      - name: Export Hebrew RTL public pages for repository URL
+        env:
+          BARKAN_STATIC_BASE_PATH: /kolbo-android-app
+        run: python karnafim-next/export_static.py
+      - name: Check content isolation and paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          for p in index.html heritage/index.html memorial/index.html photos/index.html about/index.html help/index.html privacy/index.html terms/index.html safety/index.html status/index.html; do
+            test -s "karnafim-next/public/$p"
+            grep -q '/kolbo-android-app/static/site.css' "karnafim-next/public/$p"
+            if grep -Eiq '<input[^>]+type="password"|accounts.google.com|google-signin' "karnafim-next/public/$p"; then
+              echo '::error::Unexpected credential collection component'
+              exit 1
+            fi
+          done
+          test -f karnafim-next/public/.nojekyll
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: karnafim-next/public
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish always-on static website
+        id: deployment
+        uses: actions/deploy-pages@v4
