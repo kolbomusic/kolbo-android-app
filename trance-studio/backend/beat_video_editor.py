@@ -182,7 +182,7 @@ def _visual_filter(shot):
 def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
                                   bpm=145, transcript_hint="",
                                   fx_timeline=None,humor="auto",fx_intensity=2,
-                                  source_file_index=0):
+                                  source_file_index=0,progress=None):
     src=Path(source)
     work=Path(work_dir)
     work.mkdir(parents=True,exist_ok=True)
@@ -222,6 +222,10 @@ def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
         if not clip.is_file() or clip.stat().st_size<2048:
             raise UnavailableVideo("לא הופק קטע צילום מעובד")
         files.append(clip)
+        if progress:
+            progress(88+min(7,round(7*(idx+1)/max(1,len(shots)))),
+                     "מסנכרן תנועה ומראה עם אפקטי הקול: "+
+                     str(idx+1)+" מתוך "+str(len(shots)))
     concat_list=work/"shots.txt"
     concat_list.write_text("".join("file '%s'\n"%p.name for p in files),
                            encoding="utf-8")
