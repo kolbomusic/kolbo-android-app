@@ -865,7 +865,6 @@ if([502,503,504].indexOf(statusResponse.status)>=0||
     continue;
   }
 }
-temporaryStatusFailures=0;
 if(statusResponse.status===404){
  throw new Error('שרת העיבוד הופעל מחדש ואיבד את המשימה. הקובץ עדיין נבחר במכשיר; לחץ שוב על ״צור״ רק לאחר שהשרת התייצב. אין העלאה כפולה אוטומטית.');
 }
@@ -878,6 +877,7 @@ if(statusResponse.status===429){
  }
  throw new Error('השרת עמוס מדי לבדיקת המשימה כרגע (429). הקובץ נשאר במכשיר ולא נוצרה משימה נוספת.');
 }
+temporaryStatusFailures=0;
 var j=await studioJson(statusResponse);
 if(!statusResponse.ok)throw new Error(j.error||('השירות אינו זמין (HTTP '+statusResponse.status+')'));
 var completed=Number(j.percent||0);
