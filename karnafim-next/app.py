@@ -168,14 +168,14 @@ def button_form(body,action,extra=""):
 
 def password_control(name, autocomplete):
     """Consistent accessible password field without external scripts."""
-    return ('<label class="password-field">סיסמה'
+    return ('<div class="password-field"><label for="account-password">סיסמה</label>'
             '<span class="password-wrap">'
             '<input id="account-password" type="password" name="'+name+'" '
             'minlength="12" maxlength="200" autocomplete="'+autocomplete+'" required '
             'aria-describedby="password-help">'
             '<button type="button" class="password-toggle" data-password-toggle '
             'aria-controls="account-password" aria-pressed="false" '
-            'aria-label="הצגת הסיסמה">הצגה</button></span></label>')
+            'aria-label="הצגת הסיסמה">הצגה</button></span></div>')
 
 def layout(title,body):
     u=g.user
