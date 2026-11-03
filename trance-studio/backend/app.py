@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, send_file, send_from_directory, Response
 from werkzeug.exceptions import RequestEntityTooLarge
 from itsdangerous import URLSafeTimedSerializer, BadSignature
-from engine import load_audio, render_mix, export_mp3
+from engine import load_audio, render_mix, export_mp3, AudioDecodeError
 from storyboard import align_storyboard_to_vocal
 from live_video import visual_plan, export_live_story, UnavailableVideo
 
@@ -76,6 +76,7 @@ def create_app(config=None):
         with lock:jobs[job_id].update(values)
 
     def work(job_id,paths,options):
+        stage='decode'
         try:
             update(job_id,state='processing',percent=4,label='קורא ומאמת את אורך ההקלטות')
             # Validate audio duration before CPU-expensive word-level ASR.
@@ -124,19 +125,23 @@ def create_app(config=None):
             # private audio or transcript to a new third party.
             audio_options['transcript_hint']=detected_transcript[:4000]
             audio_options['transcript_timeline']=transcript_timeline
+            stage='mix'
             audio,vocal=render_mix(clips,**audio_options,return_voice=True,
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
             if options.get('backing_music_path'):
+                stage='licensed_music'
                 from licensed_music import mix_licensed_backing
                 audio=mix_licensed_backing(
                     options['backing_music_path'],vocal,32000,
                     transcript_hint=detected_transcript,
                     bpm=options.get('bpm',145),
                     humor=options.get('humor','auto'))
+            stage='export'
             export_mp3(audio,root/job_id/'mix.mp3')
             export_mp3(vocal,root/job_id/'voice.mp3')
             meta={'video_status':'disabled','storyboard_source':'not_requested'}
             if options.get('video_requested'):
+                stage='video'
                 update(job_id,percent=87,label='בודק התאמה בין המשפטים לצילומי וידאו',
                        video_status='processing')
                 # The USER submitted an actual video, not just a voice
@@ -346,9 +351,54 @@ def create_app(config=None):
                 except AIVideoUnavailable:
                     pass
             update(job_id,state='done',percent=100,label='ההפקה מוכנה' if meta['video_status']=='done' else 'המיקס מוכן',engine='semantic_footage_with_original_asr_recovery_v5',asr_recovery_attempted=asr_recovery_attempted,asr_recovery_status=('recognized' if detected_origin=='server_original_asr' else 'unavailable' if asr_recovery_attempted else 'not_needed'),audio_seconds=round(len(audio)/32000,2),voice_coverage='full',speech_timed=bool(transcript_timeline and any(transcript_timeline)),preset=options.get('style','mixed'),humor=options.get('humor','auto'),mix_variation=options.get('mix_variation',0),**meta)
+        except AudioDecodeError as exc:
+            # The decoder supplies only vetted Hebrew UI text, never raw
+            # FFmpeg stderr or uploaded filenames.
+            app.logger.warning('Kolbo processing input failure ref=%s stage=%s code=%s',
+                               job_id[:10],stage,exc.code)
+            update(job_id,state='error',message=str(exc),error_code=exc.code,
+                   error_stage=stage,error_ref=job_id[:10])
+        except ValueError as exc:
+            # A ValueError may also be an internal DSP error. Never report
+            # a 120-second violation unless the actual validation raised it.
+            recognized={
+                'לא נמצא קול בהקלטה':('no_audible_voice',
+                    'לא זוהה קול בעוצמה מספקת בהקלטה. ודא שהקובץ כולל דיבור שניתן לשמוע.'),
+                'הקלטה ריקה או לא תקינה':('invalid_audio',
+                    'ההקלטה ריקה או מכילה שמע שלא ניתן לעבד.'),
+                'הקלטה ארוכה מ־120 שניות':('recording_too_long',
+                    'ההקלטה חורגת מ־120 שניות.'),
+                'משך ההקלטות הכולל גדול מדי לעיבוד חינמי':('combined_duration_exceeded',
+                    'סך ההקלטות והעיבוד ארוך מדי עבור מנוע הענן החינמי.'),
+            }
+            code,message=recognized.get(str(exc),('mix_validation_error',
+                'השרת נתקל בבעיה בבדיקת השמע או בהכנת המיקס. נסה קובץ מקור שניתן לנגן.'))
+            app.logger.warning('Kolbo processing validation failure ref=%s stage=%s code=%s',
+                               job_id[:10],stage,code)
+            update(job_id,state='error',message=message,error_code=code,
+                   error_stage=stage,error_ref=job_id[:10])
+        except (subprocess.CalledProcessError,subprocess.TimeoutExpired,OSError):
+            code='audio_export_failure' if stage=='export' else 'processing_io_failure'
+            message=('נוצר המיקס, אך שמירת קובץ השמע נכשלה בשרת.'
+                     if stage=='export' else
+                     'מנוע העיבוד נתקל בתקלה בקריאת המדיה או בעיבוד השמע.')
+            app.logger.exception('Kolbo processing I/O failure ref=%s stage=%s code=%s',
+                                 job_id[:10],stage,code)
+            update(job_id,state='error',message=message+' מזהה תקלה: '+job_id[:10],
+                   error_code=code,error_stage=stage,error_ref=job_id[:10])
+        except MemoryError:
+            app.logger.exception('Kolbo processing memory failure ref=%s stage=%s',
+                                 job_id[:10],stage)
+            update(job_id,state='error',
+                   message='שרת העיבוד הגיע למגבלת הזיכרון. נסה הקלטה קצרה יותר.',
+                   error_code='memory_limit',error_stage=stage,error_ref=job_id[:10])
         except Exception:
-            app.logger.exception('Kolbo audio/video worker error')
-            update(job_id,state='error',message='לא ניתן לעבד את הקובץ. הקלטה אחת עד 120 שניות, ועד ארבע הקלטות יחד.')
+            app.logger.exception('Kolbo audio/video worker error ref=%s stage=%s',
+                                 job_id[:10],stage)
+            update(job_id,state='error',
+                   message='אירעה תקלה פנימית בשלב העיבוד ('+stage+'). מזהה תקלה: '+job_id[:10],
+                   error_code='internal_processing_error',error_stage=stage,
+                   error_ref=job_id[:10])
         finally:
             for p in paths:p.unlink(missing_ok=True)
             admission.release()
@@ -385,7 +435,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.1',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():
