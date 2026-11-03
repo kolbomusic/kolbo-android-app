@@ -36,7 +36,7 @@ jobs:
       # Synthetic delivery is mocked inside this disposable integration test.
       BARKAN_MAIL_DELIVERY_VERIFIED: '1'
       BARKAN_RESEND_API_KEY: synthetic-no-outbound-email
-      BARKAN_MAIL_FROM: Synthetic <noreply@example.test>
+      BARKAN_MAIL_FROM: noreply@example.test
       BARKAN_ADMIN_EMAIL: admin@example.test
     steps:
       - uses: actions/checkout@v4
