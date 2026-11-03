@@ -44,16 +44,16 @@ mkdir -p -- "$KARNAFIM_BACKUP_OUTPUT_DIR"
 work="$(mktemp -d)"
 cleanup() { rm -rf -- "$work"; }
 trap cleanup EXIT
-export PGDATABASE="$KARNAFIM_BACKUP_DATABASE_URL"
+export KARNAFIM_BACKUP_DATABASE_URL
 export PGCONNECT_TIMEOUT=15
 export PGSSLMODE="${KARNAFIM_BACKUP_SSLMODE:-require}"
 
 # Never log or echo pg_dump args, URLs, passwords or SQL rows.
 if ! docker run --rm --network host --user "$(id -u):$(id -g)" \
-       -v "$work:/export" -e PGDATABASE -e PGCONNECT_TIMEOUT -e PGSSLMODE \
-       postgres:18-alpine pg_dump --format=custom --compress=6 \
-       --no-owner --no-privileges --file=/export/community.dump \
-       >/dev/null 2>&1; then
+       -v "$work:/export" -e KARNAFIM_BACKUP_DATABASE_URL -e PGCONNECT_TIMEOUT -e PGSSLMODE \
+       postgres:18-alpine sh -c 'exec pg_dump --dbname="$KARNAFIM_BACKUP_DATABASE_URL" \
+          --format=custom --compress=6 --no-owner --no-privileges \
+          --file=/export/community.dump' >/dev/null 2>&1; then
   echo "ERROR: PostgreSQL 18 backup failed (credentials and details suppressed)"
   exit 3
 fi
