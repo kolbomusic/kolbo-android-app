@@ -222,6 +222,12 @@ with site.app.test_client() as browser:
     gallery=browser.get("/photos",base_url=ORIGIN).get_data(as_text=True)
     assert "/media/"+str(photo["id"]) not in gallery
 
+    # Non-admin pending applicants cannot list, approve or reject other members.
+    assert browser.get("/members",base_url=ORIGIN).status_code==403
+    assert browser.post("/members",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve",
+        "identity_checked":"yes"}).status_code==403
+
     admin_email="admin@example.test"
     row=site.sql("""INSERT INTO b2_users(name,email,passhash,approved)
         VALUES(%s,%s,%s,TRUE) RETURNING id""",
@@ -238,6 +244,11 @@ with site.app.test_client() as browser:
     r=browser.post("/moderation",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
     assert r.status_code==409,"Publishing unapproved member's post must fail"
+    # Administrator cannot approve without an explicit identity and ownership check.
+    r=browser.post("/members",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve"})
+    assert r.status_code==400,"Identity confirmation required"
+    assert site.sql("SELECT approved FROM b2_users WHERE id=%s",(member["id"],),True)["approved"] is False
     r=browser.post("/members",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve","identity_checked":"yes"})
     assert r.status_code==303
