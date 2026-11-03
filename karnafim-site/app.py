@@ -96,6 +96,15 @@ def init():
                 can_invite BOOLEAN NOT NULL DEFAULT FALSE,
                 granted_by BIGINT REFERENCES b2_users(id),
                 updated TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_admin_audit(
+                id BIGSERIAL PRIMARY KEY,
+                actor BIGINT NOT NULL REFERENCES b2_users(id),
+                subject BIGINT NOT NULL REFERENCES b2_users(id),
+                action TEXT NOT NULL CHECK(action IN
+                    ('roles_saved','roles_revoked','member_approved','member_rejected')),
+                detail TEXT NOT NULL DEFAULT '',
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_admin_audit_created_idx ON b2_admin_audit(created DESC)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_tokens(
                 user_id BIGINT PRIMARY KEY REFERENCES b2_users(id) ON DELETE CASCADE,
                 digest CHAR(64) NOT NULL UNIQUE,expires TIMESTAMPTZ NOT NULL)""")
@@ -768,7 +777,16 @@ def members():
         approved=request.form["action"]=="approve"
         if approved and request.form.get("identity_checked")!="yes":
             return layout("נדרש אימות",'<div class="note error">לפני אישור חבר יש לאמת מחוץ לאתר את זהותו, שייכותו לפלוגה ואת בעלותו על כתובת הדוא״ל. <a href="/members">חזרה לבקשות</a></div>'),400
-        sql("UPDATE b2_users SET approved=%s WHERE id=%s",(approved,int(uid)))
+        with connect() as c:
+            with c.cursor() as cur:
+                cur.execute("""UPDATE b2_users SET approved=%s WHERE id=%s
+                    AND approved=FALSE RETURNING id""",(approved,int(uid)))
+                changed=cur.fetchone()
+                if not changed:abort(409)
+                cur.execute("""INSERT INTO b2_admin_audit(actor,subject,action,detail)
+                    VALUES(%s,%s,%s,%s)""",(g.user["id"],int(uid),
+                    "member_approved" if approved else "member_rejected",
+                    "identity manually checked" if approved else "application rejected"))
         return redirect("/members",303)
     rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE ORDER BY joined DESC LIMIT 100")
     html=''
@@ -795,19 +813,28 @@ def manage_team():
             abort(403)
         if target["email"].lower()==os.environ.get("BARKAN_ADMIN_EMAIL","").lower():
             abort(403)
-        if request.form.get("action")=="revoke":
-            sql("DELETE FROM b2_staff_roles WHERE user_id=%s",(uid,))
-        elif request.form.get("action")=="save":
-            # Only these three capabilities may be granted. No self-approval.
-            a=request.form.get("can_approve")=="yes"
-            m=request.form.get("can_moderate")=="yes"
-            i=request.form.get("can_invite")=="yes"
-            sql("""INSERT INTO b2_staff_roles(user_id,can_approve,can_moderate,can_invite,granted_by)
-                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(user_id) DO UPDATE SET
-                can_approve=EXCLUDED.can_approve,can_moderate=EXCLUDED.can_moderate,
-                can_invite=EXCLUDED.can_invite,granted_by=EXCLUDED.granted_by,
-                updated=NOW()""",(uid,a,m,i,g.user["id"]))
-        else:abort(400)
+        action=request.form.get("action")
+        if action not in ("save","revoke"):abort(400)
+        # Role mutation and its audit event must commit together.
+        with connect() as c:
+            with c.cursor() as cur:
+                if action=="revoke":
+                    cur.execute("DELETE FROM b2_staff_roles WHERE user_id=%s",(uid,))
+                    record="roles_revoked"
+                    detail="all permissions revoked"
+                else:
+                    a=request.form.get("can_approve")=="yes"
+                    m=request.form.get("can_moderate")=="yes"
+                    i=request.form.get("can_invite")=="yes"
+                    cur.execute("""INSERT INTO b2_staff_roles(user_id,can_approve,can_moderate,can_invite,granted_by)
+                        VALUES(%s,%s,%s,%s,%s) ON CONFLICT(user_id) DO UPDATE SET
+                        can_approve=EXCLUDED.can_approve,can_moderate=EXCLUDED.can_moderate,
+                        can_invite=EXCLUDED.can_invite,granted_by=EXCLUDED.granted_by,
+                        updated=NOW()""",(uid,a,m,i,g.user["id"]))
+                    record="roles_saved"
+                    detail="approve="+str(a)+",moderate="+str(m)+",invite="+str(i)
+                cur.execute("""INSERT INTO b2_admin_audit(actor,subject,action,detail)
+                    VALUES(%s,%s,%s,%s)""",(g.user["id"],uid,record,detail))
         return redirect("/team",303)
     rows=sql("""SELECT u.id,u.name,u.email,u.approved,
                COALESCE(r.can_approve,FALSE) can_approve,
@@ -826,7 +853,20 @@ def manage_team():
               '<button class="primary" name="action" value="save">שמירת הרשאות</button> '
               '<button class="subtle" name="action" value="revoke">ביטול כל ההרשאות</button>')
         cards+='<article class="person"><h2>'+e(person["name"])+'</h2><p>'+e(person["email"])+'</p>'+button_form(form,"/team",'class="formcard"')+'</article>'
-    return layout("ניהול הרשאות",'<div class="pagehead"><h1>צוות ניהול והרשאות</h1><p>רק מנהל הקהילה הראשי יכול למנות בעלי תפקידים או לבטל הרשאות. אפשר לשלב כמה תפקידים לאותו חבר מאושר. כל שינוי תקף גם לסשנים קיימים.</p></div>'+(cards or '<div class="note">עדיין אין חברים מאושרים נוספים למינוי. ניתן להזמין חברים דרך קישור ההרשמה.</div>'))
+    events=sql("""SELECT audit.action,audit.detail,audit.created,
+                 actor.name actor_name,subject.name subject_name
+        FROM b2_admin_audit audit
+        JOIN b2_users actor ON actor.id=audit.actor
+        JOIN b2_users subject ON subject.id=audit.subject
+        ORDER BY audit.created DESC,audit.id DESC LIMIT 25""")
+    labels={"roles_saved":"הרשאות נשמרו","roles_revoked":"הרשאות בוטלו",
+            "member_approved":"חבר אושר","member_rejected":"בקשת חברות נדחתה"}
+    activity=''.join('<li><strong>'+e(labels.get(event["action"],"פעולת ניהול"))+
+        '</strong> · '+e(event["subject_name"])+' · בוצע על ידי '+e(event["actor_name"])+
+        ' · '+e(event["created"].strftime("%d/%m/%Y %H:%M"))+'</li>' for event in events)
+    history='<section class="story"><h2>פעולות ניהול אחרונות</h2><ol>'+
+            (activity or '<li>לא נרשמו עדיין פעולות.</li>')+'</ol></section>'
+    return layout("ניהול הרשאות",'<div class="pagehead"><h1>צוות ניהול והרשאות</h1><p>רק מנהל הקהילה הראשי יכול למנות בעלי תפקידים או לבטל הרשאות. אפשר לשלב כמה תפקידים לאותו חבר מאושר. כל שינוי תקף גם לסשנים קיימים.</p></div>'+(cards or '<div class="note">עדיין אין חברים מאושרים נוספים למינוי. ניתן להזמין חברים דרך קישור ההרשמה.</div>')+history)
 
 @app.get("/invite")
 @require_approved
