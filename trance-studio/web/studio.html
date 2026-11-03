@@ -310,7 +310,7 @@ async function hasDecodableVideoTrack(file){
 }
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+(isVideoFile(f)?'סרטון':'שמע')+' · '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות או סרטונים מהמכשיר או מתוך WhatsApp'}
 function setFiles(items){
- if(active||runLock){message('כבר מתבצעת יצירה. ההקלטה החדשה לא תחליף את ההקלטה שבתהליך.');return;}
+ if(active||(typeof runLock!=='undefined'&&runLock)){message('כבר מתבצעת יצירה. ההקלטה החדשה לא תחליף את ההקלטה שבתהליך.');return;}
  files=Array.from(items||[]).filter(Boolean).slice(0,4);
  socialImported=false;
  // Never allow an old manually selected video-remix mode to survive a
