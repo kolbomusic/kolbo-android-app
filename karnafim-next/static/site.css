@@ -113,3 +113,11 @@ footer nav a{display:inline-block;min-height:40px;padding:5px 0}
 @media(forced-colors:active){.primary,.outline,.subtle{border:1px solid ButtonText}.logo:before{border:1px solid CanvasText}}
 @media(prefers-contrast:more){:root{--muted:#304b3d;--line:#6d8778}.pagehead,.story,.post,.formcard{border-width:2px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* Shared accessible password field */
+.password-field{display:grid;gap:8px;font-size:15px;font-weight:750}
+.password-wrap{position:relative;display:block}
+.formcard .password-wrap input{padding-inline-end:88px!important}
+.password-toggle{position:absolute;inset-inline-end:7px;top:50%;transform:translateY(-50%);min-height:40px;min-width:70px;border:1px solid #bacbbd;background:#eef2ec;color:#173f32;border-radius:9px;font-weight:750;font-size:14px}
+.password-toggle:hover{background:#e1eadf}
+.password-toggle:focus-visible{outline-offset:2px!important}
