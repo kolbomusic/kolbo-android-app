@@ -69,18 +69,78 @@ if state.get("video_status")!="done":
     assert state.get("client_ai_fallback") is True,state
     assert "glass" not in state  # no invented transcript correction
     assert "client_ai_prompt" in state and len(state["client_ai_prompt"])>50,state
+
+    # This legacy one-shot endpoint cannot legitimately fill a 30-second
+    # soundtrack from a TWO-SECOND clip. HTTP 422 is an intentional
+    # anti-loop safety check; it is NOT a failing renderer.
     clip=CLIP.read_bytes()
-    boundary="----KolboPhoneVideoUpload20261101"
-    payload=(f'--{boundary}\r\nContent-Disposition: form-data; '
-        'name="video"; filename="generated.mp4"\r\n'
+    boundary="----KolboPhoneVideoUpload20261103"
+    one_shot=(f'--{boundary}\r\nContent-Disposition: form-data; '
+        'name="video"; filename="short-scene.mp4"\r\n'
         'Content-Type: video/mp4\r\n\r\n').encode()+clip+f'\r\n--{boundary}--\r\n'.encode()
-    response,code=call("/api/jobs/"+job["id"]+"/generated-video",
+    try:
+        call("/api/jobs/"+job["id"]+"/generated-video",
+            one_shot,{"Content-Type":f"multipart/form-data; boundary={boundary}"},
+            timeout=125)
+    except urllib.error.HTTPError as exc:
+        assert exc.code==422,("Expected anti-loop rejection",exc.code)
+        error=json.loads(exc.read()).get("error","")
+        assert "קליפ AI יחיד קצר" in error,error
+        print("REAL_RENDER_PHONE_SHORT_CLIP_SAFELY_REJECTED",flush=True)
+    else:
+        raise AssertionError("A two-second AI clip MUST NOT become a 30-second repeated MP4")
+
+    # Validate the CURRENT phone-to-server route with ordered, actually
+    # distinct moving scenes covering the entire recorded mix. Each visual
+    # clip below is purely synthetic; no private WhatsApp data or external
+    # GPU quota is used by this mux integration test.
+    count=int(state.get("client_ai_scene_count",0))
+    weights=state.get("client_ai_scene_weights") or []
+    assert 1<=count<=24 and len(weights)==count,(count,len(weights))
+    soundtrack=float(state.get("audio_seconds",0))
+    assert 10<=soundtrack<=360,soundtrack
+    total=float(sum(weights))
+    durations=[soundtrack*float(weight)/total for weight in weights]
+    assert min(durations)>=.7,durations
+    assert max(durations)<=11.8,("No 12-second free-clip allocation can cover scene",max(durations))
+    colors=["red","lime","blue","yellow","cyan","magenta","orange",
+            "white","purple","green","pink","aqua","brown","gold",
+            "silver","teal","navy","violet","coral","salmon","olive",
+            "maroon","turquoise","orchid"]
+    attachments=[]
+    for i,needed in enumerate(durations):
+        length=round(max(1.4,needed+.5),2)
+        output=pathlib.Path("/tmp/kolbo-phone-scene-%02d.mp4"%i)
+        rect_x=(i*31)%175
+        rect_y=(i*47)%286
+        vf=(f"drawbox=x={rect_x}:y={rect_y}:w=70:h=84:"
+            f"color={colors[i]}@1:t=fill")
+        subprocess.run(["ffmpeg","-nostdin","-v","error","-y",
+            "-f","lavfi","-i",
+            f"testsrc2=size=256x384:rate=12:duration={length}",
+            "-vf",vf,"-an","-c:v","libx264","-preset","ultrafast",
+            "-crf","30","-pix_fmt","yuv420p","-movflags","+faststart",
+            str(output)],check=True,timeout=55)
+        scene=output.read_bytes()
+        assert len(scene)>12000,(i,len(scene))
+        attachments.append((i,scene))
+    boundary="----KolboPhoneUniqueScenes20261103"
+    parts=[]
+    for i,scene in attachments:
+        parts.append((f'--{boundary}\r\nContent-Disposition: form-data; '
+            f'name="clip"; filename="original-scene-{i}.mp4"\r\n'
+            'Content-Type: video/mp4\r\n\r\n').encode()+scene+b"\r\n")
+    parts.append(f'--{boundary}--\r\n'.encode())
+    payload=b"".join(parts)
+    response,code=call("/api/jobs/"+job["id"]+"/ai-clips",
         payload,{"Content-Type":f"multipart/form-data; boundary={boundary}"},
-        timeout=125)
+        timeout=300)
     assert code==200,response[:400]
     movie_result=json.loads(response)
-    print("PHONE_FALLBACK_UPLOAD_DONE",movie_result["video_status"],flush=True)
-    assert movie_result["video_mode"]=="ai_generated_on_device",movie_result
+    print("REAL_RENDER_PHONE_UNIQUE_SCENES_MUXED",{
+          "scene_count":count,"requested_seconds":soundtrack,
+          "mode":movie_result["video_mode"]},flush=True)
+    assert movie_result["video_mode"]=="ai_generated_client_fallback",movie_result
     state=json.loads(call(job["status_url"])[0])
 assert state.get("video_status")=="done",state
 mp4,code=call(state["video_url"],timeout=90)
@@ -93,11 +153,11 @@ video=next(s for s in probe["streams"] if s["codec_type"]=="video")
 assert (video["codec_name"],video["width"],video["height"])==("h264",360,640),video
 assert {s["codec_type"] for s in probe["streams"]}=={"audio","video"},probe
 duration=float(probe["format"]["duration"])
-assert 29<duration<32,duration
+assert abs(duration-float(state.get("audio_seconds",0)))<.8,duration
 subprocess.run(["ffmpeg","-v","error","-ss","24","-i",str(out),
                 "-frames:v","1","-f","null","-"],check=True,timeout=25)
 print("REAL_RENDER_PHONE_QUOTA_FALLBACK_MP4_PASS",{
     "mp4_bytes":len(mp4),"duration":duration,
     "origin":state.get("transcript_origin"),
-    "mode":state.get("video_mode"),
+    "mode":state.get("video_mode"),"shots":state.get("ai_clips_generated"),
     "coverage":state.get("visual_coverage")},flush=True)
