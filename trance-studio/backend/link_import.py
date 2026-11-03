@@ -547,10 +547,13 @@ def _try_public_download(url, folder, *, deadline, format_spec, impersonate=Fals
         # Public Chrome 99 TLS/client profile can restore Facebook extraction
         # on some layouts. No user cookies, passwords or login sessions.
         command[3:3]=["--impersonate","chrome-99"]
-    # Capture bounded diagnostics without adding user's private URL to logs.
-    with tempfile.TemporaryFile(mode="w+b") as error_stream:
+    # yt-dlp writes many filter-skip notices (including duration) to
+    # STDOUT, not STDERR. Capture both privately in temporary files.
+    # Interpret only a fixed error category; never log titles or source URLs.
+    with (tempfile.TemporaryFile(mode="w+b") as error_stream,
+          tempfile.TemporaryFile(mode="w+b") as output_stream):
         try:
-            process=subprocess.Popen(command,stdout=subprocess.DEVNULL,
+            process=subprocess.Popen(command,stdout=output_stream,
                                      stderr=error_stream)
         except (OSError,ValueError) as exc:
             raise LinkImportError("מנוע ייבוא הקישורים אינו זמין כרגע.") from exc
@@ -567,7 +570,9 @@ def _try_public_download(url, folder, *, deadline, format_spec, impersonate=Fals
             # evidence that a media file was downloaded. Keep the original
             # filter diagnostics and never misreport a skipped video as OK.
             error_stream.seek(0)
-            error_text=error_stream.read(12000).decode("utf-8","replace")
+            output_stream.seek(0)
+            error_text=(error_stream.read(12000)+b"\n"+
+                        output_stream.read(12000)).decode("utf-8","replace")
             if process.returncode==0:
                 files=[p for p in folder.iterdir()
                        if p.is_file() and p.name.startswith("shared.") and
