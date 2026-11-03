@@ -17,11 +17,17 @@ from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
 from flask import Flask, Response, abort, g, redirect, request, send_file, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 from markupsafe import Markup
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 BASE=Path(__file__).resolve().parent
 app=Flask(__name__,static_folder=str(BASE/"static"))
+# Render terminates HTTPS at its own ingress proxy. Trust exactly one ingress
+# hop for the client IP used by brute-force throttling, not forwarded host
+# or scheme headers. Outside Render, never trust arbitrary forwarded IPs.
+if os.environ.get("RENDER_SERVICE_ID","").strip():
+    app.wsgi_app=ProxyFix(app.wsgi_app,x_for=1,x_proto=0,x_host=0,x_port=0,x_prefix=0)
 CONFIGURED_SECRET=os.environ.get("BARKAN_SESSION_SECRET","").strip()
 DB=os.environ.get("BARKAN_DATABASE_URL","").strip()
 app.config.update(
