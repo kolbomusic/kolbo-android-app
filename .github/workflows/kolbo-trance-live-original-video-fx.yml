@@ -1,0 +1,96 @@
+name: Kolbo production original-video visual FX sync acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - kolbo-trance-studio-20261031
+    paths:
+      - '.github/workflows/kolbo-trance-live-original-video-fx.yml'
+permissions:
+  contents: read
+jobs:
+  public-video-fx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install offline video/audio test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install --disable-pip-version-check requests
+      - name: Generate real moving MP4 with independently synthesized sound
+        run: |
+          ffmpeg -nostdin -v error -y \
+            -f lavfi -i 'testsrc2=size=360x640:rate=12:duration=5.5' \
+            -f lavfi -i 'sine=frequency=310:sample_rate=48000:duration=5.5' \
+            -map 0:v:0 -map 1:a:0 -c:v libx264 -preset ultrafast \
+            -pix_fmt yuv420p -c:a aac -shortest /tmp/kolbo-video-fx-source.mp4
+          test -s /tmp/kolbo-video-fx-source.mp4
+      - name: Verify real production audio-timed motion warp, downloadable MP4 and sync
+        run: |
+          python - <<'PY'
+          import requests,time,subprocess,json
+          base='https://kolbo-trance-studio.onrender.com'
+          s=requests.Session()
+          for n in range(18):
+              try:
+                  health=s.get(base+'/health',timeout=25).json()
+                  if health.get('ok') and health.get('version')=='1.16.0':
+                      break
+              except (requests.RequestException,ValueError):
+                  pass
+              time.sleep(10)
+          else:raise AssertionError('Kolbo production 1.16.0 not live')
+          s.get(base+'/studio',timeout=60).raise_for_status()
+          for attempt in range(4):
+              with open('/tmp/kolbo-video-fx-source.mp4','rb') as original:
+                  upload=s.post(base+'/api/jobs',files={
+                      'audio':('spoken-video.mp4',original,'video/mp4')},
+                      data={'humor':'stretch','fx_intensity':'3',
+                            'video_strategy':'remix_original','make_video':'on',
+                            'video_requested':'on','transcript_origin':'auto',
+                            'ai_video_consent':'off','seconds':'0'},
+                      timeout=95)
+              if upload.status_code!=429:break
+              time.sleep(8)
+          assert upload.status_code==202,(upload.status_code,upload.text[:200])
+          job=upload.json();deadline=time.monotonic()+440
+          while time.monotonic()<deadline:
+              time.sleep(5)
+              state_response=s.get(base+job['status_url'],timeout=40)
+              state_response.raise_for_status()
+              state=state_response.json()
+              if state.get('state')=='error':
+                  raise AssertionError('MP4 worker failed: '+str({
+                      'code':state.get('error_code'),
+                      'message':state.get('message'),
+                      'stage':state.get('error_stage')}))
+              if state.get('state')=='done':
+                  assert state.get('video_status')=='done',state
+                  assert state.get('video_edit_audio_synced') is True,state
+                  assert state.get('video_edit_style')=='voice_fx_synced_motion_warp',state
+                  assert state.get('video_edit_fx_cues',0)>=1,state
+                  movie=s.get(base+state['video_url'],timeout=90)
+                  movie.raise_for_status()
+                  assert len(movie.content)>25000
+                  open('/tmp/kolbo-video-fx-live.mp4','wb').write(movie.content)
+                  info=json.loads(subprocess.check_output(['ffprobe','-v','error',
+                    '-show_streams','-show_format','-of','json',
+                    '/tmp/kolbo-video-fx-live.mp4']))
+                  tracks={stream['codec_type'] for stream in info['streams']}
+                  assert tracks=={'audio','video'},tracks
+                  length=float(info['format']['duration'])
+                  assert abs(length-float(state['audio_seconds']))<.8,(length,state)
+                  subprocess.run(['ffmpeg','-nostdin','-v','error','-ss','4.3',
+                     '-i','/tmp/kolbo-video-fx-live.mp4','-frames:v','1',
+                     '-f','null','-'],check=True,timeout=30)
+                  print('PRODUCTION_ORIGINAL_VIDEO_VOICE_FX_MOTION_WARP_PASS',
+                    'duration=',round(length,2),'sync_cues=',state['video_edit_fx_cues'],
+                    'backend=',health['version'])
+                  break
+          else:raise AssertionError('Production source video generation timed out')
+          PY

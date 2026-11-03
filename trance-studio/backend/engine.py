@@ -713,7 +713,7 @@ def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
     smoothed=np.convolve(voiced,np.array([.12,.20,.36,.20,.12],np.float32),mode='same')
     return smoothed.astype(np.float32),fill_locations
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint='',transcript_timeline=None):
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint='',transcript_timeline=None,return_video_timeline=False):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     if sum(len(clip)/sample_rate for clip in clips)>MAX_COMBINED_SOURCE_SECONDS:
@@ -986,6 +986,11 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     progress(62,'משמיע רולים ועיוותי קול בעוצמה מלאה ללא חפיפות')
     vocal=np.zeros(n,dtype=np.float32)
     fx_highlight=np.zeros(n,dtype=np.float32)
+    # Map actual original spoken frames and inserted vocal FX back to the
+    # user-uploaded video timeline. These positions come from the SAME
+    # arranged samples used in the audible MP3, not estimated ASR words.
+    # They are optional metadata: no audio samples are changed to export it.
+    video_fx_timeline=[]
     cursor=beat*4
     # Real voice-sampled accents happen inside the narration, while the
     # original track and its deliberate pause FX remain 100% preserved.
@@ -994,6 +999,35 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
         start=int(round(cursor*sr))
         end=min(n,start+len(track))
         if end>start:
+            if return_video_timeline:
+                for original_start,original_end,arranged_start,arranged_end in spans:
+                    if original_end>original_start and arranged_end>arranged_start:
+                        video_fx_timeline.append({
+                            'kind':'voice','source_file':clip_index,
+                            'start':round(cursor+arranged_start/sr,5),
+                            'end':round(cursor+arranged_end/sr,5),
+                            'source_seek':round(original_start/sr,5),
+                            'effect':humor,'intensity':fx_intensity})
+                marked=np.asarray(mask[:end-start]>.5,dtype=np.int8)
+                changes=np.diff(np.pad(marked,(1,1)))
+                starts=np.flatnonzero(changes==1)
+                stops=np.flatnonzero(changes==-1)
+                for fx_index,(fx_start,fx_end) in enumerate(zip(starts,stops)):
+                    if fx_end-fx_start<max(1,int(sr*.10)):
+                        continue
+                    before=[src_end for _,src_end,_,clip_end in spans
+                            if clip_end<=fx_start]
+                    source_at=(max(before)/sr if before else 0.)
+                    visual_mode=(('dj','stretch','comic_roll','pitch')[fx_index%4]
+                                 if humor=='auto' else
+                                 ('pitch','monster','rewind','stretch','glitch')[fx_index%5]
+                                 if humor=='chaos' else humor)
+                    video_fx_timeline.append({
+                        'kind':'voice_fx','source_file':clip_index,
+                        'start':round(cursor+fx_start/sr,5),
+                        'end':round(cursor+fx_end/sr,5),
+                        'source_seek':round(max(0,source_at-.27),5),
+                        'effect':visual_mode,'intensity':fx_intensity})
             vocal[start:end]+=track[:end-start]*voice_level
             fx_highlight[start:end]=np.maximum(fx_highlight[start:end],mask[:end-start])
             source=voices[clip_index]
@@ -1070,6 +1104,8 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     np.nan_to_num(music,copy=False)
     music*=.91/max(.91,float(np.max(np.abs(music))))
     progress(92,'מכין קובץ להורדה')
+    if return_voice and return_video_timeline:
+        return music,vocal,sorted(video_fx_timeline,key=lambda e:e['start'])
     return (music,vocal) if return_voice else music
 
 def export_mp3(audio,path,sr=32000):

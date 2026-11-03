@@ -128,8 +128,16 @@ def create_app(config=None):
             audio_options['transcript_hint']=detected_transcript[:4000]
             audio_options['transcript_timeline']=transcript_timeline
             stage='mix'
-            audio,vocal=render_mix(clips,**audio_options,return_voice=True,
+            rendered=render_mix(clips,**audio_options,return_voice=True,
+                                   return_video_timeline=bool(options.get('video_requested')),
                                    progress=lambda p,label:update(job_id,percent=p,label=label))
+            # Older test engines still return (mix,voice). Only the current
+            # renderer exports sample-derived original voice/FX timestamps.
+            if len(rendered)==3:
+                audio,vocal,video_fx_timeline=rendered
+            else:
+                audio,vocal=rendered
+                video_fx_timeline=[]
             if options.get('backing_music_path'):
                 stage='licensed_music'
                 from licensed_music import mix_licensed_backing
@@ -159,7 +167,11 @@ def create_app(config=None):
                             paths,root/job_id/'mix.mp3',
                             root/job_id/'story.mp4',root/job_id/'original-video',
                             bpm=options.get('bpm',145),
-                            transcript_hint=detected_transcript)
+                            transcript_hint=detected_transcript,
+                            fx_timeline=video_fx_timeline,
+                            humor=options.get('humor','auto'),
+                            fx_intensity=options.get('fx_intensity',2),
+                            progress=lambda p,label:update(job_id,percent=p,label=label))
                         meta={**remixed,
                               'storyboard_source':'original_shared_video',
                               'transcript_origin':detected_origin,
@@ -192,7 +204,11 @@ def create_app(config=None):
                             paths,root/job_id/'mix.mp3',root/job_id/'story.mp4',
                             root/job_id/'original-video',
                             bpm=options.get('bpm',145),
-                            transcript_hint=detected_transcript)
+                            transcript_hint=detected_transcript,
+                            fx_timeline=video_fx_timeline,
+                            humor=options.get('humor','auto'),
+                            fx_intensity=options.get('fx_intensity',2),
+                            progress=lambda p,label:update(job_id,percent=p,label=label))
                         meta={**original_recovery,
                               'storyboard_source':'original_shared_video',
                               'transcript_origin':'unavailable',
@@ -437,7 +453,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.2',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():
