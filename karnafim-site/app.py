@@ -1367,11 +1367,11 @@ def decision_center():
         appeal=bool(m["membership_appealed"])
         # Priority is operational attention only, not a predicted identity score.
         priority=0 if appeal else 1 if referrals>0 else 2 if not complete else 3
-        rationale=("ערעור על החלטה קודמת; נדרשת בדיקה חוזרת. " if appeal else "")+(
-           "קיימות "+str(referrals)+" המלצות של חברים מאושרים; לא אומתה זהות. " if referrals else
-           "לא התקבלו המלצות חברים. ")+(
-           "חסרים פרטי שירות מספקים. " if not complete else "פרטי שירות נמסרו לבדיקה. ")+
-           "אין לאשר חברות לפני אימות עצמאי של זהות, שייכות לפלוגה ובעלות על הדוא״ל."
+        rationale=(("ערעור על החלטה קודמת; נדרשת בדיקה חוזרת. " if appeal else "")+
+           ("קיימות "+str(referrals)+" המלצות של חברים מאושרים; לא אומתה זהות. " if referrals else
+           "לא התקבלו המלצות חברים. ")+
+           ("חסרים פרטי שירות מספקים. " if not complete else "פרטי שירות נמסרו לבדיקה. ")+
+           "אין לאשר חברות לפני אימות עצמאי של זהות, שייכות לפלוגה ובעלות על הדוא״ל.")
         tasks.append((priority,"בקשת חברות",m["name"],rationale,"/members",
                      (m["membership_summary"] or "")[:240]))
     for report in complaints:
