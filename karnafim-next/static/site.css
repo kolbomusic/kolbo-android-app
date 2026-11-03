@@ -126,3 +126,9 @@ footer nav a{display:inline-block;min-height:40px;padding:5px 0}
 /* Individual memorial portrait: visible only when the record has documented rights. */
 .memorial-portrait{width:100%;height:220px;object-fit:cover;object-position:center 25%;display:block;border-radius:12px;margin-bottom:16px}
 .memorial-photo-pending{display:flex;align-items:center;justify-content:center;min-height:170px;padding:20px;margin-bottom:16px;text-align:center;border:1px dashed #91a79a;background:#f4f7f3;color:#3b5349;border-radius:12px;font-size:.92rem;line-height:1.5}
+
+/* Visible-only recovery banner for Render cold starts, no auto POST or keepalive. */
+.site-connection-notice[hidden]{display:none!important}
+.site-connection-notice{max-width:100%;padding:14px 18px;background:#fff3d8;color:#25342b;border-bottom:2px solid #b88f45;font-size:1rem;line-height:1.7;text-align:center}
+.site-connection-notice button{margin-inline-start:12px;padding:5px 12px;border:1px solid #41654d;border-radius:8px;background:#fff;color:#193427;cursor:pointer}
+.site-connection-notice button:focus-visible{outline:3px solid #256b5f;outline-offset:3px}
