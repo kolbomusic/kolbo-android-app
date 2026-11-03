@@ -216,9 +216,8 @@ class BeatVideoEditTests(unittest.TestCase):
         from engine import arranged_vocal_track
         import numpy as np
         sr=8000
-        x=np.zeros(sr*5,dtype=np.float32)
-        t=np.arange(sr*4,dtype=np.float32)/sr
-        x[:sr*4]=.26*np.sin(2*np.pi*320*t)
+        t=np.arange(sr*5,dtype=np.float32)/sr
+        x=(.26*np.sin(2*np.pi*320*t)).astype(np.float32)
         events=[]
         track,mask,spans=arranged_vocal_track(
              x,sr,145,'stretch',3,1.15,np.random.default_rng(33),
