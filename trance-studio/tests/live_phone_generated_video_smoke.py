@@ -26,7 +26,7 @@ def call(path,body=None,headers=None,timeout=90):
 backend=(pathlib.Path(__file__).resolve().parents[1]/
          "backend"/"app.py").read_text(encoding="utf-8")
 version_match=re.search(
-    r"service='kolbo-trance-studio',version='([0-9]+\\.[0-9]+\\.[0-9]+)'",
+    r"service='kolbo-trance-studio',version='([0-9]+\.[0-9]+\.[0-9]+)'",
     backend)
 if not version_match:
     raise RuntimeError("Cannot identify checked-out Kolbo backend version")
