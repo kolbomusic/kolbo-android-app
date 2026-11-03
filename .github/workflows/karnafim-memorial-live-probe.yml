@@ -27,7 +27,7 @@ jobs:
           ]
           headers={"User-Agent":"KarnafimMemorialSafeReadOnly/1.0"}
           report={}
-          for attempt in range(1,13):
+          for attempt in range(1,4):
               try:
                   req=urllib.request.Request(base+"/memorial",headers=headers)
                   with urllib.request.urlopen(req,timeout=25) as response:
@@ -53,10 +53,15 @@ jobs:
                   report["passed"]=good
                   print("PROBE="+json.dumps({"attempt":attempt,**report},ensure_ascii=False),flush=True)
                   if good:break
+              except urllib.error.HTTPError as exc:
+                  report["error"]="HTTPError"
+                  report["http_code"]=exc.code
+                  report["failed_path"]=urllib.parse.urlsplit(exc.url).path
+                  print("PROBE="+json.dumps({"attempt":attempt,**report},ensure_ascii=False),flush=True)
               except (OSError,TimeoutError,ValueError) as exc:
                   report["error"]=type(exc).__name__
                   print("PROBE="+json.dumps({"attempt":attempt,"error":report["error"]}),flush=True)
-              if attempt<12:time.sleep(15)
+              if attempt<3:time.sleep(6)
           if not report.get("passed"):
               raise SystemExit("Live photo-source feature not verified or auth protection failed")
           PY
