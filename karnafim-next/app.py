@@ -68,9 +68,12 @@ def init():
                 email_verified BOOLEAN NOT NULL DEFAULT FALSE,
                 email_verification_required BOOLEAN NOT NULL DEFAULT FALSE,
                 role TEXT NOT NULL DEFAULT 'member',
+                membership_status TEXT NOT NULL DEFAULT 'pending',
                 joined TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             # Idempotent upgrade for existing member databases.
             cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'member'")
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS membership_status TEXT NOT NULL DEFAULT 'pending'")
+            cur.execute("UPDATE b2_users SET membership_status='approved' WHERE approved=TRUE AND membership_status='pending'")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_tokens(
                 user_id BIGINT PRIMARY KEY REFERENCES b2_users(id) ON DELETE CASCADE,
                 digest CHAR(64) NOT NULL UNIQUE,expires TIMESTAMPTZ NOT NULL)""")
@@ -93,6 +96,13 @@ def init():
                 actor BIGINT NOT NULL REFERENCES b2_users(id),
                 decision TEXT NOT NULL,reason TEXT NOT NULL,
                 created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_admin_audit(
+                id BIGSERIAL PRIMARY KEY,
+                actor BIGINT NOT NULL REFERENCES b2_users(id),
+                target BIGINT NOT NULL REFERENCES b2_users(id),
+                action TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_admin_audit_created_idx ON b2_admin_audit(created DESC)")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_posts_status_idx ON b2_posts(status,created DESC)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_media(
                 id BIGSERIAL PRIMARY KEY,post_id BIGINT REFERENCES b2_posts(id) ON DELETE CASCADE,
@@ -723,13 +733,20 @@ def members():
         if not uid.isdecimal() or request.form.get("action") not in ("approve","reject"):abort(400)
         if int(uid)==g.user["id"]:abort(400)
         approved=request.form["action"]=="approve"
-        result=sql("""UPDATE b2_users SET approved=%s
-             WHERE id=%s AND approved=FALSE AND email_verification_required=FALSE
-               AND role='member' AND lower(email)<>%s RETURNING id""",
-            (approved,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()),True)
-        if not result:abort(409)
+        decision="approved" if approved else "rejected"
+        with connect() as c:
+            with c.cursor() as cur:
+                cur.execute("""UPDATE b2_users SET approved=%s,membership_status=%s
+                    WHERE id=%s AND approved=FALSE AND membership_status='pending'
+                    AND email_verification_required=FALSE AND role='member'
+                    AND lower(email)<>%s RETURNING id""",
+                    (approved,decision,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()))
+                if not cur.fetchone():abort(409)
+                cur.execute("""INSERT INTO b2_admin_audit(actor,target,action,details)
+                    VALUES(%s,%s,%s,%s)""",
+                    (g.user["id"],int(uid),"member_"+decision,"member review"))
         return redirect("/members",303)
-    rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE AND email_verification_required=FALSE AND role='member' ORDER BY joined DESC LIMIT 100")
+    rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE AND membership_status='pending' AND email_verification_required=FALSE AND role='member' ORDER BY joined DESC LIMIT 100")
     html=''
     for u in rows:
         html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p>'+button_form(
@@ -747,10 +764,15 @@ def staff():
         role=request.form.get("role","")
         if not uid.isdecimal() or role not in ("member","moderator","member_manager","admin"):abort(400)
         if int(uid)==g.user["id"]:abort(400)
-        result=sql("""UPDATE b2_users SET role=%s
-            WHERE id=%s AND approved=TRUE AND lower(email)<>%s
-            RETURNING id""",(role,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()),True)
-        if not result:abort(409)
+        with connect() as c:
+            with c.cursor() as cur:
+                cur.execute("""UPDATE b2_users SET role=%s
+                    WHERE id=%s AND approved=TRUE AND lower(email)<>%s
+                    RETURNING id""",(role,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()))
+                if not cur.fetchone():abort(409)
+                cur.execute("""INSERT INTO b2_admin_audit(actor,target,action,details)
+                    VALUES(%s,%s,%s,%s)""",
+                    (g.user["id"],int(uid),"role_changed",role))
         return redirect("/staff",303)
     users=sql("""SELECT id,name,role FROM b2_users WHERE approved=TRUE
         AND id<>%s ORDER BY name LIMIT 150""",(g.user["id"],))
