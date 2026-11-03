@@ -161,6 +161,30 @@ class AIVideoTests(unittest.TestCase):
             _video_result_url([{'url':'https://evil.com/gradio_api/file=x'}],
                               expected_host='lightricks-ltx-2-5.hf.space')
 
+    def test_long_uneven_narration_is_planned_before_spending_public_gpu(self):
+        # One original clause is repeated as genuinely new camera angles.
+        # Server must use the DIVIDED per-shot weight, like the phone,
+        # not count the full original clause again for every angle.
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder); audio=root/'mix.mp3'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i','sine=frequency=440:duration=39',
+                '-c:a','libmp3lame',str(audio)],check=True,timeout=30)
+            called=[]
+            def quota_mock(prompt):
+                called.append(prompt)
+                raise AIVideoUnavailable('fake external quota')
+            with self.assertRaisesRegex(AIVideoUnavailable,
+                                        'fake external quota'):
+                generate_ai_story(
+                    'האיש נופל. אחר כך המשאית נוסעת בכביש '
+                    'ועוצרת ברמזור ואנשים צוחקים בקול רם.',
+                    audio,root/'story.mp4',root/'generated',
+                    generator=quota_mock)
+            self.assertEqual(len(called),1,
+                'A valid duration plan must reach the provider, not fail preflight')
+            self.assertFalse((root/'story.mp4').exists())
+
     def test_short_public_clip_stops_before_wasting_followup_gpu_requests(self):
         with tempfile.TemporaryDirectory() as folder:
             root=pathlib.Path(folder);audio=root/'mix.mp3'
