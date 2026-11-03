@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#110a20">
+<meta name="description" content="התקנת Kolbo Trance לאנדרואיד, הורדת APK או הוספת האפליקציה למסך הבית.">
+<link rel="manifest" href="/studio.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/studio-icon.svg">
+<title>Kolbo Trance · הורדה והתקנה</title>
+<style>
+:root{font-family:Arial,"Noto Sans Hebrew",sans-serif;color-scheme:dark;background:#0c0815;color:#f7f1ff}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:radial-gradient(ellipse at 20% 0%,#432669 0,transparent 55%),radial-gradient(ellipse at 85% 85%,#182960 0,transparent 45%),#0c0815;display:grid;place-items:center;padding:18px}
+main{width:min(100%,620px);background:#211832;border:1px solid #65517c;border-radius:24px;padding:clamp(20px,5vw,36px);box-shadow:0 24px 62px #04030877}
+.brand{display:flex;align-items:center;gap:12px;color:#dac2fb;font-weight:800;letter-spacing:1px}
+.brand img{width:65px;height:65px;object-fit:contain}
+h1{font-size:clamp(29px,7vw,44px);line-height:1.25;margin:18px 0 12px}
+h1 span{color:#e5acff}
+p{color:#d5c9e7;line-height:1.8;margin:10px 0}
+.options{display:grid;gap:13px;margin-top:26px}
+.action{border:1px solid #806ca1;border-radius:14px;min-height:58px;padding:14px 16px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:1.06rem;font-weight:800;cursor:pointer;text-decoration:none;font-family:inherit}
+.primary{background:linear-gradient(110deg,#e2a2ff,#9babff);color:#21102e;border:0}
+.secondary{background:#382a51;color:#f9efff}
+button.action{width:100%}
+small,.note{display:block;color:#cbb9df;font-size:.91rem;line-height:1.8}
+.note{margin:18px 0 0;border:1px solid #58486a;border-radius:12px;padding:12px}
+footer{margin-top:22px;border-top:1px solid #504265;padding-top:18px}
+footer a{color:#e5bdff}
+:focus-visible{outline:3px solid #ffd9ff;outline-offset:4px}
+[hidden]{display:none!important}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<main>
+<div class="brand"><img src="/studio-icon.svg" alt="" width="65" height="65">KOLBO TRANCE</div>
+<h1>האפליקציה שלך.<br><span>הורדה והתקנה במקום אחד.</span></h1>
+<p>מיקס טראנס, אפקטים וסרטונים מהקלטות ושיתופים. בחר איך להתקין בנייד, או פתח את האולפן בדפדפן.</p>
+<div class="options">
+<a class="action primary" id="downloadApk" href="https://github.com/kolbomusic/kolbo-android-app/releases/download/trance-story-v2.4.9-beta.1/Kolbo-Trance-Story-v2.4.9-beta.1.apk" rel="noopener noreferrer">⬇ הורדת אפליקציית Android — APK</a>
+<small>גרסת Android 2.4.9 Beta · קובץ התקנה ממאגר GitHub של Kolbo · ההתקנה מתבצעת באנדרואיד לאחר הורדת הקובץ.</small>
+<button class="action secondary" id="installPwa" type="button">התקנה ממסך הדפדפן (PWA)</button>
+<a class="action secondary" href="/studio">פתיחת האפליקציה בלי התקנה</a>
+</div>
+<div class="note" id="installHelp" role="status" aria-live="polite">להתקנת PWA פתח עמוד זה ב־Chrome בטלפון. אם לא מופיעה בקשת התקנה, בתפריט ⋮ בחר ״התקנת אפליקציה״ או ״הוספה למסך הבית״.</div>
+<footer><p>ההורדה וההתקנה אינן מפעילות יצירה ואינן מעלות קבצים. יצירת וידאו AI מתקדם תלויה בזמינות מנועים חיצוניים.</p><a href="https://github.com/kolbomusic/kolbo-android-app/releases" rel="noopener noreferrer">כל גרסאות Android ב־GitHub</a></footer>
+</main>
+<script>
+(function(){
+"use strict";
+var promptEvent=null;
+var button=document.getElementById("installPwa");
+var help=document.getElementById("installHelp");
+window.addEventListener("beforeinstallprompt",function(event){
+ event.preventDefault();promptEvent=event;
+ help.textContent="אפשר להתקין את גרסת הדפדפן ישירות באמצעות הכפתור.";
+});
+window.addEventListener("appinstalled",function(){
+ promptEvent=null;help.textContent="גרסת הדפדפן הותקנה במכשיר.";
+});
+button.addEventListener("click",async function(){
+ if(promptEvent){
+  var event=promptEvent;promptEvent=null;
+  try{await event.prompt();await event.userChoice;}catch(e){
+   help.textContent="לא ניתן להפעיל את חלונית ההתקנה. בתפריט ⋮ של Chrome בחר ״התקנת אפליקציה״.";
+  }
+ }else{
+  help.textContent="בתפריט ⋮ של Chrome בחר ״התקנת אפליקציה״ או ״הוספה למסך הבית״. להורדת קובץ Android לחץ על הכפתור העליון.";
+ }
+});
+if("serviceWorker" in navigator){
+ navigator.serviceWorker.register("/studio-sw.js",{scope:"/"}).catch(function(){});
+}
+})();
+</script>
+</body>
+</html>
