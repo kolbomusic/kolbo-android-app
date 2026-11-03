@@ -51,6 +51,53 @@ assert c.get("/health",base_url=base).get_json()["email_delivery_release_verifie
 """],cwd=APP,env=isolated_env,capture_output=True,text=True,timeout=30)
 assert lock_test.returncode==0,(lock_test.stdout,lock_test.stderr[-1200:])
 
+# Validate both provider adapters without making any outbound request.
+# Verify that an API key alone cannot enable public registration.
+for name, key_name, other_key, expected_endpoint in (
+    ("brevo","BARKAN_BREVO_API_KEY","BARKAN_RESEND_API_KEY",
+     "https://api.brevo.com/v3/smtp/email"),
+    ("resend","BARKAN_RESEND_API_KEY","BARKAN_BREVO_API_KEY",
+     "https://api.resend.com/emails"),
+):
+    mail_env=dict(os.environ)
+    mail_env[key_name]="synthetic-test-api-key"
+    mail_env.pop(other_key,None)
+    mail_env["BARKAN_MAIL_DELIVERY_VERIFIED"]="0"
+    provider_test=subprocess.run([sys.executable,"-c", """
+import json
+import unittest.mock as mock
+import app
+assert app.EMAIL_TRANSPORT == "EXPECTED_PROVIDER"
+assert app.MAIL_READY and not app.MAIL_DELIVERY_VERIFIED
+assert not app.ALLOW_SIGNUP
+from urllib.request import Request
+class MockResponse:
+    status=201
+    def __enter__(self):return self
+    def __exit__(self,*args):pass
+def capture(request,timeout):
+    assert isinstance(request,Request)
+    assert request.full_url=="EXPECTED_ENDPOINT"
+    assert timeout==7
+    payload=json.loads(request.data.decode())
+    assert payload["subject"]=="אימות דוא״ל — הקרנפים / ברקן"
+    if app.EMAIL_TRANSPORT=="brevo":
+        assert payload["sender"]["email"]=="noreply@example.test"
+        assert payload["to"]==[{"email":"synthetic.member@example.test"}]
+        assert "htmlContent" in payload
+    else:
+        assert payload["from"]=="noreply@example.test"
+        assert payload["to"]==["synthetic.member@example.test"]
+        assert "html" in payload
+    return MockResponse()
+with mock.patch("urllib.request.urlopen",side_effect=capture):
+    assert app.send_verification("synthetic.member@example.test",1)
+assert app.sql("SELECT COUNT(*) AS n FROM b2_tokens WHERE user_id=1",one=True)["n"]==1
+""" .replace("EXPECTED_PROVIDER",name).replace("EXPECTED_ENDPOINT",expected_endpoint)],
+       cwd=APP,env=mail_env,capture_output=True,text=True,timeout=30)
+    assert provider_test.returncode==0,(
+        name,provider_test.stdout,provider_test.stderr[-1500:])
+
 import app as site
 assert site.PUBLIC_AUTH and site.ALLOW_SIGNUP and site.MAIL_DELIVERY_VERIFIED
 legacy=site.sql("SELECT id,passhash,approved FROM b2_users WHERE email=%s",
