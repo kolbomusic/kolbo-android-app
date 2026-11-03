@@ -83,6 +83,7 @@ public final class MainActivity extends Activity {
     private int automaticRetries=0;
     private boolean pageReady;
     private boolean pageLoadFailed;
+    private long readinessPollingNavigation=-1;
     private android.webkit.ValueCallback<Uri[]> fileCallback;
 
     @Override public void onCreate(Bundle state){
@@ -126,6 +127,14 @@ public final class MainActivity extends Activity {
         startupMessage.setGravity(Gravity.CENTER);
         startupPanel.addView(startupMessage,new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button browserStartup=new Button(this);
+        browserStartup.setText("פתיחה בדפדפן במקרה של בעיית טעינה");
+        browserStartup.setAllCaps(false);
+        browserStartup.setOnClickListener(v->openStudioInBrowser());
+        LinearLayout.LayoutParams browserStartupLayout=new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
+        browserStartupLayout.setMargins(0,20,0,0);
+        startupPanel.addView(browserStartup,browserStartupLayout);
         stage.addView(startupPanel,new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
         offlinePanel=new LinearLayout(this);
@@ -155,6 +164,12 @@ public final class MainActivity extends Activity {
         retry.setTextSize(16f);
         retry.setOnClickListener(v->beginLoad(true));
         offlinePanel.addView(retry,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button browserOffline=new Button(this);
+        browserOffline.setText("פתח את האולפן בדפדפן");
+        browserOffline.setAllCaps(false);
+        browserOffline.setOnClickListener(v->openStudioInBrowser());
+        offlinePanel.addView(browserOffline,new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
         stage.addView(offlinePanel,new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         WebSettings settings=webView.getSettings();
@@ -237,24 +252,12 @@ public final class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view,String url){
                 if(pageLoadFailed||url==null||!url.startsWith(STUDIO))return;
                 final long token=navigationId;
-                // HTTP success is not enough. Check the actual studio DOM
-                // before hiding the loader or importing WhatsApp media.
-                view.evaluateJavascript(
-                    "(function(){return !!(document.body&&document.getElementById('generate')&&document.getElementById('result')&&document.querySelector('main')&&typeof window.kolboImportSharedAudio==='function'&&typeof window.kolboCanImportSharedAudio==='function'&&document.getElementById('generate').onclick);})()",
-                    result->{
-                        if(token!=navigationId||pageLoadFailed)return;
-                        if("true".equals(result)){
-                            pageReady=true;
-                            automaticRetries=0;
-                            loading.setVisibility(View.GONE);
-                            startupPanel.setVisibility(View.GONE);
-                            offlinePanel.setVisibility(View.GONE);
-                            importIncoming(); // import does not start creation
-                            importSharedLink(); // URL is only placed in UI
-                        }else{
-                            recoverConnection("השרת השיב דף ללא ממשק היצירה.");
-                        }
-                    });
+                // A finished network load does not guarantee that the page's
+                // JavaScript handlers are ready in Android WebView. Poll
+                // for readiness instead of failing after one early callback.
+                if(readinessPollingNavigation==token)return;
+                readinessPollingNavigation=token;
+                pollStudioReady(token,0);
             }
             @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,SslError error){
                 handler.cancel();
@@ -262,7 +265,7 @@ public final class MainActivity extends Activity {
             }
             @Override public void onReceivedHttpError(WebView view,WebResourceRequest req,
                                                       WebResourceResponse response){
-                if(req.isForMainFrame()&&response.getStatusCode()>=500){
+                if(req.isForMainFrame()&&response.getStatusCode()>=400){
                     recoverConnection("שרת היצירה אינו זמין זמנית (HTTP "+response.getStatusCode()+").");
                 }
             }
@@ -277,6 +280,45 @@ public final class MainActivity extends Activity {
         beginLoad(false);
     }
 
+
+    private void openStudioInBrowser(){
+        try{
+            startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(STUDIO)));
+        }catch(Exception ex){
+            toast("לא ניתן לפתוח את הדפדפן במכשיר");
+        }
+    }
+
+    private void pollStudioReady(final long token,final int attempt){
+        if(token!=navigationId||pageReady||pageLoadFailed)return;
+        webView.evaluateJavascript(
+            "(function(){try{var button=document.getElementById('generate');" +
+            "return !!(document.body&&document.querySelector('main')&&" +
+            "document.getElementById('result')&&button&&" +
+            "typeof window.kolboImportSharedAudio==='function'&&" +
+            "typeof window.kolboCanImportSharedAudio==='function'&&" +
+            "typeof button.onclick==='function');}catch(e){return false}})()",
+            response->{
+                if(token!=navigationId||pageReady||pageLoadFailed)return;
+                if("true".equals(response)){
+                    pageReady=true;
+                    automaticRetries=0;
+                    loading.setVisibility(View.GONE);
+                    startupPanel.setVisibility(View.GONE);
+                    offlinePanel.setVisibility(View.GONE);
+                    importIncoming(); // WhatsApp share only imports, never auto-creates
+                    importSharedLink();
+                }else if(attempt<35){
+                    if(attempt==8){
+                        startupMessage.setText("האולפן נפתח. מכין רכיבי יצירה ושיתוף...");
+                    }
+                    mainHandler.postDelayed(()->pollStudioReady(token,attempt+1),700);
+                }else{
+                    recoverConnection("ממשק היצירה לא סיים להיטען במכשיר. ניתן גם לפתוח בדפדפן.");
+                }
+            });
+    }
+
     private void beginLoad(boolean manuallyRequested){
         if(manuallyRequested){
             automaticRetries=0;
@@ -284,6 +326,7 @@ public final class MainActivity extends Activity {
             webView.clearCache(true);
         }
         final long current=++navigationId;
+        readinessPollingNavigation=-1;
         pageReady=false;
         pageLoadFailed=false;
         offlinePanel.setVisibility(View.GONE);
@@ -313,7 +356,10 @@ public final class MainActivity extends Activity {
             startupPanel.setVisibility(View.VISIBLE);
             startupMessage.setText(reason+" מנסה להתחבר פעם נוספת...");
             mainHandler.postDelayed(()->{
-                if(navigationId==failedNavigation&&!pageReady)beginLoad(false);
+                if(navigationId==failedNavigation&&!pageReady){
+                    webView.clearCache(true); // discard a stale partial page
+                    beginLoad(false);
+                }
             },6500);
         }else{
             showOffline(reason);
