@@ -1,0 +1,86 @@
+name: Kolbo production 125s original voice upload acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - kolbo-trance-studio-20261031
+    paths:
+      - '.github/workflows/kolbo-trance-live-125s-acceptance.yml'
+permissions:
+  contents: read
+jobs:
+  public-long-voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install public test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install --disable-pip-version-check requests
+      - name: Generate non-personal synthetic 125-second Opus voice
+        run: |
+          ffmpeg -nostdin -v error -y -f lavfi -i 'sine=frequency=337:duration=125:sample_rate=48000' -filter:a 'volume=0.4' -ac 1 -c:a libopus -b:a 48k /tmp/kolbo-live-125s.opus
+          test -s /tmp/kolbo-live-125s.opus
+      - name: Verify actual production service processes more than 120 seconds
+        run: |
+          python - <<'PY'
+          import requests,time,subprocess
+          base='https://kolbo-trance-studio.onrender.com'
+          session=requests.Session()
+          for retry in range(18):
+              try:
+                  health=session.get(base+'/health',timeout=25).json()
+                  if health.get('version')=='1.15.2' and health.get('ok') is True:
+                      break
+              except (requests.RequestException,ValueError):
+                  pass
+              time.sleep(10)
+          else:
+              raise AssertionError('Production server has not served backend 1.15.2')
+          entry=session.get(base+'/studio',timeout=45)
+          entry.raise_for_status()
+          assert 'id="generate"' in entry.text
+          with open('/tmp/kolbo-live-125s.opus','rb') as original:
+              response=session.post(base+'/api/jobs',
+                  files={'audio':('synthetic-125s.opus',original,'audio/ogg')},
+                  data={'humor':'off','make_video':'off','video_requested':'off','seconds':'0'},
+                  timeout=75)
+          assert response.status_code==202,(response.status_code,response.text[:240])
+          job=response.json()
+          assert job.get('status_url','').startswith('/api/jobs/')
+          deadline=time.monotonic()+420
+          while time.monotonic()<deadline:
+              time.sleep(4)
+              progress=session.get(base+job['status_url'],timeout=35)
+              progress.raise_for_status()
+              state=progress.json()
+              if state.get('state')=='error':
+                  raise AssertionError('Public 125s input failed: '+str({
+                      'code':state.get('error_code'),
+                      'stage':state.get('error_stage'),
+                      'message':state.get('message')}))
+              if state.get('state')=='done':
+                  assert float(state.get('audio_seconds',0))>=125,state
+                  assert state.get('voice_coverage')=='full',state
+                  download=session.get(base+state['download_url'],timeout=90)
+                  download.raise_for_status()
+                  assert len(download.content)>25000,'MP3 output is missing'
+                  with open('/tmp/kolbo-live-125s-mix.mp3','wb') as output:
+                      output.write(download.content)
+                  duration=float(subprocess.check_output([
+                      'ffprobe','-v','error','-show_entries','format=duration',
+                      '-of','default=nokey=1:noprint_wrappers=1',
+                      '/tmp/kolbo-live-125s-mix.mp3'],text=True).strip())
+                  assert duration>=125,('Output truncated at two minutes',duration)
+                  print('LIVE_RENDER_125_SECOND_SOURCE_FULL_MP3_PASS',
+                        'mix_duration=',round(duration,2),
+                        'backend=',health['version'])
+                  break
+          else:
+              raise AssertionError('Long voice source job did not finish within free server budget')
+          PY
