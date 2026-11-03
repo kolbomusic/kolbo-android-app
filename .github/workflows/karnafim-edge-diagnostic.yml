@@ -25,4 +25,18 @@ jobs:
               "https://karnafim-community-46.onrender.com$path"
             printf 'CURL_EXIT=%s\n' "$?"
           done
+          for path in /moderation /members /team /inbox /memorial-sources /memorial-source-review; do
+            printf 'CHECK PRIVATE %s\\n' "$path"
+            check="$(curl --http1.1 --location --silent --show-error \\
+              --connect-timeout 10 --max-time 25 \\
+              --output /dev/null \\
+              --write-out '%{http_code}|%{url_effective}' \\
+              "https://karnafim-community-46.onrender.com$path")"
+            printf 'PRIVATE_STATUS=%s\\n' "$check"
+            if [ "$check" != "200|https://karnafim-community-46.onrender.com/login" ]; then
+              echo "PRIVATE_ROUTE_NOT_VERIFIED: $path"
+              exit 1
+            fi
+          done
+          echo "PASS: private routes redirect anonymous visitors to login."
           echo "Diagnostic only. No authentication or writes were performed."
