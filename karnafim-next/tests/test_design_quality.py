@@ -78,6 +78,12 @@ r=c.get("/memorial",base_url=base)
 assert r.status_code==302
 assert r.headers["Location"]=="https://karnafim-community-46.onrender.com/memorial"
 assert c.get("/health",base_url=base).status_code==200
+# Private requests and links with sensitive query data must remain local.
+for path in ("/verify-email?token=secret", "/login", "/signup",
+             "/profile", "/inbox", "/media/42", "/ready"):
+    blocked=c.get(path,base_url=base)
+    assert blocked.status_code!=302,(path,blocked.status_code)
+assert c.get("/memorial?token=secret",base_url=base).status_code==200
 '''],cwd=ROOT,env=handoff_env,capture_output=True,text=True,timeout=20)
 assert handoff.returncode==0,(handoff.stdout,handoff.stderr[-2000:])
 
