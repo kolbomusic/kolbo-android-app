@@ -33,6 +33,8 @@ jobs:
       BARKAN_SAFETY_RELEASE_APPROVED: '1'
       BARKAN_PUBLIC_AUTH: '1'
       BARKAN_ALLOW_SIGNUP: '1'
+      # Synthetic delivery is mocked inside this disposable integration test.
+      BARKAN_MAIL_DELIVERY_VERIFIED: '1'
       BARKAN_RESEND_API_KEY: synthetic-no-outbound-email
       BARKAN_MAIL_FROM: Synthetic <noreply@example.test>
       BARKAN_ADMIN_EMAIL: admin@example.test
