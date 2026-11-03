@@ -794,7 +794,9 @@ if($('make_video').checked&&$('video_strategy').value==='new_story'&&!$('ai_vide
  return;
 }
 active=true;markStage('upload');$('generate').disabled=true;$('progress').hidden=false;$('progress').value=1;
-$('result').classList.remove('visible');
+// Keep any previously completed MP3/MP4 visible if this NEW request
+// is rejected as busy; the selected original and downloads are retained.
+if(!resultBlob&&!videoServerUrl)$('result').classList.remove('visible');
 var wantsVideo=$('make_video').checked;
 var videoAllowed=wantsVideo, recognized='', videoReason='';
 try{
