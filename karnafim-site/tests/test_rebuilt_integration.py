@@ -386,14 +386,24 @@ with site.app.test_client() as browser:
     # Recommendation code and applicant identity are not exposed in public URLs.
     assert "synthetic-private-code" not in browser.get("/",base_url=ORIGIN).get_data(as_text=True)
 
+    assert "הכוונת בדיקה מקומית" in browser.get(
+        "/moderation",base_url=ORIGIN).get_data(as_text=True)
     r=browser.post("/moderation",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
+    assert r.status_code==400,"Sensitive photo should require human verified check"
+    assert site.sql("SELECT status FROM b2_posts WHERE id=%s",(post["id"],),True)["status"]=="pending"
+    r=browser.post("/moderation",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish",
+        "human_verified":"yes"})
     assert r.status_code==303
     assert site.sql("SELECT status FROM b2_posts WHERE id=%s",(post["id"],),True)["status"]=="published"
     assert browser.get("/feed",base_url=ORIGIN).status_code==200
     assert "סיפור מוקלט ניסיוני" not in browser.get("/voices",base_url=ORIGIN).get_data(as_text=True)
     assert browser.post("/moderation",base_url=ORIGIN,data={
-        "csrf":get_csrf(browser),"id":str(voice_post["id"]),"action":"publish"}).status_code==303
+        "csrf":get_csrf(browser),"id":str(voice_post["id"]),"action":"publish"}).status_code==400
+    assert browser.post("/moderation",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(voice_post["id"]),"action":"publish",
+        "human_verified":"yes"}).status_code==303
     archive=browser.get("/voices?cohort=2003-11",base_url=ORIGIN)
     assert archive.status_code==200
     assert "סיפור מוקלט ניסיוני" in archive.get_data(as_text=True)
@@ -586,6 +596,11 @@ with site.app.test_client() as browser:
     # The moderator can still inspect the evidence for appeals/decisions.
     assert browser.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==200
 
+    # Verified memorial claims always require a real human, even if the
+    # optional local rule-based auto-publication switch is on.
+    assert site.moderate_submission(
+        "לזכר יוני שרעבי", "סיפור היסטורי על חבר שנפל בקרב. "*9,
+        "story", [], True)[0]=="pending"
     # Conservative zero-cost automated moderator: explicit, explainable,
     # no automatic identity approval or image/audio content moderation.
     assert site.moderate_submission("טקסט", "קצר", "story", [], True)[0]=="pending"

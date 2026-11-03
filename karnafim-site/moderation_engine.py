@@ -131,20 +131,32 @@ def parse_verdict(result: dict[str, Any], has_media: bool, model: str) -> Verdic
     reason = str(result.get("reason_he", ""))[:240].strip()
     if not reason:
         reason = "יש צורך בבדיקת תוכן נוספת."
+    # An AI verdict can never itself publish or reject uploaded media.
+    # Rights, identities, and the factual accuracy of memorial content require
+    # a human decision, regardless of confidence returned by a provider.
+    if has_media:
+        return Verdict("held", "קבצים ותצלומים מחייבים בדיקת מנהל, אימות זהות וזכויות שימוש.", model, True)
     if choice == "reject" and conf >= 0.98 and set(flags) & {
             "sexual", "hate", "harassment", "graphic_violence", "pii",
             "security_sensitive", "impersonation", "external_contact"}:
         return Verdict("rejected", "התוכן כולל רכיב שאינו מתאים לפרסום בקהילה. יש להסירו ולנסות שוב.", model, True)
     if choice == "allow" and conf >= 0.98 and not flags:
         return Verdict("approved", "הפרסום אושר אוטומטית לאחר סריקה חכמה. הצהרת זכויות המעלה נשמרת כאחריותו.", model, True)
-    if has_media:
-        return Verdict("held", "המדיה נשמרה פרטית: בדיקת ה־AI לא ביססה אישור אוטומטי בביטחון גבוה.", model, True)
     return Verdict("held", "הבדיקה האוטומטית לא הצליחה לקבוע שהתוכן בטוח לפרסום ללא בדיקה נוספת.", model, True)
 
 def moderate(post: dict, files: list[dict]) -> Verdict:
     block = local_gate(post, files)
     if block:
         return Verdict("rejected", block)
+    # A server key alone must never authorize transferring private community
+    # content to an external model: opt-in is per submission and explicit.
+    if post.get("ai_consent") is not True:
+        return Verdict("held", "לא ניתנה הסכמה מפורשת לשליחת התוכן לספק AI; ממתין לבדיקת מנהל.")
+    from review_triage import review_hints
+    hints=review_hints(post.get("title",""),post.get("body",""),
+                       post.get("post_type","story"),[f.get("kind","") for f in files])
+    if hints.manual_confirmation or files:
+        return Verdict("held", "תוכן רגיש או מדיה מחייבים בדיקת מנהל ולא נשלחים לשירות AI חיצוני.")
     if not configured():
         return Verdict("pending_ai", "הפרסום נשמר באופן פרטי. מנוע ביקורת ה־AI עדיין אינו מחובר או אינו זמין.")
     model = os.environ.get("KARNAFIM_GEMINI_MODEL", MODEL_DEFAULT)

@@ -1,0 +1,70 @@
+name: Karnafim reviewed publishing and AI privacy checks
+on:
+  push:
+    branches: [karnafim-safe-review-and-backup-report-20261103]
+    paths:
+      - 'karnafim-site/**'
+      - '.github/workflows/karnafim-reviewed-publishing-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safe-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BARKAN_PUBLIC_AUTH: '0'
+      BARKAN_SAFETY_RELEASE_APPROVED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r karnafim-site/requirements.txt
+      - name: Verify source compiles
+        run: python -m compileall -q karnafim-site
+      - name: Test local moderator guidance
+        run: python karnafim-site/tests/test_review_triage.py
+      - name: Test fail-closed optional AI
+        run: python karnafim-site/tests/test_ai_consent_safety.py
+      - name: Verify anonymous privacy and RTL
+        run: python karnafim-site/tests/test_rebuilt_design.py
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: barkan_ci
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: barkan_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U barkan_ci -d barkan_ci"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql://barkan_ci:synthetic_ci_only@localhost:5432/barkan_ci
+      BARKAN_DATABASE_URL: postgresql://barkan_ci:synthetic_ci_only@localhost:5432/barkan_ci
+      BARKAN_SESSION_SECRET: synthetic-tests-never-live
+      BARKAN_PUBLIC_ORIGIN: https://karnafim-community-46.onrender.com
+      BARKAN_PUBLIC_AUTH: '1'
+      BARKAN_SAFETY_RELEASE_APPROVED: '1'
+      BARKAN_ALLOW_SIGNUP: '1'
+      BARKAN_MAIL_DELIVERY_VERIFIED: '1'
+      BARKAN_RESEND_API_KEY: synthetic-test-mock-no-network
+      BARKAN_MAIL_FROM: noreply@example.test
+      BARKAN_ADMIN_EMAIL: admin@example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r karnafim-site/requirements.txt
+      - name: Check all member workflows and high-risk moderation confirmations
+        run: python karnafim-site/tests/test_rebuilt_integration.py
