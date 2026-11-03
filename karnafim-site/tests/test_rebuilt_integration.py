@@ -271,6 +271,27 @@ with site.app.test_client() as browser:
     assert r.status_code==303
     assert site.sql("SELECT COUNT(*) AS n FROM b2_messages",one=True)["n"]==1
     assert browser.get("/inbox",base_url=ORIGIN).status_code==200
+    # Private reunion calendar: only approved members see events,
+    # and only owner or delegated organizer can create/cancel them.
+    assert browser.get("/meetups",base_url=ORIGIN).status_code==200
+    create_event=browser.post("/meetups",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"title":"מפגש פלוגה ניסיוני",
+        "when":"2027-07-15T18:30","location":"מקום כללי",
+        "details":"אירוע בדיקה בלבד"})
+    assert create_event.status_code==303,(create_event.status_code,create_event.get_data(as_text=True)[:200])
+    meetup=site.sql("SELECT id,cancelled FROM b2_meetups ORDER BY id DESC LIMIT 1",one=True)
+    assert meetup and not meetup["cancelled"]
+    event_id=meetup["id"]
+    assert "מפגש פלוגה ניסיוני" in browser.get("/meetups",base_url=ORIGIN).get_data(as_text=True)
+    assert browser.post("/meetups/rsvp",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(event_id),"decision":"yes"}).status_code==303
+    assert site.sql("SELECT COUNT(*) AS n FROM b2_meetup_rsvps WHERE meetup_id=%s AND attending=TRUE",
+                    (event_id,),True)["n"]==1
+    assert browser.post("/meetups/rsvp",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(event_id),"decision":"no"}).status_code==303
+    assert site.sql("SELECT COUNT(*) AS n FROM b2_meetup_rsvps WHERE meetup_id=%s AND attending=TRUE",
+                    (event_id,),True)["n"]==0
+
     # Owner delegates moderation + invitations without membership approval.
     assert browser.get("/team",base_url=ORIGIN).status_code==200
     audit_start=site.sql("SELECT COUNT(*) AS n FROM b2_admin_audit",one=True)["n"]
@@ -289,6 +310,10 @@ with site.app.test_client() as browser:
     assert delegate.get("/invite",base_url=ORIGIN).status_code==200
     assert "wa.me" in delegate.get("/invite",base_url=ORIGIN).get_data(as_text=True)
     assert delegate.get("/moderation",base_url=ORIGIN).status_code==200
+    assert delegate.get("/meetups",base_url=ORIGIN).status_code==200
+    assert delegate.post("/meetups",base_url=ORIGIN,data={
+        "csrf":get_csrf(delegate),"title":"מפגש מורשה",
+        "when":"2027-08-11T20:00","location":"פארק ציבורי"}).status_code==303
     assert delegate.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==200
     assert delegate.get("/members",base_url=ORIGIN).status_code==403
     assert delegate.get("/team",base_url=ORIGIN).status_code==403
@@ -303,7 +328,16 @@ with site.app.test_client() as browser:
     assert "פעולות ניהול אחרונות" in browser.get("/team",base_url=ORIGIN).get_data(as_text=True)
     assert delegate.get("/invite",base_url=ORIGIN).status_code==403
     assert delegate.get("/moderation",base_url=ORIGIN).status_code==403
+    assert delegate.post("/meetups",base_url=ORIGIN,data={
+        "csrf":get_csrf(delegate),"title":"מפגש אסור",
+        "when":"2027-09-11T20:00"}).status_code==403
+    assert delegate.get("/meetups",base_url=ORIGIN).status_code==200
     assert delegate.get("/team",base_url=ORIGIN).status_code==403
+    # Owner can cancel a meetup, which rejects further attendance.
+    assert browser.post("/meetups/manage",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(event_id),"action":"cancel"}).status_code==303
+    assert browser.post("/meetups/rsvp",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(event_id),"decision":"yes"}).status_code==404
     # Owner never appears in delegation list and can't change own permissions.
     assert browser.post("/team",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(admin_id),"action":"revoke"}).status_code==403
@@ -342,6 +376,8 @@ assert c.get("/feed",base_url=origin).status_code==403
 assert c.get("/find",base_url=origin).status_code==403
 assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
 assert c.get("/inbox",base_url=origin).status_code==403
+assert c.get("/meetups",base_url=origin).status_code==403
+assert c.post("/meetups/rsvp",base_url=origin,data={"id":"1","decision":"yes"}).status_code==403
 profile=c.get("/profile",base_url=origin)
 assert profile.status_code==200
 assert "בקשת חברות בהמתנה לאישור" in profile.get_data(as_text=True)
