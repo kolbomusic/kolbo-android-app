@@ -330,6 +330,11 @@ def moderate_submission(title,body,kind,files,author_approved):
     # Never inspect and infer intent from image/audio bytes in this lightweight engine.
     if re.search(r"(?:https?://|www\.|t\.me/|wa\.me/|קנו עכשיו|להזמנות|מבצע מיוחד)",compact,re.I):
         return ("rejected","הפרסום כולל קישור או ביטוי מסחרי שאינו מתאים לארכיון הפלוגה. אפשר לערער אם זו הפניה למקור מורשת.", "")
+    # A rule-engine switch must never auto-publish memorial claims, personal
+    # data, or external references without verification by a real moderator.
+    hints=review_hints(title,body,kind)
+    if hints.manual_confirmation:
+        return ("pending","נדרש אימות אנושי: "+"; ".join(hints.reasons)[:340],"")
     if len(body.strip())<80:
         return ("pending","נדרש הקשר נוסף כדי לבדוק באופן מהימן את הסיפור.","")
     if re.search(r"(?:\b(?:05[0-9][\s-]?[0-9]{7}|[0-9]{2,3}[\s-]?[0-9]{7})\b|"
