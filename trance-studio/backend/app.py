@@ -18,6 +18,34 @@ MAX_COMBINED_UPLOAD=60*1024*1024
 AUTHORIZED_MUSIC_EXT={'.mp3','.wav','.ogg','.m4a'}
 MAX_BACKING_UPLOAD=15*1024*1024
 
+def _save_upload_stream(stream, dest, limit, total_limit, already_saved=0,
+                        expected_sha256=None):
+    """Store original source on disk in 256-KiB chunks, not a 45-MB RAM blob.
+
+    Waiting jobs can be spooled while the ONE CPU worker is rendering;
+    this must not add a 45-MiB in-memory buffer that risks another OOM.
+    """
+    maximum_chunk=256*1024
+    copied=0
+    digest=hashlib.sha256() if expected_sha256 is not None else None
+    with dest.open('wb') as output:
+        while True:
+            part=stream.read(maximum_chunk)
+            if not part:
+                break
+            copied+=len(part)
+            if copied>limit or already_saved+copied>total_limit:
+                raise ValueError('upload_limit')
+            output.write(part)
+            if digest is not None:
+                digest.update(part)
+    if copied<1:
+        raise ValueError('empty_upload')
+    if digest is not None and digest.hexdigest()!=expected_sha256:
+        raise ValueError('source_fingerprint_mismatch')
+    return copied
+
+
 def create_app(config=None):
     app=Flask(__name__,static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
@@ -656,22 +684,21 @@ def create_app(config=None):
             for i,file in enumerate(files):
                 extension=Path(file.filename).suffix.lower()
                 size_limit=MAX_VIDEO_UPLOAD if extension in VIDEO_UPLOADS else MAX_AUDIO_UPLOAD
-                content=file.stream.read(size_limit+1)
-                if not content or len(content)>size_limit:
-                    raise ValueError('גודל הקובץ חורג מהמגבלה לסוג המדיה')
-                total_bytes+=len(content)
-                if total_bytes>MAX_COMBINED_UPLOAD:
-                    raise ValueError('ההעלאה הכוללת גדולה מ־60MB')
-                # Fingerprint the exact original file received from WhatsApp
-                # or device storage. This is used to check that the voice ASR
-                # and mixing pipeline operate on the SAME uploaded bytes.
+                # Validate the optional WhatsApp source fingerprint first,
+                # then hash and spool each chunk as it arrives. A simultaneous
+                # heavy mix can be running within the same 512 MiB instance.
+                expected_hash=None
                 if source_hashes:
                     hashes=source_hashes.split(',')
                     if len(hashes)!=len(files) or not re.fullmatch('[a-f0-9]{64}',hashes[i]):
                         raise ValueError('source_fingerprint_invalid')
-                    if hashlib.sha256(content).hexdigest()!=hashes[i]:
-                        raise ValueError('source_fingerprint_mismatch')
-                path=directory/(str(i)+Path(file.filename).suffix.lower());path.write_bytes(content);paths.append(path)
+                    expected_hash=hashes[i]
+                path=directory/(str(i)+extension)
+                saved=_save_upload_stream(
+                    file.stream,path,size_limit,MAX_COMBINED_UPLOAD,
+                    already_saved=total_bytes,expected_sha256=expected_hash)
+                total_bytes+=saved
+                paths.append(path)
         except ValueError as exc:
             admission.release();shutil.rmtree(directory,ignore_errors=True)
             if str(exc).startswith('source_fingerprint'):
@@ -683,12 +710,11 @@ def create_app(config=None):
         backing_music_path=None
         if backing_file and backing_file.filename:
             try:
-                chunk=backing_file.stream.read(MAX_BACKING_UPLOAD+1)
-                if not chunk or len(chunk)>MAX_BACKING_UPLOAD or total_bytes+len(chunk)>MAX_COMBINED_UPLOAD:
-                    raise ValueError()
                 ext=Path(backing_file.filename).suffix.lower()
                 backing_music_path=directory/('licensed-backing'+ext)
-                backing_music_path.write_bytes(chunk)
+                _save_upload_stream(
+                    backing_file.stream,backing_music_path,MAX_BACKING_UPLOAD,
+                    MAX_COMBINED_UPLOAD,already_saved=total_bytes)
             except (OSError,ValueError):
                 admission.release();shutil.rmtree(directory,ignore_errors=True)
                 return jsonify(error='המוזיקה או סך הקבצים חורגים ממגבלת ההעלאה המורשית'),400
