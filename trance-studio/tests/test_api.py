@@ -159,4 +159,55 @@ class ApiTests(unittest.TestCase):
             time.sleep(.02)
         self.assertEqual(status['state'],'error')
 
+
+    def test_unreadable_audio_reports_codec_failure_not_false_duration(self):
+        bad=io.BytesIO(b'not-an-opus-recording-'*100)
+        response=self.client.post('/api/jobs',data={'humor':'off',
+            'audio':(bad,'voice.opus')})
+        self.assertEqual(response.status_code,202)
+        deadline=time.time()+30
+        while time.time()<deadline:
+            status=self.client.get(response.json['status_url']).json
+            if status['state'] in ('done','error'):break
+            time.sleep(.05)
+        self.assertEqual(status['state'],'error',status)
+        self.assertEqual(status['error_code'],'decode_failed',status)
+        self.assertEqual(status['error_stage'],'decode')
+        self.assertIn('לפענח',status['message'])
+        self.assertNotIn('120',status['message'])
+        self.assertNotIn('not-an-opus',status['message'])
+
+    def test_internal_dsp_failure_does_not_get_misreported_as_long_recording(self):
+        from unittest import mock
+        sample=np.sin(np.arange(16000)*2*np.pi*337/8000).astype(np.float32)
+        with mock.patch('app.load_audio',return_value=sample), \\
+             mock.patch('app.render_mix',side_effect=RuntimeError('private_dsp_detail')):
+            response=self.client.post('/api/jobs',data={'humor':'off',
+                'audio':(io.BytesIO(b'irrelevant'),'short.opus')})
+            self.assertEqual(response.status_code,202)
+            deadline=time.time()+20
+            while time.time()<deadline:
+                status=self.client.get(response.json['status_url']).json
+                if status['state'] in ('done','error'):break
+                time.sleep(.05)
+        self.assertEqual(status['state'],'error',status)
+        self.assertEqual(status['error_code'],'internal_processing_error',status)
+        self.assertEqual(status['error_stage'],'mix')
+        self.assertNotIn('120',status['message'])
+        self.assertNotIn('private_dsp_detail',status['message'])
+        self.assertTrue(status['error_ref'])
+
+    def test_silent_audio_decoder_returns_actionable_error(self):
+        from unittest import mock
+        import subprocess
+        from engine import load_audio,AudioDecodeError
+        with tempfile.TemporaryDirectory() as folder:
+            path=pathlib.Path(folder)/'silence.opus'
+            path.write_bytes(b'placeholder')
+            with mock.patch('engine.subprocess.run',return_value=subprocess.CompletedProcess([],0,stdout=b'',stderr=b'')):
+                with self.assertRaises(AudioDecodeError) as captured:
+                    load_audio(path)
+        self.assertEqual(captured.exception.code,'no_audio_stream')
+        self.assertIn('ערוץ שמע',str(captured.exception))
+
 if __name__=='__main__':unittest.main()
