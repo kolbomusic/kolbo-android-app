@@ -274,6 +274,7 @@ def layout(title,body):
 <header><div class="bar"><a class="logo" href="/">◈ הקרנפים <span>ברקן · פלוגה ב׳</span></a>
 <button id="toggle" type="button" aria-expanded="false" aria-controls="nav">☰ תפריט</button>
 <nav id="nav" aria-label="ניווט ראשי">'''+nav+'''</nav></div></header>
+<div id="site-connection-notice" class="site-connection-notice" role="status" aria-live="polite" hidden><span id="site-connection-message"></span> <button type="button" id="site-connection-retry">בדיקת חיבור מחדש</button></div>
 <main id="main" tabindex="-1">'''+banner+str(body)+'''</main>
 <footer><div><strong>הקרנפים / ברקן</strong><p>מיזם עצמאי של יוצאי פלוגה ב׳, גדוד 46, חטיבה 401. אינו אתר רשמי של צה״ל.</p></div>
 <nav aria-label="קישורי מדיניות"><a href="/privacy">פרטיות</a><a href="/terms">תנאי שימוש</a><a href="/safety">בטיחות</a><a href="/status">מצב המערכת</a></nav></footer>
