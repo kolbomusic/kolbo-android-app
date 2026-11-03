@@ -21,7 +21,7 @@ assert.match(html,/window\.kolboImportSharedAudio=function\(items\)/);
 assert.match(html,/\$\('generate'\)\.onclick=run/);
 assert.match(html,/if\(!fromShare&&!?\$\('linkRights'\)\.checked\)/);
 assert.match(html,/if\(socialImported&&!\$\('linkRights'\)\.checked\)/);
-assert.match(app,/video_strategy not in \('new_story','illustrated_story','remix_original','auto_legacy'\)/);
+assert.match(app,/video_strategy not in \('smart_story','new_story','illustrated_story','remix_original','auto_legacy'\)/);
 const importAt=script.indexOf('async function importSocialLink(fromShare)');
 const importEnd=script.indexOf('window.kolboImportSharedAudio=',importAt);
 assert.ok(importAt>0&&importEnd>importAt);
