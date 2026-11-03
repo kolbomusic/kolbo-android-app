@@ -286,7 +286,7 @@ def layout(title,body):
     u=g.user
     menu=[("/","בית"),("/heritage","מורשת"),("/memorial","הנצחה"),("/photos","תמונות"),("/about","על הקהילה"),("/help","עזרה")]
     if PUBLIC_AUTH and u:
-        menu += [("/feed","הקהילה"),("/voices","מורשת קולית"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
+        menu += [("/feed","הקהילה"),("/cohorts","ספר המחזורים"),("/voices","מורשת קולית"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
         permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
         if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
@@ -923,6 +923,66 @@ def voice_archive():
           opts+'</select></label><button class="primary">הצגת הקלטות</button></form>')
     return layout("מורשת קולית",'<div class="pagehead"><h1>הקולות והסיפורים של הפלוגה</h1><p>סיפורי שירות מוקלטים של חברים מאושרים, רק לאחר בדיקת תוכן. אין להקליט אחרים ללא הסכמתם או לחשוף מידע צבאי רגיש.</p><a class="primary" href="/new">שיתוף זיכרון קולי</a></div>'+form+
          (cards or '<div class="note">אין עדיין הקלטות מאושרות במחזור שנבחר.</div>'))
+
+
+COHORT_PATTERN=r"(19[9][0-9]|20[0-3][0-9])-(0[1-9]|1[0-2])"
+
+@app.get("/cohorts")
+@require_approved
+def cohort_directory():
+    """A member-only index derived exclusively from opt-in profiles and
+    previously approved records; never disclose non-opt-in member rosters."""
+    rows=sql("""SELECT cohort,COUNT(*) AS items FROM (
+        SELECT enlistment_cohort AS cohort FROM b2_users
+          WHERE approved=TRUE AND show_profile=TRUE AND enlistment_cohort<>''
+        UNION ALL
+        SELECT p.album_cohort AS cohort FROM b2_posts p
+          JOIN b2_users u ON u.id=p.author
+          WHERE p.status='published' AND u.approved=TRUE AND p.album_cohort<>''
+    ) indexed GROUP BY cohort ORDER BY cohort DESC LIMIT 120""")
+    cards=''.join('<a class="person" href="/cohorts/'+e(r["cohort"])+'"><h2>מחזור '+
+        e(r["cohort"])+'</h2><p>חברים שבחרו להופיע ותכני מורשת מאושרים · '+
+        str(r["items"])+' רשומות משויכות</p></a>' for r in rows)
+    return layout("ספר המחזורים",'<div class="pagehead"><h1>ספר מחזורי הפלוגה</h1><p>מרחב משותף לתמונות, סיפורים וקולות השירות. הספירה כוללת פרסומים ופרופילים גלויים בהסכמה — לא רשימת גיוס רשמית.</p></div><section class="people">'+
+        (cards or '<div class="note">עדיין אין מחזורים עם תכנים מאושרים או פרופילים שהסכימו להופיע.</div>')+
+        '</section><p><a href="/profile">עדכון המחזור והעדפות הפרטיות שלי</a></p>')
+
+@app.get("/cohorts/<cohort>")
+@require_approved
+def cohort_page(cohort):
+    if not re.fullmatch(COHORT_PATTERN,cohort):abort(404)
+    members=sql("""SELECT id,name,nickname,service_role,platoon FROM b2_users
+        WHERE approved=TRUE AND show_profile=TRUE AND enlistment_cohort=%s
+        ORDER BY name LIMIT 60""",(cohort,))
+    posts=sql("""SELECT p.id,p.title,p.body,p.kind,p.year_text,u.name
+        FROM b2_posts p JOIN b2_users u ON u.id=p.author
+        WHERE p.album_cohort=%s AND p.status='published' AND u.approved=TRUE
+        ORDER BY p.created DESC,p.id DESC LIMIT 50""",(cohort,))
+    member_cards=''
+    for u in members:
+        context=' · '.join(e(v) for v in (u["nickname"],u["service_role"],u["platoon"]) if v)
+        member_cards+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+context+'</p><a href="/chat/'+str(u["id"])+'">הודעה פרטית</a></article>'
+    photo_count=0
+    voice_count=0
+    stories=''
+    for p in posts:
+        files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s ORDER BY id LIMIT 4",(p["id"],))
+        images=[x for x in files if x["kind"]=="image"]
+        audio=[x for x in files if x["kind"]=="audio"]
+        photo_count+=len(images)
+        voice_count+=len(audio)
+        stories+='<article class="post"><h3>'+e(p["title"])+'</h3><p>'+e(p["name"])+' · '+e(p["year_text"])+'</p><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div></article>'
+    empty='<div class="note">אין עדיין פרסומים מאושרים במחזור הזה.</div>'
+    quick=('<nav class="album-nav" aria-label="קישורי מחזור">'
+           '<a class="outline" href="/photos?cohort='+e(cohort)+'">אלבום התמונות ('+str(photo_count)+')</a> '
+           '<a class="outline" href="/voices?cohort='+e(cohort)+'">הקלטות ('+str(voice_count)+')</a> '
+           '<a class="outline" href="/find?cohort='+e(cohort)+'">איתור חברים</a> '
+           '<a class="outline" href="/meetups">לוח מפגשים כללי</a></nav>')
+    return layout("מחזור "+cohort,'<div class="pagehead"><h1>מחזור גיוס '+e(cohort)+'</h1><p>הזיכרונות והחברים של המחזור במקום אחד. המפגשים הם כלל-פלוגתיים, ואינם משויכים אוטומטית למחזור.</p></div>'+quick+
+        '<section class="story"><h2>חברים שבחרו להופיע ('+str(len(members))+')</h2><div class="people">'+
+        (member_cards or '<div class="note">אף חבר במחזור לא בחר עדיין להציג פרופיל.</div>')+
+        '</div></section><section class="story"><h2>סיפורים ותיעוד ('+str(len(posts))+')</h2>'+
+        (stories or empty)+'</section><p><a class="primary" href="/new">הוספת זיכרון לביקורת</a> <a href="/cohorts">בחזרה לספר המחזורים</a></p>')
 
 @app.get("/find")
 @require_approved
