@@ -167,6 +167,7 @@ def before():
         "/privacy", "/terms", "/safety", "/status"
     ))
     if (os.environ.get("BARKAN_CANONICAL_HANDOFF","0")=="1"
+            and not PUBLIC_AUTH and not session.get("uid")
             and request.method=="GET" and request.path in public_handoff_routes
             and not request.query_string):
         return redirect("https://karnafim-community-46.onrender.com"+request.path,code=302)
