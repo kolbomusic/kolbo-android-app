@@ -147,17 +147,54 @@ class ApiTests(unittest.TestCase):
                 self.assertTrue(pathlib.Path(opts['backing_music_path']).is_file())
                 self.assertEqual(pathlib.Path(opts['backing_music_path']).stat().st_size,10000)
 
-    def test_long_recording_is_rejected_before_render(self):
+    def test_121_second_whatsapp_voice_no_longer_gets_rejected_or_truncated(self):
         import subprocess
-        content=subprocess.check_output(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=337:duration=121','-c:a','libopus','-f','opus','pipe:1'])
-        r=self.client.post('/api/jobs',data={'audio':(io.BytesIO(content),'long.opus')})
+        from unittest import mock
+        from engine import load_audio
+        content=subprocess.check_output(['ffmpeg','-v','error','-f','lavfi',
+            '-i','sine=frequency=337:duration=121','-c:a','libopus',
+            '-f','opus','pipe:1'])
+        with tempfile.TemporaryDirectory() as folder:
+            path=pathlib.Path(folder)/'voice.opus'
+            path.write_bytes(content)
+            audio=load_audio(path)
+        self.assertGreater(len(audio),120*32000)
+        self.assertLessEqual(len(audio),300*32000)
+        # This test verifies that API intake preserves the complete audio.
+        # A short mocked DSP result avoids spending several minutes in CI.
+        proof=np.zeros((32000,2),dtype=np.float32)
+        voice=np.zeros(32000,dtype=np.float32)
+        with mock.patch('app.render_mix',return_value=(proof,voice)) as mix:
+            r=self.client.post('/api/jobs',data={'humor':'off',
+                'audio':(io.BytesIO(content),'voice.opus')})
+            self.assertEqual(r.status_code,202)
+            deadline=time.time()+45
+            while time.time()<deadline:
+                status=self.client.get(r.json['status_url']).json
+                if status['state'] in ('done','error'):break
+                time.sleep(.05)
+            self.assertEqual(status['state'],'done',status)
+            self.assertTrue(mix.called)
+            original_clips=mix.call_args.args[0]
+            self.assertEqual(len(original_clips),1)
+            self.assertGreater(len(original_clips[0]),120*32000)
+
+    def test_over_five_minutes_reports_actual_duration_violation(self):
+        import subprocess
+        content=subprocess.check_output(['ffmpeg','-v','error','-f','lavfi',
+            '-i','sine=frequency=337:duration=301','-c:a','libopus',
+            '-f','opus','pipe:1'])
+        r=self.client.post('/api/jobs',data={'humor':'off',
+            'audio':(io.BytesIO(content),'too-long.opus')})
         self.assertEqual(r.status_code,202)
-        deadline=time.time()+30
+        deadline=time.time()+45
         while time.time()<deadline:
             status=self.client.get(r.json['status_url']).json
             if status['state'] in ('done','error'):break
-            time.sleep(.02)
-        self.assertEqual(status['state'],'error')
+            time.sleep(.05)
+        self.assertEqual(status['state'],'error',status)
+        self.assertEqual(status['error_code'],'recording_too_long',status)
+        self.assertIn('300',status['message'])
 
 
     def test_unreadable_audio_reports_codec_failure_not_false_duration(self):
