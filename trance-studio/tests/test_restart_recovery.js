@@ -1,6 +1,6 @@
 'use strict';
-/* A WhatsApp share only imports files. Recovery belongs inside an explicit
-   Create action; it may submit a lost job once, never loop indefinitely. */
+/* A WhatsApp share imports files; one Create tap may send at most one POST.
+   Render 512 MiB restarts and HTTP 429 never trigger automatic reuploads. */
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
@@ -9,40 +9,45 @@ const begin=src.indexOf('function studioResponseIsJson(response){');
 const end=src.indexOf('async function run(){',begin);
 assert.ok(begin>0&&end>begin,'bounded submission helper exists');
 const helper=src.slice(begin,end);
-assert.match(src,/var lostJobRecovery=0;/);
-assert.match(src,/statusResponse\.status===404&&lostJobRecovery<1/);
-assert.match(src,/data=await submitMixJob\(form\);\s*attempt=0;/);
-assert.match(src,/temporaryStatusFailures<=4/);
-assert.match(src,/\[502,503,504\]/);
-assert.doesNotMatch(helper,/setTimeout|setInterval|window\.kolboImportSharedAudio/);
-assert.ok(src.indexOf("$('generate').onclick=run;")>end);
+assert.match(src,/var active=false,runLock=false;/);
+assert.match(src,/async function run\(\)\{\s*if\(active\|\|runLock\)return;\s*runLock=true;/);
+assert.match(src,/if\(statusResponse\.status===404\)\{\s*throw new Error/);
+assert.match(src,/if\(statusResponse\.status===429\)\{/);
+assert.doesNotMatch(src,/lostJobRecovery|busyAttempt/);
+assert.equal((src.match(/var data=await submitMixJob\(form\)/g)||[]).length,1);
+assert.match(src,/finally\{\s*runLock=false;/);
+assert.doesNotMatch(helper,/setInterval|window\.kolboImportSharedAudio/);
+
+const job={id:'a'.repeat(48),status_url:'/api/jobs/'+'a'.repeat(48)};
+function response(status,content,body){
+ return {status,ok:status>=200&&status<300,
+  headers:{get:()=>content},json:async()=>body};
+}
 async function check(){
- let calls=0,waits=0,status=[];
- const replies=[429,202];
+ let uploads=0;
+ const replies=[
+  response(429,'text/html','Render busy page'),
+  response(202,'application/json',job),
+ ];
  const ctx={
-  message:x=>status.push(x),
-  pause:async()=>{waits++;},
-  fetch:async()=>{
-    const code=replies[calls++];
-    return {status:code,ok:code===202,json:async()=>code===202?
-      {id:'a'.repeat(48),status_url:'/api/jobs/'+'a'.repeat(48)}:
-      {error:'שרת עסוק'}};
-  }
+  message:()=>{},pause:async()=>{throw Error('Unexpected automatic delay/retry')},
+  fetch:async()=>replies[uploads++],
  };
  vm.runInNewContext(helper+'\nthis.submitMixJob=submitMixJob;',ctx);
- const job=await ctx.submitMixJob({original:'voice'});
- assert.equal(calls,2);
- assert.equal(waits,1);
- assert.equal(job.id.length,48);
- assert.ok(status[0].includes('עסוק'));
+ await assert.rejects(ctx.submitMixJob({original:'voice'}),/429/);
+ assert.equal(uploads,1,'busy must NOT resubmit user media');
+ // A subsequent, explicit NEW click is allowed after the user sees the error.
+ const accepted=await ctx.submitMixJob({original:'voice'});
+ assert.equal(accepted.id,job.id);
+ assert.equal(uploads,2);
  let errors=0;
  const failedCtx={
   message:()=>{},pause:async()=>{},
-  fetch:async()=>{errors++;return {status:500,ok:false,json:async()=>({error:'תקלה'})}}
+  fetch:async()=>{errors++;return response(500,'application/json',{error:'תקלה'});}
  };
  vm.runInNewContext(helper+'\nthis.submitMixJob=submitMixJob;',failedCtx);
  await assert.rejects(failedCtx.submitMixJob({}),/תקלה/);
- assert.equal(errors,1,'Non-429 failures must not generate duplicate server jobs');
- console.log('BOUNDED_RENDER_RESTART_RECOVERY_PASS');
+ assert.equal(errors,1,'Non-429 failures must not create another server job');
+ console.log('RENDER_RESTART_NEVER_AUTO_REPOSTS_WHATSAPP_MEDIA_PASS');
 }
-check().catch(e=>{console.error(e);process.exitCode=1;});
+check().catch(err=>{console.error(err);process.exitCode=1});
