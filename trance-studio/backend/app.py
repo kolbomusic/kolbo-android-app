@@ -23,7 +23,7 @@ def create_app(config=None):
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
     if config:app.config.update(config)
     root=Path(app.config['JOB_DIR']);root.mkdir(parents=True,exist_ok=True)
-    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(1);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
+    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
     web=Path(__file__).resolve().parents[1]/'web'
     def stream_temporary_media(media_path,mime,folder):
@@ -514,7 +514,25 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.15',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.16',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+
+    @app.get('/api/jobs/capacity')
+    def job_capacity():
+        """Check for one of two disk-spooled job slots, without uploading.
+
+        Exactly one CPU worker runs at a time. A second job may wait on
+        disk; this read-only probe avoids consuming mobile bandwidth while
+        the one active and one queued slot are occupied. It never reserves
+        a slot: the actual POST still atomically acquires admission.
+        """
+        available=admission.acquire(blocking=False)
+        if available:
+            admission.release()
+        response=jsonify(available=available,maximum_jobs=2,
+                         workers=1,queue_enabled=True)
+        response.headers['Cache-Control']='no-store'
+        if not available:response.headers['Retry-After']='5'
+        return response
 
     @app.get('/api/capabilities')
     def capabilities():
@@ -629,7 +647,7 @@ def create_app(config=None):
             if Path(backing_file.filename).suffix.lower() not in AUTHORIZED_MUSIC_EXT:
                 return jsonify(error='קובץ מוזיקה אינו בפורמט נתמך'),400
         if not admission.acquire(blocking=False):
-            response=jsonify(error='שרת העיבוד עסוק במשימה אחרת. הקובץ לא נקלט; נסה שוב לאחר שהשרת יתפנה.')
+            response=jsonify(error='כל מקומות התור תפוסים כרגע. הקובץ לא נקלט; אפשר לנסות שוב כשהתור יתפנה.')
             response.headers['Retry-After']='20'
             return response,429
         job_id=secrets.token_hex(24);directory=root/job_id;directory.mkdir(mode=0o700);paths=[]
