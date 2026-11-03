@@ -554,6 +554,11 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     # including its final phrase. All source words remain uncut and in order.
     slot_cost=beat*(1.0 if density==1 else 2.0)+.07
     maximum_slots=max(1,int(max_extensions/slot_cost))
+    # Several real short utterances deserve both a setup and a payoff.
+    # They fit inside the short-message time budget despite the conservative
+    # two-beat reservation used for recordings several minutes long.
+    if duration<10 and len(chosen)>=2 and max_extensions>=1.4:
+        maximum_slots=max(2,maximum_slots)
     if len(chosen)>maximum_slots:
         picks=np.linspace(0,len(chosen)-1,maximum_slots,dtype=np.int32)
         chosen=[chosen[int(i)] for i in sorted(set(picks))]
