@@ -49,7 +49,12 @@ PUBLIC_AUTH=(bool(CONFIGURED_SECRET and DB)
 EMAIL_PROVIDER=os.environ.get("BARKAN_RESEND_API_KEY","")
 MAIL_FROM=os.environ.get("BARKAN_MAIL_FROM","")
 MAIL_READY=bool(EMAIL_PROVIDER.strip() and MAIL_FROM.strip())
-ALLOW_SIGNUP=(PUBLIC_AUTH and os.environ.get("BARKAN_ALLOW_SIGNUP","0")=="1" and MAIL_READY)
+# Configuration is not proof of delivery. A separate explicit release attests
+# that a real end-to-end verification message reached a controlled mailbox.
+MAIL_DELIVERY_VERIFIED=(MAIL_READY and
+                        os.environ.get("BARKAN_MAIL_DELIVERY_VERIFIED","0")=="1")
+ALLOW_SIGNUP=(PUBLIC_AUTH and os.environ.get("BARKAN_ALLOW_SIGNUP","0")=="1"
+              and MAIL_DELIVERY_VERIFIED)
 
 def connect():
     return psycopg.connect(DB,row_factory=dict_row,connect_timeout=8)
@@ -230,7 +235,8 @@ def health():
     # Safe public liveness endpoint. No secrets, account data or raw DB errors.
     return {"status":"ok","generation":"new-build","auth_enabled":PUBLIC_AUTH,
             "database_configured":bool(DB),
-            "signup_enabled":ALLOW_SIGNUP,"email_sender_configured":MAIL_READY},200
+            "signup_enabled":ALLOW_SIGNUP,"email_sender_configured":MAIL_READY,
+            "email_delivery_release_verified":MAIL_DELIVERY_VERIFIED},200
 
 @app.get("/ready")
 def ready():
@@ -361,7 +367,9 @@ def safety():
 
 @app.get("/status")
 def status():
-    return layout("מצב המערכת",'<div class="pagehead"><h1>מצב המערכת</h1></div><section class="story"><p>אתר מורשת חדש: פעיל. מערכת חברים: '+("פעילה." if PUBLIC_AUTH else "מושהית עד השלמת בדיקות אבטחה.")+'</p><p>אימות דוא״ל: '+("הוגדר ספק HTTPS; אימות המסירה עדיין נדרש." if MAIL_READY else "אין ספק משלוח מאומת.")+'</p><p>זוהי כתובת הקהילה הראשית. הכתובת הזמנית מפנה לכאן; התחברות והרשמה אינן פתוחות עד השלמת בדיקות האבטחה.</p></section>')
+    return layout("מצב המערכת",'<div class="pagehead"><h1>מצב המערכת</h1></div><section class="story"><p>אתר מורשת חדש: פעיל. מערכת חברים: '+("פעילה." if PUBLIC_AUTH else "מושהית עד השלמת בדיקות אבטחה.")+'</p><p>אימות דוא״ל: '+("משלוח אומת ואושר לפתיחת הרשמה." if MAIL_DELIVERY_VERIFIED else
+                  "הוגדר ספק, אך טרם אושרה בדיקת מסירה אמיתית." if MAIL_READY else
+                  "אין ספק משלוח מאומת.")+'</p><p>זוהי כתובת הקהילה הראשית. הכתובת הזמנית מפנה לכאן; התחברות והרשמה אינן פתוחות עד השלמת בדיקות האבטחה.</p></section>')
 
 @app.route("/signup",methods=["GET","POST"])
 def signup():
