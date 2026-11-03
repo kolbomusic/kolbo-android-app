@@ -1136,7 +1136,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
 
 def export_mp3(audio,path,sr=32000):
     # A 6-minute stereo float32 mix occupies ~88 MiB. The old
-    # subprocess.run(input=audio.astype(...).tobytes()) created an
+    # previous whole-buffer subprocess input created an
     # additional 88-MiB Python bytes buffer at the worst memory peak,
     # which repeatedly evicted Render Free workers (512 MiB cgroup).
     # Stream a zero-copy memoryview in bounded pipe writes instead.
