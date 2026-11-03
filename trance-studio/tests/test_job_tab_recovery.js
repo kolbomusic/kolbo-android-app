@@ -55,7 +55,9 @@ assert.equal(Object.keys(JSON.parse(storage.get('kolbo_trance_pending_job_v1')))
  await ctx.window.KolboJobRecovery.check();
  assert.equal(checks,1);
  assert.equal(posts,0);
- assert.equal(dom.recoveryLinks.childNodes.length,2,'External URLs must be refused');
+ assert.equal(dom.recoveryLinks.childNodes.length,2,
+  'External URLs must be refused; label='+dom.recoveryMessage.textContent+
+  ' stored='+storage.get('kolbo_trance_pending_job_v1'));
  assert.equal(dom.recoveryPanel.hidden,false);
  console.log('PASS: read-only short-lived recovery, two local results, no media POST');
 })().catch(e=>{console.error(e);process.exitCode=1});
