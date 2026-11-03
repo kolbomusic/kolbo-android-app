@@ -491,6 +491,56 @@ with site.app.test_client() as browser:
     # The moderator can still inspect the evidence for appeals/decisions.
     assert browser.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==200
 
+    # Conservative zero-cost automated moderator: explicit, explainable,
+    # no automatic identity approval or image/audio content moderation.
+    assert site.moderate_submission("טקסט", "קצר", "story", [], True)[0]=="pending"
+    assert site.moderate_submission("סיפור מסחרי", "קנו עכשיו אצלנו באתר", "story", [], True)[0]=="rejected"
+    assert site.moderate_submission("סיפור", "סיפור דוגמה עם פרטי קשר test@example.test "*4,
+        "story", [], True)[0]=="pending"
+    assert site.moderate_submission("סיפור", "זיכרון נחמד מהפלוגה "*9,
+        "voice", [("audio/webm","audio",b"hello")], True)[0]=="pending"
+    assert site.moderate_submission("סיפור", "זיכרון נחמד מהפלוגה "*9,
+        "story", [], False)[0]=="pending"
+    os.environ["BARKAN_AUTO_MODERATION"]="1"
+    safe_text=("באותו ערב ישבנו עם החברים בחדר האוכל, סיפרנו בדיחות, "
+               "נזכרנו ברגעים מצחיקים מהשירות וצחקנו יחד עד סוף המשמרת. ")
+    auto=browser.post("/new",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"rights":"yes","title":"זיכרון משותף מהפלוגה",
+        "kind":"story","body":safe_text})
+    assert auto.status_code==303,(auto.status_code,auto.get_data(as_text=True)[:300])
+    approved=site.sql("""SELECT id,status,moderation_reason,moderation_summary,
+                                 moderation_source FROM b2_posts
+                    WHERE title=%s ORDER BY id DESC LIMIT 1""",("זיכרון משותף מהפלוגה",),True)
+    assert approved["status"]=="published",approved
+    assert approved["moderation_summary"] and approved["moderation_source"]=="rules-v1"
+    assert "תקציר שנוצר אוטומטית" in browser.get("/my-posts",base_url=ORIGIN).get_data(as_text=True)
+    denied=browser.post("/new",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"rights":"yes","title":"הודעה מסחרית",
+        "kind":"story","body":"קנו עכשיו מוצר במבצע מיוחד. "*8})
+    assert denied.status_code==303
+    rejected=site.sql("""SELECT id,status,moderation_reason FROM b2_posts
+              WHERE title=%s ORDER BY id DESC LIMIT 1""",("הודעה מסחרית",),True)
+    assert rejected["status"]=="rejected" and rejected["moderation_reason"]
+    assert "בקשת בדיקה חוזרת" in browser.get("/my-posts",base_url=ORIGIN).get_data(as_text=True)
+    assert browser.post("/my-posts/appeal",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(rejected["id"])}).status_code==303
+    assert site.sql("SELECT status,appealed FROM b2_posts WHERE id=%s",
+        (rejected["id"],),True)=={"status":"pending","appealed":True}
+    assert browser.post("/my-posts/appeal",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(rejected["id"])}).status_code==409
+    assert site.sql("SELECT COUNT(*) n FROM b2_moderation_events WHERE post_id=%s",
+        (rejected["id"],),True)["n"]==2
+    # Manual rejection requires an explanation available to the author.
+    assert browser.post("/moderation",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(rejected["id"]),
+        "action":"reject"}).status_code==400
+    assert browser.post("/moderation",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(rejected["id"]),
+        "action":"reject","reason":"פרסום מסחרי אינו מתאים לארכיון."}).status_code==303
+    assert site.sql("SELECT moderation_reason FROM b2_posts WHERE id=%s",
+        (rejected["id"],),True)["moderation_reason"]=="פרסום מסחרי אינו מתאים לארכיון."
+    os.environ.pop("BARKAN_AUTO_MODERATION",None)
+
     browser.post("/logout",base_url=ORIGIN,data={"csrf":get_csrf(browser)})
     assert browser.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==303
 
