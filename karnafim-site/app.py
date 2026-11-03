@@ -150,6 +150,11 @@ def init():
                 recipient BIGINT REFERENCES b2_users(id),
                 mime TEXT NOT NULL,kind TEXT NOT NULL,body BYTEA NOT NULL,
                 length INTEGER NOT NULL,created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_photo_self_tags(
+                media_id BIGINT NOT NULL REFERENCES b2_media(id) ON DELETE CASCADE,
+                user_id BIGINT NOT NULL REFERENCES b2_users(id) ON DELETE CASCADE,
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY(media_id,user_id))""")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_messages(
                 id BIGSERIAL PRIMARY KEY,sender BIGINT NOT NULL REFERENCES b2_users(id),
                 recipient BIGINT NOT NULL REFERENCES b2_users(id),
@@ -419,12 +424,47 @@ def photos():
           AND (%s='' OR (%s='general' AND p.album_cohort='')
                OR p.album_cohort=%s)
         ORDER BY p.created DESC,f.id DESC LIMIT 80""",(cohort,cohort,cohort))
-    tiles=''.join('<article class="post">'+media_html(r["id"],"image")+
-        '<h2>'+e(r["title"])+'</h2><p>'+e(r["name"])+' · '+e(r["year_text"])+'</p><p>אלבום: '+e(r["album_cohort"] or "כללי")+'</p></article>'
-        for r in records)
+    tiles=''
+    for r in records:
+        tags=sql("""SELECT u.name,t.user_id FROM b2_photo_self_tags t
+                    JOIN b2_users u ON u.id=t.user_id
+                    WHERE t.media_id=%s AND u.approved=TRUE ORDER BY u.name LIMIT 30""",(r["id"],))
+        mine=any(t["user_id"]==g.user["id"] for t in tags)
+        names=', '.join(e(t["name"]) for t in tags)
+        label='<p>זיהוי עצמי מרצון: '+names+'</p>' if names else ''
+        toggle=button_form('<input type="hidden" name="id" value="'+str(r["id"])+'">'+
+             ('<button class="subtle" name="action" value="remove">הסרת הזיהוי שלי</button>'
+              if mine else '<button class="subtle" name="action" value="add">אני מופיע/ה בתמונה — אישור הצגת שמי</button>'),
+             '/photos/self-tag')
+        tiles+='<article class="post">'+media_html(r["id"],"image")+'<h2>'+e(r["title"])+
+              '</h2><p>'+e(r["name"])+' · '+e(r["year_text"])+'</p><p>אלבום: '+
+              e(r["album_cohort"] or "כללי")+'</p>'+label+toggle+'</article>'
     return layout("תמונות",intro+'<nav class="album-nav" aria-label="בחירת אלבום">'+links+'</nav>'+
         ('<section class="media-grid">'+tiles+'</section>' if tiles else
          '<section class="empty-photo"><h2>אין תמונות מאושרות באלבום זה</h2><p>חברים מוזמנים לתרום תמונות שצילמו ושמותר להם לשתף. הפרסום יתבצע רק אחרי ביקורת.</p><a href="/new">העלאת תמונה לביקורת</a></section>'))
+
+
+@app.post("/photos/self-tag")
+@require_approved
+def photo_self_tag():
+    """Only self-identification on a published photo; no third-party tagging."""
+    protect();limit("self-tag:"+str(g.user["id"]),35,60)
+    media_id=request.form.get("id","")
+    action=request.form.get("action","")
+    if not media_id.isdecimal() or action not in ("add","remove"):abort(400)
+    mid=int(media_id)
+    valid=sql("""SELECT f.id FROM b2_media f
+        JOIN b2_posts p ON p.id=f.post_id
+        JOIN b2_users u ON u.id=p.author
+        WHERE f.id=%s AND f.kind='image' AND p.status='published'
+          AND u.approved=TRUE""",(mid,),True)
+    if not valid:abort(404)
+    if action=="add":
+        sql("""INSERT INTO b2_photo_self_tags(media_id,user_id)
+               VALUES(%s,%s) ON CONFLICT(media_id,user_id) DO NOTHING""",(mid,g.user["id"]))
+    else:
+        sql("DELETE FROM b2_photo_self_tags WHERE media_id=%s AND user_id=%s",(mid,g.user["id"]))
+    return redirect("/photos",303)
 
 @app.get("/about")
 def about():
