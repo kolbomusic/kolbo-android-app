@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const ui=fs.readFileSync('trance-studio/web/studio.html','utf8');
 assert.match(ui,/<select id="video_strategy">/);
-assert.match(ui,/<option value="new_story" selected>/);
+assert.match(ui,/<option value="smart_story" selected>/);
 assert.match(ui,/form\.set\('video_strategy',\$\('video_strategy'\)\.value==='audio_only'\?'illustrated_story':\$\('video_strategy'\)\.value\)/,
   'Audio-only must not submit a video generation mode; the make_video field stays off');
 assert.match(ui,/form\.set\('music_license_ack','on'\)/);
