@@ -42,10 +42,8 @@ jobs:
           result=json.loads(raw)
           assert code==200 and result["status"]=="ok" and result["database_configured"]
           print("HEALTH: OK, public liveness only")
-          code,path,headers,raw=get("/ready")
-          readiness=json.loads(raw)
-          assert code==200 and readiness["status"]=="ready" and readiness["database"]=="available"
-          print("READY: database and member schema OK")
+          # Check /ready last: CDN/edge resets must not hide results from
+          # public memorial and anonymous-access security checks.
           code,path,headers,raw=get("/memorial")
           html=raw.decode("utf-8","replace")
           expected=("en_f5ccba845584f96f9b9334cf335d2e78",
@@ -60,5 +58,9 @@ jobs:
               status,final,headers,_=get(path)
               assert status==200 and final=="/login",(path,status,final)
               print("PRIVATE ROUTE:",path,"redirected to login")
-          print("PASS: live public pages and private authorization gates")
+          print("PASS: live public pages and private authorization gates",flush=True)
+          code,path,headers,raw=get("/ready?smoke=1")
+          readiness=json.loads(raw)
+          assert code==200 and readiness["status"]=="ready" and readiness["database"]=="available"
+          print("PASS: readiness check, DB and member schema OK",flush=True)
           PY
