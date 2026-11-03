@@ -105,6 +105,22 @@ def init():
                 detail TEXT NOT NULL DEFAULT '',
                 created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_admin_audit_created_idx ON b2_admin_audit(created DESC)")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_meetups(
+                id BIGSERIAL PRIMARY KEY,
+                creator BIGINT NOT NULL REFERENCES b2_users(id),
+                title TEXT NOT NULL,
+                details TEXT NOT NULL DEFAULT '',
+                location_text TEXT NOT NULL DEFAULT '',
+                starts_at TIMESTAMPTZ NOT NULL,
+                cancelled BOOLEAN NOT NULL DEFAULT FALSE,
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_meetups_time_idx ON b2_meetups(starts_at)")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_meetup_rsvps(
+                meetup_id BIGINT NOT NULL REFERENCES b2_meetups(id) ON DELETE CASCADE,
+                user_id BIGINT NOT NULL REFERENCES b2_users(id) ON DELETE CASCADE,
+                attending BOOLEAN NOT NULL DEFAULT TRUE,
+                updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY(meetup_id,user_id))""")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_tokens(
                 user_id BIGINT PRIMARY KEY REFERENCES b2_users(id) ON DELETE CASCADE,
                 digest CHAR(64) NOT NULL UNIQUE,expires TIMESTAMPTZ NOT NULL)""")
@@ -238,7 +254,7 @@ def layout(title,body):
     u=g.user
     menu=[("/","בית"),("/heritage","מורשת"),("/memorial","הנצחה"),("/photos","תמונות"),("/about","על הקהילה"),("/help","עזרה")]
     if PUBLIC_AUTH and u:
-        menu += [("/feed","הקהילה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
+        menu += [("/feed","הקהילה"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
         permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
         if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
@@ -875,6 +891,81 @@ def invite_members():
     signup=ORIGIN+"/signup"
     whatsapp="https://wa.me/?text="+__import__("urllib.parse",fromlist=["quote"]).quote("חברי פלוגה ב׳ הקרנפים / ברקן — מוזמנים להירשם לקהילה שלנו: "+signup,safe="")
     return layout("מזמינים חברים",'<div class="pagehead"><h1>מחזירים את החברים הביתה</h1><p>שלחו את קישור ההרשמה ישירות לחברים מהפלוגה. ההרשמה אינה מקנה גישה לפני אישור זהות ושייכות לפלוגה.</p></div><section class="story"><p><a class="primary" href="'+e(signup)+'">פתיחת הרשמה</a> <a class="outline" href="'+e(whatsapp)+'" target="_blank" rel="noopener noreferrer">שיתוף הזמנה בוואטסאפ</a></p><p dir="ltr">'+e(signup)+'</p><p>נא לא לפרסם רשימות טלפונים או פרטים אישיים של חברים ללא הסכמתם.</p></section>')
+
+
+@app.route("/meetups",methods=["GET","POST"])
+@require_approved
+def meetups():
+    """Private reunion calendar; all event data and attendance stay members-only."""
+    can_manage=staff_permissions()["moderate"]
+    if request.method=="POST":
+        if not can_manage:abort(403)
+        protect();limit("meetup-admin:"+str(g.user["id"]),12,60)
+        title=request.form.get("title","").strip()
+        details=request.form.get("details","").strip()
+        location=request.form.get("location","").strip()
+        begins=request.form.get("when","").strip()
+        if not 3<=len(title)<=120 or len(details)>1500 or len(location)>180:abort(400)
+        try:
+            start=datetime.fromisoformat(begins)
+            if start.tzinfo is not None:abort(400)
+            # datetime-local is explicitly local Israel time; convert to UTC.
+            from zoneinfo import ZoneInfo
+            start=start.replace(tzinfo=ZoneInfo("Asia/Jerusalem")).astimezone(timezone.utc)
+            if not datetime.now(timezone.utc)<start or start.year>datetime.now(timezone.utc).year+3:abort(400)
+        except (ValueError,TypeError,OverflowError):abort(400)
+        sql("""INSERT INTO b2_meetups(creator,title,details,location_text,starts_at)
+            VALUES(%s,%s,%s,%s,%s)""",(g.user["id"],title,details,location,start))
+        return redirect("/meetups",303)
+    events=sql("""SELECT m.id,m.title,m.details,m.location_text,m.starts_at,m.cancelled,
+             (SELECT COUNT(*) FROM b2_meetup_rsvps r WHERE r.meetup_id=m.id AND r.attending=TRUE) attending_count,
+             EXISTS(SELECT 1 FROM b2_meetup_rsvps r WHERE r.meetup_id=m.id
+                    AND r.user_id=%s AND r.attending=TRUE) my_attendance
+             FROM b2_meetups m WHERE m.starts_at>=NOW()-INTERVAL '90 days'
+             ORDER BY m.starts_at ASC LIMIT 60""",(g.user["id"],))
+    cards=''
+    for event in events:
+        eid=str(event["id"])
+        date=event["starts_at"].astimezone(__import__("zoneinfo",fromlist=["ZoneInfo"]).ZoneInfo("Asia/Jerusalem")).strftime("%d/%m/%Y %H:%M")
+        controls='<p>מפגש בוטל</p>' if event["cancelled"] else (
+            button_form('<input type="hidden" name="id" value="'+eid+'">'+
+                ('<button class="subtle" name="decision" value="no">ביטול השתתפות</button>'
+                 if event["my_attendance"] else '<button class="primary" name="decision" value="yes">אני מגיע/ה</button>'),
+                "/meetups/rsvp",'class="formcard"')
+            if event["starts_at"]>datetime.now(timezone.utc) else '<p>המפגש הסתיים</p>')
+        if can_manage and not event["cancelled"]:
+            controls+=button_form('<input type="hidden" name="id" value="'+eid+'"><button name="action" value="cancel" class="subtle">ביטול המפגש</button>',"/meetups/manage")
+        cards+='<article class="post"><h2>'+e(event["title"])+'</h2><p><strong>מועד: </strong>'+e(date)+'</p><p><strong>מיקום: </strong>'+e(event["location_text"] or "יעודכן בהמשך")+'</p><p>'+e(event["details"])+'</p><p>אישורי הגעה: '+str(event["attending_count"])+'</p>'+controls+'</article>'
+    form=button_form('<label>שם המפגש<input name="title" maxlength="120" required></label><label>תאריך ושעה<input type="datetime-local" name="when" required></label><label>מיקום כללי<input name="location" maxlength="180"></label><label>פרטים נוספים<textarea name="details" maxlength="1500" rows="4"></textarea></label><button class="primary">יצירת מפגש</button>','/meetups','class="formcard"') if can_manage else ''
+    return layout("מפגשי הפלוגה",'<div class="pagehead"><h1>מפגשי הקרנפים / ברקן</h1><p>תכנון מפגשים ואישורי הגעה — גלויים לחברי הקהילה המאושרים בלבד. אין להעלות כתובות פרטיות ללא הסכמה.</p></div>'+('<section class="story"><h2>ארגון מפגש חדש</h2>'+form+'</section>' if form else '')+(cards or '<div class="note">טרם נקבעו מפגשים חדשים.</div>'))
+
+@app.post("/meetups/rsvp")
+@require_approved
+def meetup_rsvp():
+    protect();limit("meetup-rsvp:"+str(g.user["id"]),25,60)
+    eid=request.form.get("id","")
+    decision=request.form.get("decision","")
+    if not eid.isdecimal() or decision not in ("yes","no"):abort(400)
+    with connect() as c:
+        with c.cursor() as cur:
+            cur.execute("SELECT id FROM b2_meetups WHERE id=%s AND cancelled=FALSE AND starts_at>NOW()",(int(eid),))
+            if not cur.fetchone():abort(404)
+            cur.execute("""INSERT INTO b2_meetup_rsvps(meetup_id,user_id,attending)
+                VALUES(%s,%s,%s) ON CONFLICT(meetup_id,user_id)
+                DO UPDATE SET attending=EXCLUDED.attending,updated=NOW()""",
+                (int(eid),g.user["id"],decision=="yes"))
+    return redirect("/meetups",303)
+
+@app.post("/meetups/manage")
+@require_approved
+def meetup_manage():
+    if not staff_permissions()["moderate"]:abort(403)
+    protect();limit("meetup-cancel:"+str(g.user["id"]),12,60)
+    eid=request.form.get("id","")
+    if not eid.isdecimal() or request.form.get("action")!="cancel":abort(400)
+    result=sql("UPDATE b2_meetups SET cancelled=TRUE WHERE id=%s AND cancelled=FALSE RETURNING id",(int(eid),),True)
+    if not result:abort(404)
+    return redirect("/meetups",303)
 
 @app.errorhandler(404)
 def not_found(err):return layout("העמוד לא נמצא",'<div class="pagehead"><h1>העמוד לא נמצא</h1><a href="/">חזרה לדף הבית</a></div>'),404
