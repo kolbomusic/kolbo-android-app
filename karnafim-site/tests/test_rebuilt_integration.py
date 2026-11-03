@@ -254,6 +254,7 @@ with site.app.test_client() as browser:
     r=browser.post("/members",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve","identity_checked":"yes"})
     assert r.status_code==303
+    assert site.sql("SELECT action FROM b2_admin_audit ORDER BY id DESC LIMIT 1",one=True)["action"]=="member_approved"
     r=browser.post("/moderation",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
     assert r.status_code==303
@@ -272,10 +273,13 @@ with site.app.test_client() as browser:
     assert browser.get("/inbox",base_url=ORIGIN).status_code==200
     # Owner delegates moderation + invitations without membership approval.
     assert browser.get("/team",base_url=ORIGIN).status_code==200
+    audit_start=site.sql("SELECT COUNT(*) AS n FROM b2_admin_audit",one=True)["n"]
     grant=browser.post("/team",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(member["id"]),"action":"save",
         "can_moderate":"yes","can_invite":"yes"})
     assert grant.status_code==303
+    assert site.sql("SELECT COUNT(*) AS n FROM b2_admin_audit",one=True)["n"]==audit_start+1
+    assert site.sql("SELECT action FROM b2_admin_audit ORDER BY id DESC LIMIT 1",one=True)["action"]=="roles_saved"
     assert site.sql("SELECT can_approve,can_moderate,can_invite FROM b2_staff_roles WHERE user_id=%s",
         (member["id"],),True)=={"can_approve":False,"can_moderate":True,"can_invite":True}
     delegate=site.app.test_client()
@@ -295,6 +299,8 @@ with site.app.test_client() as browser:
     revoked=browser.post("/team",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(member["id"]),"action":"revoke"})
     assert revoked.status_code==303
+    assert site.sql("SELECT action FROM b2_admin_audit ORDER BY id DESC LIMIT 1",one=True)["action"]=="roles_revoked"
+    assert "פעולות ניהול אחרונות" in browser.get("/team",base_url=ORIGIN).get_data(as_text=True)
     assert delegate.get("/invite",base_url=ORIGIN).status_code==403
     assert delegate.get("/moderation",base_url=ORIGIN).status_code==403
     assert delegate.get("/team",base_url=ORIGIN).status_code==403
