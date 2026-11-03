@@ -285,7 +285,7 @@ assert c.post("/login",base_url=origin,data={"csrf":csrf,
   "email":"manual-pending@example.test","password":"SyntheticOnlyManualPassword!2026"}).status_code==303
 assert c.get("/feed",base_url=origin).status_code==403
 assert c.get("/find",base_url=origin).status_code==403
-assert c.get("/new",base_url=origin).status_code==403
+assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
 assert c.get("/inbox",base_url=origin).status_code==403
 '''],cwd=APP,env=manual_env,capture_output=True,text=True,timeout=50)
 assert manual.returncode==0,(manual.stdout,manual.stderr[-1500:])
