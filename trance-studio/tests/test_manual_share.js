@@ -39,7 +39,10 @@ const context={
     Array, console,
     isVideoFile:f=>/\.mp4$/i.test(f.name||'')||/^video\//i.test(f.type||''),
     explainVideoStrategy(){},
-    '
+    '$':id=>{
+      assert.ok(['generate','video_strategy'].includes(id));
+      return id==='generate'?button:strategy;
+    },
     message:value=>notified.push(value),
     markStage:value=>stage.push(value),
     syncFiles(){},
@@ -70,34 +73,4 @@ context.window.kolboImportSharedAudio([{name:'WA-person-speaking.mp4',type:'vide
 assert.equal(strategy.value,'remix_original',
  'Shared moving video automatically chooses audio-synchronized source editing');
 assert.equal(count,0,'Switching to original video effects never auto-generates');
-console.log('MANUAL_WHATSAPP_SHARE_ONLY_WAITS_FOR_EXPLICIT_CREATE_BUTTON_PASS');
-:id=>{
-      assert.ok(['generate','video_strategy'].includes(id));
-      return id==='generate'?button:strategy;
-    },
-    message:value=>notified.push(value),
-    markStage:value=>stage.push(value),
-    syncFiles(){},
-    run(){count++},
-    setTimeout(){scheduled++}
-};
-vm.runInNewContext(handler,context);
-const voice={name:'WhatsApp-PTT.opus',size:12044};
-context.window.kolboImportSharedAudio([voice]);
-assert.equal(context.files.length,1);
-assert.equal(context.files[0].name,voice.name);
-assert.equal(button.disabled,false,'Create button must be enabled only after import');
-assert.equal(count,0,'No automatic generation on WhatsApp share');
-assert.equal(scheduled,0,'No delayed generation on WhatsApp share');
-assert.equal(focus,1);
-assert.ok(notified.at(-1).includes('לחץ'));
-context.window.kolboImportSharedAudio([]);
-assert.equal(button.disabled,true);
-assert.equal(count,0);
-context.window.kolboImportSharedAudio([voice]);
-context.active=true;
-context.window.kolboImportSharedAudio([{name:'new.opus'}]);
-assert.equal(context.files.length,1);
-assert.equal(context.files[0].name,voice.name,'An active job must not silently overwrite inputs');
-assert.equal(count,0);
 console.log('MANUAL_WHATSAPP_SHARE_ONLY_WAITS_FOR_EXPLICIT_CREATE_BUTTON_PASS');
