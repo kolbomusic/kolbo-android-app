@@ -29,8 +29,26 @@ def compose_original_video_with_mix(original_paths, music_mp3, output_mp4, work_
             continue
         try:
             _video_profile(source)
-            require_visible_motion(source,threshold=.30)
-            if _duration(source)<.8:
+            source_duration=_duration(source)
+            if source_duration<.8:
+                continue
+            # A real WhatsApp/TikTok clip can start with a frozen title
+            # screen before moving footage. Check a FEW bounded segments
+            # from the original source rather than treating the intro as
+            # proof that the entire video is static. Totally still videos
+            # continue to be rejected; no fabricated motion is invented.
+            moving=False
+            for start_seconds in (0,3,8,15):
+                if source_duration<start_seconds+1:
+                    continue
+                try:
+                    require_visible_motion(source,threshold=.30,
+                                           start_seconds=start_seconds)
+                    moving=True
+                    break
+                except NoVisibleMotion:
+                    continue
+            if not moving:
                 continue
             original=source
             original_index=index
