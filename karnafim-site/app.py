@@ -89,6 +89,12 @@ def init():
                 email_verified BOOLEAN NOT NULL DEFAULT FALSE,
                 email_verification_required BOOLEAN NOT NULL DEFAULT FALSE,
                 joined TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            # Existing accounts retain their values. No directory information
+            # is publicly visible until the member explicitly opts in.
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS enlistment_cohort TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS service_role TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS platoon TEXT NOT NULL DEFAULT ''")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_users_directory_idx ON b2_users(approved,show_profile,enlistment_cohort)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_staff_roles(
                 user_id BIGINT PRIMARY KEY REFERENCES b2_users(id) ON DELETE CASCADE,
                 can_approve BOOLEAN NOT NULL DEFAULT FALSE,
@@ -192,7 +198,7 @@ def limit(label, maximum=8, minutes=15):
 def current():
     uid=session.get("uid")
     if not isinstance(uid,int):return None
-    return sql("SELECT id,name,email,approved,show_profile,email_verified,email_verification_required,nickname,unit_year,about FROM b2_users WHERE id=%s",(uid,),True)
+    return sql("SELECT id,name,email,approved,show_profile,email_verified,email_verification_required,nickname,unit_year,about,enlistment_cohort,service_role,platoon FROM b2_users WHERE id=%s",(uid,),True)
 
 @app.before_request
 def before():
@@ -582,15 +588,22 @@ def profile():
             '<p>לאחר אימות זהות ואישור מנהל, ייפתחו הגישה לאיתור חברים ולהודעות.</p>'
             if not u["approved"] else '')
     return layout("פרופיל",'<div class="pagehead"><h1>הפרופיל שלי</h1><p>מעמד החשבון: '+e(role)+'</p>'+access+'</div>'+button_form(
-        '<label>כינוי מתקופת השירות<input name="nickname" maxlength="100" value="'+e(u["nickname"])+'"></label><label>שנים / מחזור<input name="unit_year" maxlength="50" value="'+e(u["unit_year"] or "")+'"></label><label>כמה מילים עליך<textarea name="about" maxlength="500">'+e(u["about"])+'</textarea></label><label class="check"><input name="visible" type="checkbox" '+checked+'> הצגת הפרופיל לחברים מאושרים בלבד</label><button class="primary">שמירת הפרופיל</button>','/profile','class="formcard"')+button_form('<button class="subtle">התנתקות</button>','/logout'))
+        '<label>כינוי מתקופת השירות<input name="nickname" maxlength="100" value="'+e(u["nickname"])+'"></label><label>שנים / מחזור<input name="unit_year" maxlength="50" value="'+e(u["unit_year"] or "")+'"></label><label>מחזור גיוס (חודש ושנה)<input type="month" name="cohort" min="1990-01" max="2035-12" value="'+e(u["enlistment_cohort"])+'"></label><label>תפקיד בשירות<input name="service_role" maxlength="100" value="'+e(u["service_role"])+'" placeholder="לדוגמה: נהג מרכבה"></label><label>מחלקה / צוות<input name="platoon" maxlength="80" value="'+e(u["platoon"])+'"></label><label>כמה מילים עליך<textarea name="about" maxlength="500">'+e(u["about"])+'</textarea></label><label class="check"><input name="visible" type="checkbox" '+checked+'> הצגת הפרופיל לחברים מאושרים בלבד</label><button class="primary">שמירת הפרופיל</button>','/profile','class="formcard"')+button_form('<button class="subtle">התנתקות</button>','/logout'))
 
 @app.post("/profile")
 @require_login
 def save_profile():
     protect()
-    sql("UPDATE b2_users SET nickname=%s,unit_year=%s,about=%s,show_profile=%s WHERE id=%s",
+    cohort=request.form.get("cohort","").strip()
+    if cohort and not re.fullmatch(r"(19[9][0-9]|20[0-3][0-9])-(0[1-9]|1[0-2])",cohort):
+        abort(400)
+    role=request.form.get("service_role","").strip()[:100]
+    platoon=request.form.get("platoon","").strip()[:80]
+    sql("""UPDATE b2_users SET nickname=%s,unit_year=%s,about=%s,
+           enlistment_cohort=%s,service_role=%s,platoon=%s,show_profile=%s WHERE id=%s""",
         (request.form.get("nickname","")[:100],request.form.get("unit_year","")[:50],
-         request.form.get("about","")[:500],request.form.get("visible")=="on",g.user["id"]))
+         request.form.get("about","")[:500],cohort,role,platoon,
+         request.form.get("visible")=="on",g.user["id"]))
     return redirect("/profile",303)
 
 def image_or_video(f):
@@ -698,16 +711,44 @@ def feed():
 @app.get("/find")
 @require_approved
 def find():
+    # Only approved members who explicitly opt in are searchable.
     term=request.args.get("q","").strip()[:80]
+    cohort=request.args.get("cohort","").strip()
+    if cohort and not re.fullmatch(r"(19[9][0-9]|20[0-3][0-9])-(0[1-9]|1[0-2])",cohort):
+        abort(400)
+    # Escape LIKE wildcards so searching for % or _ does not enumerate the directory.
+    escaped=term.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")
+    needle="%"+escaped+"%"
     matches=[]
-    if term:
-        matches=sql("""SELECT id,name,nickname,unit_year,about FROM b2_users WHERE approved=TRUE
-            AND show_profile=TRUE AND (name ILIKE %s OR nickname ILIKE %s OR unit_year ILIKE %s)
-            ORDER BY name LIMIT 25""",tuple("%"+term+"%" for _ in range(3)))
+    if term or cohort:
+        matches=sql("""SELECT id,name,nickname,unit_year,about,enlistment_cohort,
+                               service_role,platoon FROM b2_users
+            WHERE approved=TRUE AND show_profile=TRUE
+              AND (%s='' OR enlistment_cohort=%s)
+              AND (%s='' OR name ILIKE %s ESCAPE '\\'
+                        OR nickname ILIKE %s ESCAPE '\\'
+                        OR unit_year ILIKE %s ESCAPE '\\'
+                        OR service_role ILIKE %s ESCAPE '\\'
+                        OR platoon ILIKE %s ESCAPE '\\')
+            ORDER BY name LIMIT 30""",
+            (cohort,cohort,term,needle,needle,needle,needle,needle))
+    cohorts=sql("""SELECT enlistment_cohort,COUNT(*) AS n FROM b2_users
+        WHERE approved=TRUE AND show_profile=TRUE AND enlistment_cohort<>''
+        GROUP BY enlistment_cohort ORDER BY enlistment_cohort DESC LIMIT 120""")
+    options=''.join('<option value="'+e(c["enlistment_cohort"])+'"'+
+                    (' selected' if cohort==c["enlistment_cohort"] else '')+'>'+
+                    e(c["enlistment_cohort"])+' ('+str(c["n"])+')</option>' for c in cohorts)
     cards=''
     for m in matches:
-        cards+='<article class="person"><h3>'+e(m["name"])+'</h3><p>'+e(m["nickname"])+' '+e(m["unit_year"])+'</p><p>'+e(m["about"])+'</p><a href="/chat/'+str(m["id"])+'">שליחת הודעה</a></article>'
-    return layout("איתור חברים",'<div class="pagehead"><h1>מוצאים שוב את החברים</h1><p>חיפוש בין פרופילים שחבריהם אישרו להציגם.</p></div><form class="search"><label>שם, כינוי או מחזור<input name="q" value="'+e(term)+'" maxlength="80"></label><button class="primary">חיפוש</button></form><section class="people">'+(cards or '<div class="note">לא נמצאו תוצאות גלויות לחיפוש הזה.</div>')+'</section>')
+        details=' · '.join(e(v) for v in
+             (m["nickname"],m["unit_year"],m["enlistment_cohort"],
+              m["service_role"],m["platoon"]) if v)
+        cards+='<article class="person"><h3>'+e(m["name"])+'</h3><p>'+details+'</p><p>'+e(m["about"])+'</p><a href="/chat/'+str(m["id"])+'">שליחת הודעה פרטית</a></article>'
+    form=('<form class="search" method="get" action="/find"><label>שם, כינוי, תפקיד או מחלקה'
+          '<input name="q" value="'+e(term)+'" maxlength="80"></label>'
+          '<label>מחזור גיוס<select name="cohort"><option value="">כל המחזורים</option>'+
+          options+'</select></label><button class="primary">חיפוש חברים</button></form>')
+    return layout("איתור חברים",'<div class="pagehead"><h1>ספר המחזורים ואיתור החברים</h1><p>החיפוש פתוח לחברים מאושרים בלבד ומציג רק חברים שבחרו להופיע בו. אין פרסום של כתובות דוא״ל או טלפונים.</p></div>'+form+'<section class="people">'+(cards or '<div class="note">לא נמצאו פרופילים גלויים בהתאם לחיפוש.</div>')+'</section>')
 
 @app.get("/inbox")
 @require_approved
