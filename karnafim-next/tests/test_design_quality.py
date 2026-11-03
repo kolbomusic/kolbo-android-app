@@ -54,6 +54,11 @@ for link in all_links:
 for path in ("/login","/signup","/new","/profile","/inbox","/find"):
     assert client.get(path,base_url=origin).status_code in (503,303),path
 
+memorial_html=client.get("/memorial",base_url=origin).get_data(as_text=True)
+for label in ("בניה ריין", "אורי גרוסמן", "אדם גורן", "אלכסנדר", "יוני", "www.izkor.gov.il"):
+    assert label in memorial_html, label
+assert memorial_html.count('class="memorial"')==5
+
 css=(ROOT/"static/site.css").read_text(encoding="utf-8")
 js=(ROOT/"static/site.js").read_text(encoding="utf-8")
 for token in (".auth-page",".auth-trust",":focus-visible","prefers-reduced-motion",
