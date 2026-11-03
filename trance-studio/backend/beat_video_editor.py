@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 from live_video import _duration, _video_profile, UnavailableVideo
-from motion_quality import require_visible_motion, NoVisibleMotion
+from motion_quality import require_visible_motion_somewhere, NoVisibleMotion
 
 
 def edit_decisions(duration, bpm, source_duration, transcript=""):
@@ -191,7 +191,7 @@ def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
     if not .5<=duration<=360.:
         raise UnavailableVideo("אורך המיקס אינו מתאים לעריכת וידאו")
     _video_profile(src)
-    require_visible_motion(src,threshold=.30)
+    require_visible_motion_somewhere(src,duration=src_duration,threshold=.30)
     synced=sync_edit_decisions(duration,bpm,src_duration,fx_timeline,
                   humor=humor,fx_intensity=fx_intensity,
                   source_file_index=source_file_index)
