@@ -100,6 +100,9 @@ with site.app.test_client() as browser:
     assert photo["mime"]=="image/jpeg"
     assert browser.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==200
     assert browser.get("/my-posts",base_url=ORIGIN).status_code==200
+    # Pending media never leaks into the public-facing gallery.
+    gallery=browser.get("/photos",base_url=ORIGIN).get_data(as_text=True)
+    assert "/media/"+str(photo["id"]) not in gallery
 
     admin_email="admin@example.test"
     row=site.sql("""INSERT INTO b2_users(name,email,passhash,approved)
@@ -121,6 +124,10 @@ with site.app.test_client() as browser:
     assert r.status_code==303
     assert site.sql("SELECT status FROM b2_posts WHERE id=%s",(post["id"],),True)["status"]=="published"
     assert browser.get("/feed",base_url=ORIGIN).status_code==200
+    # Only approved members see media from published, approved authors.
+    gallery=browser.get("/photos",base_url=ORIGIN).get_data(as_text=True)
+    assert "/media/"+str(photo["id"]) in gallery
+    assert "זיכרון בדיקה" in gallery
     assert browser.get("/find",base_url=ORIGIN).status_code==200
 
     r=browser.post("/chat/"+str(member["id"]),base_url=ORIGIN,data={
