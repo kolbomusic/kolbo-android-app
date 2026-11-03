@@ -343,6 +343,46 @@ with site.app.test_client() as browser:
     review=browser.get("/members",base_url=ORIGIN).get_data(as_text=True)
     assert "מועמד ניסוי" in review and "המלצות חברים מאושרים: 1" in review
     assert "שירתנו באותה מחלקה" in review
+    # Memorial photo sources belong to the LIVE application flow.
+    # A member may suggest evidence, but may not review or publish an image.
+    assert recommender.get("/memorial-sources?person=yoni-sharabi",
+                           base_url=ORIGIN).status_code==200
+    assert recommender.get("/memorial-source-review",base_url=ORIGIN).status_code==403
+    proposed={
+        "csrf":get_csrf(recommender),
+        "person_key":"yoni-sharabi",
+        "source_url":"https://www.izkor.gov.il/יהונתן%20שרעבי/en_53e66dd727188835acbe02a1f641a882",
+        "evidence":"רשומת ההנצחה הרשמית המזהה את המצולם בשם ובפרטים הנכונים",
+        "rights_note":"אין עדיין רישיון שימוש חוזר בתמונה",
+    }
+    invalid=dict(proposed,source_url="https://localhost/private")
+    assert recommender.post("/memorial-sources",base_url=ORIGIN,data=invalid).status_code==400
+    assert recommender.post("/memorial-sources",base_url=ORIGIN,data=proposed).status_code==303
+    item=site.sql("""SELECT id,person_key,izkor_id,status FROM b2_memorial_source_suggestions
+                      WHERE contributor=%s ORDER BY id DESC LIMIT 1""",(member["id"],),True)
+    assert item["person_key"]=="yoni-sharabi"
+    assert item["izkor_id"]==site.MEMORIAL_PEOPLE["yoni-sharabi"]["izkor_id"]
+    assert item["status"]=="pending"
+    assert "ממתין לבדיקת מנהל" in recommender.get(
+        "/memorial-sources",base_url=ORIGIN).get_data(as_text=True)
+    assert "הצעת מקור תמונה לאדם זה" in recommender.get(
+        "/memorial",base_url=ORIGIN).get_data(as_text=True)
+    review_html=browser.get("/memorial-source-review",base_url=ORIGIN)
+    assert review_html.status_code==200
+    assert "רשומת ההנצחה הרשמית" in review_html.get_data(as_text=True)
+    explanation="המקור נבדק; אין אישור להעתיק את התמונה לפני קבלת רישיון שימוש."
+    assert browser.post("/memorial-source-review",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(item["id"]),
+        "action":"reviewed","reason":explanation
+    }).status_code==303
+    assert site.sql("""SELECT status,decision_reason FROM b2_memorial_source_suggestions
+                       WHERE id=%s""",(item["id"],),True)=={
+                           "status":"reviewed","decision_reason":explanation}
+    member_history=recommender.get("/memorial-sources",base_url=ORIGIN).get_data(as_text=True)
+    assert explanation in member_history and "אינו אישור לפרסום" in member_history
+    assert "memorial-portrait" not in recommender.get(
+        "/memorial",base_url=ORIGIN).get_data(as_text=True)
+
     # Recommendation code and applicant identity are not exposed in public URLs.
     assert "synthetic-private-code" not in browser.get("/",base_url=ORIGIN).get_data(as_text=True)
 
