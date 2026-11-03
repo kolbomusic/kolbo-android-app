@@ -686,13 +686,34 @@ async function ensureCloudReady(){
  throw new Error('שרת הענן החינמי עדיין לא התעורר. לא נשלחה הקלטה ליצירה; אפשר לנסות שוב בלי לבחור אותה מחדש.');
 }
 
+function studioResponseIsJson(response){
+ var headers=response&&response.headers;
+ var type=headers&&typeof headers.get==='function'?
+          String(headers.get('content-type')||'').toLowerCase():'';
+ return !type||type.includes('json');
+}
+async function studioJson(response){
+ var status=Number(response&&response.status||0);
+ if(!studioResponseIsJson(response)){
+  if([502,503,504].includes(status))
+   throw new Error('שרת Render החזיר דף תקלה זמני (HTTP '+status+
+    '). ייתכן שהעיבוד כבר התחיל, ולכן לא תישלח הקלטה שוב אוטומטית. אפשר לנסות ליצור מחדש לאחר שהשרת מתייצב.');
+  throw new Error('השרת החזיר עמוד במקום נתוני מיקס (HTTP '+status+
+    '). נסה לרענן את האולפן.');
+ }
+ try{return await response.json();}
+ catch(error){
+  throw new Error('התקבלה תשובה פגומה מהשרת (HTTP '+status+
+   '). לא שולחים שוב את הקובץ אוטומטית כדי למנוע יצירה כפולה.');
+ }
+}
 async function submitMixJob(form){
  // Reuse one helper for normal upload and a single post-restart recovery.
  // Render 429 means the job was NOT admitted: retry only this case.
  var response,body;
  for(var busyAttempt=0;busyAttempt<3;busyAttempt++){
   response=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
-  body=await response.json().catch(function(){return {error:'השרת לא החזיר תשובה תקינה'}});
+  body=await studioJson(response);
   if(response.status!==429||busyAttempt===2)break;
   message('שרת העיבוד עסוק. ההקלטה נשמרה; מנסה שוב ללא יצירה כפולה...');
   await pause(busyAttempt===0?6000:12000);
@@ -774,13 +795,23 @@ var lostJobRecovery=0;
 var temporaryStatusFailures=0;
 for(var attempt=0;attempt<600;attempt++){
 await pause(1000);
-var statusResponse=await fetch(data.status_url,{credentials:'same-origin'});
-if([502,503,504].indexOf(statusResponse.status)>=0){
+var statusResponse;
+try{statusResponse=await fetch(data.status_url,{credentials:'same-origin'});}
+catch(networkError){
   temporaryStatusFailures++;
   if(temporaryStatusFailures<=4){
-   message('השרת מתחבר מחדש. שומר על ההקלטה ועל ההפקה...');
-   await pause(2500);
-   continue;
+    message('החיבור לשרת נקטע. בודק אם ההפקה עדיין קיימת...');
+    await pause(3500);continue;
+  }
+  throw new Error('החיבור לשרת נקטע מספר פעמים. לא יצרנו משימה נוספת כדי למנוע כפילות.');
+}
+if([502,503,504].indexOf(statusResponse.status)>=0||
+   (statusResponse.ok&&!studioResponseIsJson(statusResponse))){
+  temporaryStatusFailures++;
+  if(temporaryStatusFailures<=4){
+    message('השרת מתחבר מחדש. בודק את המשימה הקיימת בלי לשלוח שוב את הקובץ...');
+    await pause(3500);
+    continue;
   }
 }
 temporaryStatusFailures=0;
@@ -792,8 +823,8 @@ if(statusResponse.status===404&&lostJobRecovery<1){
  attempt=0;
  continue;
 }
-var j=await statusResponse.json().catch(function(){return {error:'השרת לא החזיר תשובה תקינה'}});
-if(!statusResponse.ok)throw new Error(j.error||'השירות אינו זמין');
+var j=await studioJson(statusResponse);
+if(!statusResponse.ok)throw new Error(j.error||('השירות אינו זמין (HTTP '+statusResponse.status+')'));
 var completed=Number(j.percent||0);
 $('progress').value=completed;
 markStage(completed<10?'recognize':completed<87?'mix':'video');
@@ -982,6 +1013,34 @@ $('shareVideo').onclick=async function(){
 };
 $('download').onclick=function(){if(!resultBlob)return;if(window.KolboAndroid&&resultServerUrl){window.KolboAndroid.downloadMix(resultServerUrl);message('שומר את המיקס לתיקיית ההורדות...');return}var a=document.createElement('a');a.href=resultUrl;a.download='Kolbo-Trance-Funny-Mix.mp3';document.body.appendChild(a);a.click();a.remove()};
 $('share').onclick=async function(){if(!resultBlob)return;if(window.KolboAndroid&&resultServerUrl){window.KolboAndroid.shareMix(resultServerUrl);message('מכין שיתוף של המיקס...');return}var f=new File([resultBlob],'Kolbo-Trance-Funny-Mix.mp3',{type:'audio/mpeg'});if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'Kolbo Trance Studio'});return}catch(e){if(e.name==='AbortError')return}}$('download').click();message('הקובץ נשמר לשיתוף מתוך WhatsApp.')};
+// Keep the display on while this installed PWA or browser tab is visible.
+// Android native uses FLAG_KEEP_SCREEN_ON. Never hold it in the background.
+var kolboScreenWakeLock=null;
+async function keepKolboScreenAwake(){
+ if(window.KolboAndroid||!('wakeLock' in navigator)||
+    document.visibilityState!=='visible'||kolboScreenWakeLock)return;
+ try{
+  var lock=await navigator.wakeLock.request('screen');
+  if(document.visibilityState!=='visible'){await lock.release();return;}
+  kolboScreenWakeLock=lock;
+  lock.addEventListener('release',function(){
+    if(kolboScreenWakeLock===lock)kolboScreenWakeLock=null;
+  });
+ }catch(error){
+  // Browsers can deny this based on user and power saving preferences.
+ }
+}
+document.addEventListener('visibilitychange',function(){
+ if(document.visibilityState==='visible')keepKolboScreenAwake();
+ else if(kolboScreenWakeLock){
+  var old=kolboScreenWakeLock;kolboScreenWakeLock=null;
+  old.release().catch(function(){});
+ }
+});
+window.addEventListener('pageshow',keepKolboScreenAwake);
+window.addEventListener('focus',keepKolboScreenAwake);
+document.addEventListener('pointerdown',keepKolboScreenAwake,{passive:true});
+keepKolboScreenAwake();
 window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredInstall=e;$('install').hidden=false});
 $('install').onclick=async function(){if(deferredInstall){deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('install').hidden=true}else{message('בתפריט הדפדפן בחר התקנת אפליקציה.')}};
 if('serviceWorker' in navigator){
