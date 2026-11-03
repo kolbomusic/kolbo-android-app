@@ -82,6 +82,7 @@ jobs:
         run: |
           node trance-studio/tests/test_restart_recovery.js
           node trance-studio/tests/test_create_single_click.js
+          node trance-studio/tests/test_capacity_wait.js
           node trance-studio/tests/test_render_proxy_errors.js
           node trance-studio/tests/test_screen_awake.js
       - name: Validate licensed music and story-only YouTube UI

@@ -49,7 +49,7 @@ class IsolatedAsrTests(unittest.TestCase):
         self.assertIn("del audio, rendered, clips",src)
         self.assertLess(src.index("del audio, rendered, clips"),
                         src.index("if options.get('video_requested'):",src.index("del audio, rendered, clips")))
-        self.assertIn("version='1.16.15'",src)
+        self.assertIn("version='1.16.16'",src)
 
 
 if __name__=="__main__":

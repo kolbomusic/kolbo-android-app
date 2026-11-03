@@ -1,11 +1,7 @@
 name: Kolbo production original-video visual FX sync acceptance
+# Live acceptance is manual to avoid exhausting the single production worker.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - kolbo-trance-studio-20261031
-    paths:
-      - '.github/workflows/kolbo-trance-live-original-video-fx.yml'
 permissions:
   contents: read
 # Serialize real requests to the same free 512 MiB Render instance.
@@ -43,12 +39,12 @@ jobs:
           for n in range(18):
               try:
                   health=s.get(base+'/health',timeout=25).json()
-                  if health.get('ok') and health.get('version')=='1.16.15':
+                  if health.get('ok') and health.get('version')=='1.16.16':
                       break
               except (requests.RequestException,ValueError):
                   pass
               time.sleep(10)
-          else:raise AssertionError('Kolbo production 1.16.15 not live')
+          else:raise AssertionError('Kolbo production 1.16.16 not live')
           s.get(base+'/studio',timeout=60).raise_for_status()
           for attempt in range(4):
               with open('/tmp/kolbo-video-fx-source.mp4','rb') as original:

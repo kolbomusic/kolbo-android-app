@@ -130,25 +130,41 @@ class ApiTests(unittest.TestCase):
                 executor.return_value.submit.assert_called_once()
 
 
-    def test_512mb_worker_rejects_second_job_without_queuing_or_processing(self):
-        # One actual CPU worker cannot safely process two 66-second mixes
-        # while resident Whisper and H264 allocations exceed 512 MiB.
+    def test_one_worker_disk_queues_second_job_and_rejects_third(self):
+        # Only one CPU task RUNS; a second original upload waits on disk.
+        # A third client learns capacity via GET without uploading bytes.
         from unittest import mock
         from app import create_app
         with tempfile.TemporaryDirectory() as folder:
             with mock.patch('app.ThreadPoolExecutor') as executor:
                 app=create_app({'TESTING':True,'JOB_DIR':folder})
                 client=app.test_client()
+                endpoint='/api/jobs/capacity'
+                empty=client.get(endpoint)
+                self.assertEqual(empty.status_code,200)
+                self.assertTrue(empty.get_json()['available'])
+                self.assertEqual(empty.get_json()['maximum_jobs'],2)
+                self.assertEqual(empty.get_json()['workers'],1)
                 first=client.post('/api/jobs',data={
                     'audio':(io.BytesIO(b'first'),'voice1.opus')})
                 self.assertEqual(first.status_code,202,first.get_json())
+                self.assertTrue(client.get(endpoint).get_json()['available'])
                 second=client.post('/api/jobs',data={
                     'audio':(io.BytesIO(b'second'),'voice2.opus')})
-                self.assertEqual(second.status_code,429,second.get_json())
-                self.assertEqual(second.headers.get('Retry-After'),'20')
-                self.assertIn('משימה אחרת',second.get_json()['error'])
-                executor.return_value.submit.assert_called_once()
-                self.assertEqual(client.get(first.get_json()['status_url']).status_code,200)
+                self.assertEqual(second.status_code,202,second.get_json())
+                self.assertNotEqual(first.get_json()['id'],second.get_json()['id'])
+                full=client.get(endpoint)
+                self.assertFalse(full.get_json()['available'])
+                self.assertEqual(full.headers.get('Retry-After'),'5')
+                third=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'third'),'voice3.opus')})
+                self.assertEqual(third.status_code,429,third.get_json())
+                self.assertEqual(third.headers.get('Retry-After'),'20')
+                self.assertIn('התור תפוסים',third.get_json()['error'])
+                self.assertEqual(executor.return_value.submit.call_count,2)
+                self.assertEqual(client.get(first.get_json()['status_url']).get_json()['state'],'queued')
+                self.assertEqual(client.get(second.get_json()['status_url']).get_json()['state'],'queued')
+                self.assertEqual(len(list(pathlib.Path(folder).glob('*/0.opus'))),2)
 
     def test_video_strategy_and_licensed_music_are_explicit_and_forwarded(self):
         from unittest import mock

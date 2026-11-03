@@ -18,12 +18,40 @@ MAX_COMBINED_UPLOAD=60*1024*1024
 AUTHORIZED_MUSIC_EXT={'.mp3','.wav','.ogg','.m4a'}
 MAX_BACKING_UPLOAD=15*1024*1024
 
+def _save_upload_stream(stream, dest, limit, total_limit, already_saved=0,
+                        expected_sha256=None):
+    """Store original source on disk in 256-KiB chunks, not a 45-MB RAM blob.
+
+    Waiting jobs can be spooled while the ONE CPU worker is rendering;
+    this must not add a 45-MiB in-memory buffer that risks another OOM.
+    """
+    maximum_chunk=256*1024
+    copied=0
+    digest=hashlib.sha256() if expected_sha256 is not None else None
+    with dest.open('wb') as output:
+        while True:
+            part=stream.read(maximum_chunk)
+            if not part:
+                break
+            copied+=len(part)
+            if copied>limit or already_saved+copied>total_limit:
+                raise ValueError('upload_limit')
+            output.write(part)
+            if digest is not None:
+                digest.update(part)
+    if copied<1:
+        raise ValueError('empty_upload')
+    if digest is not None and digest.hexdigest()!=expected_sha256:
+        raise ValueError('source_fingerprint_mismatch')
+    return copied
+
+
 def create_app(config=None):
     app=Flask(__name__,static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
     if config:app.config.update(config)
     root=Path(app.config['JOB_DIR']);root.mkdir(parents=True,exist_ok=True)
-    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(1);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
+    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(1);queue_slots=threading.BoundedSemaphore(2);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
     web=Path(__file__).resolve().parents[1]/'web'
     def stream_temporary_media(media_path,mime,folder):
@@ -76,6 +104,9 @@ def create_app(config=None):
         with lock:jobs[job_id].update(values)
 
     def work(job_id,paths,options):
+        # Exclusive heavy CPU/memory gate shared with phone AI-clip mux.
+        # The second mix waits on disk; no simultaneous H264 or DSP render.
+        admission.acquire()
         stage='decode'
         try:
             update(job_id,state='processing',percent=4,label='קורא ומאמת את אורך ההקלטות')
@@ -481,6 +512,7 @@ def create_app(config=None):
         finally:
             for p in paths:p.unlink(missing_ok=True)
             admission.release()
+            queue_slots.release()
 
     @app.before_request
     def origin_check():
@@ -514,7 +546,25 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.15',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.16',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+
+    @app.get('/api/jobs/capacity')
+    def job_capacity():
+        """Check for one of two disk-spooled job slots, without uploading.
+
+        Exactly one CPU worker runs at a time. A second job may wait on
+        disk; this read-only probe avoids consuming mobile bandwidth while
+        the one active and one queued slot are occupied. It never reserves
+        a slot: the actual POST still atomically acquires admission.
+        """
+        available=queue_slots.acquire(blocking=False)
+        if available:
+            queue_slots.release()
+        response=jsonify(available=available,maximum_jobs=2,
+                         workers=1,queue_enabled=True)
+        response.headers['Cache-Control']='no-store'
+        if not available:response.headers['Retry-After']='5'
+        return response
 
     @app.get('/api/capabilities')
     def capabilities():
@@ -628,8 +678,8 @@ def create_app(config=None):
                 return jsonify(error='נדרש אישור זכויות שימוש בקובץ המוזיקה'),400
             if Path(backing_file.filename).suffix.lower() not in AUTHORIZED_MUSIC_EXT:
                 return jsonify(error='קובץ מוזיקה אינו בפורמט נתמך'),400
-        if not admission.acquire(blocking=False):
-            response=jsonify(error='שרת העיבוד עסוק במשימה אחרת. הקובץ לא נקלט; נסה שוב לאחר שהשרת יתפנה.')
+        if not queue_slots.acquire(blocking=False):
+            response=jsonify(error='כל מקומות התור תפוסים כרגע. הקובץ לא נקלט; אפשר לנסות שוב כשהתור יתפנה.')
             response.headers['Retry-After']='20'
             return response,429
         job_id=secrets.token_hex(24);directory=root/job_id;directory.mkdir(mode=0o700);paths=[]
@@ -638,41 +688,39 @@ def create_app(config=None):
             for i,file in enumerate(files):
                 extension=Path(file.filename).suffix.lower()
                 size_limit=MAX_VIDEO_UPLOAD if extension in VIDEO_UPLOADS else MAX_AUDIO_UPLOAD
-                content=file.stream.read(size_limit+1)
-                if not content or len(content)>size_limit:
-                    raise ValueError('גודל הקובץ חורג מהמגבלה לסוג המדיה')
-                total_bytes+=len(content)
-                if total_bytes>MAX_COMBINED_UPLOAD:
-                    raise ValueError('ההעלאה הכוללת גדולה מ־60MB')
-                # Fingerprint the exact original file received from WhatsApp
-                # or device storage. This is used to check that the voice ASR
-                # and mixing pipeline operate on the SAME uploaded bytes.
+                # Validate the optional WhatsApp source fingerprint first,
+                # then hash and spool each chunk as it arrives. A simultaneous
+                # heavy mix can be running within the same 512 MiB instance.
+                expected_hash=None
                 if source_hashes:
                     hashes=source_hashes.split(',')
                     if len(hashes)!=len(files) or not re.fullmatch('[a-f0-9]{64}',hashes[i]):
                         raise ValueError('source_fingerprint_invalid')
-                    if hashlib.sha256(content).hexdigest()!=hashes[i]:
-                        raise ValueError('source_fingerprint_mismatch')
-                path=directory/(str(i)+Path(file.filename).suffix.lower());path.write_bytes(content);paths.append(path)
+                    expected_hash=hashes[i]
+                path=directory/(str(i)+extension)
+                saved=_save_upload_stream(
+                    file.stream,path,size_limit,MAX_COMBINED_UPLOAD,
+                    already_saved=total_bytes,expected_sha256=expected_hash)
+                total_bytes+=saved
+                paths.append(path)
         except ValueError as exc:
-            admission.release();shutil.rmtree(directory,ignore_errors=True)
+            queue_slots.release();shutil.rmtree(directory,ignore_errors=True)
             if str(exc).startswith('source_fingerprint'):
                 return jsonify(error='קובץ המקור השתנה בין התמלול להעלאה. יש לשלוח שוב את ההקלטה המקורית.'),409
             return jsonify(error='גודל הקובץ אינו תקין: עד 15MB לשמע, 45MB לסרטון ו־60MB לכל הקבצים יחד'),400
         except Exception:
-            admission.release();shutil.rmtree(directory,ignore_errors=True)
+            queue_slots.release();shutil.rmtree(directory,ignore_errors=True)
             return jsonify(error='לא ניתן לקרוא את הקובץ המקורי'),400
         backing_music_path=None
         if backing_file and backing_file.filename:
             try:
-                chunk=backing_file.stream.read(MAX_BACKING_UPLOAD+1)
-                if not chunk or len(chunk)>MAX_BACKING_UPLOAD or total_bytes+len(chunk)>MAX_COMBINED_UPLOAD:
-                    raise ValueError()
                 ext=Path(backing_file.filename).suffix.lower()
                 backing_music_path=directory/('licensed-backing'+ext)
-                backing_music_path.write_bytes(chunk)
+                _save_upload_stream(
+                    backing_file.stream,backing_music_path,MAX_BACKING_UPLOAD,
+                    MAX_COMBINED_UPLOAD,already_saved=total_bytes)
             except (OSError,ValueError):
-                admission.release();shutil.rmtree(directory,ignore_errors=True)
+                queue_slots.release();shutil.rmtree(directory,ignore_errors=True)
                 return jsonify(error='המוזיקה או סך הקבצים חורגים ממגבלת ההעלאה המורשית'),400
         with lock:jobs[job_id]={'state':'queued','percent':0,'label':'ממתין לעיבוד','created':time.time(),'seconds':seconds,'bpm':bpm}
         executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'video_requested':video_requested,'transcription_failed':transcription_failed,'transcript':transcript,'transcript_origin':transcript_origin,'source_hashes':source_hashes,'ai_video_consent':ai_video_consent and video_requested,

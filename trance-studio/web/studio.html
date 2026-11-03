@@ -738,6 +738,39 @@ async function studioJson(response){
    '). לא שולחים שוב את הקובץ אוטומטית כדי למנוע יצירה כפולה.');
  }
 }
+async function waitForJobCapacity(){
+ // Check the free worker's one-processing + one-disk-queued slots using
+ // tiny GET probes. NEVER send the user's WhatsApp media while both are full.
+ // The original selected file stays local and the Create button stays locked.
+ var hasSlot=false,permissionDenied=false;
+ for(var attempt=0;attempt<45;attempt++){
+  var controller=new AbortController();
+  var timeout=setTimeout(function(){controller.abort()},10000);
+  try{
+   var response=await fetch('/api/jobs/capacity',{
+     method:'GET',credentials:'same-origin',cache:'no-store',
+     headers:{Accept:'application/json'},signal:controller.signal
+   });
+   if(response.status===401||response.status===403){
+    permissionDenied=true;break;
+   }
+   if(response.ok&&studioResponseIsJson(response)){
+    var capacity=await response.json();
+    if(capacity&&capacity.available===true){hasSlot=true;break}
+   }
+  }catch(error){
+   // Render may briefly sleep or return an HTML 429. Retry only a GET,
+   // never the original media POST.
+  }finally{clearTimeout(timeout)}
+  if(attempt<44){
+   message('ממתין לתור פנוי בשרת החינמי. הקובץ נשאר במכשיר; אין העלאה חוזרת ('+
+           (attempt+1)+'/45)...');
+   await pause(4000);
+  }
+ }
+ if(permissionDenied)throw new Error('נדרשת התחברות מחודשת לאולפן כדי להתחיל יצירה. הקובץ לא הועלה.');
+ if(!hasSlot)throw new Error('כל מקומות התור תפוסים. הקובץ נשמר במכשיר ולא הועלה; אפשר לנסות יצירה נוספת לאחר שהתור יתפנה.');
+}
 async function submitMixJob(form){
  // Exactly ONE media POST per explicit Create tap. Never upload multiple
  // times because a Render Free worker is busy or sent an HTML 429 response.
@@ -844,6 +877,7 @@ form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99
 form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('fx_gain',String(Number($('fx_gain').value)/100));form.set('voice_level',String(Number($('voice').value)/100));
 // One explicit Create click must create at most one server job, even
 // if Render restarts. The original file remains selected for a manual retry.
+await waitForJobCapacity();
 var data=await submitMixJob(form);
 var temporaryStatusFailures=0;
 for(var attempt=0;attempt<600;attempt++){
