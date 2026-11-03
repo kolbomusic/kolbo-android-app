@@ -64,6 +64,31 @@ for label in ("בניה ריין", "אורי גרוסמן", "אדם גורן", "
     assert label in memorial_html, label
 assert memorial_html.count('class="memorial"')==5
 
+# Only the Render ingress may supply the client IP used by throttling.
+# Regular test deployments must ignore spoofed X-Forwarded-For headers.
+import subprocess
+import textwrap
+for render_mode,expected in ((False,"10.0.0.1"),(True,"203.0.113.16")):
+    env=dict(os.environ)
+    env.pop("RENDER_SERVICE_ID",None)
+    if render_mode:
+        env["RENDER_SERVICE_ID"]="synthetic-render-service"
+    check=subprocess.run([sys.executable,"-c",textwrap.dedent("""
+        import app
+        from flask import request
+        @app.app.get("/_probe_ip")
+        def probe():
+            return request.remote_addr
+        c=app.app.test_client()
+        r=c.get("/_probe_ip",base_url="https://karnafim-community-46.onrender.com",
+                environ_overrides={"REMOTE_ADDR":"10.0.0.1"},
+                headers={"X-Forwarded-For":"203.0.113.16"})
+        assert r.status_code==200
+        print(r.get_data(as_text=True))
+    """)],cwd=ROOT,env=env,capture_output=True,text=True,timeout=20)
+    assert check.returncode==0,(check.stdout,check.stderr[-1200:])
+    assert check.stdout.strip()==expected,(render_mode,check.stdout,expected)
+
 css=(ROOT/"static/site.css").read_text(encoding="utf-8")
 js=(ROOT/"static/site.js").read_text(encoding="utf-8")
 for token in (".auth-page",".auth-trust",":focus-visible","prefers-reduced-motion",
