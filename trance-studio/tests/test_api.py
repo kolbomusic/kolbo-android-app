@@ -20,6 +20,20 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/jobs',data={'bpm':'oops','audio':(io.BytesIO(b'bad'),'a.opus')}).status_code,400)
         self.assertEqual(self.client.get('/api/jobs/not-a-job').status_code,404)
 
+    def test_public_install_page_has_real_apk_and_open_studio_link(self):
+        page=self.client.get('/install')
+        self.assertEqual(page.status_code,200)
+        self.assertIn('text/html',page.content_type)
+        html=page.get_data(as_text=True)
+        self.assertIn('Kolbo Trance',html)
+        self.assertIn('2.4.9 Beta',html)
+        self.assertIn('https://github.com/kolbomusic/kolbo-android-app/releases/download/trance-story-v2.4.9-beta.1/Kolbo-Trance-Story-v2.4.9-beta.1.apk',html)
+        self.assertIn('href="/studio"',html)
+        self.assertIn('id="installPwa"',html)
+        self.assertIn('beforeinstallprompt',html)
+        self.assertIn('no-store',page.headers.get('Cache-Control',''))
+        self.assertIn('href="/install"',self.client.get('/studio').get_data(as_text=True))
+
     def test_real_upload_renders_downloadable_mp3(self):
         stream=io.BytesIO()
         with wave.open(stream,'wb') as w:
