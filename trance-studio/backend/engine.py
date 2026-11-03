@@ -552,7 +552,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     # Do not spend a 10-second long-form FX budget entirely in the first
     # minute. Select dramatic beats evenly across the *whole* original,
     # including its final phrase. All source words remain uncut and in order.
-    slot_cost=beat*(1.0 if density==1 else 1.5)+.06
+    slot_cost=beat*(1.0 if density==1 else 2.0)+.07
     maximum_slots=max(1,int(max_extensions/slot_cost))
     if len(chosen)>maximum_slots:
         picks=np.linspace(0,len(chosen)-1,maximum_slots,dtype=np.int32)
