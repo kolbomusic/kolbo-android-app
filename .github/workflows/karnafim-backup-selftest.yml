@@ -1,0 +1,83 @@
+name: Karnafim encrypted backup synthetic restore verification
+on:
+  push:
+    branches: [karnafim-encrypted-backup-and-mail-readiness-20261103]
+    paths:
+      - 'karnafim-site/ops/backup_encrypted.sh'
+      - '.github/workflows/karnafim-backup-selftest.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-backup-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: backup_ci
+          POSTGRES_PASSWORD: synthetic_password_only
+          POSTGRES_DB: synthetic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U backup_ci -d synthetic"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Seed a disposable database with fictitious community data
+        shell: bash
+        run: |
+          export PGDATABASE='postgresql://backup_ci:synthetic_password_only@127.0.0.1:5432/synthetic?sslmode=disable'
+          docker run --rm --network host -e PGDATABASE postgres:18-alpine \
+            psql --dbname="$PGDATABASE" -v ON_ERROR_STOP=1 -c "
+              CREATE TABLE b2_users(id INTEGER, name TEXT);
+              CREATE TABLE b2_posts(id INTEGER, title TEXT);
+              CREATE TABLE b2_messages(id INTEGER, body TEXT);
+              CREATE TABLE b2_memorial_source_suggestions(id INTEGER, source_url TEXT);
+              INSERT INTO b2_users VALUES (1, 'SYNTHETIC ONLY');
+              INSERT INTO b2_posts VALUES (2, 'Synthetic memory');
+              INSERT INTO b2_messages VALUES (3, 'Synthetic message');"
+      - name: Run encrypted pg_dump and verify decrypt round trip
+        shell: bash
+        env:
+          KARNAFIM_BACKUP_DATABASE_URL: postgresql://backup_ci:synthetic_password_only@127.0.0.1:5432/synthetic?sslmode=disable
+          KARNAFIM_BACKUP_PASSPHRASE: synthetic-testing-only-never-used-for-real-backups-2026
+          KARNAFIM_BACKUP_TEST_MODE: '1'
+          KARNAFIM_BACKUP_SSLMODE: disable
+          KARNAFIM_BACKUP_OUTPUT_DIR: ${{ runner.temp }}/encrypted-synthetic
+        run: |
+          bash karnafim-site/ops/backup_encrypted.sh
+          cd "$KARNAFIM_BACKUP_OUTPUT_DIR"
+          sha256sum -c ./*.sha256
+          test "$(find . -maxdepth 1 -name '*.pgdump.gpg' | wc -l)" -eq 1
+          test "$(find . -maxdepth 1 -name '*.dump' | wc -l)" -eq 0
+      - name: Restore the encrypted archive into a separate synthetic database
+        shell: bash
+        env:
+          KARNAFIM_BACKUP_PASSPHRASE: synthetic-testing-only-never-used-for-real-backups-2026
+          KARNAFIM_BACKUP_OUTPUT_DIR: ${{ runner.temp }}/encrypted-synthetic
+        run: |
+          export PGDATABASE='postgresql://backup_ci:synthetic_password_only@127.0.0.1:5432/synthetic?sslmode=disable'
+          docker run --rm --network host -e PGDATABASE postgres:18-alpine \
+            psql --dbname="$PGDATABASE" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE restore_ci;'
+          printf '%s' "$KARNAFIM_BACKUP_PASSPHRASE" |
+            gpg --batch --yes --no-tty --pinentry-mode loopback \
+              --passphrase-fd 0 --decrypt --output "${RUNNER_TEMP}/restore-ci.dump" \
+              "$KARNAFIM_BACKUP_OUTPUT_DIR"/*.pgdump.gpg >/dev/null 2>&1
+          export PGDATABASE='postgresql://backup_ci:synthetic_password_only@127.0.0.1:5432/restore_ci?sslmode=disable'
+          docker run --rm --network host --user "$(id -u):$(id -g)" -e PGDATABASE \
+            -v "${RUNNER_TEMP}:/export:ro" postgres:18-alpine \
+            pg_restore --exit-on-error --no-owner --no-privileges \
+              --dbname="$PGDATABASE" /export/restore-ci.dump
+          actual="$(docker run --rm --network host -e PGDATABASE postgres:18-alpine \
+            psql --dbname="$PGDATABASE" -At -c 'SELECT count(*) FROM b2_users;')"
+          test "$actual" = "1"
+          echo 'PASS: restored dummy member data from encrypted archive into disposable PG18'
+      - name: Remove the synthetic archive
+        if: always()
+        shell: bash
+        run: rm -rf -- "${RUNNER_TEMP}/encrypted-synthetic" "${RUNNER_TEMP}/restore-ci.dump"
