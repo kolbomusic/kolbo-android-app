@@ -683,6 +683,11 @@ def signup():
         if request.form.get("agree")!="yes" or request.form.get("website"):abort(400)
         name=request.form.get("name","").strip()[:90]
         service_claim=request.form.get("service_claim","").strip()[:500]
+        # Automated completeness triage is not identity verification.
+        missing_details=(len(service_claim)<18)
+        triage_reason=("נדרשים פרטים נוספים על השירות (מחזור, תפקיד או מחלקה) לצורך בדיקת שייכות. "
+                       "בינתיים הבקשה ממתינה לבדיקת צוות הקהילה." if missing_details else
+                       "פרטי השירות נקלטו לבדיקה. זהות, שייכות ובעלות על הדוא״ל טרם אומתו.")
         email=request.form.get("email","").strip().lower()[:200]
         password=request.form.get("password","")
         if len(name)<2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) or not 12<=len(password)<=200:
@@ -694,8 +699,9 @@ def signup():
                         service_claim,membership_status,membership_reason,membership_summary)
                         VALUES(%s,%s,%s,%s,%s,'pending',%s,%s) RETURNING id""",
                         (name,email,hashpw(password),not MANUAL_SIGNUP,service_claim,
-                        'ממתין לאימות זהות ושייכות לפלוגה.',
-                        'בקשת הצטרפות של '+name+(' · פרטי שירות שמסר: '+service_claim[:220] if service_claim else ' · פרטי שירות טרם נמסרו.')))
+                        triage_reason,
+                        'נקלטה בקשת הצטרפות של '+name+(' · פירוט ראשוני שמסר: '+service_claim[:220] if service_claim else ' · פרטי שירות לא נמסרו.')+
+                        ' · סטטוס: נדרשת בדיקת מנהל.'))
                     uid=cur.fetchone()["id"]
                 except psycopg.errors.UniqueViolation:
                     c.rollback()
@@ -1228,7 +1234,7 @@ def members():
         return redirect("/members",303)
     rows=sql("""SELECT id,name,email,joined,service_claim,membership_status,
                    membership_reason,membership_summary
-                   FROM b2_users WHERE approved=FALSE
+                   FROM b2_users WHERE approved=FALSE AND membership_status='pending'
                    ORDER BY joined DESC LIMIT 100""")
     html=''
     for u in rows:
@@ -1433,7 +1439,8 @@ def dashboard():
     summary=sql("""SELECT
         (SELECT COUNT(*) FROM b2_users) AS total_members,
         (SELECT COUNT(*) FROM b2_users WHERE approved=TRUE) AS approved_members,
-        (SELECT COUNT(*) FROM b2_users WHERE approved=FALSE) AS pending_members,
+        (SELECT COUNT(*) FROM b2_users WHERE approved=FALSE AND membership_status='pending') AS pending_members,
+        (SELECT COUNT(*) FROM b2_users WHERE approved=FALSE AND membership_status='rejected') AS rejected_members,
         (SELECT COUNT(*) FROM b2_posts WHERE status='pending') AS pending_posts,
         (SELECT COUNT(*) FROM b2_photo_memories WHERE status='pending') AS pending_memories,
         (SELECT COUNT(*) FROM b2_photo_reports WHERE status='open') AS privacy_requests,
@@ -1446,6 +1453,7 @@ def dashboard():
             WHERE can_approve OR can_moderate OR can_invite) AS delegates""",one=True)
     items=[
         ("בקשות הצטרפות",summary["pending_members"],"/members","חברים הממתינים לאימות ואישור"),
+        ("בקשות חברות שלא אושרו",summary["rejected_members"],"/dashboard","בקשות עם הסבר אישי ואפשרות לערער"),
         ("פרסומים לביקורת",summary["pending_posts"],"/moderation","סיפורים, תמונות והקלטות שממתינים לאישור"),
         ("פרסומים אוטומטיים",summary["auto_published"],"/feed","סיפורים טקסטואליים שעברו סינון אוטומטי"),
         ("פרסומים שנדחו",summary["rejected_posts"],"/moderation","החלטות שתועדו עם נימוק; ערעורים חוזרים לתור הבקרה"),
