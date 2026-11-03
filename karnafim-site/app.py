@@ -20,6 +20,7 @@ from flask import Flask, Response, abort, g, redirect, request, send_file, sessi
 from werkzeug.middleware.proxy_fix import ProxyFix
 from markupsafe import Markup
 from PIL import Image, ImageOps, UnidentifiedImageError
+from memorial_source_registry import MEMORIAL_PEOPLE, plausible_public_source, official_memorial_link
 
 BASE=Path(__file__).resolve().parent
 app=Flask(__name__,static_folder=str(BASE/"static"))
@@ -128,6 +129,24 @@ def init():
                 detail TEXT NOT NULL DEFAULT '',
                 created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_admin_audit_created_idx ON b2_admin_audit(created DESC)")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_memorial_source_suggestions(
+                id BIGSERIAL PRIMARY KEY,
+                person_key TEXT NOT NULL,
+                izkor_id TEXT NOT NULL,
+                contributor BIGINT NOT NULL REFERENCES b2_users(id) ON DELETE CASCADE,
+                source_url TEXT NOT NULL,
+                evidence TEXT NOT NULL,
+                rights_note TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending','reviewed','rejected')),
+                moderator BIGINT REFERENCES b2_users(id),
+                decision_reason TEXT NOT NULL DEFAULT '',
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                decided TIMESTAMPTZ)""")
+            cur.execute("""CREATE INDEX IF NOT EXISTS b2_memorial_suggestions_pending_idx
+                ON b2_memorial_source_suggestions(status,created DESC)""")
+            cur.execute("""CREATE INDEX IF NOT EXISTS b2_memorial_suggestions_author_idx
+                ON b2_memorial_source_suggestions(contributor,created DESC)""")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_meetups(
                 id BIGSERIAL PRIMARY KEY,
                 creator BIGINT NOT NULL REFERENCES b2_users(id),
@@ -346,10 +365,10 @@ def layout(title,body):
     if PUBLIC_AUTH and u:
         menu += [("/feed","הקהילה"),("/cohorts","ספר המחזורים"),("/voices","מורשת קולית"),("/meetups","מפגשי פלוגה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/application","מצב ההצטרפות"),("/profile","הפרופיל שלי")]
         permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
-        if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות")]
+        if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות"),("/memorial-source-review","מקורות תמונות הנצחה")]
         if permissions["approve"] or permissions["moderate"]:menu += [("/decisions","מרכז החלטות")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
-        if u["approved"]:menu += [("/recommend","המלצה על חבר")]
+        if u["approved"]:menu += [("/recommend","המלצה על חבר"),("/memorial-sources","הצעת תמונה להנצחה")]
         if permissions["invite"]:menu += [("/invite","הזמנת חברים")]
         if admin():menu += [("/dashboard","לוח בקרה"),("/team","הרשאות ניהול")]
     elif PUBLIC_AUTH:
@@ -449,40 +468,135 @@ def heritage():
 
 @app.get("/memorial")
 def memorial():
-    """Verified public memorial records; no copying of third-party portraits."""
+    """Public remembrance. No image re-hosting before documented rights."""
     force = [
-        ("רס״ן בניה ריין ז״ל", "מפקד כוח בניה", "https://www.izkor.gov.il/בניה%20ריין/en_f5ccba845584f96f9b9334cf335d2e78/"),
-        ("סמ״ר אורי גרוסמן ז״ל", "מפקד טנק ששימש כתותחן בכוח בניה", "https://www.izkor.gov.il/אורי%20גרוסמן/en_f53b79619b3f27184812b11f14e635a8/"),
-        ("סמ״ר אדם גורן ז״ל", "טען־קשר בכוח בניה", "https://www.izkor.gov.il/אדם%20גורן/en_e6446f8f52c2b18e0ec560602482bdda"),
-        ("סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל", "נהג הטנק בכוח בניה", "https://www.izkor.gov.il/אלכסנדר%20בונימוביץ/en_34b2955a02b6a81f8ba932dbf6228e61/"),
+        ("benaya-rein","רס״ן בניה ריין ז״ל","מפקד כוח בניה","https://www.izkor.gov.il/בניה%20ריין/en_f5ccba845584f96f9b9334cf335d2e78/"),
+        ("uri-grossman","סמ״ר אורי גרוסמן ז״ל","מפקד טנק ששימש כתותחן בכוח בניה","https://www.izkor.gov.il/אורי%20גרוסמן/en_f53b79619b3f27184812b11f14e635a8/"),
+        ("adam-goren","סמ״ר אדם גורן ז״ל","טען־קשר בכוח בניה","https://www.izkor.gov.il/אדם%20גורן/en_e6446f8f52c2b18e0ec560602482bdda"),
+        ("alexander-bunimovitz","סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל","נהג הטנק בכוח בניה","https://www.izkor.gov.il/אלכסנדר%20בונימוביץ/en_34b2955a02b6a81f8ba932dbf6228e61/"),
     ]
-    def memorial_card(name,role,date,iso,source):
+    def memorial_card(key,name,role,date,iso,source):
+        if not official_memorial_link(key,source):abort(500)
+        suggestion=(' <a href="/memorial-sources?person='+e(key)+'">הצעת מקור תמונה לאדם זה</a>'
+                    if g.user and g.user["approved"] else '')
         return ('<article class="memorial"><div class="candle" aria-hidden="true">✦</div>'
                 '<h3>'+e(name)+'</h3><p>'+e(role)+'</p>'
                 '<p><time datetime="'+e(iso)+'">'+e(date)+'</time></p>'
+                '<p class="muted">התמונה תוצג לאחר בדיקת זהות והרשאה לשימוש.</p>'
                 '<a href="'+e(source)+'" target="_blank" rel="noopener noreferrer"'
-                ' aria-label="סיפור ההנצחה הרשמי של '+e(name)+'">סיפור החיים באתר יזכור</a></article>')
-    cards=''.join(memorial_card(name,role,"12.8.2006","2006-08-12",source) for name,role,source in force)
-    yoni=memorial_card("סמל יהונתן (יוני) שרעבי ז״ל",
+                ' aria-label="עמוד ההנצחה הרשמי של '+e(name)+'">עמוד ההנצחה והתמונה באתר יזכור</a>'+
+                suggestion+'</article>')
+    cards=''.join(memorial_card(key,name,role,"12.8.2006","2006-08-12",source)
+                  for key,name,role,source in force)
+    yoni=memorial_card("yoni-sharabi","סמל יהונתן (יוני) שרעבי ז״ל",
                        "לוחם שריון · פלוגה ב׳ הקרנפים, גדוד 46, חטיבה 401",
                        "3.8.2006","2006-08-03",
                        "https://www.izkor.gov.il/יהונתן%20שרעבי/en_53e66dd727188835acbe02a1f641a882")
     return layout("הנצחה",
         '<div class="pagehead solemn"><span class="tag">לזכור בכבוד</span>'
         '<h1>החברים שתמיד איתנו</h1><p>הנצחה מכבדת המבוססת על רשומות אתר יזכור של משרד הביטחון.'
-        'תצלומים אישיים וסיפורי משפחות יפורסמו רק בכפוף לזכויות ולהסכמות מתאימות.</p></div>'
+        'תמונות מאתרי מקור אינן מועתקות לאתר ללא בדיקת זהות וזכויות פרסום.</p></div>'
         '<section class="story"><h2>כוח בניה — גדוד 46</h2>'
         '<p>ב־12 באוגוסט 2006 נפלו ארבעת אנשי הצוות בדרכם למשימת חילוץ נוספת בלבנון.'
         'אנו זוכרים את כל אנשי הצוות יחד.</p></section>'
         '<section class="memories" aria-label="הנצחת ארבעת אנשי כוח בניה">'+cards+'</section>'
         '<section class="story"><h2>פלוגה ב׳ — לזכר יוני שרעבי</h2>'
         '<p>יהונתן (יוני) שרעבי שירת כלוחם שריון בפלוגה ב׳ ״הקרנפים״ של גדוד 46 בחטיבה 401.'
-        ' הוא נפל בקרב באזור א־טייבה בדרום לבנון ב־3 באוגוסט 2006 מפגיעת טיל נגד טנקים, והוא בן 20.</p>'+
+        ' הוא נפל בקרב באזור א־טייבה בדרום לבנון ב־3 באוגוסט 2006 מפגיעת טיל נגד טנקים, והוא בן 20.</p>'
         '<p class="muted">קיימת אי־התאמה בין עדות חבר מהפלוגה על תפקידו כנהג טנק לבין הרישום במקור ההנצחה הרשמי. עד לבירור נוסף, התפקיד המדויק אינו מוצג כעובדה מאומתת.</p></section>'
         '<section class="memories" aria-label="הנצחת יהונתן שרעבי">'+yoni+'</section>'
-        '<div class="note">שמות, דרגות, תאריכי נפילה ותפקידי אנשי כוח בניה נבדקו מול אתר יזכור של משרד הביטחון. לגבי תפקידו המדויק של יוני שרעבי קיימת אי־התאמה בין מקור ההנצחה לעדות חבר מהפלוגה, ולכן הניסוח נשאר זהיר.'+
-        ' המידע ההיסטורי מקושר לעמודי הנצחה רשמיים.'
-        ' יש לכבד את פרטיות המשפחות לפני פרסום תמונות או סיפורים אישיים.</div>')
+        '<div class="note">המידע ההיסטורי מקושר לעמודי הנצחה רשמיים. אין לפרסם מידע משפחתי פרטי או תמונות ללא הסכמה וזכויות מתאימות.</div>')
+
+@app.route("/memorial-sources",methods=["GET","POST"])
+@require_approved
+def memorial_sources():
+    """Member-submitted candidate links, never automatically fetched or published."""
+    if request.method=="POST":
+        protect();limit("memorial-source:"+str(g.user["id"]),4,60)
+        key=request.form.get("person_key","").strip()
+        link=request.form.get("source_url","").strip()
+        evidence=request.form.get("evidence","").strip()[:700]
+        rights=request.form.get("rights_note","").strip()[:350]
+        if key not in MEMORIAL_PEOPLE or not plausible_public_source(link) or len(evidence)<15:
+            abort(400)
+        sql("""INSERT INTO b2_memorial_source_suggestions(
+                person_key,izkor_id,contributor,source_url,evidence,rights_note)
+                VALUES(%s,%s,%s,%s,%s,%s)""",
+            (key,MEMORIAL_PEOPLE[key]["izkor_id"],g.user["id"],link,evidence,rights))
+        return redirect("/memorial-sources",code=303)
+    selected=request.args.get("person","")
+    if selected and selected not in MEMORIAL_PEOPLE:abort(404)
+    choices=''.join('<option value="'+e(key)+'"'+(' selected' if key==selected else '')+
+                    '>'+e(record["name"])+'</option>' for key,record in MEMORIAL_PEOPLE.items())
+    records=sql("""SELECT person_key,status,decision_reason,created
+        FROM b2_memorial_source_suggestions WHERE contributor=%s
+        ORDER BY created DESC,id DESC LIMIT 30""",(g.user["id"],))
+    labels={"pending":"ממתין לבדיקת מנהל","reviewed":"נבדק — אינו אישור לפרסום התמונה","rejected":"המקור נדחה"}
+    history=''.join('<article class="person"><h3>'+e(MEMORIAL_PEOPLE.get(r["person_key"],{}).get("name","מקור הנצחה"))+
+                    '</h3><p>'+e(labels.get(r["status"],"בבדיקה"))+'</p>'+
+                    ('<p>'+e(r["decision_reason"])+'</p>' if r["decision_reason"] else '')+'</article>'
+                    for r in records)
+    form=button_form('<label>חלל<select name="person_key" required>'+choices+'</select></label>'+
+        '<label>כתובת HTTPS למקור התמונה<input name="source_url" type="url" maxlength="500" required></label>'+
+        '<label>כיצד ידוע שהתמונה שייכת לחלל זה?<textarea name="evidence" minlength="15" maxlength="700" required></textarea></label>'+
+        '<label>מידע כללי על הרשאת השימוש (לא לצרף מסמכים או פרטי משפחה)<textarea name="rights_note" maxlength="350"></textarea></label>'+
+        '<button class="primary">הצעת מקור לבדיקה</button>','/memorial-sources','class="formcard"')
+    return layout("הצעת תמונות להנצחה",'<div class="pagehead"><h1>תמונות להנצחת חברינו</h1>'
+        '<p>אפשר להציע כתובת תמונה לבדיקה. האתר אינו מוריד או מפרסם את התמונה אוטומטית;'
+        ' נדרשת הרשאת שימוש ותאימות זהות.</p></div>'+form+
+        '<section class="story"><h2>מצב ההצעות שלי</h2>'+(
+            history or '<p>עדיין אין הצעות.</p>')+'</section>')
+
+@app.route("/memorial-source-review",methods=["GET","POST"])
+@require_approved
+def memorial_source_review():
+    if not staff_permissions()["moderate"]:abort(403)
+    if request.method=="POST":
+        protect();limit("memorial-source-review:"+str(g.user["id"]),30,60)
+        ident=request.form.get("id","")
+        action=request.form.get("action","")
+        reason=request.form.get("reason","").strip()[:450]
+        if not ident.isdecimal() or action not in ("reviewed","rejected") or len(reason)<12:
+            abort(400)
+        result=sql("""UPDATE b2_memorial_source_suggestions
+            SET status=%s,moderator=%s,decision_reason=%s,decided=NOW()
+            WHERE id=%s AND status='pending'
+              AND izkor_id=CASE person_key
+                  WHEN 'benaya-rein' THEN %s
+                  WHEN 'uri-grossman' THEN %s
+                  WHEN 'adam-goren' THEN %s
+                  WHEN 'alexander-bunimovitz' THEN %s
+                  WHEN 'yoni-sharabi' THEN %s
+                  ELSE '' END
+            RETURNING id""",
+            (action,g.user["id"],reason,int(ident),
+             *(MEMORIAL_PEOPLE[k]["izkor_id"] for k in
+               ("benaya-rein","uri-grossman","adam-goren",
+                "alexander-bunimovitz","yoni-sharabi"))),True)
+        if not result:abort(409)
+        return redirect("/memorial-source-review",code=303)
+    proposals=sql("""SELECT s.id,s.person_key,s.izkor_id,s.source_url,s.evidence,
+                s.rights_note,u.name AS contributor_name
+        FROM b2_memorial_source_suggestions s
+        JOIN b2_users u ON u.id=s.contributor
+        WHERE s.status='pending' ORDER BY s.created DESC,s.id DESC LIMIT 50""")
+    cards=''
+    for item in proposals:
+        person=MEMORIAL_PEOPLE.get(item["person_key"])
+        if not person or person["izkor_id"]!=item["izkor_id"]:
+            continue
+        cards+=('<article class="post"><h2>'+e(person["name"])+'</h2><p>הציע/ה: '+
+                e(item["contributor_name"])+'</p><p>מקור לבדיקה (אין פתיחה אוטומטית): '+
+                e(item["source_url"])+'</p><p>ראיית שיוך: '+e(item["evidence"])+
+                '</p><p>מידע על זכויות: '+e(item["rights_note"])+'</p>'+
+                button_form('<input type="hidden" name="id" value="'+str(item["id"])+'">'+
+                '<label>נימוק למגיש<input name="reason" minlength="12" maxlength="450" required></label>'+
+                '<button name="action" value="reviewed" class="primary">מקור נבדק — ללא פרסום תמונה</button>'+
+                '<button name="action" value="rejected" class="subtle">דחייה</button>',
+                '/memorial-source-review')+'</article>')
+    return layout("בדיקת מקורות הנצחה",'<div class="pagehead"><h1>בקרת מקורות הנצחה</h1>'
+        '<p>בדיקת מקור אינה מתירה העתקה, הצגה או פרסום של תמונה ללא רישיון מפורש.</p></div>'+
+        (cards or '<div class="note">אין הצעות ממתינות.</div>'))
 
 @app.get("/photos")
 def photos():
