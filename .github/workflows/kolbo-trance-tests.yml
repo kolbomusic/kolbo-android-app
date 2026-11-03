@@ -79,7 +79,10 @@ jobs:
           node trance-studio/tests/test_studio_cloud_wake.js
           node trance-studio/tests/test_social_link_share.js
       - name: Verify limited Render restart recovery without automated WhatsApp creation
-        run: node trance-studio/tests/test_restart_recovery.js
+        run: |
+          node trance-studio/tests/test_restart_recovery.js
+          node trance-studio/tests/test_render_proxy_errors.js
+          node trance-studio/tests/test_screen_awake.js
       - name: Validate licensed music and story-only YouTube UI
         run: node trance-studio/tests/test_video_music_ui.js
       - name: Verify source video voice-FX synced UI
