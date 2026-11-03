@@ -248,34 +248,38 @@ def heritage():
 
 @app.get("/memorial")
 def memorial():
-    # Verified IDF / Ministry of Defense memorial records. Do not copy portraits
-    # or family photographs without permission to reproduce them.
-    force_baniya = [
-        ("רס״ן בניה ריין ז״ל", "מפקד כוח בניה", "12.8.2006",
-         "https://www.izkor.gov.il/בניה%20ריין/en_f5ccba845584f96f9b9334cf335d2e78/"),
-        ("סמ״ר אורי גרוסמן ז״ל", "לוחם בכוח בניה", "12.8.2006", ""),
-        ("סמ״ר אדם גורן ז״ל", "לוחם בכוח בניה", "12.8.2006", ""),
-        ("סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל", "לוחם בכוח בניה", "12.8.2006", ""),
+    """Verified public memorial records; no copying of third-party portraits."""
+    force = [
+        ("רס״ן בניה ריין ז״ל", "מפקד כוח בניה", "https://www.izkor.gov.il/בניה%20ריין/en_f5ccba845584f96f9b9334cf335d2e78/"),
+        ("סמ״ר אורי גרוסמן ז״ל", "תותחן ומפקד טנק בכוח בניה", "https://www.izkor.gov.il/אורי%20גרוסמן/en_f53b79619b3f27184812b11f14e635a8/"),
+        ("סמ״ר אדם גורן ז״ל", "טען־קשר בכוח בניה", "https://www.izkor.gov.il/אדם%20גורן/en_e6446f8f52c2b18e0ec560602482bdda"),
+        ("סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל", "נהג הטנק בכוח בניה", "https://www.izkor.gov.il/אלכסנדר%20בונימוביץ/en_34b2955a02b6a81f8ba932dbf6228e61/"),
     ]
-    cards = ""
-    for name, role, date, source in force_baniya:
-        link = ('<p><a href="'+e(source)+'" rel="noopener noreferrer" target="_blank">לסיפור ההנצחה הרשמי</a></p>' if source else '')
-        cards += ('<article class="memorial"><div class="candle" aria-hidden="true">✦</div>'
-                  '<h3>'+e(name)+'</h3><p>'+e(role)+'</p>'
-                  '<p><time datetime="2006-08-12">'+e(date)+'</time> · מלחמת לבנון השנייה</p>'+link+'</article>')
+    def memorial_card(name,role,date,iso,source):
+        return ('<article class="memorial"><div class="candle" aria-hidden="true">✦</div>'
+                '<h3>'+e(name)+'</h3><p>'+e(role)+'</p>'
+                '<p><time datetime="'+e(iso)+'">'+e(date)+'</time></p>'
+                '<a href="'+e(source)+'" target="_blank" rel="noopener noreferrer"'
+                ' aria-label="סיפור ההנצחה הרשמי של '+e(name)+'">סיפור החיים באתר יזכור</a></article>')
+    cards=''.join(memorial_card(name,role,"12.8.2006","2006-08-12",source) for name,role,source in force)
+    yoni=memorial_card("סמל יהונתן (יוני) שרעבי ז״ל",
+                       "תותחן מרכבה סימן 4 · פלוגה ב׳ הקרנפים, גדוד 46",
+                       "3.8.2006","2006-08-03",
+                       "https://www.izkor.gov.il/יהונתן%20שרעבי/en_53e66dd727188835acbe02a1f641a882")
     return layout("הנצחה",
         '<div class="pagehead solemn"><span class="tag">לזכור בכבוד</span>'
-        '<h1>החברים שתמיד איתנו</h1><p>שמות וסיפורי הנופלים מתוך מקורות מורשת והנצחה. '
-        'חומרים אישיים ותמונות יתווספו רק לאחר בדיקת מקור וזכויות שימוש.</p></div>'
+        '<h1>החברים שתמיד איתנו</h1><p>הנצחה מכבדת המבוססת על רשומות אתר יזכור של משרד הביטחון.'
+        'תצלומים אישיים וסיפורי משפחות יפורסמו רק בכפוף לזכויות ולהסכמות מתאימות.</p></div>'
         '<section class="story"><h2>כוח בניה — גדוד 46</h2>'
-        '<p>ב־12 באוגוסט 2006, במהלך מלחמת לבנון השנייה, נפלו ארבעת אנשי כוח בניה '
-        'בדרכם למשימת חילוץ. אנו זוכרים את כולם יחד.</p></section>'
-        '<section class="memories" aria-label="הנצחת ארבעת לוחמי כוח בניה">'+cards+'</section>'
-        '<section class="story"><h2>לזכר יוני שרעבי ז״ל</h2>'
-        '<p>מקום לזכרו של יוני ולסיפורים האישיים של חבריו. פרטים היסטוריים נוספים '
-        'יתווספו לאחר אימות המקורות.</p></section>'
-        '<div class="note">יש לכבד את פרטיות המשפחות ולפרסם תמונות או סיפורים אישיים '
-        'רק באישור מתאים.</div>')
+        '<p>ב־12 באוגוסט 2006 נפלו ארבעת אנשי הצוות בדרכם למשימת חילוץ נוספת בלבנון.'
+        'אנו זוכרים את כל אנשי הצוות יחד.</p></section>'
+        '<section class="memories" aria-label="הנצחת ארבעת אנשי כוח בניה">'+cards+'</section>'
+        '<section class="story"><h2>פלוגה ב׳ — לזכר יוני שרעבי</h2>'
+        '<p>יהונתן (יוני) שרעבי שירת בפלוגה ב׳ ״הקרנפים״ כתותחן טנק מרכבה סימן 4.'
+        ' הוא נפל בקרב בלבנון ב־3 באוגוסט 2006, והוא בן 20.</p></section>'
+        '<section class="memories" aria-label="הנצחת יהונתן שרעבי">'+yoni+'</section>'
+        '<div class="note">המידע ההיסטורי מקושר לעמודי הנצחה רשמיים.'
+        ' יש לכבד את פרטיות המשפחות לפני פרסום תמונות או סיפורים אישיים.</div>')
 
 @app.get("/photos")
 def photos():
