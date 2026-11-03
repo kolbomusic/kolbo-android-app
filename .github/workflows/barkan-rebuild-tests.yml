@@ -45,5 +45,7 @@ jobs:
         run: pip install -r karnafim-next/requirements.txt
       - name: Verify syntax and start separate clean app
         run: python -m compileall -q karnafim-next
+      - name: Validate RTL design, internal navigation and safe public pages
+        run: python karnafim-next/tests/test_design_quality.py
       - name: Execute full community flow with disposable PostgreSQL
         run: python karnafim-next/tests/test_rebuild.py
