@@ -46,7 +46,8 @@ jobs:
                                   if isinstance(data, dict):
                                       for field in ("status","auth_enabled",
                                                     "member_portal","database_configured",
-                                                    "signup_enabled"):
+                                                    "signup_enabled","registration_mode",
+                                                    "email_delivery_release_verified"):
                                           if field in data:
                                               result[field]=data[field]
                               except (ValueError, UnicodeError, TypeError):
@@ -88,7 +89,7 @@ jobs:
           results=[]
           for host in ("karnafim-community-46.onrender.com",
                        "karnafim-barkan-46.onrender.com"):
-              for path in ("/login","/signup","/profile","/find"):
+              for path in ("/login","/signup","/profile","/find","/inbox","/media/1"):
                   result={"host":host,"path":path,"http":None}
                   req=urllib.request.Request("https://"+host+path,
                       headers={"User-Agent":"KarnafimReadOnlySecurity/1.0"})
@@ -96,6 +97,7 @@ jobs:
                       with urllib.request.urlopen(req, timeout=24) as resp:
                           result["http"]=resp.status
                           result["final_host"]=urllib.parse.urlsplit(resp.url).hostname
+                          result["final_path"]=urllib.parse.urlsplit(resp.url).path
                           result["csp"]=bool(resp.headers.get("Content-Security-Policy"))
                           result["nosniff"]=resp.headers.get("X-Content-Type-Options")=="nosniff"
                   except urllib.error.HTTPError as exc:
