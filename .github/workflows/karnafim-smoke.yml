@@ -1,5 +1,7 @@
 name: Karnafim rebuilt security and RTL quality
 on:
+  pull_request:
+    branches: [karnafim-veterans-portal-20261031]
   push:
     branches: [karnafim-veterans-portal-20261031]
     paths:
@@ -21,6 +23,8 @@ jobs:
           python-version: '3.12'
       - name: Install rebuilt application dependencies
         run: python -m pip install -r karnafim-site/requirements.txt
+      - name: Verify no JavaScript syntax errors in recovery UI
+        run: node --check karnafim-site/static/site.js
       - name: Python syntax check
         run: python -m compileall -q karnafim-site
       - name: Verify RTL pages, links, accessibility, privacy and closed authentication
