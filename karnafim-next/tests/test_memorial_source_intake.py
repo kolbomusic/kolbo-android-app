@@ -28,6 +28,12 @@ for url in ("/memorial-sources","/memorial-source-review"):
 source=(Path(__file__).resolve().parents[1]/"app.py").read_text(encoding="utf-8")
 assert "status='pending'" in source
 assert "INSERT INTO b2_memorial_sources" in source
+# A contributor may read only their own proposal statuses, not other members'.
+assert "FROM b2_memorial_sources WHERE submitted_by=%s" in source
+assert '(g.user["id"],)' in source
+assert "המקורות שהצעת" in source
+assert "המקור נבדק — טרם אושר לפרסום תמונה" in source
+
 assert "if not can_moderate():abort(403)" in source
 assert '"/memorial-sources"' in source
 assert "photo_approval" not in source[source.index("def memorial_sources():"):source.index('@app.get("/photos")')]
