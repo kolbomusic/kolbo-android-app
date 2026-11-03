@@ -62,6 +62,9 @@ memorial_html=client.get("/memorial",base_url=origin).get_data(as_text=True)
 for label in ("בניה ריין", "אורי גרוסמן", "אדם גורן", "אלכסנדר", "יוני", "www.izkor.gov.il"):
     assert label in memorial_html, label
 assert memorial_html.count('class="memorial"')==5
+# Do not publish a disputed crew position as verified memorial information.
+assert "כתותחן טנק" not in memorial_html
+assert "תותחן מרכבה סימן 4 · פלוגה ב׳ הקרנפים" not in memorial_html
 
 # Canonical handoff is opt-in. Keep /health alive for deployment checks.
 import subprocess
