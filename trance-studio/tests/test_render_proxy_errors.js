@@ -8,7 +8,8 @@ const script=html.slice(start,end);
 assert.match(script,/await studioJson\(response\)/);
 assert.match(script,/body=await studioJson\(response\)/);
 assert.match(html,/var j=await studioJson\(statusResponse\)/);
-assert.match(html,/temporaryStatusFailures<=4/);
+assert.match(html,/for\(var busy=0;busy<32;busy\+\+\)/);
+assert.match(html,/var statusResponse=await readExistingJobStatus\(data\.status_url\)/);
 assert.doesNotMatch(script,/setInterval|\bwindow\.kolboImportSharedAudio\b/);
 function response(code,contentType,data){
  return {status:code,ok:code>=200&&code<300,
