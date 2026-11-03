@@ -207,6 +207,8 @@ with site.app.test_client() as browser:
     assert r.status_code==303,r.status_code
     assert browser.get("/new",base_url=ORIGIN).status_code==200
     assert browser.get("/find",base_url=ORIGIN).status_code==403
+    assert browser.get("/cohorts",base_url=ORIGIN).status_code==403
+    assert browser.get("/cohorts/2003-11",base_url=ORIGIN).status_code==403
 
     r=browser.post("/new",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"rights":"yes",
@@ -300,6 +302,14 @@ with site.app.test_client() as browser:
     archive=browser.get("/voices?cohort=2003-11",base_url=ORIGIN)
     assert archive.status_code==200
     assert "סיפור מוקלט ניסיוני" in archive.get_data(as_text=True)
+    assert browser.get("/cohorts/2003-11",base_url=ORIGIN).status_code==200
+    hub=browser.get("/cohorts/2003-11",base_url=ORIGIN).get_data(as_text=True)
+    assert "סיפור מוקלט ניסיוני" in hub
+    assert "זיכרון בדיקה" in hub
+    assert "/media/"+str(voice_media["id"]) in hub
+    assert browser.get("/cohorts/2003-99",base_url=ORIGIN).status_code==404
+    assert browser.get("/cohorts/2004-03",base_url=ORIGIN).status_code==200
+    assert "סיפור מוקלט ניסיוני" not in browser.get("/cohorts/2004-03",base_url=ORIGIN).get_data(as_text=True)
     assert "/media/"+str(voice_media["id"]) in archive.get_data(as_text=True)
     assert "סיפור מוקלט ניסיוני" not in browser.get("/voices?cohort=2004-03",base_url=ORIGIN).get_data(as_text=True)
     assert browser.get("/voices?cohort=2004-99",base_url=ORIGIN).status_code==400
@@ -377,11 +387,16 @@ with site.app.test_client() as browser:
         "csrf":get_csrf(opt_in_user),"cohort":"2003-99","visible":"on"}).status_code==400
     visible=browser.get("/find?cohort=2003-11&q=מרכבה",base_url=ORIGIN).get_data(as_text=True)
     assert "חבר בדיקות" in visible and "נהג מרכבה" in visible
+    cohort_hub=browser.get("/cohorts/2003-11",base_url=ORIGIN).get_data(as_text=True)
+    assert "חבר בדיקות" in cohort_hub and "נהג מרכבה" in cohort_hub
+    assert "synthetic.member@example.test" not in cohort_hub
+    assert 'href="/cohorts/2003-11"' in browser.get("/cohorts",base_url=ORIGIN).get_data(as_text=True)
     assert "synthetic.member@example.test" not in visible
     assert "חבר בדיקות" not in browser.get("/find?cohort=2004-03",base_url=ORIGIN).get_data(as_text=True)
     # Disabling visibility immediately removes the profile from search.
     site.sql("UPDATE b2_users SET show_profile=FALSE WHERE id=%s",(member["id"],))
     assert "חבר בדיקות" not in browser.get("/find?q=מרכבה",base_url=ORIGIN).get_data(as_text=True)
+    assert "חבר בדיקות" not in browser.get("/cohorts/2003-11",base_url=ORIGIN).get_data(as_text=True)
 
     r=browser.post("/chat/"+str(member["id"]),base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"text":"הודעת ניסיון פרטית"})
@@ -492,6 +507,7 @@ assert c.post("/login",base_url=origin,data={"csrf":csrf,
   "email":"manual-pending@example.test","password":"SyntheticOnlyManualPassword!2026"}).status_code==303
 assert c.get("/feed",base_url=origin).status_code==403
 assert c.get("/voices",base_url=origin).status_code==403
+assert c.get("/cohorts",base_url=origin).status_code==403
 assert c.get("/dashboard",base_url=origin).status_code==403
 assert c.get("/find",base_url=origin).status_code==403
 assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
