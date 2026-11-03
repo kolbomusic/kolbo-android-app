@@ -269,21 +269,21 @@ with site.app.test_client() as browser:
     # until they deliberately enable visibility in their own profile.
     blank=browser.get("/find?q=חבר",base_url=ORIGIN).get_data(as_text=True)
     assert "חבר בדיקות" not in blank
-    with site.app.test_client() as opt_in_user:
-        r=opt_in_user.post("/login",base_url=ORIGIN,data={
-            "csrf":get_csrf(opt_in_user),"email":email,
-            "password":"SyntheticTestPassword#2026"})
-        assert r.status_code==303
-        r=opt_in_user.post("/profile",base_url=ORIGIN,data={
-            "csrf":get_csrf(opt_in_user),"nickname":"שריונר בדיקה",
-            "unit_year":"2003–2006","cohort":"2003-11",
-            "service_role":"נהג מרכבה","platoon":"פלוגה ב׳","visible":"on"})
-        assert r.status_code==303
-        assert site.sql("SELECT enlistment_cohort,service_role,show_profile FROM b2_users WHERE id=%s",
-            (member["id"],),True)=={
-            "enlistment_cohort":"2003-11","service_role":"נהג מרכבה","show_profile":True}
-        assert opt_in_user.post("/profile",base_url=ORIGIN,data={
-            "csrf":get_csrf(opt_in_user),"cohort":"2003-99","visible":"on"}).status_code==400
+    opt_in_user=site.app.test_client()
+    r=opt_in_user.post("/login",base_url=ORIGIN,data={
+        "csrf":get_csrf(opt_in_user),"email":email,
+        "password":"SyntheticTestPassword#2026"})
+    assert r.status_code==303
+    r=opt_in_user.post("/profile",base_url=ORIGIN,data={
+        "csrf":get_csrf(opt_in_user),"nickname":"שריונר בדיקה",
+        "unit_year":"2003–2006","cohort":"2003-11",
+        "service_role":"נהג מרכבה","platoon":"פלוגה ב׳","visible":"on"})
+    assert r.status_code==303
+    assert site.sql("SELECT enlistment_cohort,service_role,show_profile FROM b2_users WHERE id=%s",
+        (member["id"],),True)=={
+        "enlistment_cohort":"2003-11","service_role":"נהג מרכבה","show_profile":True}
+    assert opt_in_user.post("/profile",base_url=ORIGIN,data={
+        "csrf":get_csrf(opt_in_user),"cohort":"2003-99","visible":"on"}).status_code==400
     visible=browser.get("/find?cohort=2003-11&q=מרכבה",base_url=ORIGIN).get_data(as_text=True)
     assert "חבר בדיקות" in visible and "נהג מרכבה" in visible
     assert "synthetic.member@example.test" not in visible
