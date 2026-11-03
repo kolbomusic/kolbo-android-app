@@ -21,7 +21,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from markupsafe import Markup
 from PIL import Image, ImageOps, UnidentifiedImageError
 from memorial_source_registry import MEMORIAL_PEOPLE, plausible_public_source, official_memorial_link
-from db_endpoint_audit import neon_endpoint_tag
+from review_triage import review_hints
 
 BASE=Path(__file__).resolve().parent
 app=Flask(__name__,static_folder=str(BASE/"static"))
@@ -32,10 +32,6 @@ if os.environ.get("RENDER_SERVICE_ID","").strip():
     app.wsgi_app=ProxyFix(app.wsgi_app,x_for=1,x_proto=0,x_host=0,x_port=0,x_prefix=0)
 CONFIGURED_SECRET=os.environ.get("BARKAN_SESSION_SECRET","").strip()
 DB=os.environ.get("BARKAN_DATABASE_URL","").strip()
-# Diagnostic prints only a one-way hash of the public Neon endpoint label.
-# It never prints connection strings, passwords, database rows or member data.
-if DB:
-    print("KARNAFIM_DB_ENDPOINT_TAG="+neon_endpoint_tag(DB),flush=True)
 app.config.update(
     # An ephemeral key is acceptable only for a public read-only deployment.
     # Account login requires a durable configured secret and a database.
@@ -1308,6 +1304,16 @@ def moderation():
         action=request.form.get("action","")
         if not pid.isdecimal() or action not in ("publish","reject"):abort(400)
         if action=="publish":
+            candidate=sql("""SELECT p.title,p.body,p.kind,u.approved,
+                EXISTS(SELECT 1 FROM b2_media f WHERE f.post_id=p.id) AS has_media
+                FROM b2_posts p JOIN b2_users u ON u.id=p.author
+                WHERE p.id=%s AND p.status='pending'""",(int(pid),),True)
+            if not candidate or not candidate["approved"]:abort(409)
+            hints=review_hints(candidate["title"],candidate["body"],
+                               candidate["kind"],
+                               ("media",) if candidate["has_media"] else ())
+            if hints.manual_confirmation and request.form.get("human_verified")!="yes":
+                return layout("אימות נדרש",'<section class="note error">נדרש לסמן שבדקת זהות, מקורות, פרטיות וזכויות לפרסום הרגיש לפני אישורו. <a href="/moderation">חזרה לבקרה</a></section>'),400
             note="אושר לאחר בדיקת צוות הבקרה."
             result=sql("""UPDATE b2_posts p SET status='published',
                 moderation_reason=%s,moderation_source='human'
@@ -1332,9 +1338,15 @@ def moderation():
     cards=''
     for p in posts:
         files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
+        hints=review_hints(p["title"],p["body"],p["kind"],[f["kind"] for f in files])
+        checks=('<div class="note"><strong>הכוונת בדיקה מקומית — עדיפות '+e(hints.priority)+
+                '</strong><p>מערכת כללים, לא זיהוי אדם או אימות עובדות באמצעות AI.</p>'+
+                ''.join('<p>• '+e(reason)+'</p>' for reason in hints.reasons)+'</div>')
         controls=('<button name="action" value="publish" class="primary">אישור לפרסום</button>' if p["approved"] else '<span>נדרש קודם אישור החבר</span>')
+        if hints.manual_confirmation:
+            controls+='<label class="check"><input type="checkbox" name="human_verified" value="yes"> בדקתי באופן אישי זהות, מקורות, פרטיות והרשאות שימוש (חובה לפני אישור בלבד)</label>'
         controls+='<label>נימוק לדחייה<input name="reason" maxlength="700" placeholder="מה נדרש לתקן כדי לאשר?"></label><button name="action" value="reject" class="subtle">דחיית פרסום עם הסבר</button>'
-        cards+='<article class="post"><h2>'+e(p["title"])+'</h2><p>מאת '+e(p["name"])+'</p><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div>'+button_form('<input type="hidden" name="id" value="'+str(p["id"])+'">'+controls,'/moderation')+'</article>'
+        cards+='<article class="post"><h2>'+e(p["title"])+'</h2><p>מאת '+e(p["name"])+'</p><p>'+e(p["body"])+'</p>'+checks+'<div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div>'+button_form('<input type="hidden" name="id" value="'+str(p["id"])+'">'+controls,'/moderation')+'</article>'
     return layout("בקרת פרסומים",'<div class="pagehead"><h1>בקרת פרסומים</h1></div>'+(cards or '<p>אין פרסומים ממתינים.</p>'))
 
 @app.route("/members",methods=["GET","POST"])
