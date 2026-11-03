@@ -170,7 +170,8 @@ def create_app(config=None):
                             transcript_hint=detected_transcript,
                             fx_timeline=video_fx_timeline,
                             humor=options.get('humor','auto'),
-                            fx_intensity=options.get('fx_intensity',2))
+                            fx_intensity=options.get('fx_intensity',2),
+                            progress=lambda p,label:update(job_id,percent=p,label=label))
                         meta={**remixed,
                               'storyboard_source':'original_shared_video',
                               'transcript_origin':detected_origin,
@@ -206,7 +207,8 @@ def create_app(config=None):
                             transcript_hint=detected_transcript,
                             fx_timeline=video_fx_timeline,
                             humor=options.get('humor','auto'),
-                            fx_intensity=options.get('fx_intensity',2))
+                            fx_intensity=options.get('fx_intensity',2),
+                            progress=lambda p,label:update(job_id,percent=p,label=label))
                         meta={**original_recovery,
                               'storyboard_source':'original_shared_video',
                               'transcript_origin':'unavailable',
