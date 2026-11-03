@@ -45,4 +45,5 @@ jobs:
         run: |
           docker run --rm --memory=512m --cpus=1 -e HF_HUB_OFFLINE=1 \
             -v "$PWD/trance-studio/tests:/app/tests:ro" \
+            -v "$PWD/trance-studio/android:/app/android:ro" \
             --entrypoint python kolbo-trance:hebrew-spoken -m unittest discover -s /app/tests -p 'test_*.py'
