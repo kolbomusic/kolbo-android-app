@@ -116,6 +116,43 @@ class SourceAsrRecoveryTests(unittest.TestCase):
             def transcribe(self, path, **kwargs): return iter([FakeSegment()]), None
         self.assertEqual(source_asr._recognize(FakeModel(), '/tmp/audio.opus', use_vad=False), '')
 
+    def test_five_minute_voice_keeps_late_word_and_segment_timestamps(self):
+        # Regression: older builds capped timestamps at 125 seconds AND at
+        # 120 words, so FX and scene cues ignored the end of long recordings.
+        class Word:
+            def __init__(self, start):
+                self.start=start
+                self.end=start+.32
+                self.word=' נוסעת'
+        class Segment:
+            def __init__(self, text, words=None, start=None, end=None):
+                self.text=text
+                self.words=words
+                self.start=start
+                self.end=end
+        class FakeModel:
+            def transcribe(self,path,**options):
+                self.options=options
+                words=[Word(1.0+i*1.25) for i in range(185)]
+                return iter([
+                    Segment('המשאית נוסעת בכביש',words=words),
+                    Segment('החמור נוער',start=265.0,end=267.5),
+                    Segment('הכלב צוחק',start=300.1,end=301.0),
+                ]),None
+        model=FakeModel()
+        with mock.patch.object(source_asr,'_get_model',return_value=model):
+            text, complete, timelines=source_asr.transcribe_original_files(
+                ['/tmp/long-whatsapp.opus'],return_timeline=True)
+        self.assertTrue(complete)
+        self.assertIn('החמור נוער',text)
+        self.assertTrue(model.options['word_timestamps'])
+        self.assertEqual(len(timelines),1)
+        self.assertEqual(len(timelines[0]),186)
+        self.assertGreater(timelines[0][120]['start'],125)
+        self.assertEqual(timelines[0][-1]['start'],265.0)
+        self.assertEqual(timelines[0][-1]['end'],267.5)
+        self.assertFalse(any(item['start']>300 for item in timelines[0]))
+
     def test_missing_browser_transcript_submits_video_request_without_422(self):
         with tempfile.TemporaryDirectory() as temp:
             with mock.patch.object(server,'ThreadPoolExecutor') as factory:
