@@ -23,7 +23,7 @@ def create_app(config=None):
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
     if config:app.config.update(config)
     root=Path(app.config['JOB_DIR']);root.mkdir(parents=True,exist_ok=True)
-    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
+    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(1);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
     web=Path(__file__).resolve().parents[1]/'web'
     def stream_temporary_media(media_path,mime,folder):
@@ -121,6 +121,13 @@ def create_app(config=None):
                     asr_recovery_error=str(exc)[:180]
                     app.logger.warning('Original speech timing unavailable: %s',
                                        type(exc).__name__)
+                finally:
+                    # The 512 MiB worker must not retain multilingual Whisper
+                    # weights while constructing the full stereo DJ mix.
+                    # Original source bytes remain on disk; release only the
+                    # in-memory ASR inference model before DSP allocations.
+                    from source_asr import release_model
+                    release_model()
             audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent','video_strategy','backing_music_path','music_license_ack')}
             # Make the already recognized Hebrew speech useful for comic
             # timing/preset decisions. Keep it in-process; never transmit
@@ -497,7 +504,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.13',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.14',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():
@@ -611,7 +618,10 @@ def create_app(config=None):
                 return jsonify(error='נדרש אישור זכויות שימוש בקובץ המוזיקה'),400
             if Path(backing_file.filename).suffix.lower() not in AUTHORIZED_MUSIC_EXT:
                 return jsonify(error='קובץ מוזיקה אינו בפורמט נתמך'),400
-        if not admission.acquire(blocking=False):return jsonify(error='השרת עסוק כרגע. נסו שוב בעוד רגע או בחרו עיבוד במכשיר.'),429
+        if not admission.acquire(blocking=False):
+            response=jsonify(error='שרת העיבוד עסוק במשימה אחרת. הקובץ לא נקלט; נסה שוב לאחר שהשרת יתפנה.')
+            response.headers['Retry-After']='20'
+            return response,429
         job_id=secrets.token_hex(24);directory=root/job_id;directory.mkdir(mode=0o700);paths=[]
         total_bytes=0
         try:
