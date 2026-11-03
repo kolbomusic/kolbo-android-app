@@ -221,9 +221,39 @@ def headers(resp):
 
 @app.get("/health")
 def health():
+    # Safe public liveness endpoint. No secrets, account data or raw DB errors.
     return {"status":"ok","generation":"new-build","auth_enabled":PUBLIC_AUTH,
             "database_configured":bool(DB),
             "signup_enabled":ALLOW_SIGNUP,"email_sender_configured":MAIL_READY},200
+
+@app.get("/ready")
+def ready():
+    # Readiness is distinct from liveness: a configured URL is not proof
+    # that the database is reachable or the member schema is provisioned.
+    # Never return connection strings, hostnames, credentials or SQL errors.
+    if not DB:
+        return {"status":"not_ready","database":"unconfigured",
+                "member_portal":"closed"},503
+    try:
+        with connect() as c:
+            with c.cursor() as cur:
+                cur.execute("""SELECT
+                    to_regclass('public.b2_users') IS NOT NULL AS users,
+                    to_regclass('public.b2_posts') IS NOT NULL AS posts,
+                    to_regclass('public.b2_media') IS NOT NULL AS media,
+                    to_regclass('public.b2_messages') IS NOT NULL AS messages,
+                    to_regclass('public.b2_tokens') IS NOT NULL AS tokens""")
+                schema=cur.fetchone()
+        all_ready=all(bool(schema[key]) for key in
+                      ("users","posts","media","messages","tokens"))
+    except (psycopg.Error, OSError, TimeoutError):
+        all_ready=False
+    if not all_ready:
+        return {"status":"not_ready","database":"unavailable",
+                "member_portal":"closed"},503
+    return {"status":"ready","database":"available",
+            "member_portal":"enabled" if PUBLIC_AUTH else "closed",
+            "signup":"enabled" if ALLOW_SIGNUP else "closed"},200
 
 @app.get("/")
 def home():
