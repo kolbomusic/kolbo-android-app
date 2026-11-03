@@ -179,6 +179,77 @@ def _visual_filter(shot):
     return ",".join(parts)
 
 
+def compose_simple_original_video_fallback(source,music_mp3,output_mp4,
+                                            work_dir,*,bpm=145):
+    """Single-pass REAL video rescue if multi-shot FX rendering failed.
+
+    Never turn an audio file or static slide into fabricated action footage.
+    Uses only the user's moving original video and the finished vocal mix.
+    Slow the source moderately if needed, instead of repeating a short loop.
+    A single modest moving-video color/crop transform is deliberately labeled
+    less sophisticated than sample-timed original-voice FX.
+    """
+    src=Path(source);work=Path(work_dir)
+    work.mkdir(parents=True,exist_ok=True)
+    mix_duration=_duration(music_mp3)
+    src_duration=_duration(src)
+    if not (.5<=mix_duration<=360. and .8<=src_duration<=600.):
+        raise UnavailableVideo("משך הסרטון אינו מתאים למסלול העריכה החלופי")
+    _video_profile(src)
+    require_visible_motion_somewhere(src,duration=src_duration,threshold=.15)
+    # An original 30-second movie with a 39-second remix can be stretched
+    # ~1.3x to fill the soundtrack without making a 9-second repeated loop.
+    # Never stretch 5 seconds into 40 seconds and call it a new scene.
+    speed=min(1.0,src_duration/mix_duration)
+    if speed<.55:
+        raise UnavailableVideo("אין מספיק תנועה מצולמת ביחס לאורך המיקס")
+    transform=(
+        "setpts=(PTS-STARTPTS)/%.6f,fps=12,"
+        "scale=360:640:force_original_aspect_ratio=increase:"
+        "force_divisible_by=2,"
+        "scale=ceil(iw*1.08/2)*2:ceil(ih*1.08/2)*2,"
+        "crop=360:640:(in_w-out_w)/2:(in_h-out_h)/2,"
+        "eq=contrast=1.10:saturation=1.13,"
+        "setsar=1,format=yuv420p"
+    )%speed
+    output=Path(output_mp4)
+    cmd=["ffmpeg","-nostdin","-v","error","-y",
+         "-i",str(src),"-i",str(music_mp3),
+         "-map","0:v:0","-map","1:a:0","-vf",transform,
+         "-c:v","libx264","-profile:v","baseline","-level","3.0",
+         "-preset","ultrafast","-crf","30","-r","12","-g","24",
+         "-c:a","aac","-b:a","144k",
+         "-t","%.3f"%mix_duration,"-movflags","+faststart",
+         str(output)]
+    try:
+        subprocess.run(cmd,check=True,capture_output=True,timeout=120)
+    except (OSError,subprocess.SubprocessError) as exc:
+        output.unlink(missing_ok=True)
+        raise UnavailableVideo("קידוד סרטון הגיבוי נכשל") from exc
+    if not output.exists() or output.stat().st_size<15000:
+        output.unlink(missing_ok=True)
+        raise UnavailableVideo("לא נוצר סרטון גיבוי תקין")
+    codec,width,height=_video_profile(output)
+    if (codec,width,height)!=("h264",360,640) or abs(_duration(output)-mix_duration)>.85:
+        output.unlink(missing_ok=True)
+        raise UnavailableVideo("סרטון הגיבוי אינו תואם את משך המיקס או פורמט אנדרואיד")
+    return {
+        "video_status":"done",
+        "video_mode":"original_input_video",
+        "video_edit_style":"single_pass_source_rescue",
+        "video_edit_audio_synced":False,
+        "video_edit_fx_cues":0,
+        "video_edit_shots":1,
+        "visual_coverage":"original_video_not_scene_generated",
+        "source":"user_original_real_moving_video",
+        "video_note":(
+            "סרטון המקור עבר עריכת גיבוי עם האטה, חיתוך וזום מתון כדי להתאים "
+            "לאורך המיקס. המסלול אינו מסנכרן כל אפקט קולי לתנועה, "
+            "ואינו יוצר סצנות חדשות או שינויי שפתיים ב־AI."
+        )
+    }
+
+
 def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
                                   bpm=145, transcript_hint="",
                                   fx_timeline=None,humor="auto",fx_intensity=2,
@@ -191,7 +262,7 @@ def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
     if not .5<=duration<=360.:
         raise UnavailableVideo("אורך המיקס אינו מתאים לעריכת וידאו")
     _video_profile(src)
-    require_visible_motion_somewhere(src,duration=src_duration,threshold=.30)
+    require_visible_motion_somewhere(src,duration=src_duration,threshold=.15)
     synced=sync_edit_decisions(duration,bpm,src_duration,fx_timeline,
                   humor=humor,fx_intensity=fx_intensity,
                   source_file_index=source_file_index)
