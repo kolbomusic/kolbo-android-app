@@ -436,9 +436,9 @@ def photos():
              ('<button class="subtle" name="action" value="remove">הסרת הזיהוי שלי</button>'
               if mine else '<button class="subtle" name="action" value="add">אני מופיע/ה בתמונה — אישור הצגת שמי</button>'),
              '/photos/self-tag')
-        tiles+='<article class="post">'+media_html(r["id"],"image")+'<h2>'+e(r["title"])+
+        tiles= (tiles+'<article class="post">'+media_html(r["id"],"image")+'<h2>'+e(r["title"])+
               '</h2><p>'+e(r["name"])+' · '+e(r["year_text"])+'</p><p>אלבום: '+
-              e(r["album_cohort"] or "כללי")+'</p>'+label+toggle+'</article>'
+              e(r["album_cohort"] or "כללי")+'</p>'+label+toggle+'</article>')
     return layout("תמונות",intro+'<nav class="album-nav" aria-label="בחירת אלבום">'+links+'</nav>'+
         ('<section class="media-grid">'+tiles+'</section>' if tiles else
          '<section class="empty-photo"><h2>אין תמונות מאושרות באלבום זה</h2><p>חברים מוזמנים לתרום תמונות שצילמו ושמותר להם לשתף. הפרסום יתבצע רק אחרי ביקורת.</p><a href="/new">העלאת תמונה לביקורת</a></section>'))
