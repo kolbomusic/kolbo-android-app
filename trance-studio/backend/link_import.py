@@ -717,7 +717,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     if "extractor" in failures:
         raise LinkImportError(
             provider+" לא החזירה קובץ וידאו שהשרת הצליח לקרוא. "
-            "אפשר לבחור סרטון מורשה מהמכשיר ולהמשיך ליצירה.",
+            "אפשר לבחור את הסרטון או הקלטת המסך המורשית מהמכשיר ולהמשיך ליצירה.",
             code="extractor_parse",attempts=len(failures),steps=details)
     raise LinkImportError(
         "לא התקבל קובץ וידאו תקין מהמקורות הציבוריים שנבדקו.",
