@@ -426,6 +426,17 @@ def memorial_sources():
         return layout("המקור התקבל",'<div class="pagehead"><h1>ההצעה נשמרה לבדיקה</h1><p>הקישור לא נפתח אוטומטית, התמונה לא הועתקה ולא פורסמה. נדרשים אימות זהות וזכויות לפני פרסום.</p></div>')
     options=''.join('<option value="'+e(key)+'">'+e(rec["name"])+'</option>'
                     for key,rec in MEMORIAL_PEOPLE.items())
+    my_sources=sql("""SELECT person_key,status,review_note,submitted
+        FROM b2_memorial_sources WHERE submitted_by=%s
+        ORDER BY submitted DESC,id DESC LIMIT 25""",(g.user["id"],))
+    status_names={"pending":"ממתין לבדיקת מנהל","reviewed":"המקור נבדק — טרם אושר לפרסום תמונה",
+                  "rejected":"המקור נדחה"}
+    history=''
+    for item in my_sources:
+        person=MEMORIAL_PEOPLE.get(item["person_key"])
+        person_name=person["name"] if person else "רשומת הנצחה"
+        history+='<article class="person"><h3>'+e(person_name)+'</h3><p>'+e(status_names.get(item["status"],"בטיפול"))+'</p>'+(
+            '<p>'+e(item["review_note"])+'</p>' if item["review_note"] else "")+'</article>'
     return layout("הצעת תמונת הנצחה",
         '<div class="pagehead"><h1>הצעת מקור תמונה לחלל</h1><p>חברי קהילה מאושרים יכולים להציע מקור לבדיקה. אין להגיש כאן מידע אישי או מסמכי אישור פרטיים.</p></div>'+
         button_form('<label>החלל<select name="person_key" required>'+options+'</select></label>'+
@@ -433,7 +444,9 @@ def memorial_sources():
         '<label>כיצד אומת השיוך לאדם המצולם?<textarea name="context" maxlength="600" required></textarea></label>'+
         '<label>מידע כללי על זכויות שימוש (לא לצרף מסמכים פרטיים)<textarea name="permission" maxlength="300"></textarea></label>'+
         '<button class="primary">שליחת מקור לבדיקת מנהל</button>',
-        "/memorial-sources",'class="formcard"'))
+        "/memorial-sources",'class="formcard"')+
+        '<section class="people" aria-label="סטטוס המקורות שהצעת"><h2>המקורות שהצעת</h2>'+(
+            history or '<p>לא הגשת עדיין הצעות.</p>')+'</section>')
 
 @app.route("/memorial-source-review",methods=["GET","POST"])
 @require_approved
