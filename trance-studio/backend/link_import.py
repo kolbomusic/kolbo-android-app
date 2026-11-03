@@ -21,7 +21,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 MAX_VIDEO=45*1024*1024
 MAX_AUDIO=15*1024*1024
-MAX_SECONDS=120.5
+MAX_SECONDS=300.5
 # Public Facebook markup often places video metadata after the first 150 KB.
 # This remains strictly bounded and never reads full arbitrary HTML pages.
 MAX_FB_HTML=750000
@@ -158,7 +158,7 @@ def _media_probe(path):
             timeout=10,stderr=subprocess.DEVNULL)
         duration=float(output.decode().strip())
         if not 0.15<duration<=MAX_SECONDS:
-            raise LinkImportError("משך הסרטון גדול משתי דקות או שאינו תקין.")
+            raise LinkImportError("משך הסרטון גדול מחמש דקות או שאינו תקין.")
     except (ValueError,subprocess.CalledProcessError,subprocess.TimeoutExpired) as exc:
         if isinstance(exc,LinkImportError):raise
         raise LinkImportError("לא התקבל קובץ שמע או וידאו תקין.") from exc
@@ -524,7 +524,7 @@ def _readable_failure(stderr):
         return "extractor"
     if "unsupported url" in raw:
         return "unsupported"
-    if "duration > 120" in raw or "does not pass filter" in raw:
+    if "does not pass filter" in raw or "duration > 300" in raw:
         return "duration"
     if "file is larger" in raw or "max-filesize" in raw:
         return "size"
@@ -538,7 +538,7 @@ def _try_public_download(url, folder, *, deadline, format_spec, impersonate=Fals
         "--no-cache-dir","--no-write-thumbnail","--no-write-subs",
         "--no-write-auto-subs","--restrict-filenames",
         "--socket-timeout","8","--retries","1","--fragment-retries","1",
-        "--max-filesize","45M","--match-filter","duration <= 120",
+        "--max-filesize","45M","--match-filter","duration <= 300",
         "--format",format_spec,
         "--merge-output-format","mp4",
         "--output",str(folder/"shared.%(ext)s"),url
@@ -566,7 +566,7 @@ def _try_public_download(url, folder, *, deadline, format_spec, impersonate=Fals
                     return "size"
                 time.sleep(.3)
             # yt-dlp may exit with code zero when --match-filter SKIPS a
-            # longer-than-120s TikTok clip. A successful process is NOT
+            # longer-than-300s TikTok clip. A successful process is NOT
             # evidence that a media file was downloaded. Keep the original
             # filter diagnostics and never misreport a skipped video as OK.
             error_stream.seek(0)
@@ -707,7 +707,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     if "size" in failures:
         raise LinkImportError("גודל הסרטון חורג מ־45MB.",code="size",attempts=len(failures),steps=details)
     if "duration" in failures:
-        raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.",code="duration",attempts=len(failures),steps=details)
+        raise LinkImportError("המדיה ארוכה מחמש דקות או אינה בפורמט נתמך.",code="duration",attempts=len(failures),steps=details)
     provider="TikTok" if is_tiktok else "Facebook" if is_facebook else "האתר"
     if "private" in failures or "restricted" in failures:
         raise LinkImportError(
