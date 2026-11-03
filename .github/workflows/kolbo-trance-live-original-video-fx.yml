@@ -39,12 +39,12 @@ jobs:
           for n in range(18):
               try:
                   health=s.get(base+'/health',timeout=25).json()
-                  if health.get('ok') and health.get('version')=='1.16.12':
+                  if health.get('ok') and health.get('version')=='1.16.13':
                       break
               except (requests.RequestException,ValueError):
                   pass
               time.sleep(10)
-          else:raise AssertionError('Kolbo production 1.16.12 not live')
+          else:raise AssertionError('Kolbo production 1.16.13 not live')
           s.get(base+'/studio',timeout=60).raise_for_status()
           for attempt in range(4):
               with open('/tmp/kolbo-video-fx-source.mp4','rb') as original:
