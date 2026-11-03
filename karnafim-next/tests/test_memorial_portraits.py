@@ -1,8 +1,11 @@
 """Safeguards for attribution and photograph publication in memorials."""
+import hashlib
+import io
 import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from PIL import Image
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 os.environ.pop("DATABASE_URL",None)
@@ -26,6 +29,29 @@ with TemporaryDirectory() as temp:
     (root/"memorial"/"yoni-sharabi.jpg").write_bytes(b"not a reviewed portrait")
     assert portrait_for("yoni-sharabi",root) is None
     assert portrait_for("unknown-person",root) is None
+    image=Image.new("RGB",(40,50),"white")
+    output=io.BytesIO()
+    image.save(output,format="JPEG")
+    photo=root/"memorial"/"yoni-sharabi.jpg"
+    photo.write_bytes(output.getvalue())
+    record=MEMORIAL_PEOPLE["yoni-sharabi"]
+    try:
+        record["photo_approval"]={
+            "status":"approved",
+            "izkor_id":record["izkor_id"],
+            "source_url":"https://example.org/family-photo",
+            "permission_reference":"family-consent-ref-2026",
+            "reviewed_by":"site-owner",
+            "sha256":hashlib.sha256(photo.read_bytes()).hexdigest(),
+        }
+        assert portrait_for("yoni-sharabi",root)=="/static/memorial/yoni-sharabi.jpg"
+        photo.write_bytes(photo.read_bytes()+b"changed")
+        assert portrait_for("yoni-sharabi",root) is None
+        record["photo_approval"]["sha256"]=hashlib.sha256(photo.read_bytes()).hexdigest()
+        record["photo_approval"]["izkor_id"]="wrong-identity"
+        assert portrait_for("yoni-sharabi",root) is None
+    finally:
+        record.pop("photo_approval",None)
 
 client=app.app.test_client()
 html=client.get("/memorial",base_url="https://karnafim-barkan-46.onrender.com").get_data(as_text=True)
