@@ -497,7 +497,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.11',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.12',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():
@@ -975,6 +975,12 @@ def create_app(config=None):
         path=root/job_id/'storyboard.json'
         if not exists or not path.is_file():return jsonify(error='סטוריבורד לא נמצא'),404
         return send_file(path,mimetype='application/json',as_attachment=False)
+
+    @app.get('/install')
+    def install_page():
+        response=send_from_directory(web,'install.html')
+        response.headers['Cache-Control']='no-store'
+        return response
 
     @app.get('/studio')
     def studio():
