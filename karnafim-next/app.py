@@ -248,8 +248,34 @@ def heritage():
 
 @app.get("/memorial")
 def memorial():
-    cards=''.join('<article class="memorial"><div class="candle" aria-hidden="true">✦</div><h3>'+e(x)+'</h3><p>לזכרם. פרטים נוספים יפורסמו לאחר בדיקת מקור ואישור מתאים.</p></article>' for x in ["יוני שרעבי ז״ל","אורי גרוסמן ז״ל","אדם גורן ז״ל"])
-    return layout("הנצחה",'<div class="pagehead solemn"><span class="tag">לזכור בכבוד</span><h1>החברים שתמיד איתנו</h1><p>מרחב הנצחה צנוע ומכבד. תמונות ופרטים יפורסמו רק לאחר אימות וזכויות שימוש.</p></div><section class="memories">'+cards+'</section><div class="note">אנו מבקשים להימנע מהעלאת פרטים אישיים או סיפורים על משפחות ללא הסכמה ואישור.</div>')
+    # Verified IDF / Ministry of Defense memorial records. Do not copy portraits
+    # or family photographs without permission to reproduce them.
+    force_baniya = [
+        ("רס״ן בניה ריין ז״ל", "מפקד כוח בניה", "12.8.2006",
+         "https://www.izkor.gov.il/בניה%20ריין/en_f5ccba845584f96f9b9334cf335d2e78/"),
+        ("סמ״ר אורי גרוסמן ז״ל", "לוחם בכוח בניה", "12.8.2006", ""),
+        ("סמ״ר אדם גורן ז״ל", "לוחם בכוח בניה", "12.8.2006", ""),
+        ("סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל", "לוחם בכוח בניה", "12.8.2006", ""),
+    ]
+    cards = ""
+    for name, role, date, source in force_baniya:
+        link = ('<p><a href="'+e(source)+'" rel="noopener noreferrer" target="_blank">לסיפור ההנצחה הרשמי</a></p>' if source else '')
+        cards += ('<article class="memorial"><div class="candle" aria-hidden="true">✦</div>'
+                  '<h3>'+e(name)+'</h3><p>'+e(role)+'</p>'
+                  '<p><time datetime="2006-08-12">'+e(date)+'</time> · מלחמת לבנון השנייה</p>'+link+'</article>')
+    return layout("הנצחה",
+        '<div class="pagehead solemn"><span class="tag">לזכור בכבוד</span>'
+        '<h1>החברים שתמיד איתנו</h1><p>שמות וסיפורי הנופלים מתוך מקורות מורשת והנצחה. '
+        'חומרים אישיים ותמונות יתווספו רק לאחר בדיקת מקור וזכויות שימוש.</p></div>'
+        '<section class="story"><h2>כוח בניה — גדוד 46</h2>'
+        '<p>ב־12 באוגוסט 2006, במהלך מלחמת לבנון השנייה, נפלו ארבעת אנשי כוח בניה '
+        'בדרכם למשימת חילוץ. אנו זוכרים את כולם יחד.</p></section>'
+        '<section class="memories" aria-label="הנצחת ארבעת לוחמי כוח בניה">'+cards+'</section>'
+        '<section class="story"><h2>לזכר יוני שרעבי ז״ל</h2>'
+        '<p>מקום לזכרו של יוני ולסיפורים האישיים של חבריו. פרטים היסטוריים נוספים '
+        'יתווספו לאחר אימות המקורות.</p></section>'
+        '<div class="note">יש לכבד את פרטיות המשפחות ולפרסם תמונות או סיפורים אישיים '
+        'רק באישור מתאים.</div>')
 
 @app.get("/photos")
 def photos():
