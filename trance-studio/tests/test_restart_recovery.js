@@ -16,6 +16,7 @@ assert.match(src,/if\(statusResponse\.status===429\)\{/);
 assert.doesNotMatch(src,/lostJobRecovery|busyAttempt/);
 assert.equal((src.match(/var data=await submitMixJob\(form\)/g)||[]).length,1);
 assert.match(src,/finally\{\s*runLock=false;/);
+assert.match(src,/if\(!resultBlob&&!videoServerUrl\)\$\('result'\)\.classList\.remove\('visible'\);/);
 assert.doesNotMatch(helper,/setInterval|window\.kolboImportSharedAudio/);
 
 const job={id:'a'.repeat(48),status_url:'/api/jobs/'+'a'.repeat(48)};
