@@ -57,10 +57,12 @@ with site.app.test_client() as browser:
     assert r.status_code==200
     assert 'id="account-password"' in r.get_data(as_text=True)
     assert 'autocomplete="new-password"' in r.get_data(as_text=True)
+    assert 'minlength="12"' in r.get_data(as_text=True)
     assert 'data-password-toggle' in r.get_data(as_text=True)
     login_form=browser.get("/login",base_url=ORIGIN)
     assert login_form.status_code==200
     assert 'autocomplete="current-password"' in login_form.get_data(as_text=True)
+    assert 'minlength="12"' not in login_form.get_data(as_text=True)
     assert 'aria-controls="account-password"' in login_form.get_data(as_text=True)
     email="synthetic.member@example.test"
     fields={
