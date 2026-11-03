@@ -1,14 +1,7 @@
 name: Kolbo production Hebrew voice to phone-completed motion MP4
+# Production tests submit costly jobs to 512 MiB Render; run on demand only.
 on:
-  push:
-    branches: [kolbo-trance-studio-20261031]
-    paths:
-      - 'trance-studio/backend/app.py'
-      - 'trance-studio/web/studio.html'
-      - 'trance-studio/tests/live_phone_generated_video_smoke.py'
-      - '.github/workflows/kolbo-trance-phone-ai-live.yml'
   workflow_dispatch:
-# Serialize real requests to the same free 512 MiB Render instance.
 concurrency:
   group: kolbo-trance-render-acceptance
   cancel-in-progress: false
