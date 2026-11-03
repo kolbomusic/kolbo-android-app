@@ -1,0 +1,64 @@
+name: Publish Barkan public pages on existing always-on Render CDN
+on:
+  push:
+    branches: [karnafim-barkan-rebuild-20261102]
+    paths:
+      - 'karnafim-next/**'
+      - '.github/workflows/barkan-publish-public-entrance.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: barkan-publish-cdn
+  cancel-in-progress: false
+jobs:
+  publish-public-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install export dependencies
+        run: python -m pip install -r karnafim-next/requirements.txt
+      - name: Export ten safe, public-only RTL pages
+        env:
+          BARKAN_STATIC_BASE_PATH: /karnafim
+        run: python karnafim-next/export_static.py
+      - name: Validate before copying to existing CDN
+        shell: bash
+        run: |
+          set -euo pipefail
+          for page in index.html heritage/index.html memorial/index.html photos/index.html about/index.html help/index.html privacy/index.html terms/index.html safety/index.html status/index.html; do
+            test -s "karnafim-next/public/$page"
+            grep -q '/karnafim/static/site.css' "karnafim-next/public/$page"
+            if grep -Eiq 'type="password"|google-signin|accounts.google.com' "karnafim-next/public/$page"; then
+              echo "::error::Private login component found in $page"
+              exit 1
+            fi
+          done
+          test -f karnafim-next/public/static/site.js
+          test -f karnafim-next/public/static/site.css
+          mkdir -p "$RUNNER_TEMP/barkan_public"
+          cp -a karnafim-next/public/. "$RUNNER_TEMP/barkan_public/"
+      - name: Publish under isolated /karnafim folder only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/kolbo-trance-studio-20261031
+          git checkout -B kolbo-trance-studio-20261031 FETCH_HEAD
+          mkdir -p trance-studio/entry/karnafim
+          cp -a "$RUNNER_TEMP/barkan_public/." trance-studio/entry/karnafim/
+          git add trance-studio/entry/karnafim
+          if git diff --cached --quiet; then
+            echo 'Already published; no change'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Publish safe Barkan heritage pages under isolated CDN path'
+          git push origin HEAD:refs/heads/kolbo-trance-studio-20261031
+          echo 'Published public-only pages. Existing Studio index.html was not modified.'
