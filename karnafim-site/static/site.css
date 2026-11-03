@@ -151,3 +151,9 @@ footer nav a{display:inline-block;min-height:40px;padding:5px 0}
  .post audio{height:54px}
  .hero-actions>.primary,.hero-actions>.outline{flex:1 1 180px}
 }
+
+/* Visible-only recovery banner for Render cold starts, no auto POST or keepalive. */
+.site-connection-notice[hidden]{display:none!important}
+.site-connection-notice{max-width:100%;padding:14px 18px;background:#fff3d8;color:#25342b;border-bottom:2px solid #b88f45;font-size:1rem;line-height:1.7;text-align:center}
+.site-connection-notice button{margin-inline-start:12px;padding:5px 12px;border:1px solid #41654d;border-radius:8px;background:#fff;color:#193427;cursor:pointer}
+.site-connection-notice button:focus-visible{outline:3px solid #256b5f;outline-offset:3px}
