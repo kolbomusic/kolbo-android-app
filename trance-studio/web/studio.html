@@ -211,6 +211,13 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <progress id="progress" max="100" value="0" hidden></progress>
 
 </section>
+<section class="panel" id="recoveryPanel" role="status" aria-live="polite" hidden>
+<h2>הפקה קודמת — התאוששות לאחר התנתקות</h2>
+<p class="hint" id="recoveryMessage">בודק אם ההפקה הקודמת עדיין קיימת בשרת.</p>
+<div class="actions" id="recoveryLinks"></div>
+<button type="button" class="secondary" id="recoveryCheck">בדיקת מצב ההפקה הקודמת</button>
+<p class="hint">אין שמירת הקלטה או תמלול בדפדפן לצורך התאוששות זו. אם השרת מחק את המשימה, אפשר להתחיל מחדש רק בלחיצה מפורשת.</p>
+</section>
 <section class="panel" id="result"><h2 id="resultTitle">✓ ההפקה מוכנה!</h2>
 <div id="videoNotice" role="alert" hidden></div>
 <div class="actions"><button type="button" id="retryVideo" class="secondary" hidden>נסה שוב ליצור סרטון AI — בלי ליצור מחדש את המיקס</button><button type="button" id="switchToAiVideo" class="secondary" hidden>בחר יצירת סרטון חדש מהדיבור (AI ניסיוני)</button></div>
@@ -235,6 +242,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <div class="foot">KOLBO TRANCE STUDIO · ללא מנוי · לשימוש אישי · עיבוד בענן · שמירת הקובץ עד שעה</div>
 </main>
 <script src="/studio-ai-fallback.js"></script>
+<script src="/studio-job-recovery.js"></script>
 <script>
 (function(){
 'use strict';
@@ -879,6 +887,7 @@ form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);
 // if Render restarts. The original file remains selected for a manual retry.
 await waitForJobCapacity();
 var data=await submitMixJob(form);
+if(window.KolboJobRecovery)window.KolboJobRecovery.storeJob(data);
 var temporaryStatusFailures=0;
 for(var attempt=0;attempt<600;attempt++){
 await pause(1000);
