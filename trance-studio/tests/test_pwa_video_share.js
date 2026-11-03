@@ -8,8 +8,8 @@ const sw=fs.readFileSync('trance-studio/web/studio-sw.js','utf8');
 const ui=fs.readFileSync('trance-studio/web/studio.html','utf8');
 assert.match(ui,/files\.some\(isVideoFile\)/,
  'Video from WhatsApp must auto-select the original-source video editor');
-assert.match(ui,/\$\('video_strategy'\)\.value='remix_original'/,
- 'Native source-video transforms are default for uploaded motion');
+assert.match(ui,/\$\('video_strategy'\)\.value='smart_story'/,
+ 'Source-first smart-video mode automatically edits the uploaded footage before attempting generation');
 assert.match(ui,/videoModeChosenByUser/,
  'Never overwrite a deliberate new-story selection');
 assert.match(ui,/video_edit_style==='voice_fx_synced_motion_warp'/,
