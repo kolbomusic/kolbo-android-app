@@ -345,8 +345,14 @@ public final class MainActivity extends Activity {
                 if(connection.getResponseCode()==200&&
                    String.valueOf(connection.getContentType()).contains("application/json")){
                     try(InputStream data=connection.getInputStream()){
-                        byte[] raw=data.readNBytes(1024);
-                        JSONObject status=new JSONObject(new String(raw,StandardCharsets.UTF_8));
+                        // InputStream.readNBytes is not present on older
+                        // Android API levels; a single bounded health read
+                        // keeps this beta compatible down to minSdk 29.
+                        byte[] raw=new byte[1024];
+                        int count=data.read(raw);
+                        if(count<=0)throw new java.io.IOException("empty health response");
+                        JSONObject status=new JSONObject(
+                            new String(raw,0,count,StandardCharsets.UTF_8));
                         ready=status.optBoolean("ok",false)&&
                               "kolbo-trance-studio".equals(status.optString("service",""));
                     }
