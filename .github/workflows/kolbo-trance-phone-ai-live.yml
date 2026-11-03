@@ -8,6 +8,10 @@ on:
       - 'trance-studio/tests/live_phone_generated_video_smoke.py'
       - '.github/workflows/kolbo-trance-phone-ai-live.yml'
   workflow_dispatch:
+# Serialize real requests to the same free 512 MiB Render instance.
+concurrency:
+  group: kolbo-trance-render-acceptance
+  cancel-in-progress: false
 jobs:
   real-live-phone-mux:
     runs-on: ubuntu-24.04
