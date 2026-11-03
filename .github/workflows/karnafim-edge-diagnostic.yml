@@ -1,0 +1,28 @@
+name: Karnafim Render edge path connectivity diagnostic
+on:
+  push:
+    branches: [karnafim-safe-review-and-backup-report-20261103]
+    paths:
+      - '.github/workflows/karnafim-edge-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Inspect only public HTTP status and transport errors (no member content)
+        shell: bash
+        run: |
+          set +e
+          for path in /health / /memorial /ready /login; do
+            printf 'CHECK %s\n' "$path"
+            curl --http1.1 --location --silent --show-error \
+              --connect-timeout 10 --max-time 22 \
+              --output /dev/null \
+              --write-out 'HTTP=%{http_code} IP=%{remote_ip} TOTAL=%{time_total} REDIRECT=%{num_redirects}\n' \
+              "https://karnafim-community-46.onrender.com$path"
+            printf 'CURL_EXIT=%s\n' "$?"
+          done
+          echo "Diagnostic only. No authentication or writes were performed."
