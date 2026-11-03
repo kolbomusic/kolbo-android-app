@@ -541,7 +541,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     # random effect family at every pause. These neutral hooks always use
     # copies of the actual spoken syllable; contextual effects require
     # an explicit, non-negated Hebrew story cue.
-    neutral_hooks=('dj','stretch','comic_roll','pitch')
+    neutral_hooks=('comic_roll','stretch','pitch','comic_roll')
     last_story_cue=None
     last_story_cue_cut=-int(sr*20)
     for index,cut in enumerate(chosen):
@@ -740,7 +740,7 @@ def _duck_music_in_chunks(music, vocal, fx_highlight, sr, chunk_frames=32768):
         np.clip(duck,0,1,out=duck)
         duck*=np.float32(-.67)
         duck+=np.float32(1)
-        duck*=np.float32(1)-np.float32(.20)*fx_highlight[start:end]
+        duck*=np.float32(1)-np.float32(.68)*fx_highlight[start:end]
         music[start:end]*=duck[:,None]
 
 
@@ -1086,22 +1086,28 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             source=voices[clip_index]
             phrases=(transcript_timeline[clip_index]
                      if clip_index<len(transcript_timeline) else [])
-            overdub=accent_overdub(
-                source,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
-                vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
-                timed_phrases=phrases,
-                cue_from_text=lambda phrase:_semantic_comedy_cue(phrase,.5))
-            for original_start,original_end,arranged_start,arranged_end in spans:
-                # Original source spans map 1:1 to output, even after pause
-                # inserts. Adding a wet overdub never replaces a spoken word.
-                src=overdub[original_start:original_end]
-                a=start+arranged_start
-                b=min(end,a+len(src))
-                if b>a:
-                    vocal[a:b]+=src[:b-a]*voice_level
-                    if humor!='off':
+            # The automatic comic director already inserts audible,
+            # beat-quantized sample FX into measured phrase breaks.
+            # The old *second* overdub copied syllables ON TOP of the next
+            # words every ~3 seconds: muddled speech, random clashes and
+            # no reliable visual time map. Auto mode now uses ONE coherent
+            # punchline track only; explicit manual processors may still
+            # add traditional turntable overdubs when requested.
+            if humor not in ('auto','chaos'):
+                overdub=accent_overdub(
+                    source,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
+                    vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
+                    timed_phrases=phrases,
+                    cue_from_text=lambda phrase:_semantic_comedy_cue(phrase,.5))
+                for original_start,original_end,arranged_start,arranged_end in spans:
+                    src=overdub[original_start:original_end]
+                    a=start+arranged_start
+                    b=min(end,a+len(src))
+                    if b>a:
+                        vocal[a:b]+=src[:b-a]*voice_level
                         fx_highlight[a:b]=np.maximum(
-                            fx_highlight[a:b],np.minimum(1,np.abs(src[:b-a])*3))
+                            fx_highlight[a:b],
+                            np.minimum(1,np.abs(src[:b-a])*3))
         cursor+=len(track)/sr+beat*3
     progress(80,'מבצע מיקס כשהקול המעובד בחזית')
     # The synth is independent. Duck only its volume during speech so the
