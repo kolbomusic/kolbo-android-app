@@ -12,7 +12,6 @@ jobs:
     env:
       KARNAFIM_BACKUP_DATABASE_URL: ${{ secrets.KARNAFIM_BACKUP_DATABASE_URL }}
       KARNAFIM_BACKUP_PASSPHRASE: ${{ secrets.KARNAFIM_BACKUP_PASSPHRASE }}
-      KARNAFIM_BACKUP_OUTPUT_DIR: ${{ runner.temp }}/karnafim-encrypted
     steps:
       - name: Abort without both protected secrets
         shell: bash
@@ -32,6 +31,8 @@ jobs:
           ref: e914d52bbe4b070ac4e3a5a1b731f8fdcb23d373
           persist-credentials: false
       - name: Create encrypted community recovery archive
+        env:
+          KARNAFIM_BACKUP_OUTPUT_DIR: ${{ runner.temp }}/karnafim-encrypted
         shell: bash
         run: bash karnafim-site/ops/backup_encrypted.sh
       - name: Upload ciphertext only (seven-day retention)
