@@ -76,8 +76,11 @@ def release_model():
 def _recognize(model, path, *, use_vad, return_segments=False):
     # No prompting with specific actors or events: this could hallucinate
     # the user's intended movie instead of recognizing the actual recording.
+    # Render Free hosts mixing and isolated Whisper under one 512MiB limit.
+    # Beam 2 reduces peak decoder memory; text must still pass Hebrew and
+    # confidence gates, with fallback to original source if unreliable.
     options = {
-        "language": "he", "task": "transcribe", "beam_size": 5,
+        "language": "he", "task": "transcribe", "beam_size": 2,
         "temperature": 0, "vad_filter": use_vad,
         "condition_on_previous_text": False,
         "hallucination_silence_threshold": 1.5,
