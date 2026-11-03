@@ -24,6 +24,7 @@ on:
       - 'trance-studio/web/studio-ai-fallback.js'
       - 'trance-studio/tests/test_narrative_plan.py'
       - 'trance-studio/tests/test_manual_share.js'
+      - 'trance-studio/tests/test_native_cloud_wake.js'
       - 'trance-studio/tests/test_simple_mobile_ui.js'
       - 'trance-studio/tests/test_auto_social_link_share.js'
       - 'trance-studio/tests/test_live_video.py'
@@ -80,6 +81,8 @@ jobs:
           node --check trance-studio/web/studio-ai-fallback.js
           node trance-studio/tests/test_manual_share.js
           node trance-studio/tests/test_native_share_resume.js
+          node trance-studio/tests/test_native_cloud_wake.js
+          node trance-studio/tests/test_studio_cloud_wake.js
           node trance-studio/tests/test_ai_story_no_loop.js
           node trance-studio/tests/test_social_link_share.js
           node trance-studio/tests/test_auto_social_link_share.js
@@ -90,15 +93,15 @@ jobs:
         run: |
           set -eux
           mkdir -p dist
-          cp trance-studio/android/app/build/outputs/apk/debug/app-debug.apk dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk
-          test -s dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk | head -n 8
-          sha256sum dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk | tee dist/SHA256SUMS.txt
+          cp trance-studio/android/app/build/outputs/apk/debug/app-debug.apk dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk
+          test -s dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk | head -n 8
+          sha256sum dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk | tee dist/SHA256SUMS.txt
       - name: Confirm independent Android package and media bridge
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk | grep -q "package: name='com.kolbomusic.trancestudio.story2462'"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk | grep -q "versionCode='248' versionName='2.4.7-beta.1'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk | grep -q "package: name='com.kolbomusic.trancestudio.story2462'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk | grep -q "versionCode='249' versionName='2.4.8-beta.1'"
           grep -q 'offlinePanel' trance-studio/android/app/src/main/java/com/kolbomusic/trancestudio/MainActivity.java
           grep -q 'startupPanel' trance-studio/android/app/src/main/java/com/kolbomusic/trancestudio/MainActivity.java
           grep -q 'onReceivedHttpError' trance-studio/android/app/src/main/java/com/kolbomusic/trancestudio/MainActivity.java
@@ -109,15 +112,15 @@ jobs:
       - name: Verify Android installer-visible name agrees with APK version
         run: |
           set -eux
-          APK="dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk"
+          APK="dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk"
           BADGING="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -Fq "application-label:'קולבו טראנס סטורי 2.4.7'"
+          echo "$BADGING" | grep -Fq "application-label:'קולבו טראנס סטורי 2.4.8'"
           echo "$BADGING" | grep -Fq "package: name='com.kolbomusic.trancestudio.story2462'"
-          echo "$BADGING" | grep -Fq "versionCode='248' versionName='2.4.7-beta.1'"
+          echo "$BADGING" | grep -Fq "versionCode='249' versionName='2.4.8-beta.1'"
       - name: Archive installation APK
         uses: actions/upload-artifact@v4
         with:
-          name: Kolbo-Trance-Story-2.4.7-beta.1-APK
+          name: Kolbo-Trance-Story-2.4.8-beta.1-APK
           path: dist/
           if-no-files-found: error
           retention-days: 30
@@ -126,8 +129,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="trance-story-v2.4.7-beta.1"
-          APK="dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk"
+          TAG="trance-story-v2.4.8-beta.1"
+          APK="dist/Kolbo-Trance-Story-v2.4.8-beta.1.apk"
           # Debug signing keys are runner-specific. Never overwrite an
           # already published APK with an incompatible signing certificate.
           # Each beta has an immutable tag; a reused applicationId requires
@@ -136,7 +139,7 @@ jobs:
             echo "Release $TAG already exists; retaining the original signed APK."
           else
             gh release create "$TAG" "$APK" --target "$GITHUB_SHA" \
-              --title "Kolbo Trance Story v2.4.7 beta 1 · startup loading repaired" \
-              --notes "Version 2.4.7: repeated WebView readiness polling, stale-cache recovery, visible native browser fallback, multi-file PWA WhatsApp share, native cold-start loader, preservation of in-progress WhatsApp mixes, bounded re-share, verified interactive studio UI, safe SSL handling, speech-led DJ mix. Android receives WhatsApp video up to 45 MB (60 MB total), sharing imports but never starts generation without Create. Free AI motion scenes are experimental and quota-limited. Requires internet. This beta repairs stuck native loading and keeps the same story2462 package as 2.4.6 beta 2. Debug signing on GitHub runners is ephemeral; uninstall the prior beta before installing this APK if Android reports a signature conflict." \
+              --title "Kolbo Trance Story v2.4.7 beta 1 · native cold-start preflight repaired" \
+              --notes "Version 2.4.8: native /health warm-up before WebView navigation, bounded cloud-sleep retry without sending media, repeated WebView readiness polling, stale-cache recovery, visible native browser fallback, multi-file PWA WhatsApp share, native cold-start loader, preservation of in-progress WhatsApp mixes, bounded re-share, verified interactive studio UI, safe SSL handling, speech-led DJ mix. Android receives WhatsApp video up to 45 MB (60 MB total), sharing imports but never starts generation without Create. Free AI motion scenes are experimental and quota-limited. Requires internet. This beta prevents the Render Free cold-start HTML page from being mistaken for the app and keeps the same story2462 Android package. Debug signing on GitHub runners is ephemeral; uninstall the prior beta before installing this APK if Android reports a signature conflict." \
               --prerelease
           fi
