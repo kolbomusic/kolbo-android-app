@@ -79,6 +79,53 @@ jobs:
           if new_health.get("http_status")!=200 or new_health.get("status")!="ok":
               raise SystemExit("New dynamic Render service is not verified healthy")
           PY
+      - name: Inspect public auth routes, headers, and Google site status
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, urllib.request, urllib.error
+          results=[]
+          for host in ("karnafim-community-46.onrender.com",
+                       "karnafim-barkan-46.onrender.com"):
+              for path in ("/login","/signup","/profile","/find"):
+                  result={"host":host,"path":path,"http":None}
+                  req=urllib.request.Request("https://"+host+path,
+                      headers={"User-Agent":"KarnafimReadOnlySecurity/1.0"})
+                  try:
+                      with urllib.request.urlopen(req, timeout=24) as resp:
+                          result["http"]=resp.status
+                          result["final_host"]=urllib.parse.urlsplit(resp.url).hostname
+                          result["csp"]=bool(resp.headers.get("Content-Security-Policy"))
+                          result["nosniff"]=resp.headers.get("X-Content-Type-Options")=="nosniff"
+                  except urllib.error.HTTPError as exc:
+                      result["http"]=exc.code
+                  except (OSError,TimeoutError) as exc:
+                      result["error"]=type(exc).__name__
+                  results.append(result)
+                  print("ROUTE_SECURITY="+json.dumps(result,ensure_ascii=False),flush=True)
+          domain="karnafim-community-46.onrender.com"
+          google={"host":domain,"classification":"unverified"}
+          url="https://transparencyreport.google.com/transparencyreport/api/v3/safebrowsing/status?site="+domain
+          try:
+              req=urllib.request.Request(url,
+                   headers={"User-Agent":"Mozilla/5.0 (compatible; KarnafimReadOnly/1.0)"})
+              with urllib.request.urlopen(req,timeout=20) as resp:
+                  raw=resp.read(100000).decode("utf-8","replace")
+              i=raw.find("[[")
+              if i<0:raise ValueError("Google status response shape")
+              rows=json.loads(raw[i:])
+              if not rows or not isinstance(rows[0],list) or rows[0][0]!="sb.ssr":
+                  raise ValueError("Unrecognized Google status response")
+              code=int(rows[0][1])
+              google["classification"]={1:"no_unsafe_content_found",
+                  2:"unsafe",3:"some_pages_unsafe",5:"uncommon_downloads",
+                  6:"no_available_data"}.get(code,"unverified")
+              google["phishing_signal"]=bool(rows[0][4])
+          except (OSError,TimeoutError,ValueError,IndexError,TypeError) as exc:
+              google["error"]=type(exc).__name__
+          print("GOOGLE_PUBLIC_STATUS="+json.dumps(google,ensure_ascii=False),flush=True)
+          PY
       - name: Keep safe diagnostic report
         if: always()
         uses: actions/upload-artifact@v4
