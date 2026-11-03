@@ -245,7 +245,7 @@ with site.app.test_client() as browser:
         "kind":"voice","uploads":(jpeg(),"picture.jpg","image/jpeg")
     },content_type="multipart/form-data")
     assert invalid.status_code==400
-    recording=io.BytesIO(b"\\x1a\\x45\\xdf\\xa3"+b"synthetic opus audio payload")
+    recording=io.BytesIO(b"\x1a\x45\xdf\xa3"+b"synthetic opus audio payload")
     saved=browser.post("/new",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"rights":"yes","title":"סיפור מוקלט ניסיוני",
         "body":"זיכרון קצר ולא מזהה","kind":"voice","album_cohort":"2003-11",
