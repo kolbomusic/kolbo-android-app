@@ -1,650 +1,692 @@
-import os,re,secrets,hashlib,hmac,html,base64
-from datetime import datetime, timedelta
-from flask import Flask,request,redirect,session,render_template_string,abort,Response
+"""Karnafim / Barkan — independent, Hebrew RTL veterans community.
+
+New application and database tables (b2_*). No Google social login, no shared
+shop dependency, no external scripts. This deployment serves the original public address with the rebuilt application.
+"""
+import hashlib
+import hmac
+import io
+import os
+import re
+import secrets
+from datetime import datetime, timezone
+from functools import wraps
+from html import escape
+from pathlib import Path
+
 import psycopg
 from psycopg.rows import dict_row
-from accessibility_ui import integrate_html, accessibility_statement_body, JS as TRUSTED_ACCESSIBILITY_JS
-from email_delivery import issue_token, digest_token, send_confirmation, delivery_ready
+from flask import Flask, Response, abort, g, redirect, request, send_file, session, url_for
+from markupsafe import Markup
+from PIL import Image, ImageOps, UnidentifiedImageError
 
-# Pin a CSP hash for our trusted inline accessibility helper. Never compute
-# hashes from arbitrary rendered HTML: that could whitelist injected scripts.
-_A11Y_JS_BODY=TRUSTED_ACCESSIBILITY_JS.partition(">")[2].rpartition("</script>")[0]
-_A11Y_JS_SHA256=base64.b64encode(hashlib.sha256(_A11Y_JS_BODY.encode("utf-8")).digest()).decode("ascii")
-SAFE_RETURN_PATHS=frozenset(("/", "/profile", "/directory", "/new-post", "/my-posts", "/chats", "/feed"))
+BASE=Path(__file__).resolve().parent
+app=Flask(__name__,static_folder=str(BASE/"static"))
+CONFIGURED_SECRET=os.environ.get("BARKAN_SESSION_SECRET","").strip()
+DB=os.environ.get("BARKAN_DATABASE_URL","").strip()
+app.config.update(
+    # An ephemeral key is acceptable only for a public read-only deployment.
+    # Account login requires a durable configured secret and a database.
+    SECRET_KEY=CONFIGURED_SECRET or secrets.token_urlsafe(48),
+    SESSION_COOKIE_NAME="barkan_46_session",
+    SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=3600*6,
+    MAX_CONTENT_LENGTH=32*1024*1024, MAX_FORM_MEMORY_SIZE=128*1024,
+    TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"],
+)
+ORIGIN=os.environ.get("BARKAN_PUBLIC_ORIGIN","https://karnafim-community-46.onrender.com").rstrip("/")
+# Public account forms are a separate switch. Never enable until the new origin
+# passes live security checks and is no longer flagged by Safe Browsing.
+PUBLIC_AUTH=(bool(CONFIGURED_SECRET and DB)
+             and os.environ.get("BARKAN_PUBLIC_AUTH","0")=="1"
+             and os.environ.get("BARKAN_SAFETY_RELEASE_APPROVED","0")=="1")
+EMAIL_PROVIDER=os.environ.get("BARKAN_RESEND_API_KEY","")
+MAIL_FROM=os.environ.get("BARKAN_MAIL_FROM","")
+MAIL_READY=bool(EMAIL_PROVIDER.strip() and MAIL_FROM.strip())
+ALLOW_SIGNUP=(PUBLIC_AUTH and os.environ.get("BARKAN_ALLOW_SIGNUP","0")=="1" and MAIL_READY)
 
-app=Flask(__name__)
-app.secret_key=os.environ['SECRET_KEY']
-app.config.update(SESSION_COOKIE_NAME="karnafim_member_session",SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=timedelta(hours=6),MAX_CONTENT_LENGTH=34*1024*1024,MAX_FORM_MEMORY_SIZE=64*1024,MAX_FORM_PARTS=25,TRUSTED_HOSTS=["karnafim-community-46.onrender.com","localhost","127.0.0.1"])
-# Fail closed while Google Safe Browsing flags the site. Accidentally changing
-# maintenance alone must not restore private accounts, uploads or message routes.
-# Explicitly release ONLY after Google clearance and security regressions pass:
-# KARNAFIM_MAINTENANCE=0 AND KARNAFIM_SAFETY_RELEASE_APPROVED=1
-# Local email/password only; Search Console verification is a separate site-owner check.
-SAFETY_RELEASE_APPROVED=os.environ.get("KARNAFIM_SAFETY_RELEASE_APPROVED","0")=="1"
-AUTH_READY=os.environ.get("KARNAFIM_LOCAL_AUTH_ENABLED","0")=="1"
-READ_ONLY_BOOT=not (os.environ.get("KARNAFIM_MAINTENANCE","1")=="0"
-                    and SAFETY_RELEASE_APPROVED and AUTH_READY)
-DB=os.environ.get("DATABASE_URL","") if READ_ONLY_BOOT else os.environ["DATABASE_URL"]
+def connect():
+    return psycopg.connect(DB,row_factory=dict_row,connect_timeout=8)
+
+def sql(query, params=(), one=False):
+    with connect() as c:
+        with c.cursor() as cur:
+            cur.execute(query,params)
+            return (cur.fetchone() if one else cur.fetchall()) if cur.description else None
+
+def init():
+    """Rebuild schema from scratch, preserve original account hashes as one-time seed."""
+    with connect() as c:
+        with c.cursor() as cur:
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_users(
+                id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,passhash TEXT NOT NULL,
+                nickname TEXT NOT NULL DEFAULT '',unit_year TEXT NOT NULL DEFAULT '',
+                about TEXT NOT NULL DEFAULT '',approved BOOLEAN NOT NULL DEFAULT FALSE,
+                show_profile BOOLEAN NOT NULL DEFAULT FALSE,
+                email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                email_verification_required BOOLEAN NOT NULL DEFAULT FALSE,
+                joined TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_tokens(
+                user_id BIGINT PRIMARY KEY REFERENCES b2_users(id) ON DELETE CASCADE,
+                digest CHAR(64) NOT NULL UNIQUE,expires TIMESTAMPTZ NOT NULL)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_throttle(
+                fingerprint TEXT NOT NULL,at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_throttle_idx ON b2_throttle(fingerprint,at)")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_posts(
+                id BIGSERIAL PRIMARY KEY,author BIGINT NOT NULL REFERENCES b2_users(id),
+                title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT 'story',
+                year_text TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_posts_status_idx ON b2_posts(status,created DESC)")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_media(
+                id BIGSERIAL PRIMARY KEY,post_id BIGINT REFERENCES b2_posts(id) ON DELETE CASCADE,
+                owner BIGINT NOT NULL REFERENCES b2_users(id),
+                recipient BIGINT REFERENCES b2_users(id),
+                mime TEXT NOT NULL,kind TEXT NOT NULL,body BYTEA NOT NULL,
+                length INTEGER NOT NULL,created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_messages(
+                id BIGSERIAL PRIMARY KEY,sender BIGINT NOT NULL REFERENCES b2_users(id),
+                recipient BIGINT NOT NULL REFERENCES b2_users(id),
+                text TEXT NOT NULL DEFAULT '',
+                media_id BIGINT REFERENCES b2_media(id),
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_messages_pair_idx ON b2_messages(sender,recipient,created)")
+            # Preserve existing members' hashes without copying messages or passwords
+            # into source code. The copied Neon branch is a rollback snapshot.
+            cur.execute("""SELECT to_regclass('public.members') IS NOT NULL AS has_legacy_members""")
+            if cur.fetchone()["has_legacy_members"]:
+                cur.execute("""INSERT INTO b2_users(name,email,passhash,nickname,approved,show_profile,
+                                  email_verified,email_verification_required)
+                    SELECT name,lower(email),password,COALESCE(nickname,''),approved,
+                           FALSE,FALSE,FALSE FROM members
+                    WHERE email IS NOT NULL AND password IS NOT NULL
+                    ON CONFLICT(email) DO NOTHING""")
+if DB:
+    init()
+
+def e(value): return escape(str(value if value is not None else ""),quote=True)
+
+def hashpw(p, salt=None):
+    salt=salt or secrets.token_hex(16)
+    return salt+":"+hashlib.pbkdf2_hmac("sha256",p.encode(),bytes.fromhex(salt),250000).hex()
+
+def checkpw(p, hashed):
+    try: return hmac.compare_digest(hashpw(p,hashed.split(":")[0]),hashed)
+    except (ValueError,TypeError,IndexError):return False
+
+def finger(label):
+    key=app.secret_key.encode()
+    ip=request.remote_addr or "unknown"
+    return hmac.new(key,(label+"|"+ip).encode(),hashlib.sha256).hexdigest()
+
+def limit(label, maximum=8, minutes=15):
+    fp=finger(label)
+    with connect() as c:
+        with c.cursor() as cur:
+            cur.execute("SELECT COUNT(*) n FROM b2_throttle WHERE fingerprint=%s AND at>NOW()-(%s * INTERVAL '1 minute')",(fp,minutes))
+            if cur.fetchone()["n"]>=maximum:abort(429)
+            cur.execute("INSERT INTO b2_throttle(fingerprint) VALUES(%s)",(fp,))
+
+def current():
+    uid=session.get("uid")
+    if not isinstance(uid,int):return None
+    return sql("SELECT id,name,email,approved,show_profile,email_verified,email_verification_required,nickname,unit_year,about FROM b2_users WHERE id=%s",(uid,),True)
 
 @app.before_request
-def security_hold():
- if READ_ONLY_BOOT and request.path not in ("/health","/favicon.svg","/favicon.ico","/robots.txt","/sitemap.xml"):
-  import re
-  can_read=(request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/status","/photos","/accessibility","/help","/terms") or re.fullmatch(r"/source/[0-9]+",request.path) is not None or re.fullmatch(r"/memorial/[a-z0-9-]+",request.path) is not None)
-  if request.method in ("GET","HEAD") and can_read:
-   from pathlib import Path
-   if request.path=="/accessibility":
-    from public_pages import shell, NOTICE
-    document=shell(NOTICE+accessibility_statement_body(read_only=True),"הצהרת נגישות")
-   elif request.path=="/photos":
-    from historical_photos import gallery_page
-    document=gallery_page()
-   elif request.path!="/":
-    from public_pages import render_page
-    document=render_page(request.path)
-    if document is None: abort(404)
-   else:
-    document=(Path(__file__).resolve().parent/"maintenance_public.html").read_text(encoding="utf-8")
-   gsc_token=os.environ.get("KARNAFIM_GSC_VERIFICATION","").strip()
-   if gsc_token and re.fullmatch(r"[A-Za-z0-9_-]{20,256}",gsc_token):
-    document=document.replace("</head>",'<meta name="google-site-verification" content="'+gsc_token+'"></head>',1)
-   response=Response(integrate_html(document,scripts_allowed=False,toolbar_enabled=False),status=200,mimetype="text/html")
-   response.headers["Content-Security-Policy"]="default-src 'none'; style-src 'unsafe-inline'; img-src https://upload.wikimedia.org; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-  else:
-   # Previously active credential endpoints are fully retired while the site is under review.
-   # 410 (rather than temporary 503) explicitly tells crawlers that these forms are gone;
-   # no private content or credentials are served, even if an old bookmark is followed.
-   retired_credentials=(request.path in ("/login","/register","/password","/find") or request.path.startswith("/auth/google/"))
-   private_exact=request.path in (
-    "/new-post","/my-posts","/chats","/feed","/invite","/profile",
-    "/directory","/admin","/community/moderation","/discover",
-    "/memories","/inbox","/delete-account","/accessibility/report",
-    "/logout","/admin/memory"
-   )
-   private_prefix=request.path.startswith((
-    "/chat/","/contact/","/community-media/","/post/","/admin/",
-    "/community/"
-   ))
-   # Unknown/spam URL probes should return 404 (not temporary 503);
-   # removed login/find routes use 410; known private routes stay locked.
-   status=410 if retired_credentials else 503 if (private_exact or private_prefix or request.path in ("/","/about","/privacy","/safety","/archive","/memorials","/status","/photos","/accessibility","/help","/terms")) else 404
-   message=("שירות איתור החברים הוסר זמנית בעקבות בדיקת אבטחת האתר. לא נאספים כאן פרטים אישיים." if request.path=="/find" else "עמוד הכניסה הוסר במסגרת טיפול באבטחת האתר. אין להזין כאן פרטי התחברות." if retired_credentials else "אתר הקרנפים — גישה אישית מושהית לצורך בדיקת אבטחה." if status==503 else "הכתובת המבוקשת אינה קיימת.")
-   response=Response(message,status=status,mimetype="text/plain")
-   response.headers["Content-Security-Policy"]="default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-  response.headers["Cache-Control"]="no-store, max-age=0"
-  response.headers["X-Robots-Tag"]=("index, follow" if response.status_code==200 else "noindex, nofollow")
-  response.headers["X-Content-Type-Options"]="nosniff"
-  response.headers["Referrer-Policy"]="no-referrer"
-  return response
+def before():
+    if "csrf" not in session:session["csrf"]=secrets.token_urlsafe(32)
+    g.user=current() if PUBLIC_AUTH and session.get("uid") is not None else None
 
-# Public crawl map for the temporary *read-only* site. Private routes remain
-# blocked at the application layer; robots.txt is not an access-control system.
-@app.route("/robots.txt")
-def robots_txt():
- content="\n".join([
-   "User-agent: *",
-   "Allow: /",
-   # /find and credential endpoints now explicitly return 410 so Google can recrawl.
-   # Do not disallow crawling these URLs: Google must be able to observe removal.
-   "Disallow: /new-post",
-   "Disallow: /my-posts",
-   "Disallow: /chats",
-   "Disallow: /chat/",
-   "Disallow: /admin",
-   "Disallow: /profile",
-   "Disallow: /directory",
-   "Disallow: /community-media/",
-   "Disallow: /post/",
-   "Sitemap: https://karnafim-community-46.onrender.com/sitemap.xml",
-   ""
- ])
- return Response(content,mimetype="text/plain")
+def require_login(fn):
+    @wraps(fn)
+    def inner(*args,**kwargs):
+        if not PUBLIC_AUTH:abort(503)
+        if g.user is None:return redirect("/login",code=303)
+        return fn(*args,**kwargs)
+    return inner
 
-@app.route("/sitemap.xml")
-def public_sitemap():
- from memorial_photos import PEOPLE
- paths=["/","/about","/privacy","/safety","/status","/archive","/memorials",
-        "/photos","/help","/accessibility","/terms"]
- paths.extend("/source/"+str(n) for n in range(1,15))
- paths.extend("/memorial/"+p["slug"] for p in PEOPLE)
- xml='<?xml version="1.0" encoding="UTF-8"?>\n'
- xml+='<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
- xml+="".join("<url><loc>https://karnafim-community-46.onrender.com"+
-              html.escape(path,quote=True)+"</loc></url>" for path in paths)
- xml+="</urlset>"
- return Response(xml,mimetype="application/xml")
+def require_approved(fn):
+    @wraps(fn)
+    @require_login
+    def inner(*args,**kwargs):
+        if not g.user["approved"]:abort(403)
+        return fn(*args,**kwargs)
+    return inner
+
+def admin():
+    return bool(g.user and g.user["approved"] and
+                g.user["email"].lower()==os.environ.get("BARKAN_ADMIN_EMAIL","").lower())
+
+def protect():
+    if not hmac.compare_digest(str(request.form.get("csrf","")),session.get("csrf","")):abort(400)
+
+def button_form(body,action,extra=""):
+    return '<form method="post" action="'+e(action)+'" '+extra+'><input type="hidden" name="csrf" value="'+e(session["csrf"])+'">'+body+'</form>'
+
+def password_control(name, autocomplete):
+    """Consistent accessible password field without external scripts."""
+    return ('<div class="password-field"><label for="account-password">סיסמה</label>'
+            '<span class="password-wrap">'
+            '<input id="account-password" type="password" name="'+name+'" '
+            + ('minlength="12" ' if autocomplete=="new-password" else '') +
+            'maxlength="200" autocomplete="'+autocomplete+'" required '
+            'aria-describedby="password-help">'
+            '<button type="button" class="password-toggle" data-password-toggle '
+            'aria-controls="account-password" aria-pressed="false" '
+            'aria-label="הצגת הסיסמה">הצגה</button></span></div>')
+
+def layout(title,body):
+    u=g.user
+    menu=[("/","בית"),("/heritage","מורשת"),("/memorial","הנצחה"),("/photos","תמונות"),("/about","על הקהילה"),("/help","עזרה")]
+    if PUBLIC_AUTH and u:
+        menu += [("/feed","הקהילה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
+        if admin():menu += [("/moderation","בקרת פרסומים"),("/members","אישור חברים")]
+    elif PUBLIC_AUTH:
+        menu += [("/login","כניסה")]
+        if ALLOW_SIGNUP:menu += [("/signup","הצטרפות")]
+    nav=''.join('<a href="'+link+'"'+(' aria-current="page"' if request.path==link else '')+'>'+label+'</a>' for link,label in menu)
+    banner=('<div class="banner">האתר החדש נמצא בהכנת מערכת החברים ובבדיקת אבטחה. '
+            'תכני המורשת זמינים כעת; הרשמה והתחברות ייפתחו רק לאחר אימות בטיחות האתר.</div>') if not PUBLIC_AUTH else ''
+    html='''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#142e27">
+<meta name="description" content="קהילת הקרנפים / ברקן — מורשת פלוגה ב, גדוד 46, חטיבה 401">
+<link rel="stylesheet" href="/static/site.css"><title>'''+e(title)+''' · הקרנפים / ברקן</title></head>
+<body><a class="skip" href="#main">דלג לתוכן</a>
+<header><div class="bar"><a class="logo" href="/">◈ הקרנפים <span>ברקן · פלוגה ב׳</span></a>
+<button id="toggle" type="button" aria-expanded="false" aria-controls="nav">☰ תפריט</button>
+<nav id="nav" aria-label="ניווט ראשי">'''+nav+'''</nav></div></header>
+<main id="main" tabindex="-1">'''+banner+str(body)+'''</main>
+<footer><div><strong>הקרנפים / ברקן</strong><p>מיזם עצמאי של יוצאי פלוגה ב׳, גדוד 46, חטיבה 401. אינו אתר רשמי של צה״ל.</p></div>
+<nav aria-label="קישורי מדיניות"><a href="/privacy">פרטיות</a><a href="/terms">תנאי שימוש</a><a href="/safety">בטיחות</a><a href="/status">מצב המערכת</a></nav></footer>
+<script src="/static/site.js" defer></script></body></html>'''
+    return Response(html,mimetype="text/html")
 
 @app.after_request
-def harden_responses(resp):
- # Verification must remain available after the site leaves read-only mode;
- # otherwise Search Console can revoke ownership on its periodic recheck.
- if request.path=="/" and resp.status_code==200 and resp.mimetype=="text/html":
-  token=os.environ.get("KARNAFIM_GSC_VERIFICATION","").strip()
-  if token and re.fullmatch(r"[A-Za-z0-9_-]{20,256}",token):
-   data=resp.get_data(as_text=True)
-   if 'name="google-site-verification"' not in data and "</head>" in data:
-    resp.set_data(data.replace("</head>",'<meta name="google-site-verification" content="'+token+'"></head>',1))
- if request.path in ("/login","/register","/password","/find","/verify-email","/resend-verification") or request.path.startswith("/auth/google/"):
-  resp.headers.setdefault("X-Robots-Tag","noindex, nofollow")
- if request.path=="/verify-email":
-  resp.headers["Referrer-Policy"]="no-referrer"
-  resp.headers["Cache-Control"]="no-store, max-age=0"
- resp.headers.setdefault("X-Content-Type-Options","nosniff")
- resp.headers.setdefault("X-Frame-Options","DENY")
- resp.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
- resp.headers.setdefault("Cross-Origin-Resource-Policy","same-origin")
- resp.headers.setdefault("Permissions-Policy","camera=(), geolocation=(), microphone=(self)")
- if request.path in ("/login", "/register", "/password", "/verify-email", "/resend-verification") and not READ_ONLY_BOOT:
-  # Original local account forms never load Google scripts or frames.
-  resp.headers["Content-Security-Policy"]=(
-   "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; "
-   "script-src 'sha256-" + _A11Y_JS_SHA256 + "'; "
-   "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
-  )
+def headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options","nosniff")
+    resp.headers.setdefault("X-Frame-Options","DENY")
+    resp.headers.setdefault("Referrer-Policy","no-referrer")
+    resp.headers.setdefault("Permissions-Policy","camera=(),geolocation=(),microphone=(self)")
+    resp.headers.setdefault("Cross-Origin-Resource-Policy","same-origin")
+    resp.headers.setdefault("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+    resp.headers.setdefault("Strict-Transport-Security","max-age=31536000")
+    if resp.mimetype=="text/html":resp.headers.setdefault("Cache-Control","no-store")
+    if request.path in ("/login","/signup","/verify-email","/profile","/inbox","/find") or request.path.startswith("/media/"):
+        resp.headers["X-Robots-Tag"]="noindex,nofollow"
+    return resp
 
- else:
-  resp.headers.setdefault("Content-Security-Policy","frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'")
- resp.headers.setdefault("Strict-Transport-Security","max-age=31536000")
- if resp.mimetype=="text/html":
-  resp.headers.setdefault("Cache-Control","private, no-store, max-age=0")
- return resp
-
-def sql(q,params=(),fetch=False):
- with psycopg.connect(DB,row_factory=dict_row) as c:
-  with c.cursor() as cur:
-   cur.execute(q,params)
-   return cur.fetchall() if fetch else None
-def init():
- sql("""CREATE TABLE IF NOT EXISTS members (
- id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, nickname TEXT NOT NULL DEFAULT '',
- email TEXT NOT NULL UNIQUE, password TEXT NOT NULL, service_start TEXT NOT NULL DEFAULT '',
- service_end TEXT NOT NULL DEFAULT '', company TEXT NOT NULL DEFAULT '',
- role TEXT NOT NULL DEFAULT '', about TEXT NOT NULL DEFAULT '',
- approved BOOLEAN NOT NULL DEFAULT FALSE, visible BOOLEAN NOT NULL DEFAULT FALSE,
- created_at TIMESTAMPTZ DEFAULT NOW());
- CREATE TABLE IF NOT EXISTS requests (
- id BIGSERIAL PRIMARY KEY, sender_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
- recipient_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
- note TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(),
- UNIQUE(sender_id,recipient_id));
- CREATE TABLE IF NOT EXISTS messages (
- id BIGSERIAL PRIMARY KEY, sender_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
- recipient_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
- body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());""")
-if not READ_ONLY_BOOT:
- init()
- # Existing accounts retain their credentials; verification is mandatory for new signups.
- sql("ALTER TABLE members ADD COLUMN IF NOT EXISTS verification_required BOOLEAN NOT NULL DEFAULT FALSE")
- sql("ALTER TABLE members ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ")
- sql("""CREATE TABLE IF NOT EXISTS email_verification_tokens (
- member_id BIGINT PRIMARY KEY REFERENCES members(id) ON DELETE CASCADE,
- token_hash CHAR(64) NOT NULL UNIQUE,
- expires_at TIMESTAMPTZ NOT NULL,
- created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
- )""")
- # HTTPS mail delivery fallback is a bounded Gmail queue, not a public route.
- sql("""CREATE TABLE IF NOT EXISTS email_outbox (
- id BIGSERIAL PRIMARY KEY,
- kind TEXT NOT NULL DEFAULT 'verification',
- to_address TEXT NOT NULL,
- verification_url TEXT,
- status TEXT NOT NULL DEFAULT 'pending'
-  CHECK (status IN ('pending','sending','sent','failed')),
- created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
- expires_at TIMESTAMPTZ NOT NULL,
- attempts INTEGER NOT NULL DEFAULT 0,
- claimed_at TIMESTAMPTZ,
- sent_at TIMESTAMPTZ,
- last_error TEXT NOT NULL DEFAULT ''
- )""")
- sql("CREATE INDEX IF NOT EXISTS email_outbox_dispatch_idx ON email_outbox(status,created_at) WHERE status='pending'")
- sql("CREATE INDEX IF NOT EXISTS email_outbox_recipient_idx ON email_outbox(lower(to_address),created_at DESC)")
- sql("""CREATE TABLE IF NOT EXISTS login_failures (
- fingerprint TEXT NOT NULL,
- created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
- )""")
- sql("CREATE INDEX IF NOT EXISTS login_failures_lookup ON login_failures(fingerprint,created_at DESC)")
- sql("ALTER TABLE members ADD COLUMN IF NOT EXISTS session_version BIGINT NOT NULL DEFAULT 0")
-
-def auth_fingerprint(email):
- raw=(email+"|"+(request.remote_addr or "")).encode("utf-8")
- return hmac.new(app.secret_key.encode("utf-8"),raw,hashlib.sha256).hexdigest()
-
-def is_rate_limited(fingerprint):
- count=sql("SELECT COUNT(*) AS n FROM login_failures WHERE fingerprint=%s AND created_at>NOW()-INTERVAL '15 minutes'",(fingerprint,),True)[0]["n"]
- return count>=8
-
-def hashpw(p,s=None):
- s=s or secrets.token_hex(16)
- return s+":"+hashlib.pbkdf2_hmac("sha256",p.encode(),bytes.fromhex(s),250000).hex()
-def verify(p,h):
- try: return hmac.compare_digest(hashpw(p,h.split(":")[0]),h)
- except: return False
-def me():
- if session.get("auth_method")!="local" or "uid" not in session:return None
- rows=sql("SELECT * FROM members WHERE id=%s",(session["uid"],),True)
- if not rows:return None
- if session.get("credential_version",0)!=rows[0].get("session_version",0):
-  session.clear()
-  return None
- return rows[0]
-def admin(u):return bool(u and u["email"].lower()==os.getenv("ADMIN_EMAIL","").lower() and u["approved"])
-def token():return session.setdefault("csrf",secrets.token_urlsafe(24))
-def guard():
- saved=session.get("csrf")
- submitted=request.form.get("csrf","")
- if not saved or not submitted or not hmac.compare_digest(submitted,saved):abort(403)
-def esc(v):return html.escape(str(v or ""),quote=True)
-def field(name,label,type="text",required=False,value=""):
- return f'<label>{esc(label)}<input name="{esc(name)}" type="{type}" value="{esc(value)}" maxlength="200" {"required" if required else ""}></label>'
-def view(title,body):
- u=me(); nav='<a href="/">🏠 בית</a> <a href="/memorials">🕯️ הנצחה</a> <a href="/archive">📜 ארכיון</a> <a href="/directory">👥 מדריך חברים</a> <a href="/photos">📷 תמונות</a> <a href="/feed">📸 סיפורים</a> <a href="/help">❔ עזרה</a> '
- if u:
-  nav+='<a href="/new-post">📸 שתפו סיפור או תמונות</a> <a href="/my-posts">📝 הפרסומים שלי</a> <a href="/profile">הפרופיל שלי</a> '
-  if u["approved"]:
-   nav+='<a href="/chats">💬 צ׳אט</a> <a href="/invite">🤝 הזמנת חברים</a> <a href="/directory">👥 מדריך</a> '
-  if admin(u):nav+='<a href="/admin">ניהול</a> <a href="/admin/accessibility">דיווחי נגישות</a> <a href="/community/moderation">אישור פרסומים</a> '
-  nav+='<a href="/password">שינוי סיסמה</a> '
-  nav+='<a href="/logout">יציאה</a>'
- else:
-  nav+='<a class="nav-register" href="/register">בקשת הצטרפות</a> <a class="nav-login" href="/login">🔑 כניסה לחשבון</a>'
- return integrate_html(render_template_string("""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="קהילת יוצאי פלוגה ב׳ הקרנפים/ברקן גדוד 46 חטיבה 401"><title>{{title}} | הקרנפים חוזרים לקשר</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
- :root{font-family:Arial,'Segoe UI',sans-serif;background:#f3f1e8;color:#172a25}*{box-sizing:border-box}body{margin:0;line-height:1.7}header{background:#172b25;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header a{color:white;text-decoration:none;margin-left:12px;font-size:14px}.logo{font-size:21px;font-weight:800;color:#dbeb9f}main{max-width:1050px;margin:auto;padding:36px 18px}h1{font-size:clamp(30px,5vw,54px);line-height:1.2;margin:0 0 18px}h2{margin-top:32px}.hero{background:linear-gradient(125deg,#142b23,#365441);padding:50px 32px;color:white;border-radius:22px}.hero p{color:#e2e9db;font-size:19px;max-width:700px}.btn,button{background:#cce38d;color:#152b24;border:0;padding:11px 20px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 0}a{color:#246448}.btn.secondary{background:#e5ebe3}.card{background:white;border:1px solid #dee2d8;border-radius:15px;padding:23px;margin:14px 0;box-shadow:0 4px 18px #13251c09}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}label{display:block;font-weight:600;margin:12px 0}input,textarea,select{width:100%;display:block;padding:12px;border:1px solid #b8c4b4;border-radius:8px;font:inherit;background:white}textarea{min-height:105px}form{max-width:560px}.muted{color:#60736a}.tag{display:inline-block;padding:3px 9px;background:#e6eedb;border-radius:14px;font-size:12px}.error{background:#fff0e8;padding:14px;border-radius:8px}footer{text-align:center;padding:28px;color:#66766b;font-size:13px}
-header{position:sticky;top:0;z-index:1000;min-height:76px;box-shadow:0 3px 12px #0002}
-header nav{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:40px}
-header nav a{display:inline-flex;align-items:center;justify-content:center;margin:0;padding:9px 13px;font-size:15px;font-weight:700;white-space:nowrap;border-radius:9px;color:#fff;background:rgba(255,255,255,.09)}
-header nav a:hover,header nav a:focus-visible{background:rgba(255,255,255,.20);outline:2px solid #d8e7a5;outline-offset:2px}
-header nav .nav-login{background:#d3ea93!important;color:#162b22!important;box-shadow:0 0 0 2px #d3ea9322}
-header nav .nav-register{border:1px solid #b3c894}
-.hero-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:24px}
-.hero-actions .btn{min-height:47px;display:inline-flex;align-items:center;justify-content:center;text-align:center}
-.hero-actions .btn-login{background:#fff;border:2px solid #d3ea93;color:#173429}
-.hero-actions .btn-login:hover{background:#f4f8ea}
-.account-hint{margin-top:16px;color:#e4edda;font-size:15px}
-.account-hint a{color:#efffad;font-weight:800;text-decoration:underline}
-@media(max-width:700px){header{padding:12px 14px;min-height:0;align-items:stretch}header nav{width:100%;display:flex;gap:7px}header nav a{font-size:14px;padding:9px 10px}header .logo{font-size:18px}.hero{padding:33px 21px}.hero-actions{flex-direction:column;align-items:stretch}.hero-actions .btn{width:100%}}
-</style></head><body><header><div class="logo">🦏 הקרנפים | ברקן</div><nav aria-label="ניווט ראשי">{{nav|safe}}</nav></header><main>{{body|safe}}</main><footer>יוזמה קהילתית עצמאית של יוצאי הפלוגה • אין קשר רשמי לצה״ל • פרטים אישיים מוסתרים כברירת מחדל · <a href="/accessibility">♿ נגישות</a> · <a href="/accessibility/report">דיווח על בעיית נגישות</a></footer></body></html>""",title=title,body=body,nav=nav),scripts_allowed=True)
-def formwrap(x):return '<input type="hidden" name="csrf" value="'+token()+'">'+x
-@app.route("/")
-def home():
- return app.extensions["karnafim_portal"]["home"]()
-@app.route("/favicon.svg")
-@app.route("/favicon.ico")
-def favicon():
- return Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#19372c"/><path fill="#d8eaa2" d="M14 17h13v30h-7V24h-6zm17 0h13v30h-7V24h-6zm17 0h6v30h-6z"/><path d="M8 51h48" stroke="#d8eaa2" stroke-width="3" stroke-linecap="round"/></svg>',mimetype="image/svg+xml",headers={"Cache-Control":"public, max-age=604800","X-Content-Type-Options":"nosniff"})
-@app.route("/health")
+@app.get("/health")
 def health():
- # Render exposes the deployed Git commit as a non-secret runtime identifier.
- # Show only an abbreviated validated SHA so monitors can detect stale deploys.
- raw_revision=os.environ.get("RENDER_GIT_COMMIT","").strip()
- revision=raw_revision[:12].lower() if re.fullmatch(r"[0-9a-fA-F]{40}",raw_revision) else "unknown"
- return {"ok":True,"service":"karnafim",
-         "access":("read_only" if READ_ONLY_BOOT else "community"),
-         "revision":revision}
-@app.route("/terms")
-def terms_public():
- from public_pages import render_page
- return render_page("/terms")
+    # Safe public liveness endpoint. No secrets, account data or raw DB errors.
+    return {"status":"ok","generation":"new-build","auth_enabled":PUBLIC_AUTH,
+            "database_configured":bool(DB),
+            "signup_enabled":ALLOW_SIGNUP,"email_sender_configured":MAIL_READY},200
 
-@app.route("/find", methods=["GET", "HEAD"])
-def retired_find():
- # Preserve the retired address as 410 even after the private community is
- # reopened. Never resurrect the old publicly searchable member endpoint.
- return Response(
-  "כתובת איתור החברים הישנה הוסרה. למידע על הגישה לקהילה: /status",
-  status=410, mimetype="text/plain",
-  headers={"X-Robots-Tag":"noindex, nofollow","Cache-Control":"no-store"}
- )
+@app.get("/ready")
+def ready():
+    # Readiness is distinct from liveness: a configured URL is not proof
+    # that the database is reachable or the member schema is provisioned.
+    # Never return connection strings, hostnames, credentials or SQL errors.
+    if not DB:
+        return {"status":"not_ready","database":"unconfigured",
+                "member_portal":"closed"},503
+    try:
+        with connect() as c:
+            with c.cursor() as cur:
+                cur.execute("""SELECT
+                    to_regclass('public.b2_users') IS NOT NULL AS users,
+                    to_regclass('public.b2_posts') IS NOT NULL AS posts,
+                    to_regclass('public.b2_media') IS NOT NULL AS media,
+                    to_regclass('public.b2_messages') IS NOT NULL AS messages,
+                    to_regclass('public.b2_tokens') IS NOT NULL AS tokens""")
+                schema=cur.fetchone()
+        all_ready=all(bool(schema[key]) for key in
+                      ("users","posts","media","messages","tokens"))
+    except (psycopg.Error, OSError, TimeoutError):
+        all_ready=False
+    if not all_ready:
+        return {"status":"not_ready","database":"unavailable",
+                "member_portal":"closed"},503
+    return {"status":"ready","database":"available",
+            "member_portal":"enabled" if PUBLIC_AUTH else "closed",
+            "signup":"enabled" if ALLOW_SIGNUP else "closed"},200
 
-@app.route("/status")
-def public_status():
- method="דוא״ל וסיסמה אישית"
- signup_allowed=os.getenv("KARNAFIM_ALLOW_REGISTRATION","0")=="1" and delivery_ready()
- return view("מצב הקהילה",'<h1>מצב קהילת הקרנפים</h1><div class="card"><h2>חברות והרשאות</h2>'
-  '<p>זוהי יוזמה עצמאית של יוצאי פלוגה ב׳ ואינה אתר רשמי של צה״ל או משרד הביטחון.</p>'
-  '<p>הכניסה מתבצעת באמצעות '+method+'. אימות החשבון אינו אישור שירות צבאי. '
-  'אישור חברות נפרד נדרש לפני גישה למידע ולפרסומים פרטיים.</p>'
-  '<p><a href="/login">כניסה לחשבון קיים</a></p>'
-  +('<p><a href="/register">בקשת הצטרפות</a></p>' if signup_allowed else
-    '<p>הרשמת חברים חדשים מושהית לעת עתה.</p>')+'</div>')
+@app.get("/")
+def home():
+    return layout("בית",'''<section class="hero"><div class="eyebrow">חטיבה 401 · גדוד 46 · פלוגה ב׳</div>
+<h1>יש קשרים<br><em>שלא משתחררים.</em></h1><p>בית אחד לחברים מהשירות, לזיכרונות, לתמונות, למורשת ולהנצחת האנשים שאיתם חלקנו דרך.</p>
+<div class="hero-actions"><a class="primary" href="/heritage">לסיפורי הפלוגה</a><a class="outline" href="/memorial">לזיכרון ולהנצחה</a></div>
+<div class="hero-index">2003—2006 <span>ומעבר לשנים</span></div></section>
+<section class="intro"><span class="tag">הבית של הפלוגה</span><h2>החברות נשארת. עכשיו יש לה מקום.</h2>
+<p>מיזם עצמאי לחידוש הקשר בין יוצאי הקרנפים, שנקראו בהמשך ברקן, ולהקמת ארכיון שיתופי מכבד.</p></section>
+<section class="tiles"><a href="/heritage"><span>01 / הסיפור שלנו</span><h3>ארכיון ומורשת</h3><p>היחידה, השנים, הזיכרונות והסיפורים שעיצבו אותנו.</p><b>כניסה לארכיון ←</b></a>
+<a href="/memorial"><span>02 / תמיד איתנו</span><h3>הנצחה וזיכרון</h3><p>מקום מכבד לזכור את החברים ואת המחיר שנשאו.</p><b>למרחב ההנצחה ←</b></a>
+<a href="/photos"><span>03 / הרגעים הקטנים</span><h3>תמונות וזיכרונות</h3><p>שוב ביחד, גם דרך האלבומים והסיפורים.</p><b>לגלריה ←</b></a></section>''')
 
-# Minimal privacy-preserving accessibility feedback: no public user directory, no messages to email.
-if not READ_ONLY_BOOT:
- sql("""CREATE TABLE IF NOT EXISTS accessibility_reports(
- id BIGSERIAL PRIMARY KEY,
- fingerprint TEXT NOT NULL,
- description TEXT NOT NULL,
- reply_email TEXT NOT NULL DEFAULT '',
- status TEXT NOT NULL DEFAULT 'open',
- created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
- sql("CREATE INDEX IF NOT EXISTS accessibility_reports_recent ON accessibility_reports(fingerprint,created_at DESC)")
+@app.get("/heritage")
+def heritage():
+    return layout("ארכיון ומורשת",'''<div class="pagehead"><span class="tag">מורשת</span><h1>הסיפור שלנו</h1><p>פלוגה ב׳ — הקרנפים, לימים ברקן; גדוד 46 ״שלח״, חטיבה 401.</p></div>
+<section class="story"><h2>יותר משנים על ציר הזמן</h2><p>האתר נולד מתוך רצון לשמר את החברות בין יוצאי הפלוגה, למצוא מחדש את החברים ולשתף סיפורי שירות ממקור ראשון.</p>
+<p>תאריכי שירות, מסמכים ותצלומים יתווספו בהדרגה עם הסכמה, ציון מקור ובדיקת דיוק היסטורי. אין כאן טענה לרישום רשמי של צה״ל.</p></section>
+<section class="timeline"><div><b>2003</b><h3>ראשית מחזורי המפגש</h3><p>יוצאי הפלוגה ממחזורי 2003–2006 מתאחדים סביב הזיכרון המשותף.</p></div>
+<div><b>2006</b><h3>השנים שנשארו איתנו</h3><p>הקרבות, החברות והזיכרונות — עם מקום לתיעוד מכבד של כל סיפור מאומת.</p></div>
+<div><b>היום</b><h3>קהילה חדשה</h3><p>אתר עצמאי שמאפשר לבוגרים לשוב וליצור קשר ולשמור מורשת לדורות הבאים.</p></div></section>''')
 
-@app.route("/accessibility/report",methods=["GET","POST"])
-def accessibility_report():
- if request.method=="POST":
-  guard()
-  if request.form.get("homepage","").strip():
-   return view("תודה",'<p role="status">הפנייה נקלטה.</p>')  # Honeypot.
-  description=request.form.get("description","").strip()[:1800]
-  reply=(request.form.get("email","").strip().lower())[:160]
-  if len(description)<12 or len(description)>1800 or (reply and ("@" not in reply or any(c in reply for c in "\r\n "))):
-   return view("טופס לא תקין",'<p role="alert">יש להזין תיאור ברור של לפחות 12 תווים וכתובת דוא״ל תקינה אם בחרת למסור אותה.</p><a href="/accessibility/report">חזרה לטופס</a>'),400
-  fingerprint=hmac.new(app.secret_key.encode("utf-8"),(request.remote_addr or "unknown").encode("utf-8"),hashlib.sha256).hexdigest()
-  n=sql("SELECT COUNT(*) AS n FROM accessibility_reports WHERE fingerprint=%s AND created_at>NOW()-INTERVAL '1 hour'",(fingerprint,),True)[0]["n"]
-  if n>=3:
-   return view("מגבלת פניות",'<p role="alert">התקבלו מספר פניות בפרק זמן קצר. ניתן לנסות שוב במועד אחר.</p>'),429
-  sql("INSERT INTO accessibility_reports(fingerprint,description,reply_email) VALUES(%s,%s,%s)",(fingerprint,description,reply))
-  return view("תודה",'<div class="card" role="status"><h1>הפנייה נקלטה</h1><p>תיאור בעיית הנגישות נשמר למנהל האתר. פרטי הקשר אינם מוצגים לציבור.</p><p><a href="/">חזרה לדף הבית</a></p></div>')
- return view("דיווח על בעיית נגישות",
- '<h1>♿ דיווח על בעיית נגישות</h1><p>נתקלתם בתוכן לא קריא, בעיה בניווט במקלדת, בחסימה בהעלאת קבצים או בטופס שקשה להשתמש בו? ספרו לנו.</p>'
- '<form method="post" class="card">'+formwrap(
- '<label>תיאור הבעיה והעמוד שבו נתקלתם בה<textarea name="description" rows="6" required minlength="12" maxlength="1800" aria-describedby="help-description"></textarea></label>'
- '<p id="help-description">אפשר לציין סוג מכשיר וקורא מסך. אין לכתוב כאן סיסמה, מספר אישי או מידע רגיש.</p>'
- '<label>כתובת דוא״ל למענה (לא חובה)<input type="email" name="email" maxlength="160" autocomplete="email"></label>'
- '<div aria-hidden="true" style="position:absolute;left:-9999px"><label>השאירו שדה זה ריק<input name="homepage" tabindex="-1" autocomplete="off"></label></div>'
- '<button>שליחת דיווח למנהל</button>')+'</form>')
+@app.get("/memorial")
+def memorial():
+    """Verified public memorial records; no copying of third-party portraits."""
+    force = [
+        ("רס״ן בניה ריין ז״ל", "מפקד כוח בניה", "https://www.izkor.gov.il/בניה%20ריין/en_f5ccba845584f96f9b9334cf335d2e78/"),
+        ("סמ״ר אורי גרוסמן ז״ל", "תותחן ומפקד טנק בכוח בניה", "https://www.izkor.gov.il/אורי%20גרוסמן/en_f53b79619b3f27184812b11f14e635a8/"),
+        ("סמ״ר אדם גורן ז״ל", "טען־קשר בכוח בניה", "https://www.izkor.gov.il/אדם%20גורן/en_e6446f8f52c2b18e0ec560602482bdda"),
+        ("סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל", "נהג הטנק בכוח בניה", "https://www.izkor.gov.il/אלכסנדר%20בונימוביץ/en_34b2955a02b6a81f8ba932dbf6228e61/"),
+    ]
+    def memorial_card(name,role,date,iso,source):
+        return ('<article class="memorial"><div class="candle" aria-hidden="true">✦</div>'
+                '<h3>'+e(name)+'</h3><p>'+e(role)+'</p>'
+                '<p><time datetime="'+e(iso)+'">'+e(date)+'</time></p>'
+                '<a href="'+e(source)+'" target="_blank" rel="noopener noreferrer"'
+                ' aria-label="סיפור ההנצחה הרשמי של '+e(name)+'">סיפור החיים באתר יזכור</a></article>')
+    cards=''.join(memorial_card(name,role,"12.8.2006","2006-08-12",source) for name,role,source in force)
+    yoni=memorial_card("סמל יהונתן (יוני) שרעבי ז״ל",
+                       "תותחן מרכבה סימן 4 · פלוגה ב׳ הקרנפים, גדוד 46",
+                       "3.8.2006","2006-08-03",
+                       "https://www.izkor.gov.il/יהונתן%20שרעבי/en_53e66dd727188835acbe02a1f641a882")
+    return layout("הנצחה",
+        '<div class="pagehead solemn"><span class="tag">לזכור בכבוד</span>'
+        '<h1>החברים שתמיד איתנו</h1><p>הנצחה מכבדת המבוססת על רשומות אתר יזכור של משרד הביטחון.'
+        'תצלומים אישיים וסיפורי משפחות יפורסמו רק בכפוף לזכויות ולהסכמות מתאימות.</p></div>'
+        '<section class="story"><h2>כוח בניה — גדוד 46</h2>'
+        '<p>ב־12 באוגוסט 2006 נפלו ארבעת אנשי הצוות בדרכם למשימת חילוץ נוספת בלבנון.'
+        'אנו זוכרים את כל אנשי הצוות יחד.</p></section>'
+        '<section class="memories" aria-label="הנצחת ארבעת אנשי כוח בניה">'+cards+'</section>'
+        '<section class="story"><h2>פלוגה ב׳ — לזכר יוני שרעבי</h2>'
+        '<p>יהונתן (יוני) שרעבי שירת בפלוגה ב׳ ״הקרנפים״ כתותחן טנק מרכבה סימן 4.'
+        ' הוא נפל בקרב בלבנון ב־3 באוגוסט 2006, והוא בן 20.</p></section>'
+        '<section class="memories" aria-label="הנצחת יהונתן שרעבי">'+yoni+'</section>'
+        '<div class="note">המידע ההיסטורי מקושר לעמודי הנצחה רשמיים.'
+        ' יש לכבד את פרטיות המשפחות לפני פרסום תמונות או סיפורים אישיים.</div>')
 
-@app.route("/admin/accessibility",methods=["GET","POST"])
-def admin_accessibility():
- u=me()
- if not admin(u):abort(403)
- if request.method=="POST":
-  guard()
-  report_id=request.form.get("id","")
-  if not report_id.isdigit():abort(400)
-  sql("UPDATE accessibility_reports SET status='resolved' WHERE id=%s",(int(report_id),))
-  return redirect("/admin/accessibility")
- reports=sql("SELECT id,description,reply_email,created_at FROM accessibility_reports WHERE status='open' ORDER BY created_at DESC LIMIT 100",fetch=True)
- body='<h1>דיווחי נגישות שטרם טופלו</h1>'
- if not reports:body+='<p role="status">לא התקבלו דיווחים פתוחים.</p>'
- for r in reports:
-  body+='<article class="card"><p>'+esc(r["description"])+'</p><p>דוא״ל למענה: '+esc(r["reply_email"] or "לא נמסר")+'</p>'
-  body+='<form method="post">'+formwrap('<input type="hidden" name="id" value="'+str(r["id"])+'"><button>סימון כטופל</button>')+'</form></article>'
- return view("דיווחי נגישות",body)
+@app.get("/photos")
+def photos():
+    intro='<div class="pagehead"><span class="tag">אלבום הפלוגה</span><h1>כל תמונה מחזירה רגע</h1><p>רק תמונות שאושרו לפרסום מוצגות לחברים מאושרים.</p></div>'
+    if not PUBLIC_AUTH or not g.user or not g.user["approved"]:
+        return layout("תמונות",intro+'<section class="empty-photo"><h2>אלבום החברים פרטי</h2><p>תמונות מאושרות זמינות רק לחברי הקהילה שאושרו.</p></section>')
+    rows=sql("""SELECT f.id,p.title,p.year_text,u.name
+        FROM b2_media f JOIN b2_posts p ON p.id=f.post_id
+        JOIN b2_users u ON u.id=p.author
+        WHERE f.kind='image' AND p.status='published' AND u.approved=TRUE
+        ORDER BY p.created DESC,f.id DESC LIMIT 80""")
+    tiles=''.join('<article class="post">'+media_html(r["id"],"image")+
+        '<h2>'+e(r["title"])+'</h2><p>'+e(r["name"])+' · '+e(r["year_text"])+'</p></article>'
+        for r in rows)
+    return layout("תמונות",intro+('<section class="media-grid">'+tiles+'</section>' if tiles else
+        '<section class="empty-photo"><h2>עדיין אין תמונות מאושרות</h2><p>תמונות חדשות יופיעו כאן לאחר בדיקת מנהל ואישור פרסום.</p><a href="/new">העלאת זיכרון</a></section>'))
 
-@app.route("/accessibility")
-def accessibility_page():
- return view("הצהרת נגישות",accessibility_statement_body(read_only=False))
+@app.get("/about")
+def about():
+    return layout("על הקהילה",'''<div class="pagehead"><span class="tag">מי אנחנו</span><h1>הקרנפים / ברקן</h1><p>קהילת ותיקים עצמאית לבוגרי פלוגה ב׳, גדוד 46, חטיבה 401.</p></div>
+<section class="story"><h2>המטרה</h2><p>לחדש קשרים, לאתר חברים, לשתף סיפורים ולשמור את המורשת בדרך מכבדת ובטוחה.</p>
+<p>השתתפות מבוססת על הסכמת המשתתפים; אין גישה לפרופילים פרטיים ברשתות החברתיות ללא הרשאה ואין הבטחה לזהות מאומתת על סמך שם בלבד.</p></section>''')
 
-@app.route("/help")
-def help_center():
- return view("מרכז עזרה",'''<section aria-labelledby="help-heading"><h1 id="help-heading">❔ עזרה ושאלות נפוצות</h1>
-<p>כל הפעולות באתר בעברית. אין צורך להשתמש ברשת חברתית כדי לשתף זיכרונות עם חברים שאושרו לקהילה.</p>
-<h2>איך מצטרפים?</h2><p>פותחים חשבון בדף <a href="/register">ההרשמה</a>. מנהל הקהילה מאשר את הקשר לפלוגה בנפרד מאימות הדוא״ל. אם האתר מציג אזהרת אבטחה, אין להזין פרטי התחברות.</p>
-<h2>איך מעלים תמונות, סיפור או אירוע?</h2><p>לאחר אישור החברות בוחרים <a href="/new-post">פרסום חדש</a>, סוג הפרסום, כותרת ותיאור. אפשר לצרף עד ארבעה קבצים. לתמונות מוגבלת העלאה עד 8MB לקובץ לפני הכיווץ; קובץ שמע עד 2MB וסרטון עד 8MB. החומרים נשמרים פרטיים עד אישור ביקורת התוכן.</p>
-<h2>מי רואה את הסיפור שלי?</h2><p>רק חברי קהילה מאושרים יכולים לצפות בציר הזמן המאושר. המנהל יכול לראות גם פרסומים שממתינים לבדיקה. <a href="/my-posts">הפרסומים שלי</a> מציג גם תכנים פרטיים שהעלית.</p>
-<h2>איך מוצאים חברים?</h2><p><a href="/directory">מדריך החברים</a> מציג רק חברים שאושרו ושבחרו להופיע בו. אפשר לשלוח בקשת קשר ולקיים שיחה פרטית רק לאחר שהמקבל אישר את הבקשה.</p>
-<h2>מה בודק מנגנון ה־AI?</h2><p>הוא מסנן פרטים רגישים ותוכן בעייתי. תכנים לא חד־משמעיים נשמרים פרטיים. אם שירות ה־AI אינו מחובר, אי אפשר להבטיח פרסום אוטומטי. הבדיקה אינה מאשרת מי המצולם בתמונה או שהתקבלה הסכמה מכל מי שמופיע בה.</p>
-<h2>פרטיות וזכויות</h2><p>לא מעלים מספר אישי צבאי, כתובות של חברים, מידע מסווג או תמונות של אחרים ללא רשות. ההצגה במדריך נתונה לבחירת המשתמש.</p>
-<h2>שימוש נגיש באתר</h2><p>אפשר להשתמש במקלדת, בדילוג לתוכן הראשי ובאפשרויות התצוגה בראש העמוד. <a href="/accessibility">מידע על נגישות</a> · <a href="/accessibility/report">דיווח על בעיה</a>.</p>
-</section>''')
+@app.get("/help")
+def help_page():
+    return layout("עזרה",'''<div class="pagehead"><h1>שאלות ועזרה</h1></div><section class="story">
+<h2>איך מצטרפים?</h2><p>עם פתיחת ההרשמה, בוחרים כתובת דוא״ל וסיסמה. החברות מתאשרת בידי מנהל, והפרסומים עוברים ביקורת לפני פרסום.</p>
+<h2>אפשר לשלוח תמונות?</h2><p>כן, עד ארבעה קבצים לכל פרסום. העלאות נשארות פרטיות עד אישור.</p>
+<h2>האם הפרטים שלי מוצגים?</h2><p>לא. פרופיל חבר מופיע במדריך רק אם אושרה חברותו והוא בחר בכך.</p>
+<h2>זהו אתר רשמי?</h2><p>לא. זהו מיזם קהילתי עצמאי.</p></section>''')
 
-@app.route("/about")
-def about_public():
- return view("על הקהילה",'<h1>על הקרנפים | ברקן</h1><div class="card"><p>אתר מפגש עצמאי ליוצאי פלוגה ב׳, גדוד 46 ״שלח״, חטיבה 401, ובפרט מחזורי 2003–2006.</p><p>האתר אינו גורם רשמי של צה״ל ואינו מאמת אוטומטית זהות או שירות צבאי.</p></div>')
+@app.get("/privacy")
+def privacy():
+    return layout("פרטיות",'''<div class="pagehead"><h1>פרטיות</h1></div><section class="story"><p>ההרשמה דורשת שם, דוא״ל וסיסמה שממנה נשמר גיבוב בלבד. כתובות המייל אינן חשופות לחברים אחרים. פרסומים פרטיים והודעות מוגנים בהרשאות.</p><p>פרופילים אינם מופיעים במדריך כברירת מחדל. הבעלים יוכל לבקש להסיר תוכן וחשבון. אין להשתמש במידע ליצירת קשר מחוץ לקהילה ללא רשות.</p></section>''')
 
-@app.route("/privacy")
-def privacy_public():
- return view("מדיניות פרטיות",'<h1>פרטיות בקהילה</h1><div class="card"><p>בעת חידוש הפעילות אפשר יהיה להשתמש בחשבון האתר המקורי ובסיסמה הקיימת. האתר ישמור שם ודוא״ל בהסכמה, גיבוב סיסמה ולא את הסיסמה עצמה, וכן הודעות ותמונות שחברים בוחרים לשתף. האתר משתמש בעוגיית התחברות מאובטחת.</p><p>חברות מאושרת ידנית; פרטי קשר אינם מפורסמים במדריך כברירת מחדל. פרופיל מופיע רק כאשר החבר בחר להציגו. פרסומים אישיים זמינים לחברים מאושרים לאחר ביקורת מנהל.</p><p>אפשר לשנות את הגדרות החשיפה או למחוק את החשבון דרך <a href="/profile">הפרופיל שלי</a> לאחר כניסה. אין להעלות פרטים או תמונות של אחרים ללא אישור.</p></div>')
+@app.get("/terms")
+def terms():
+    return layout("תנאי שימוש",'''<div class="pagehead"><h1>תנאי שימוש</h1></div><section class="story"><p>הקהילה מיועדת ליוצאי הפלוגה ולחברים שאושרו. נא לפרסם תוכן שיש לכם זכויות לשתף, להגן על פרטיות אחרים ולהימנע מדברי הסתה, הטרדה, מידע צבאי רגיש או התחזות.</p><p>מפעיל האתר רשאי להשהות פרסומים מחשש להפרת מדיניות. זהו מיזם עצמאי שאינו פועל מטעם צה״ל.</p></section>''')
 
-@app.route("/safety")
-def safety_public():
- return view("כללי בטיחות",'<h1>בטיחות ושיתוף אחראי</h1><div class="card"><p>יש להימנע ממספרים אישיים, פרטי קשר של אחרים ומידע רגיש על שירות צבאי.</p><p>תמונות וסיפורים עוברים אישור לפני פרסום. תמונה הנוגעת להנצחה נבדקת בנפרד לאישור מקור וזכויות שימוש. אישור תמונה אינו אימות אוטומטי של זהות המצולם.</p><p>אם הדפדפן מציג אזהרת אבטחה, אין לעקוף אותה או להזין פרטים עד בירור הבעיה.</p></div>')
+@app.get("/safety")
+def safety():
+    return layout("בטיחות ואבטחה",'''<div class="pagehead"><h1>בטיחות ואבטחה</h1></div><section class="story"><p>המערכת החדשה אינה כוללת Google Sign-In ואינה מחברת חשבונות חברים לחנות מסחרית. כל פרסום אישי נבדק לפני הצגתו לחברים.</p><p>כל עוד קיימת אזהרת דפדפן בכתובת כלשהי, אין לעקוף אותה או להזין פרטי גישה.</p></section>''')
 
-@app.route("/register",methods=["GET","POST"])
-def register():
- if os.getenv("KARNAFIM_ALLOW_REGISTRATION","0")!="1" or not delivery_ready():
-  return view("הרשמה מושהית",'<h1>בקשת הצטרפות</h1><p>הרשמה עם אימות דוא״ל עדיין אינה זמינה עד להפעלת שירות משלוח מאומת ולסיום בדיקת האבטחה.</p><p>חשבונות ותיקים לא נמחקו.</p>'),503
- if request.method=="POST":
-  guard()
-  if request.form.get("consent")!="on":abort(400)
-  name=request.form.get("name","").strip()[:100]
-  email=request.form.get("email","").strip().lower()[:200]
-  pw=request.form.get("password","")
-  if len(name)<2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) or not 12<=len(pw)<=200:
-   return view("שגיאה בהרשמה",'<p class="error">יש להזין שם, דוא״ל תקין וסיסמה בת 12–200 תווים.</p>'),400
-  fingerprint=auth_fingerprint("signup:"+email)
-  if is_rate_limited(fingerprint):
-   return view("הרשמה מושהית",'<p>נשלחו יותר מדי בקשות. אפשר לנסות שוב בהמשך.</p>'),429
-  sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
-  token,hashed=issue_token()
-  try:
-   row=sql("""INSERT INTO members(name,email,password,nickname,service_start,service_end,company,role,verification_required)
-    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,TRUE) RETURNING id""",
-    (name,email,hashpw(pw),request.form.get("nickname","")[:100],request.form.get("start","")[:40],
-     request.form.get("end","")[:40],request.form.get("company","")[:100],request.form.get("role","")[:100]),True)
-   member_id=row[0]["id"]
-   sql("INSERT INTO email_verification_tokens(member_id,token_hash,expires_at) VALUES(%s,%s,NOW()+INTERVAL '24 hours')",
-       (member_id,hashed))
-   sent=send_confirmation(email,token)
-  except psycopg.errors.UniqueViolation:
-   # Existing email must not be disclosed or falsely claimed as sent.
-   return view("בקשת הצטרפות",'<h1>בדוק את כתובת הדוא״ל</h1><p>אם זו הרשמה חדשה, הודעת האימות נשלחת לכתובת. אם כבר נרשמת וטרם אימתת, אפשר <a href="/resend-verification">לבקש קישור חדש</a>.</p>')
-  except Exception:
-   # Provider or transient database problems never bypass confirmation.
-   return view("הרשמה",'<h1>לא ניתן להשלים את הבקשה כרגע</h1><p>נסו לשלוח קישור אימות מחדש.</p><a href="/resend-verification">שליחת אימות מחדש</a>'),503
-  if not sent:
-   return view("אימות דוא״ל",'<h1>שליחת המייל טרם הצליחה</h1><p>אפשר לבקש קישור אימות חדש.</p><a href="/resend-verification">שליחה מחדש</a>'),503
-  return view("אימות דוא״ל",'<h1>בדוק את תיבת הדוא״ל שלך</h1><p>שירות הדוא״ל קיבל בקשה לשליחת קישור אימות בתוקף 24 שעות. אין צורך לשלוח סיסמה במייל.</p><p>אם לא הגיע מייל, אפשר <a href="/resend-verification">לבקש קישור חדש</a>.</p>')
- return view("בקשת הצטרפות",'<h1>מצטרפים לקהילת הקרנפים / ברקן</h1><p>לאחר אימות הדוא״ל אפשר יהיה לשלוח סיפורים, תמונות וסרטונים לבדיקה, בלי לחשוף אותם לחברים לפני אישור הפרסום.</p><form method="post" class="card">'+formwrap(
-  field("name","שם מלא",required=True)+field("nickname","כינוי מהשירות")+
-  field("email","כתובת דוא״ל","email",True)+field("password","סיסמה אישית, לפחות 12 תווים","password",True)+
-  field("start","שנת גיוס")+field("end","שנת שחרור")+field("company","פלוגה")+field("role","תפקיד")+
-  '<label><input type="checkbox" name="consent" required style="width:auto;display:inline"> אני מסכים/ה לשמירת הפרטים לצורך ההצטרפות.</label><button>הרשמה ושליחת קישור אימות</button>'
- )+'</form>')
+@app.get("/status")
+def status():
+    return layout("מצב המערכת",'<div class="pagehead"><h1>מצב המערכת</h1></div><section class="story"><p>אתר מורשת חדש: פעיל. מערכת חברים: '+("פעילה." if PUBLIC_AUTH else "מושהית עד השלמת בדיקות אבטחה.")+'</p><p>אימות דוא״ל: '+("הוגדר ספק HTTPS; אימות המסירה עדיין נדרש." if MAIL_READY else "אין ספק משלוח מאומת.")+'</p><p>הכתובת הקודמת נשמרה לקריאה בלבד ולא אוספת סיסמאות.</p></section>')
 
-@app.route("/verify-email",methods=["GET","POST"])
-def verify_email():
- value=request.values.get("token","")
- hashed=digest_token(value)
- if not hashed:abort(400)
- if request.method=="POST":
-  guard()
-  updated=sql("""WITH used AS (
-   DELETE FROM email_verification_tokens WHERE token_hash=%s AND expires_at>NOW()
-   RETURNING member_id)
-   UPDATE members SET verification_required=FALSE,email_verified_at=NOW()
-   FROM used WHERE members.id=used.member_id RETURNING members.id""",(hashed,),True)
-  if not updated:return view("קישור שפג תוקפו",'<h1>הקישור אינו תקף או שכבר נוצל</h1><a href="/resend-verification">בקשת קישור חדש</a>'),410
-  return view("דוא״ל אומת",'<h1>כתובת הדוא״ל אומתה בהצלחה</h1><p>כעת אפשר להתחבר עם הסיסמה שבחרת ולהעלות זיכרונות ותמונות לביקורת.</p><a href="/login">כניסה לחשבון</a>')
- return view("אימות דוא״ל",'<h1>אימות כתובת הדוא״ל</h1><p>לאימות החשבון ולפתיחת האפשרות לשתף תוכן, לחץ על הכפתור.</p>'
-  '<form method="post" class="card">'+formwrap('<input type="hidden" name="token" value="'+esc(value)+'"><button>אימות כתובת הדוא״ל</button>')+'</form>')
+@app.route("/signup",methods=["GET","POST"])
+def signup():
+    # New members must verify email before their password can be used.
+    # Do not collect credentials if an email sender is not configured.
+    if not ALLOW_SIGNUP:abort(503)
+    if request.method=="POST":
+        protect();limit("signup",4,60)
+        if request.form.get("agree")!="yes" or request.form.get("website"):abort(400)
+        name=request.form.get("name","").strip()[:90]
+        email=request.form.get("email","").strip().lower()[:200]
+        password=request.form.get("password","")
+        if len(name)<2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) or not 12<=len(password)<=200:
+            return layout("הרשמה",'<div class="note error">יש להזין שם, דוא״ל תקין וסיסמה בת 12 תווים לפחות.</div>'),400
+        with connect() as c:
+            with c.cursor() as cur:
+                try:
+                    cur.execute("""INSERT INTO b2_users(name,email,passhash,email_verification_required)
+                        VALUES(%s,%s,%s,%s) RETURNING id""",(name,email,hashpw(password),True))
+                    uid=cur.fetchone()["id"]
+                except psycopg.errors.UniqueViolation:
+                    c.rollback()
+                    return layout("הרשמה",'<div class="note">אם הבקשה כבר קיימת, אין צורך להגיש אותה שוב.</div>')
+        if not send_verification(email,uid):
+            return layout("משלוח אימות",'<div class="pagehead"><h1>ההרשמה נשמרה, אבל המייל לא נשלח</h1><p>אפשר לנסות שוב דרך שליחת אימות מחדש. החשבון חסום לכניסה עד אימות הכתובת.</p><a href="/resend-verification" class="primary">שליחת אימות מחדש</a></div>'),503
+        return layout("בקשת הצטרפות",'<div class="pagehead"><h1>בקשת ההצטרפות נשמרה</h1><p>הודעת האימות התקבלה במערכת השליחה. יש לאמת את הדוא״ל לפני הכניסה לחשבון.</p><a class="primary" href="/login">מעבר לכניסה</a></div>')
+    return layout("הרשמה",'<section class="auth-page"><div class="pagehead"><span class="tag">חברות בקהילה</span><h1>מצטרפים לקרנפים</h1><p>חשבון אישי ומאובטח ליוצאי פלוגה ב׳. לאחר אימות כתובת הדוא״ל, בקשת החברות תיבדק לפני גישה לתכנים של חברים.</p></div><div class="auth-trust"><span>🔒 חיבור מוצפן</span><span>✉ אימות דוא״ל</span><span>◈ קהילה לחברים מאושרים</span></div>'+
+        button_form('<label>שם מלא<input name="name" required maxlength="90" autocomplete="name" placeholder="איך קוראים לך?"></label><label>כתובת דוא״ל<input name="email" type="email" inputmode="email" dir="ltr" required autocomplete="email" placeholder="you@example.com"></label>' + password_control("password","new-password") + '<p id="password-help" class="muted">לפחות 12 תווים. מומלץ להשתמש בסיסמה ייחודית.</p><input name="website" tabindex="-1" class="honeypot" aria-hidden="true"><label class="check"><input type="checkbox" name="agree" value="yes" required> אני מסכים לשמירת הפרטים לצורך קבלה לקהילה</label><button class="primary">שליחת בקשת הצטרפות</button>','/signup','class="formcard"')+'</section>')
+
+def send_verification(email,uid):
+    if not MAIL_READY:return False
+    import json
+    from urllib.request import Request,urlopen
+    token=secrets.token_urlsafe(36)
+    with connect() as c:
+        with c.cursor() as cur:
+            cur.execute("""INSERT INTO b2_tokens(user_id,digest,expires) VALUES(%s,%s,NOW()+INTERVAL '24 hours')
+                ON CONFLICT(user_id) DO UPDATE SET digest=EXCLUDED.digest,expires=EXCLUDED.expires""",
+                (uid,hashlib.sha256(token.encode()).hexdigest()))
+    link=ORIGIN+"/verify-email?token="+token
+    req=Request("https://api.resend.com/emails",data=json.dumps({
+        "from":MAIL_FROM,"to":[email],"subject":"אימות דוא״ל — הקרנפים / ברקן",
+        "html":'<p dir="rtl">אמתו את הכתובת: <a href="'+e(link)+'">קישור אימות</a>. הקישור תקף 24 שעות.</p>'
+    }).encode(),headers={"Authorization":"Bearer "+EMAIL_PROVIDER,"Content-Type":"application/json"},method="POST")
+    try:
+        with urlopen(req,timeout=7) as result:return result.status in (200,201,202)
+    except (OSError,TimeoutError):return False
 
 @app.route("/resend-verification",methods=["GET","POST"])
 def resend_verification():
- if not delivery_ready():return view("שירות אימות דוא״ל",'<h1>שליחת המיילים אינה זמינה כרגע</h1>'),503
- if request.method=="POST":
-  guard()
-  email=request.form.get("email","").strip().lower()
-  if len(email)>200 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email):abort(400)
-  fingerprint=auth_fingerprint("resend:"+email)
-  if is_rate_limited(fingerprint):return view("בקשות מרובות",'<p>נסה שוב מאוחר יותר.</p>'),429
-  sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
-  rows=sql("SELECT id FROM members WHERE lower(email)=%s AND verification_required=TRUE",(email,),True)
-  if rows:
-   token,hashed=issue_token()
-   sql("""INSERT INTO email_verification_tokens(member_id,token_hash,expires_at)
-    VALUES(%s,%s,NOW()+INTERVAL '24 hours')
-    ON CONFLICT(member_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,
-    expires_at=EXCLUDED.expires_at,created_at=NOW()""",(rows[0]["id"],hashed))
-   send_confirmation(email,token)
-  return view("בקשת אימות",'<h1>בקשת האימות נבדקה</h1><p>אם קיים חשבון הממתין לאימות ושירות הדוא״ל קיבל את הבקשה, תישלח הודעה. כדאי לבדוק גם בדואר הזבל.</p>')
- return view("שליחת אימות מחדש",'<h1>שליחת קישור אימות מחדש</h1><form method="post" class="card">'+formwrap(
-  field("email","כתובת הדוא״ל של החשבון","email",True)+'<button>שליחת קישור חדש</button>')+'</form>')
+    if not ALLOW_SIGNUP:abort(503)
+    if request.method=="POST":
+        protect()
+        limit("resend-general",10,60)
+        email=request.form.get("email","").lower().strip()[:200]
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email):abort(400)
+        limit("resend:"+email,3,60)
+        account=sql("""SELECT id FROM b2_users
+            WHERE lower(email)=%s AND email_verification_required=TRUE""",(email,),True)
+        if account:send_verification(email,account["id"])
+        return layout("בקשת אימות",'<div class="pagehead"><h1>הבקשה נבדקה</h1><p>אם יש חשבון שממתין לאימות ושירות המיילים קיבל את ההודעה, יישלח קישור חדש. אפשר גם לבדוק בדואר הזבל.</p></div>')
+    return layout("שליחת אימות מחדש",'<div class="pagehead"><h1>שליחת אימות מחדש</h1></div>'+
+        button_form('<label>כתובת הדוא״ל שלך<input type="email" name="email" autocomplete="email" required></label><button class="primary">בקשת קישור אימות</button>','/resend-verification','class="formcard"'))
+
+@app.route("/verify-email",methods=["GET","POST"])
+def verify_email():
+    if not PUBLIC_AUTH:abort(503)
+    token=request.values.get("token","")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{40,100}",token):abort(400)
+    if request.method=="POST":
+        protect()
+        digest=hashlib.sha256(token.encode()).hexdigest()
+        result=sql("""WITH t AS(DELETE FROM b2_tokens WHERE digest=%s AND expires>NOW() RETURNING user_id)
+            UPDATE b2_users SET email_verified=TRUE,email_verification_required=FALSE
+            FROM t WHERE b2_users.id=t.user_id RETURNING b2_users.id""",(digest,),True)
+        if not result:abort(410)
+        return layout("אימות הושלם",'<div class="pagehead"><h1>הדוא״ל אומת</h1><a class="primary" href="/login">כניסה</a></div>')
+    return layout("אימות דוא״ל",button_form('<div class="pagehead"><h1>אימות כתובת דוא״ל</h1><p>לחצו לאישור החד־פעמי.</p></div><input type="hidden" name="token" value="'+e(token)+'"><button class="primary">אימות</button>','/verify-email','class="formcard"'))
 
 @app.route("/login",methods=["GET","POST"])
 def login():
- destination=request.args.get("next","/")
- destination=destination if destination in SAFE_RETURN_PATHS else "/"
- if me():return redirect(destination,code=303)
- if request.method=="POST":
-  guard()
-  email=request.form.get("email","").strip().lower()
-  pw=request.form.get("password","")
-  if len(email)>200 or len(pw)>200:abort(400)
-  fingerprint=auth_fingerprint(email)
-  if is_rate_limited(fingerprint):
-   return view("הכניסה מושהית",'<p class="error">יותר מדי ניסיונות. אפשר לנסות שוב מאוחר יותר.</p>'),429
-  rows=sql("SELECT id,password,session_version,verification_required FROM members WHERE lower(email)=%s",(email,),True) if email else []
-  if not (rows and pw and verify(pw,rows[0]["password"])):
-   sql("INSERT INTO login_failures(fingerprint) VALUES(%s)",(fingerprint,))
-   return view("שגיאת כניסה",'<p class="error">פרטי ההתחברות אינם נכונים.</p><a href="/login">ניסיון נוסף</a>'),401
-  if rows[0]["verification_required"]:
-   return view("נדרש אימות דוא״ל",'<h1>כתובת הדוא״ל עדיין לא אומתה</h1><p>כדי להתחבר ולהעלות תמונות וסיפורים יש לאמת קודם את המייל.</p><a href="/resend-verification">שליחת קישור מחדש</a>'),403
-  session.clear()
-  session["uid"]=rows[0]["id"]
-  session["auth_method"]="local"
-  session["credential_version"]=rows[0]["session_version"]
-  session.permanent=True
-  return redirect(destination,code=303)
- return view("כניסה לחשבון",'<h1>🔐 כניסה לקהילת הקרנפים</h1><p>התחבר עם כתובת הדוא״ל והסיסמה האישית שלך. חשבונות קיימים נשמרו.</p>'
-  '<form method="post" class="card">'+formwrap(
-    field("email","כתובת דוא״ל","email",True)+field("password","סיסמה","password",True)+
-    '<button>כניסה לחשבון</button>')+'</form><p><a href="/resend-verification">אימות מייל להרשמה חדשה</a></p>')
+    if not PUBLIC_AUTH:abort(503)
+    if request.method=="POST":
+        protect();limit("login:"+request.form.get("email","")[:200],9,15)
+        email=request.form.get("email","").lower().strip()[:200]
+        pw=request.form.get("password","")
+        u=sql("SELECT id,passhash,approved,email_verification_required FROM b2_users WHERE lower(email)=%s",(email,),True)
+        if not u or not checkpw(pw,u["passhash"]):return layout("כניסה",'<div class="note error">פרטי הכניסה שגויים.</div><a href="/login">ניסיון נוסף</a>'),401
+        if u["email_verification_required"]:return layout("כניסה",'<div class="note">יש לאמת תחילה את כתובת הדוא״ל.</div>'),403
+        session.clear();session["csrf"]=secrets.token_urlsafe(32);session["uid"]=u["id"];session.permanent=True
+        return redirect("/my-posts",code=303)
+    return layout("כניסה",'<section class="auth-page"><div class="pagehead"><span class="tag">המרחב האישי</span><h1>טוב שחזרת הביתה</h1><p>התחברות מאובטחת באמצעות כתובת דוא״ל וסיסמה. אחרי הכניסה יחכו לך הזיכרונות, החברים והפרסומים שלך.</p></div><div class="auth-trust"><span>🔒 חיבור מוצפן</span><span>◈ חשבון פרטי</span><span>✦ זיכרונות משותפים</span></div>'+
+        button_form('<label>כתובת דוא״ל<input type="email" dir="ltr" inputmode="email" name="email" autocomplete="email" placeholder="you@example.com" required></label>' + password_control("password","current-password") + '<p id="password-help" class="muted">הסיסמה נשארת פרטית ולא נשלחת לשירותי התחברות חיצוניים.</p><button class="primary">כניסה לחשבון</button>' +
+         ('<p><a href="/signup">עדיין לא נרשמת?</a></p>' if ALLOW_SIGNUP else ''),'/login','class="formcard"')+'</section>')
 
-@app.route("/logout",methods=["GET","POST"])
+@app.post("/logout")
+@require_login
 def logout():
- if request.method=="POST":
-  guard();session.clear();return redirect("/")
- if not me():return redirect("/")
- return view("התנתקות",'<h1>התנתקות מהחשבון</h1><form method="post">'+formwrap('<button>אישור התנתקות</button>')+'</form>')
-@app.route("/directory")
-def directory():
- u=me()
- if not u:return redirect("/login")
- if not u["approved"]:return view("ממתין לאישור",'<div class="card"><h2>בקשת ההצטרפות ממתינה לאישור</h2><p>בינתיים אפשר לצפות בארכיון המורשת, למצוא קבוצות חיפוש ולהזמין חברים.</p><a href="/archive">לארכיון</a> · <a href="/status">למידע על איתור חברים</a></div>')
- term=request.args.get("q","")[:80]
- records=sql("SELECT id,name,nickname,service_start,service_end,company,role,about,facebook_url,instagram_url,linkedin_url FROM members WHERE approved AND visible AND (name ILIKE %s OR nickname ILIKE %s) ORDER BY name LIMIT 100",('%'+term+'%','%'+term+'%'),True)
- def card_for(r):
-  x='<div class="card"><h2>'+esc(r["name"])+'</h2><p>'+esc(r["nickname"])+' • '+esc(r["company"])+'</p><p class="muted">'+esc(r["service_start"])+'–'+esc(r["service_end"])+' | '+esc(r["role"])+'</p><p>'+esc(r["about"])+'</p><p><a href="/contact/'+str(r["id"])+'">שליחת בקשת קשר באתר</a></p>'
-  for key,label in [("facebook_url","פייסבוק"),("instagram_url","אינסטגרם"),("linkedin_url","לינקדאין")]:
-   if r[key]:x+='<a style="margin-left:12px" href="'+esc(r[key])+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>'
-  return x+'</div>'
- cards=''.join(card_for(r) for r in records)
- body='<h1>חברי הפלוגה</h1><p>חברים מאושרים שבחרו להופיע. קישור לרשת חברתית מוצג רק אם בעל הפרופיל הוסיף אותו מרצונו.</p><form method="get"><label for="directory-search">חיפוש חבר לפי שם או כינוי</label><input id="directory-search" name="q" value="'+esc(term)+'" placeholder="שם או כינוי מהשירות"><button>חיפוש</button></form><div class="grid">'+(cards or '<div class="card"><h2>אתם הראשונים!</h2><p>החברים עוד לא בחרו להופיע במדריך. בינתיים נסו חיפוש ברשתות או הזמינו חבר מהמחזור.</p><a href="/status">מצב איתור החברים</a> · <a href="/invite">הזמנת חברים</a></div>')+'</div>'
- return view("מדריך חברים",body)
+    protect();session.clear();return redirect("/",code=303)
 
-def social_link(value,site):
- from urllib.parse import urlsplit
- value=(value or "").strip()[:300]
- if not value:return ""
- try:
-  u=urlsplit(value)
-  host=(u.hostname or "").lower()
-  hosts={"facebook_url":{"facebook.com","www.facebook.com","m.facebook.com"},"instagram_url":{"instagram.com","www.instagram.com"},"linkedin_url":{"linkedin.com","www.linkedin.com"}}
-  if u.scheme!="https" or host not in hosts[site] or u.username or u.password:return ""
-  return value
- except ValueError:return ""
-
-@app.route("/profile",methods=["GET","POST"])
+@app.get("/profile")
+@require_login
 def profile():
- u=me()
- if not u:return redirect("/login")
- if request.method=="POST":
-  guard()
-  fb=social_link(request.form.get("facebook_url",""),"facebook_url")
-  ig=social_link(request.form.get("instagram_url",""),"instagram_url")
-  li=social_link(request.form.get("linkedin_url",""),"linkedin_url")
-  sql("UPDATE members SET nickname=%s,about=%s,visible=%s,facebook_url=%s,instagram_url=%s,linkedin_url=%s WHERE id=%s",(request.form.get("nickname","")[:100],request.form.get("about","")[:1000],request.form.get("visible")=="on",fb,ig,li,u["id"]))
-  return redirect("/profile")
- body='<h1>הפרופיל שלי</h1><p>מצב החשבון: '+("מאושר" if u["approved"] else "ממתין לאישור")+'</p><p>אתה בוחר אם להופיע במדריך. קישורים לרשתות החברתיות שלך הם אופציונליים ויוצגו רק אם בחרת להופיע.</p>'
- body+='<form method="post" class="card">'+formwrap(field("nickname","כינוי מהשירות",value=u["nickname"])+'<label>מה אתה זוכר מהפלוגה?<textarea name="about" maxlength="1000">'+esc(u["about"])+'</textarea></label>'+field("facebook_url","קישור לפרופיל פייסבוק שלי (אופציונלי)","url",value=u["facebook_url"])+field("instagram_url","קישור לפרופיל אינסטגרם שלי (אופציונלי)","url",value=u["instagram_url"])+field("linkedin_url","קישור לפרופיל לינקדאין שלי (אופציונלי)","url",value=u["linkedin_url"])+'<label><input style="display:inline;width:auto" type="checkbox" name="visible" '+("checked" if u["visible"] else "")+'> אני רוצה להופיע במדריך החברים</label><button>שמירת הפרופיל</button></form>')
- body+='<form action="/delete-account" method="post" onsubmit="return confirm(\'למחוק את החשבון והמידע לצמיתות?\')">'+formwrap('<button style="background:#f9d0ca">מחיקת החשבון שלי</button>')+'</form>'
- return view("פרופיל אישי",body)
+    u=g.user
+    checked="checked" if u["show_profile"] else ""
+    return layout("פרופיל",'<div class="pagehead"><h1>הפרופיל שלי</h1></div>'+button_form(
+        '<label>כינוי מתקופת השירות<input name="nickname" maxlength="100" value="'+e(u["nickname"])+'"></label><label>שנים / מחזור<input name="unit_year" maxlength="50" value="'+e(u["unit_year"] or "")+'"></label><label>כמה מילים עליך<textarea name="about" maxlength="500">'+e(u["about"])+'</textarea></label><label class="check"><input name="visible" type="checkbox" '+checked+'> הצגת הפרופיל לחברים מאושרים בלבד</label><button class="primary">שמירת הפרופיל</button>','/profile','class="formcard"')+button_form('<button class="subtle">התנתקות</button>','/logout'))
 
-@app.route("/delete-account",methods=["POST"])
-def delete_account():
- u=me()
- if not u:return redirect("/login")
- guard();sql("DELETE FROM members WHERE id=%s",(u["id"],));session.clear();return redirect("/")
-@app.route("/contact/<int:uid>",methods=["GET","POST"])
-def contact(uid):
- u=me()
- if not u or not u["approved"]:return redirect("/login")
- if u["id"]==uid:abort(400)
- r=sql("SELECT id,name FROM members WHERE id=%s AND approved AND visible",(uid,),True)
- if not r:abort(404)
- if request.method=="POST":
-  guard();note=request.form.get("note","")[:600].strip()
-  if not note:abort(400)
-  sql("INSERT INTO requests(sender_id,recipient_id,note) VALUES(%s,%s,%s) ON CONFLICT(sender_id,recipient_id) DO UPDATE SET note=EXCLUDED.note",(u["id"],uid,note))
-  return view("נשלח",'<p>בקשת הקשר נקלטה ותופיע בתיבה של החבר כאשר ייכנס לאתר.</p><a href="/directory">חזרה למדריך</a>')
- return view("בקשת קשר",'<h1>שליחת בקשת קשר אל '+esc(r[0]["name"])+'</h1><form method="post" class="card">'+formwrap('<label>הודעה<textarea name="note" required maxlength="600" placeholder="היי, שירתנו יחד..."></textarea></label><button>שליחה</button></form>'))
-@app.route("/inbox")
+@app.post("/profile")
+@require_login
+def save_profile():
+    protect()
+    sql("UPDATE b2_users SET nickname=%s,unit_year=%s,about=%s,show_profile=%s WHERE id=%s",
+        (request.form.get("nickname","")[:100],request.form.get("unit_year","")[:50],
+         request.form.get("about","")[:500],request.form.get("visible")=="on",g.user["id"]))
+    return redirect("/profile",303)
+
+def image_or_video(f):
+    if not f or not f.filename:return None
+    data=f.read(9*1024*1024)
+    mime=f.mimetype.split(";")[0].lower()
+    kind=None
+    if mime in ("image/jpeg","image/png","image/webp"):
+        try:
+            im=Image.open(io.BytesIO(data))
+            im.verify();im=Image.open(io.BytesIO(data))
+            if im.width*im.height>12_000_000:abort(413)
+            im=ImageOps.exif_transpose(im).convert("RGB")
+            im.thumbnail((1600,1600))
+            b=io.BytesIO();im.save(b,format="JPEG",quality=83,optimize=True)
+            data=b.getvalue();mime="image/jpeg";kind="image"
+        except (OSError,UnidentifiedImageError,ValueError):abort(400)
+    elif mime in ("video/mp4","video/quicktime") and len(data)>12 and data[4:8]==b"ftyp":
+        kind="video"
+    elif mime=="video/webm" and data[:4]==b"\x1a\x45\xdf\xa3":
+        kind="video"
+    elif mime in ("audio/webm","audio/ogg") and (
+        data[:4] in (b"\x1a\x45\xdf\xa3",b"OggS")):
+        kind="audio"
+    if not kind or len(data)==0 or len(data)>8*1024*1024:abort(400)
+    return (mime,kind,data)
+
+@app.route("/new",methods=["GET","POST"])
+@require_login
+def create_post():
+    if request.method=="POST":
+        protect();limit("post:"+str(g.user["id"]),8,60)
+        title=request.form.get("title","").strip()[:120]
+        body=request.form.get("body","").strip()[:4000]
+        kind=request.form.get("kind","story")
+        year=request.form.get("year","").strip()[:30]
+        if kind not in ("story","photo","event") or not title or request.form.get("rights")!="yes":abort(400)
+        files=[v for v in request.files.getlist("uploads") if v and v.filename]
+        if len(files)>4:abort(413)
+        safe=[image_or_video(f) for f in files]
+        if not body and not safe:abort(400)
+        if sum(len(v[2]) for v in safe)>16*1024*1024:abort(413)
+        with connect() as c:
+            with c.cursor() as cur:
+                cur.execute("""INSERT INTO b2_posts(author,title,body,kind,year_text)
+                    VALUES(%s,%s,%s,%s,%s) RETURNING id""",
+                    (g.user["id"],title,body,kind,year))
+                pid=cur.fetchone()["id"]
+                for mime,typ,data in safe:
+                    cur.execute("""INSERT INTO b2_media(post_id,owner,mime,kind,body,length)
+                        VALUES(%s,%s,%s,%s,%s,%s)""",
+                        (pid,g.user["id"],mime,typ,data,len(data)))
+        return redirect("/my-posts",303)
+    return layout("שיתוף סיפור",'<div class="pagehead"><h1>משתפים זיכרון</h1><p>הפרסום יישמר פרטי עד אישור חברות וביקורת התוכן.</p></div>'+button_form(
+        '<label>סוג זיכרון<select name="kind"><option value="story">סיפור</option><option value="photo">תמונות או סרטון</option><option value="event">אירוע ומפגש</option></select></label><label>כותרת<input name="title" required maxlength="120"></label><label>שנה (לא חובה)<input name="year" maxlength="30"></label><label>תוכן<textarea name="body" maxlength="4000" rows="6"></textarea></label><label>קבצים (עד ארבעה)<input type="file" name="uploads" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg"></label><p class="muted">עד 8MB לקובץ ו־16MB סך הכול לפרסום. תמונות יעברו כיווץ והסרת נתוני EXIF.</p><label class="check"><input type="checkbox" name="rights" value="yes" required> אני מאשר שיש לי זכויות לפרסם את התוכן</label><button class="primary">שליחה לביקורת</button>',
+        "/new",'class="formcard" enctype="multipart/form-data"'))
+
+def media_html(mid,kind):
+    src="/media/"+str(mid)
+    if kind=="image":return '<img loading="lazy" src="'+src+'" alt="תצלום מהקהילה">'
+    if kind=="video":return '<video controls preload="metadata" src="'+src+'">סרטון</video>'
+    if kind=="audio":return '<audio controls preload="none" src="'+src+'">קול</audio>'
+    return ""
+
+@app.get("/media/<int:mid>")
+@require_login
+def media(mid):
+    u=g.user
+    m=sql("""SELECT f.*,p.status post_status
+      FROM b2_media f LEFT JOIN b2_posts p ON p.id=f.post_id
+      WHERE f.id=%s""",(mid,),True)
+    if not m:abort(404)
+    can_post=bool(m["post_id"] and (u["id"]==m["owner"] or
+                  (u["approved"] and (admin() or m["post_status"]=="published"))))
+    can_message=bool(m["recipient"] and u["id"] in (m["recipient"],m["owner"]) and u["approved"])
+    if not (can_post or can_message):abort(403)
+    r=send_file(io.BytesIO(bytes(m["body"])),mimetype=m["mime"],conditional=True,download_name="community-media")
+    r.headers["Cache-Control"]="private,no-store"
+    r.headers["Content-Security-Policy"]="default-src 'none'; sandbox"
+    return r
+
+@app.get("/my-posts")
+@require_login
+def myposts():
+    posts=sql("SELECT * FROM b2_posts WHERE author=%s ORDER BY created DESC LIMIT 80",(g.user["id"],))
+    items=''
+    for p in posts:
+        files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
+        status="פורסם" if p["status"]=="published" else "ממתין לבדיקת מנהל"
+        items+='<article class="post"><span class="tag">'+status+'</span><h2>'+e(p["title"])+'</h2><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div></article>'
+    return layout("הפרסומים שלי",'<div class="pagehead"><h1>הפרסומים שלי</h1><p>רק אתה והמנהל רואים פרסומים שעדיין לא אושרו.</p><a class="primary" href="/new">פרסום חדש</a></div>'+(items or '<div class="note">אין לך עדיין פרסומים.</div>'))
+
+@app.get("/feed")
+@require_approved
+def feed():
+    posts=sql("""SELECT p.*,u.name FROM b2_posts p JOIN b2_users u ON u.id=p.author
+                 WHERE p.status='published' AND u.approved=TRUE
+                 ORDER BY p.created DESC LIMIT 60""")
+    items=''
+    for p in posts:
+        files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
+        items+='<article class="post"><span class="tag">'+e(p["kind"])+'</span><h2>'+e(p["title"])+'</h2><p>'+e(p["name"])+' · '+e(p["year_text"])+'</p><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div></article>'
+    return layout("מרחב החברים",'<div class="pagehead"><h1>החברים משתפים</h1><p>סיפורים ותמונות שפורסמו לאחר ביקורת.</p><a href="/new" class="primary">שיתוף משלך</a></div>'+(items or '<div class="note">עדיין אין פרסומים מאושרים.</div>'))
+
+@app.get("/find")
+@require_approved
+def find():
+    term=request.args.get("q","").strip()[:80]
+    matches=[]
+    if term:
+        matches=sql("""SELECT id,name,nickname,unit_year,about FROM b2_users WHERE approved=TRUE
+            AND show_profile=TRUE AND (name ILIKE %s OR nickname ILIKE %s OR unit_year ILIKE %s)
+            ORDER BY name LIMIT 25""",tuple("%"+term+"%" for _ in range(3)))
+    cards=''
+    for m in matches:
+        cards+='<article class="person"><h3>'+e(m["name"])+'</h3><p>'+e(m["nickname"])+' '+e(m["unit_year"])+'</p><p>'+e(m["about"])+'</p><a href="/chat/'+str(m["id"])+'">שליחת הודעה</a></article>'
+    return layout("איתור חברים",'<div class="pagehead"><h1>מוצאים שוב את החברים</h1><p>חיפוש בין פרופילים שחבריהם אישרו להציגם.</p></div><form class="search"><label>שם, כינוי או מחזור<input name="q" value="'+e(term)+'" maxlength="80"></label><button class="primary">חיפוש</button></form><section class="people">'+(cards or '<div class="note">לא נמצאו תוצאות גלויות לחיפוש הזה.</div>')+'</section>')
+
+@app.get("/inbox")
+@require_approved
 def inbox():
- return redirect("/chats")
-@app.route("/admin",methods=["GET","POST"])
-def manage():
- u=me()
- if not admin(u):abort(403)
- if request.method=="POST":
-  guard();uid=int(request.form.get("uid",0));op=request.form.get("op")
-  if uid!=u["id"]:
-   if op=="approve":sql("UPDATE members SET approved=TRUE WHERE id=%s",(uid,))
-   if op=="hide":sql("UPDATE members SET approved=FALSE,visible=FALSE WHERE id=%s",(uid,))
-  return redirect("/admin")
- rows=sql("SELECT id,name,email,company,service_start,approved,visible FROM members ORDER BY approved,created_at DESC LIMIT 200",fetch=True)
- b='<h1>ניהול קהילה</h1><p>אימות השירות מתבצע על ידי מנהל הקהילה — לא על סמך פרטי ההרשמה בלבד.</p>'
- for r in rows:
-  b+='<div class="card"><strong>'+esc(r["name"])+'</strong> • '+esc(r["email"])+'<p>'+esc(r["company"])+' '+esc(r["service_start"])+' | '+("מאושר" if r["approved"] else "ממתין")+'</p><form method="post">'+formwrap('<input type="hidden" name="uid" value="'+str(r["id"])+'"><button name="op" value="approve">אישור</button> <button name="op" value="hide">הסתרה</button>')+'</form></div>'
- pending=sql("SELECT x.id,x.title,x.story,m.name FROM memories x JOIN members m ON m.id=x.author_id WHERE NOT x.approved ORDER BY x.created_at DESC LIMIT 100",fetch=True)
- b+="<h2>אירועים הממתינים לאישור</h2>"
- for x in pending:
-  b+='<div class="card"><strong>'+esc(x["title"])+'</strong><p>'+esc(x["story"])+'</p><small>'+esc(x["name"])+'</small><form method="post" action="/admin/memory">'+formwrap('<input name="mid" type="hidden" value="'+str(x["id"])+'"><button name="action" value="approve">פרסום</button><button name="action" value="delete">מחיקה</button>')+'</form></div>'
- return view("ניהול",b)
-@app.errorhandler(500)
-def error(e):
- if READ_ONLY_BOOT:
-  return Response("אירעה תקלה זמנית. נסו שוב מאוחר יותר.",status=500,mimetype="text/plain")
- return view("שגיאה","<p>אירעה תקלה זמנית. נסו שוב מאוחר יותר.</p>"),500
+    peers=sql("""SELECT DISTINCT u.id,u.name FROM b2_users u
+        JOIN b2_messages m ON (m.sender=u.id OR m.recipient=u.id)
+        WHERE ((m.sender=%s AND m.recipient=u.id) OR
+               (m.recipient=%s AND m.sender=u.id))
+          AND u.approved=TRUE ORDER BY u.name LIMIT 60""",(g.user["id"],g.user["id"]))
+    html=''.join('<a class="person" href="/chat/'+str(x["id"])+'">'+e(x["name"])+' ← לשיחה</a>' for x in peers)
+    return layout("ההודעות שלי",'<div class="pagehead"><h1>הודעות פרטיות</h1><p>השיחות גלויות רק למשתתפים.</p></div>'+(html or '<div class="note">אין שיחות עדיין. ניתן למצוא חברים במדריך.</div>'))
 
-if not READ_ONLY_BOOT:
- sql("""CREATE TABLE IF NOT EXISTS memories(
- id BIGSERIAL PRIMARY KEY, author_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
- title TEXT NOT NULL, story TEXT NOT NULL, year INTEGER,
- source_url TEXT NOT NULL DEFAULT '', approved BOOLEAN DEFAULT FALSE,
- created_at TIMESTAMPTZ DEFAULT NOW())""")
-@app.route("/memories")
-def memories():
- return redirect("/feed")
-@app.route("/discover")
-def discover():
- return redirect("/status",code=303)
-@app.route("/admin/memory",methods=["POST"])
-def memory_admin():
- u=me()
- if not admin(u):abort(403)
- guard();mid=int(request.form.get("mid",0))
- if request.form.get("action")=="approve":sql("UPDATE memories SET approved=TRUE WHERE id=%s",(mid,))
- elif request.form.get("action")=="delete":sql("DELETE FROM memories WHERE id=%s",(mid,))
- return redirect("/admin")
+@app.route("/chat/<int:peer>",methods=["GET","POST"])
+@require_approved
+def chat(peer):
+    other=sql("SELECT id,name FROM b2_users WHERE id=%s AND approved=TRUE",(peer,),True)
+    if not other or other["id"]==g.user["id"]:abort(404)
+    if request.method=="POST":
+        protect();limit("message:"+str(g.user["id"]),18,60)
+        body=request.form.get("text","").strip()[:2000]
+        f=request.files.get("file")
+        info=image_or_video(f) if f and f.filename else None
+        if not body and not info:abort(400)
+        with connect() as c:
+            with c.cursor() as cur:
+                mid=None
+                if info:
+                    mime,kind,data=info
+                    cur.execute("""INSERT INTO b2_media(owner,recipient,mime,kind,body,length)
+                       VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
+                       (g.user["id"],peer,mime,kind,data,len(data)))
+                    mid=cur.fetchone()["id"]
+                cur.execute("INSERT INTO b2_messages(sender,recipient,text,media_id) VALUES(%s,%s,%s,%s)",
+                            (g.user["id"],peer,body,mid))
+        return redirect("/chat/"+str(peer),303)
+    messages=sql("""SELECT m.*,f.kind FROM b2_messages m LEFT JOIN b2_media f ON f.id=m.media_id
+         WHERE (m.sender=%s AND m.recipient=%s) OR (m.sender=%s AND m.recipient=%s)
+         ORDER BY m.created DESC LIMIT 90""",(g.user["id"],peer,peer,g.user["id"]))
+    out=''
+    for m in reversed(messages):
+        cls="mine" if m["sender"]==g.user["id"] else "theirs"
+        out+='<div class="bubble '+cls+'"><p>'+e(m["text"])+'</p>'+(media_html(m["media_id"],m["kind"]) if m["media_id"] else '')+'</div>'
+    return layout("שיחה עם "+other["name"],'<div class="pagehead"><h1>שיחה עם '+e(other["name"])+'</h1><p>הודעות פרטיות בין חברים מאושרים בלבד.</p></div><section class="conversation">'+(out or '<p>עדיין אין הודעות.</p>')+'</section>'+button_form(
+        '<label>הודעה<textarea name="text" rows="3" maxlength="2000"></textarea></label><label>תמונה, סרטון או הקלטה<input type="file" name="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg"></label><button class="primary">שליחה</button>',
+        '/chat/'+str(peer),'class="formcard" enctype="multipart/form-data"'))
 
-@app.route("/password",methods=["GET","POST"])
-def change_password():
+@app.route("/moderation",methods=["GET","POST"])
+@require_approved
+def moderation():
+    if not admin():abort(403)
+    if request.method=="POST":
+        protect()
+        pid=request.form.get("id","")
+        action=request.form.get("action","")
+        if not pid.isdecimal() or action not in ("publish","reject"):abort(400)
+        if action=="publish":
+            result=sql("""UPDATE b2_posts p SET status='published' FROM b2_users u
+                WHERE p.id=%s AND p.author=u.id AND u.approved=TRUE
+                AND p.status='pending' RETURNING p.id""",(int(pid),),True)
+            if not result:abort(409)
+        else:sql("UPDATE b2_posts SET status='rejected' WHERE id=%s AND status='pending'",(int(pid),))
+        return redirect("/moderation",303)
+    posts=sql("""SELECT p.*,u.name,u.approved FROM b2_posts p
+        JOIN b2_users u ON u.id=p.author WHERE p.status='pending'
+        ORDER BY p.created DESC LIMIT 60""")
+    cards=''
+    for p in posts:
+        files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
+        controls=('<button name="action" value="publish" class="primary">אישור לפרסום</button>' if p["approved"] else '<span>נדרש קודם אישור החבר</span>')
+        controls+='<button name="action" value="reject" class="subtle">דחיית פרסום</button>'
+        cards+='<article class="post"><h2>'+e(p["title"])+'</h2><p>מאת '+e(p["name"])+'</p><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div>'+button_form('<input type="hidden" name="id" value="'+str(p["id"])+'">'+controls,'/moderation')+'</article>'
+    return layout("בקרת פרסומים",'<div class="pagehead"><h1>בקרת פרסומים</h1></div>'+(cards or '<p>אין פרסומים ממתינים.</p>'))
 
- u=me()
- if not u:return redirect("/login")
- if request.method=="POST":
-  guard()
-  old=request.form.get("old","")
-  new=request.form.get("new","")
-  if not verify(old,u["password"]) or not 12<=len(new)<=200 or old==new:
-   return view("שינוי סיסמה",'<p class="error">הסיסמה הנוכחית שגויה או שהסיסמה החדשה אינה עומדת בתנאים.</p>'),400
-  sql("UPDATE members SET password=%s,session_version=session_version+1 WHERE id=%s AND password=%s",
-      (hashpw(new),u["id"],u["password"]))
-  session.clear()
-  return view("הסיסמה עודכנה",'<h1>הסיסמה עודכנה</h1><p>התחברו מחדש עם הסיסמה החדשה.</p><a href="/login">כניסה לחשבון</a>')
- return view("שינוי סיסמה",'<h1>שינוי סיסמה</h1><form method="post" class="card">'+formwrap(
-  field("old","סיסמה נוכחית","password",True)+
-  field("new","סיסמה חדשה, לפחות 12 תווים","password",True)+
-  '<button>עדכון סיסמה</button>')+'</form>')
+@app.route("/members",methods=["GET","POST"])
+@require_approved
+def members():
+    if not admin():abort(403)
+    if request.method=="POST":
+        protect()
+        uid=request.form.get("id","")
+        if not uid.isdecimal() or request.form.get("action") not in ("approve","reject"):abort(400)
+        if int(uid)==g.user["id"]:abort(400)
+        approved=request.form["action"]=="approve"
+        sql("UPDATE b2_users SET approved=%s WHERE id=%s",(approved,int(uid)))
+        return redirect("/members",303)
+    rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE ORDER BY joined DESC LIMIT 100")
+    html=''
+    for u in rows:
+        html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p>'+button_form(
+            '<input type="hidden" name="id" value="'+str(u["id"])+'"><button name="action" value="approve" class="primary">אישור חבר</button><button name="action" value="reject" class="subtle">דחייה</button>','/members')+'</article>'
+    return layout("אישור חברים",'<div class="pagehead"><h1>בקשות חברות</h1></div>'+(html or '<div class="note">אין בקשות חברות ממתינות.</div>'))
 
-# The public security-hold site is entirely static and must boot without DB/OAuth.
-# In community mode the original migrations and route registration still run.
-if not READ_ONLY_BOOT:
- from community_portal import install as install_portal
- install_portal(app,sql,view,me,admin,guard,formwrap,esc)
- from memorial_photos import setup as setup_memorial
- setup_memorial(app,sql,app.extensions["karnafim_portal"]["page"],me,admin,guard,formwrap)
+@app.errorhandler(404)
+def not_found(err):return layout("העמוד לא נמצא",'<div class="pagehead"><h1>העמוד לא נמצא</h1><a href="/">חזרה לדף הבית</a></div>'),404
 
-if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)))
+@app.errorhandler(403)
+def forbidden(err):return layout("גישה מוגבלת",'<div class="pagehead"><h1>גישה מוגבלת</h1><p>יש צורך בחברות מאושרת או בהרשאה מתאימה.</p></div>'),403
+
+@app.errorhandler(503)
+def maintenance(err):return layout("מערכת החברים בהכנה",'<div class="pagehead"><h1>החברים חוזרים לכאן בקרוב</h1><p>המערכת האישית סגורה עד בדיקות בטיחות ואבטחה; בינתיים אפשר לעיין במורשת ובהנצחה.</p><a href="/" class="primary">לעמוד הבית</a></div>'),503
+
+if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT","10000")))
