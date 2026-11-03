@@ -354,7 +354,7 @@ def generate_ai_story(transcript, audio_mp3, output_mp4, work_dir,
                     # older distilled Space that returned static frames.
                     url=_request_ltx25_generation(prompt,duration=5.0,max_wait=72)
                 except AIVideoUnavailable:
-                    url=_request_video_generation(prompt,duration=4.5,max_wait=72)
+                    url=_request_video_generation(prompt,duration=5.0,max_wait=72)
             raw=work/f"generated-original-{index}.mp4"
             seconds=download(url,raw)
             if seconds+.12<allocations[index]:
