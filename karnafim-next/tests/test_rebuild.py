@@ -175,7 +175,7 @@ with site.app.test_client() as browser:
 
     # A verified/approved member may suggest a memorial photo source, but
     # neither the source nor a local portrait is auto-published.
-    with site.app.test_client() as contributor:
+    def check_memorial_source_flow(contributor):
         r=contributor.post("/login",base_url=ORIGIN,data={
             "csrf":get_csrf(contributor),"email":email,
             "password":"SyntheticTestPassword#2026"})
@@ -215,6 +215,7 @@ with site.app.test_client() as browser:
         assert "memorial-portrait" not in contributor.get(
             "/memorial",base_url=ORIGIN).get_data(as_text=True)
         contributor.post("/logout",base_url=ORIGIN,data={"csrf":get_csrf(contributor)})
+    check_memorial_source_flow(site.app.test_client())
 
     r=browser.post("/chat/"+str(member["id"]),base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"text":"הודעת ניסיון פרטית"})
