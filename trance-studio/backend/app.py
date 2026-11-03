@@ -79,6 +79,8 @@ def create_app(config=None):
         stage='decode'
         try:
             update(job_id,state='processing',percent=4,label='קורא ומאמת את אורך ההקלטות')
+            # Accept longer original speech (up to five minutes per job)
+            # without silently clipping a WhatsApp message.
             # Validate audio duration before CPU-expensive word-level ASR.
             # Oversized/invalid recordings must fail immediately, never sit
             # for minutes in recognition before a simple decoder check.
@@ -366,8 +368,8 @@ def create_app(config=None):
                     'לא זוהה קול בעוצמה מספקת בהקלטה. ודא שהקובץ כולל דיבור שניתן לשמוע.'),
                 'הקלטה ריקה או לא תקינה':('invalid_audio',
                     'ההקלטה ריקה או מכילה שמע שלא ניתן לעבד.'),
-                'הקלטה ארוכה מ־120 שניות':('recording_too_long',
-                    'ההקלטה חורגת מ־120 שניות.'),
+                'סך הקלטות המקור חורג מחמש דקות':('combined_duration_exceeded',
+                    'אורך הקלטות המקור יחד עולה על חמש דקות. ניתן לבחור עד ארבע הקלטות שסכומן עד 300 שניות.'),
                 'משך ההקלטות הכולל גדול מדי לעיבוד חינמי':('combined_duration_exceeded',
                     'סך ההקלטות והעיבוד ארוך מדי עבור מנוע הענן החינמי.'),
             }
@@ -435,7 +437,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.1',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.15.2',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():
