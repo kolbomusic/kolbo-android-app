@@ -1,0 +1,52 @@
+name: Karnafim production read-only verification after human review release
+on:
+  push:
+    branches: [karnafim-safe-review-and-backup-report-20261103]
+    paths:
+      - '.github/workflows/karnafim-release-live-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Check public production pages and locked private routes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+
+          base="https://karnafim-community-46.onrender.com"
+          headers={"User-Agent":"KarnafimSafeReleaseSmoke/1.0"}
+          def get(path):
+              with urllib.request.urlopen(urllib.request.Request(base+path,headers=headers),timeout=30) as r:
+                  return r.status,urllib.parse.urlsplit(r.url).path,r.headers,r.read(250_000)
+
+          code,path,headers,raw=get("/health")
+          result=json.loads(raw)
+          assert code==200 and result["status"]=="ok" and result["database_configured"]
+          print("HEALTH: OK, public liveness only")
+          code,path,headers,raw=get("/ready")
+          readiness=json.loads(raw)
+          assert code==200 and readiness["status"]=="ready" and readiness["database"]=="available"
+          print("READY: database and member schema OK")
+          code,path,headers,raw=get("/memorial")
+          html=raw.decode("utf-8","replace")
+          expected=("en_f5ccba845584f96f9b9334cf335d2e78",
+                    "en_f53b79619b3f27184812b11f14e635a8",
+                    "en_e6446f8f52c2b18e0ec560602482bdda",
+                    "en_34b2955a02b6a81f8ba932dbf6228e61",
+                    "en_53e66dd727188835acbe02a1f641a882")
+          assert code==200 and all(x in html for x in expected)
+          assert headers.get("Content-Security-Policy","").startswith("default-src 'none'")
+          print("MEMORIAL: all five official records present, CSP enabled")
+          for path in ("/moderation","/members","/team","/inbox","/memorial-sources","/memorial-source-review"):
+              status,final,headers,_=get(path)
+              assert status==200 and final=="/login",(path,status,final)
+              print("PRIVATE ROUTE:",path,"redirected to login")
+          print("PASS: live public pages and private authorization gates")
+          PY
