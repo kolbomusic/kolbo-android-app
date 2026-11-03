@@ -63,6 +63,21 @@ for label in ("בניה ריין", "אורי גרוסמן", "אדם גורן", "
     assert label in memorial_html, label
 assert memorial_html.count('class="memorial"')==5
 
+# Canonical handoff is opt-in. Keep /health alive for deployment checks.
+import subprocess
+handoff_env=dict(os.environ)
+handoff_env["BARKAN_CANONICAL_HANDOFF"]="1"
+handoff=subprocess.run([sys.executable,"-c",'''
+import app
+c=app.app.test_client()
+base="https://karnafim-barkan-46.onrender.com"
+r=c.get("/memorial",base_url=base)
+assert r.status_code==302
+assert r.headers["Location"]=="https://karnafim-community-46.onrender.com/memorial"
+assert c.get("/health",base_url=base).status_code==200
+'''],cwd=ROOT,env=handoff_env,capture_output=True,text=True,timeout=20)
+assert handoff.returncode==0,(handoff.stdout,handoff.stderr[-2000:])
+
 css=(ROOT/"static/site.css").read_text(encoding="utf-8")
 js=(ROOT/"static/site.js").read_text(encoding="utf-8")
 for token in (".auth-page",".auth-trust",":focus-visible","prefers-reduced-motion",
