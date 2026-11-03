@@ -4,7 +4,7 @@ Only fictional synthetic speech and a generated moving test pattern are sent;
 this test proves the upload/mux endpoint, not photorealistic AI scene quality.
 """
 from __future__ import annotations
-import hashlib,io,json,os,pathlib,subprocess,time,urllib.error,urllib.request
+import hashlib,io,json,os,pathlib,re,subprocess,time,urllib.error,urllib.request
 from http.cookiejar import CookieJar
 from urllib.request import HTTPCookieProcessor,Request,build_opener
 
@@ -19,18 +19,34 @@ def call(path,body=None,headers=None,timeout=90):
     with client.open(Request(BASE+path,data=body,headers=headers or {}),timeout=timeout) as response:
         return response.read(),response.status
 
-# Wait for the new frontend before starting a long-lived Render Free job.
+# A push triggers this production acceptance BEFORE manual Render deployment.
+# Merely seeing the old /studio HTML is not proof the new worker is live:
+# sending a job during worker replacement loses its in-memory job ID (404).
+# Extract the version from THIS checked-out backend instead of hard-coding it.
+backend=(pathlib.Path(__file__).resolve().parents[1]/
+         "backend"/"app.py").read_text(encoding="utf-8")
+version_match=re.search(
+    r"service='kolbo-trance-studio',version='([0-9]+\\.[0-9]+\\.[0-9]+)'",
+    backend)
+if not version_match:
+    raise RuntimeError("Cannot identify checked-out Kolbo backend version")
+expected_version=version_match.group(1)
 for i in range(90):
     try:
-        page,_=call("/studio",timeout=24)
-        if b"completeAIVideoOnPhone" in page:
-            break
-    except (OSError,urllib.error.URLError):
+        raw,_=call("/health",timeout=24)
+        health=json.loads(raw)
+        if health.get("ok") and health.get("version")==expected_version:
+            page,_=call("/studio",timeout=24)
+            if b"completeAIVideoOnPhone" in page:
+                print("PHONE_SMOKE_TARGET_BACKEND_READY",expected_version,flush=True)
+                break
+    except (OSError,urllib.error.URLError,ValueError):
         pass
     time.sleep(5)
 else:
-    raise RuntimeError("phone quota fallback not deployed")
+    raise RuntimeError("Target backend version not deployed: "+expected_version)
 
+# Allow the previous Render worker to drain before creating an in-memory job.
 time.sleep(12)
 boundary="----KolboPhoneVideoSmoke20261101"
 parts=[]
