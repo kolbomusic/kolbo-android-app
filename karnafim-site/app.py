@@ -555,7 +555,7 @@ def image_or_video(f):
     return (mime,kind,data)
 
 @app.route("/new",methods=["GET","POST"])
-@require_approved
+@require_login
 def create_post():
     if request.method=="POST":
         protect();limit("post:"+str(g.user["id"]),8,60)
