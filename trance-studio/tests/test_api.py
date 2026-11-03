@@ -180,8 +180,7 @@ class ApiTests(unittest.TestCase):
     def test_internal_dsp_failure_does_not_get_misreported_as_long_recording(self):
         from unittest import mock
         sample=np.sin(np.arange(16000)*2*np.pi*337/8000).astype(np.float32)
-        with mock.patch('app.load_audio',return_value=sample), \\
-             mock.patch('app.render_mix',side_effect=RuntimeError('private_dsp_detail')):
+        with mock.patch('app.load_audio',return_value=sample), mock.patch('app.render_mix',side_effect=RuntimeError('private_dsp_detail')):
             response=self.client.post('/api/jobs',data={'humor':'off',
                 'audio':(io.BytesIO(b'irrelevant'),'short.opus')})
             self.assertEqual(response.status_code,202)
