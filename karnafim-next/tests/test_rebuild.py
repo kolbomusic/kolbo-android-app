@@ -19,8 +19,28 @@ assert "/barkan_ci" in DB, "Refuse non-test database"
 assert os.environ.get("BARKAN_SAFETY_RELEASE_APPROVED")=="1"
 assert os.environ.get("BARKAN_PUBLIC_AUTH")=="1"
 assert os.environ.get("BARKAN_ALLOW_SIGNUP")=="1"
+# Exercise the real one-time legacy import using a synthetic account.
+# This test runs against /barkan_ci on localhost only.
+import psycopg
+legacy_password="SampleOldPass!2026"
+legacy_salt="0123456789abcdef0123456789abcdef"
+legacy_hash=legacy_salt+":"+hashlib.pbkdf2_hmac(
+    "sha256",legacy_password.encode(),bytes.fromhex(legacy_salt),250000).hex()
+with psycopg.connect(DB) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute("""CREATE TABLE members(
+            id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,email TEXT UNIQUE,
+            password TEXT NOT NULL,nickname TEXT DEFAULT '',approved BOOLEAN DEFAULT FALSE)""")
+        cursor.execute("""INSERT INTO members(name,email,password,nickname,approved)
+            VALUES(%s,%s,%s,%s,TRUE)""",
+            ("חבר בדיקת מעבר","legacy-test@example.test",legacy_hash,"חבר ותיק"))
 import app as site
 assert site.PUBLIC_AUTH and site.ALLOW_SIGNUP
+legacy=site.sql("SELECT id,passhash,approved FROM b2_users WHERE email=%s",
+                ("legacy-test@example.test",),True)
+assert legacy and legacy["approved"]
+assert site.checkpw(legacy_password,legacy["passhash"])
+assert not site.checkpw("incorrect-password",legacy["passhash"])
 ORIGIN="https://karnafim-barkan-46.onrender.com"
 
 def get_csrf(client):
@@ -46,6 +66,15 @@ def mock_delivery(email,uid):
     send_log.append((email,token))
     return True
 site.send_verification=mock_delivery
+
+with site.app.test_client() as old_member:
+    r=old_member.post("/login",base_url=ORIGIN,data={
+        "csrf":get_csrf(old_member),"email":"legacy-test@example.test",
+        "password":legacy_password})
+    assert r.status_code==303, r.status_code
+    assert old_member.get("/my-posts",base_url=ORIGIN).status_code==200
+    old_member.post("/logout",base_url=ORIGIN,
+                    data={"csrf":get_csrf(old_member)})
 
 with site.app.test_client() as browser:
     for route in ("/","/heritage","/memorial","/photos","/about","/privacy","/terms","/safety","/help","/status"):
