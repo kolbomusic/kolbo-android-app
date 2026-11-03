@@ -512,6 +512,21 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
             cut=(left[1]+right[0])//2
             if int(.7*sr)<cut<len(x)-int(.25*sr):
                 possible.append(cut)
+    # Whisper's source word ends provide real inter-word boundaries even
+    # where there is no >25ms VAD silence. Use only genuine recognition
+    # timestamps; never guess a word boundary from unrelated music.
+    # Zero-crossing relocation (<=12ms) avoids clicks at the insertion.
+    for phrase in timed_phrases or ():
+        try:
+            end=float(phrase['end'])
+            if .8<end<len(x)/sr-.3:
+                expected=int(end*sr)
+                cut=zero_crossing_cut(x,expected,sr)
+                if abs(cut-expected)<int(.012*sr):
+                    possible.append(cut)
+        except (KeyError,TypeError,ValueError):
+            continue
+    possible=sorted(set(possible))
     # The old fixed five-second gap left most short WhatsApp speech
     # untouched and piled the only comic effect onto the final word.
     # Keep conservative gaps for longer narration, but adapt to 5–10s
@@ -534,6 +549,14 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     # Keep the whole narration intact; reserve up to 19% additional time
     # (capped to 10s) for a few genuinely paced comic punchlines.
     max_extensions=min(10.0,max(.85,len(x)/sr*.19))
+    # Do not spend a 10-second long-form FX budget entirely in the first
+    # minute. Select dramatic beats evenly across the *whole* original,
+    # including its final phrase. All source words remain uncut and in order.
+    slot_cost=beat*(1.0 if density==1 else 1.5)+.06
+    maximum_slots=max(1,int(max_extensions/slot_cost))
+    if len(chosen)>maximum_slots:
+        picks=np.linspace(0,len(chosen)-1,maximum_slots,dtype=np.int32)
+        chosen=[chosen[int(i)] for i in sorted(set(picks))]
     total_fx_seconds=0.
     pieces=[];masks=[];original_spans=[]
     position=0;offset=0
