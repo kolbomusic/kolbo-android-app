@@ -239,7 +239,7 @@ with site.app.test_client() as browser:
     assert r.status_code==303
     admin_page=browser.get("/profile",base_url=ORIGIN)
     assert admin_page.status_code==200
-    assert "מנהל קהילה" in admin_page.get_data(as_text=True)
+    assert "מנהל הקהילה הראשי" in admin_page.get_data(as_text=True)
     assert 'href="/members"' in admin_page.get_data(as_text=True)
     r=browser.post("/moderation",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
@@ -268,6 +268,37 @@ with site.app.test_client() as browser:
     assert r.status_code==303
     assert site.sql("SELECT COUNT(*) AS n FROM b2_messages",one=True)["n"]==1
     assert browser.get("/inbox",base_url=ORIGIN).status_code==200
+    # Owner delegates moderation + invitations without membership approval.
+    assert browser.get("/team",base_url=ORIGIN).status_code==200
+    grant=browser.post("/team",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(member["id"]),"action":"save",
+        "can_moderate":"yes","can_invite":"yes"})
+    assert grant.status_code==303
+    assert site.sql("SELECT can_approve,can_moderate,can_invite FROM b2_staff_roles WHERE user_id=%s",
+        (member["id"],),True)=={"can_approve":False,"can_moderate":True,"can_invite":True}
+    with site.app.test_client() as delegate:
+        login=delegate.post("/login",base_url=ORIGIN,data={
+            "csrf":get_csrf(delegate),"email":email,"password":"SyntheticTestPassword#2026"})
+        assert login.status_code==303
+        assert delegate.get("/invite",base_url=ORIGIN).status_code==200
+        assert "wa.me" in delegate.get("/invite",base_url=ORIGIN).get_data(as_text=True)
+        assert delegate.get("/moderation",base_url=ORIGIN).status_code==200
+        assert delegate.get("/members",base_url=ORIGIN).status_code==403
+        assert delegate.get("/team",base_url=ORIGIN).status_code==403
+        assert delegate.post("/team",base_url=ORIGIN,data={
+            "csrf":get_csrf(delegate),"id":str(member["id"]),"action":"save",
+            "can_approve":"yes"}).status_code==403
+        # Changes take effect in already active sessions, no stale admin grants.
+        revoked=browser.post("/team",base_url=ORIGIN,data={
+            "csrf":get_csrf(browser),"id":str(member["id"]),"action":"revoke"})
+        assert revoked.status_code==303
+        assert delegate.get("/invite",base_url=ORIGIN).status_code==403
+        assert delegate.get("/moderation",base_url=ORIGIN).status_code==403
+        assert delegate.get("/team",base_url=ORIGIN).status_code==403
+    # Owner never appears in delegation list and can't change own permissions.
+    assert browser.post("/team",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(admin_id),"action":"revoke"}).status_code==403
+
     browser.post("/logout",base_url=ORIGIN,data={"csrf":get_csrf(browser)})
     assert browser.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==303
 
