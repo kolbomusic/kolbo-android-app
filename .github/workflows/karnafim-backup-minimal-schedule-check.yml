@@ -1,0 +1,12 @@
+name: Minimal schedule syntax probe
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 2 * * *'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "safe; no secrets or real data"
