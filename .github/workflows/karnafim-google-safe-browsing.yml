@@ -55,3 +55,5 @@ jobs:
           path: karnafim-google-status.json
           retention-days: 7
           if-no-files-found: warn
+
+# Rerun public Google classification check after original-domain rebuild on 2026-11-03.
