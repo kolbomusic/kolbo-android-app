@@ -439,7 +439,7 @@ def verify_email():
 def login():
     if not PUBLIC_AUTH:abort(503)
     if request.method=="POST":
-        protect();limit("login:"+request.form.get("email","")[:200],9,15)
+        protect();limit("login-ip-total",30,15);limit("login:"+request.form.get("email","")[:200],9,15)
         email=request.form.get("email","").lower().strip()[:200]
         pw=request.form.get("password","")
         u=sql("SELECT id,passhash,approved,email_verification_required FROM b2_users WHERE lower(email)=%s",(email,),True)
