@@ -43,8 +43,18 @@ for route in PAGES:
     folder.mkdir(parents=True,exist_ok=True)
     markup=response.data.decode("utf-8")
     if URL_PREFIX:
-        # Scope every internal public link and local asset to the project site.
-        markup=re.sub(r'(href|src)="/',lambda m:m.group(1)+'="'+URL_PREFIX+'/',markup)
+        # Use explicit index.html for nested public routes to work on every CDN
+        # without rewrites, including shared Render static subdirectories.
+        def static_link(match):
+            attr,path=match.group(1),match.group(2)
+            if path.startswith("static/") or path.endswith((".css",".js",".png",".svg",".ico")):
+                mapped=path
+            elif not path or path.strip("/")=="":
+                mapped="index.html"
+            else:
+                mapped=path.rstrip("/")+"/index.html"
+            return attr+'="'+URL_PREFIX+'/'+mapped+'"'
+        markup=re.sub(r'(href|src)="/([^"]*)"',static_link,markup)
     (folder/"index.html").write_text(markup,encoding="utf-8")
 
 shutil.copytree(ROOT/"static",OUT/"static",dirs_exist_ok=True)
