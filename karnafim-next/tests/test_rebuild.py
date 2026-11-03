@@ -22,7 +22,7 @@ assert os.environ.get("BARKAN_ALLOW_SIGNUP")=="1"
 # Exercise the real one-time legacy import using a synthetic account.
 # This test runs against /barkan_ci on localhost only.
 import psycopg
-legacy_password="SampleOldPass!2026"
+legacy_password="Old#2468"
 legacy_salt="0123456789abcdef0123456789abcdef"
 legacy_hash=legacy_salt+":"+hashlib.pbkdf2_hmac(
     "sha256",legacy_password.encode(),bytes.fromhex(legacy_salt),250000).hex()
