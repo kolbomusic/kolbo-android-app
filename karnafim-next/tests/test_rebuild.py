@@ -173,6 +173,49 @@ with site.app.test_client() as browser:
     assert "זיכרון בדיקה" in gallery
     assert browser.get("/find",base_url=ORIGIN).status_code==200
 
+    # A verified/approved member may suggest a memorial photo source, but
+    # neither the source nor a local portrait is auto-published.
+    with site.app.test_client() as contributor:
+        r=contributor.post("/login",base_url=ORIGIN,data={
+            "csrf":get_csrf(contributor),"email":email,
+            "password":"SyntheticTestPassword#2026"})
+        assert r.status_code==303,r.status_code
+        assert contributor.get("/memorial-sources",base_url=ORIGIN).status_code==200
+        assert contributor.get("/memorial-source-review",base_url=ORIGIN).status_code==403
+        source_url="https://www.izkor.gov.il/יהונתן%20שרעבי/en_53e66dd727188835acbe02a1f641a882"
+        suggested={
+            "csrf":get_csrf(contributor),
+            "person_key":"yoni-sharabi",
+            "source_url":source_url,
+            "context":"התמונה מוצגת ברשומה הרשמית של האדם הזה באתר יזכור.",
+            "permission":"לא קיימת כרגע הרשאת פרסום חוזר",
+        }
+        invalid=dict(suggested,source_url="http://localhost/internal")
+        assert contributor.post("/memorial-sources",base_url=ORIGIN,data=invalid).status_code==400
+        assert contributor.post("/memorial-sources",base_url=ORIGIN,data=suggested).status_code==200
+        item=site.sql("""SELECT id,izkor_id,status FROM b2_memorial_sources
+                        WHERE submitted_by=%s""",(member["id"],),True)
+        assert item["izkor_id"]==site.MEMORIAL_PEOPLE["yoni-sharabi"]["izkor_id"]
+        assert item["status"]=="pending"
+        assert "ממתין לבדיקת מנהל" in contributor.get(
+            "/memorial-sources",base_url=ORIGIN).get_data(as_text=True)
+        review_page=browser.get("/memorial-source-review",base_url=ORIGIN)
+        assert review_page.status_code==200
+        assert source_url in review_page.get_data(as_text=True)
+        decision_note="נבדק שיוך לרשומה; חסרה הרשאת פרסום התצלום."
+        r=browser.post("/memorial-source-review",base_url=ORIGIN,data={
+            "csrf":get_csrf(browser),"id":str(item["id"]),
+            "action":"reviewed","reason":decision_note})
+        assert r.status_code==303,r.status_code
+        status=site.sql("SELECT status,review_note FROM b2_memorial_sources WHERE id=%s",
+                        (item["id"],),True)
+        assert status=={"status":"reviewed","review_note":decision_note}
+        personal=contributor.get("/memorial-sources",base_url=ORIGIN).get_data(as_text=True)
+        assert decision_note in personal and "טרם אושר לפרסום" in personal
+        assert "memorial-portrait" not in contributor.get(
+            "/memorial",base_url=ORIGIN).get_data(as_text=True)
+        contributor.post("/logout",base_url=ORIGIN,data={"csrf":get_csrf(contributor)})
+
     r=browser.post("/chat/"+str(member["id"]),base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"text":"הודעת ניסיון פרטית"})
     assert r.status_code==303
