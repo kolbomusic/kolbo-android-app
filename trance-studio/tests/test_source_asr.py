@@ -45,7 +45,7 @@ class SourceAsrRecoveryTests(unittest.TestCase):
 
     def test_native_android_hands_off_to_server_before_heavy_browser_asr(self):
         page=(ROOT/'web'/'studio.html').read_text(encoding='utf-8')
-        self.assertIn('if(window.KolboAndroid)',page)
+        self.assertIn('var useLocalAsr=!window.KolboAndroid||',page)
         self.assertIn("form.set('make_video',wantsVideo?'on':'off')",page)
         self.assertIn("form.set('transcript',verifyTranscript(recognized)?recognized:'')",page)
 
