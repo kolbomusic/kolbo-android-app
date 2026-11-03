@@ -190,7 +190,9 @@ async function getPlan(id,passedPrompt,passedScenes){
     var grounded=passedScenes.slice(0,MAX_SHOTS).filter(function(p){
       return typeof p==='string'&&p.length>20&&p.length<2000&&HEBREW.test(p);
     });
-    if(grounded.length)return grounded;
+    // A partially filtered plan would upload fewer clips than the backend
+    // reserved and either fail 422 or conceal missing spoken events.
+    if(grounded.length===passedScenes.length)return grounded;
   }
   // A full cinematic prompt is NOT a scene plan. Splitting it locally
   // can make one 5-second clip for a six-shot soundtrack, later rejected by
