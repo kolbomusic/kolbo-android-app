@@ -175,7 +175,7 @@ with site.app.test_client() as browser:
         assert official_record_id in memorial_html,(name,"missing or changed Ministry of Defense record")
     assert "סמל יהונתן (יוני) שרעבי ז״ל" in memorial_html
     assert "en_53e66dd727188835acbe02a1f641a882" in memorial_html
-    assert memorial_html.count('סיפור החיים באתר יזכור')>=5
+    assert memorial_html.count('עמוד ההנצחה והתמונה באתר יזכור')>=5
     assert memorial_html.count("12.8.2006")>=4
     assert "המידע ההיסטורי מקושר לעמודי הנצחה רשמיים" in memorial_html
     assert "תפקידו כנהג טנק" in memorial_html
