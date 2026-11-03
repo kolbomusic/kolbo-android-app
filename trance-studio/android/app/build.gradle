@@ -9,8 +9,8 @@ android {
         applicationId 'com.kolbomusic.trancestudio.story2462'
         minSdk 29
         targetSdk 34
-        versionCode 248
-        versionName '2.4.7-beta.1'
+        versionCode 249
+        versionName '2.4.8-beta.1'
     }
     buildTypes {
         release {

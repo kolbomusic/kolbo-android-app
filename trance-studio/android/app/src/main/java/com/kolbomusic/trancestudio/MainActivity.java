@@ -44,6 +44,7 @@ import java.util.regex.Pattern;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -319,6 +320,66 @@ public final class MainActivity extends Activity {
             });
     }
 
+
+    /**
+     * Render Free may respond with its temporary 200-OK loading page for
+     * ~60 seconds after idle. Android WebView used to treat that page as
+     * Studio HTML, time out waiting for its Create button, then get stuck.
+     *
+     * Wake the cloud with a bounded native health probe before navigating.
+     * Unlike the user-facing studio, health checks send NO WhatsApp media and
+     * never start mix generation. They are also independent of WebView cache.
+     */
+    private void probeCloudBeforeLoad(final long token,final int attempt){
+        if(token!=navigationId||pageReady||pageLoadFailed||isDestroyed())return;
+        io.execute(()->{
+            boolean ready=false;
+            HttpURLConnection connection=null;
+            try{
+                URL health=new URL(SITE+"/health?androidWake="+(attempt+1));
+                connection=(HttpURLConnection)health.openConnection();
+                connection.setInstanceFollowRedirects(false);
+                connection.setConnectTimeout(8000);
+                connection.setReadTimeout(8000);
+                connection.setRequestProperty("Accept","application/json");
+                if(connection.getResponseCode()==200&&
+                   String.valueOf(connection.getContentType()).contains("application/json")){
+                    try(InputStream data=connection.getInputStream()){
+                        // InputStream.readNBytes is not present on older
+                        // Android API levels; a single bounded health read
+                        // keeps this beta compatible down to minSdk 29.
+                        byte[] raw=new byte[1024];
+                        int count=data.read(raw);
+                        if(count<=0)throw new java.io.IOException("empty health response");
+                        JSONObject status=new JSONObject(
+                            new String(raw,0,count,StandardCharsets.UTF_8));
+                        ready=status.optBoolean("ok",false)&&
+                              "kolbo-trance-studio".equals(status.optString("service",""));
+                    }
+                }
+            }catch(Exception expectedDuringColdStart){
+                // Never bypass TLS failures or trust an HTML/proxy response.
+            }finally{
+                if(connection!=null)connection.disconnect();
+            }
+            final boolean online=ready;
+            mainHandler.post(()->{
+                if(token!=navigationId||pageReady||pageLoadFailed||isDestroyed())return;
+                if(online){
+                    startupMessage.setText("השרת התעורר. פותח את האולפן...");
+                    webView.loadUrl(STUDIO+"?android=2481&load="+token);
+                }else if(attempt<11){
+                    startupMessage.setText("שרת הענן החינמי מתעורר... בודק חיבור "+
+                            (attempt+2)+" מתוך 12. ההקלטות לא יישלחו לפני יצירה.");
+                    mainHandler.postDelayed(
+                        ()->probeCloudBeforeLoad(token,attempt+1),4500);
+                }else{
+                    recoverConnection("שרת העיבוד עדיין לא השיב לבדיקת הזמינות.");
+                }
+            });
+        });
+    }
+
     private void beginLoad(boolean manuallyRequested){
         if(manuallyRequested){
             automaticRetries=0;
@@ -334,7 +395,7 @@ public final class MainActivity extends Activity {
         startupMessage.setText("מתחבר לשרת ומכין את סביבת היצירה...");
         loading.setVisibility(View.VISIBLE);
         webView.setVisibility(View.VISIBLE);
-        webView.loadUrl(STUDIO+"?android=2462&load="+current);
+        probeCloudBeforeLoad(current,0);
         mainHandler.postDelayed(()->{
             if(navigationId==current&&!pageReady&&!pageLoadFailed){
                 startupMessage.setText("שרת הענן החינמי מתעורר. ההקלטות שלך נשארות במכשיר...");
@@ -344,7 +405,7 @@ public final class MainActivity extends Activity {
             if(navigationId==current&&!pageReady&&!pageLoadFailed){
                 recoverConnection("החיבור לשרת נמשך זמן רב מדי.");
             }
-        },75000);
+        },240000);
     }
 
     private void recoverConnection(String reason){

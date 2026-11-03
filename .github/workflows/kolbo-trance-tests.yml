@@ -75,6 +75,8 @@ jobs:
         run: |
           node trance-studio/tests/test_manual_share.js
           node trance-studio/tests/test_native_share_resume.js
+          node trance-studio/tests/test_native_cloud_wake.js
+          node trance-studio/tests/test_studio_cloud_wake.js
           node trance-studio/tests/test_social_link_share.js
       - name: Verify limited Render restart recovery without automated WhatsApp creation
         run: node trance-studio/tests/test_restart_recovery.js

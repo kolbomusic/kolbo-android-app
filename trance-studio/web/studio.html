@@ -653,6 +653,39 @@ async function completeAIVideoOnPhone(jobId,prompt){
  throw new Error('גם מכסת יצירת הווידאו החינמית של המכשיר אינה זמינה. '+(failure&&failure.message||''));
 }
 
+async function ensureCloudReady(){
+ // A Render Free instance sleeps after idle and can initially return an
+ // HTTP 200 wake-up HTML page, NOT JSON. Do not POST user's original media
+ // until a separate health probe confirms that our Flask app is responsive.
+ // This runs only after the user taps Create, never when sharing from WhatsApp.
+ for(var attempt=0;attempt<14;attempt++){
+  var control=new AbortController();
+  var timeout=setTimeout(function(){control.abort()},10000);
+  try{
+   var response=await fetch('/health?studioWake='+(attempt+1),{
+    method:'GET',cache:'no-store',credentials:'same-origin',
+    headers:{Accept:'application/json'},signal:control.signal
+   });
+   if(response.ok){
+    var type=String(response.headers.get('content-type')||'');
+    if(type.includes('application/json')){
+     var status=await response.json();
+     if(status&&status.ok===true&&status.service==='kolbo-trance-studio')
+      return true;
+    }
+   }
+  }catch(error){
+   // A timeout/temporary proxy error during cold start is expected.
+  }finally{clearTimeout(timeout)}
+  if(attempt<13){
+   message('שרת הענן מתעורר. שומר על ההקלטה במכשיר — בדיקת חיבור '+
+           (attempt+1)+' מתוך 14...');
+   await pause(4000);
+  }
+ }
+ throw new Error('שרת הענן החינמי עדיין לא התעורר. לא נשלחה הקלטה ליצירה; אפשר לנסות שוב בלי לבחור אותה מחדש.');
+}
+
 async function submitMixJob(form){
  // Reuse one helper for normal upload and a single post-restart recovery.
  // Render 429 means the job was NOT admitted: retry only this case.
@@ -691,6 +724,7 @@ $('result').classList.remove('visible');
 var wantsVideo=$('make_video').checked;
 var videoAllowed=wantsVideo, recognized='', videoReason='';
 try{
+await ensureCloudReady();
 if(wantsVideo){
  markStage('recognize');
  // The native Android WebView already needs cloud connectivity to mix.
