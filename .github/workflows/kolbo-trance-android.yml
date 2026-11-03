@@ -27,6 +27,10 @@ on:
       - 'trance-studio/tests/test_simple_mobile_ui.js'
       - 'trance-studio/tests/test_auto_social_link_share.js'
       - 'trance-studio/tests/test_live_video.py'
+      - 'trance-studio/tests/test_ai_story_no_loop.js'
+      - 'trance-studio/tests/test_provider_diagnostics.js'
+      - 'trance-studio/backend/engine.py'
+      - 'trance-studio/backend/beat_video_editor.py'
       - '.github/workflows/kolbo-trance-android.yml'
 permissions:
   contents: write
