@@ -91,6 +91,17 @@ def init():
                 joined TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             # Existing accounts retain their values. No directory information
             # is publicly visible until the member explicitly opts in.
+            cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS referral_code TEXT")
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS b2_users_referral_code_unique ON b2_users(referral_code)")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_membership_recommendations(
+                id BIGSERIAL PRIMARY KEY,
+                applicant BIGINT NOT NULL REFERENCES b2_users(id) ON DELETE CASCADE,
+                recommender BIGINT NOT NULL REFERENCES b2_users(id) ON DELETE CASCADE,
+                context TEXT NOT NULL,
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT b2_one_recommendation UNIQUE(applicant,recommender),
+                CONSTRAINT b2_no_self_recommend CHECK(applicant<>recommender))""")
+            cur.execute("CREATE INDEX IF NOT EXISTS b2_member_recommend_applicant ON b2_membership_recommendations(applicant)")
             cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS membership_status TEXT NOT NULL DEFAULT 'pending'")
             cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS membership_reason TEXT NOT NULL DEFAULT ''")
             cur.execute("ALTER TABLE b2_users ADD COLUMN IF NOT EXISTS membership_summary TEXT NOT NULL DEFAULT ''")
@@ -337,6 +348,7 @@ def layout(title,body):
         permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
         if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים"),("/photo-review","בקשות פרטיות")]
         if permissions["approve"]:menu += [("/members","אישור חברים")]
+        if u["approved"]:menu += [("/recommend","המלצה על חבר")]
         if permissions["invite"]:menu += [("/invite","הזמנת חברים")]
         if admin():menu += [("/dashboard","לוח בקרה"),("/team","הרשאות ניהול")]
     elif PUBLIC_AUTH:
@@ -696,12 +708,13 @@ def signup():
             with c.cursor() as cur:
                 try:
                     cur.execute("""INSERT INTO b2_users(name,email,passhash,email_verification_required,
-                        service_claim,membership_status,membership_reason,membership_summary)
-                        VALUES(%s,%s,%s,%s,%s,'pending',%s,%s) RETURNING id""",
+                        service_claim,membership_status,membership_reason,membership_summary,
+                        referral_code)
+                        VALUES(%s,%s,%s,%s,%s,'pending',%s,%s,%s) RETURNING id""",
                         (name,email,hashpw(password),not MANUAL_SIGNUP,service_claim,
                         triage_reason,
                         'נקלטה בקשת הצטרפות של '+name+(' · פירוט ראשוני שמסר: '+service_claim[:220] if service_claim else ' · פרטי שירות לא נמסרו.')+
-                        ' · סטטוס: נדרשת בדיקת מנהל.'))
+                        ' · סטטוס: נדרשת בדיקת מנהל.',secrets.token_urlsafe(24)))
                     uid=cur.fetchone()["id"]
                 except psycopg.errors.UniqueViolation:
                     c.rollback()
@@ -1232,13 +1245,22 @@ def members():
                     "member_approved" if approved else "member_rejected",
                     "identity manually checked" if approved else "application rejected with explanation"))
         return redirect("/members",303)
-    rows=sql("""SELECT id,name,email,joined,service_claim,membership_status,
-                   membership_reason,membership_summary
-                   FROM b2_users WHERE approved=FALSE AND membership_status='pending'
-                   ORDER BY joined DESC LIMIT 100""")
+    rows=sql("""SELECT u.id,u.name,u.email,u.joined,u.service_claim,u.membership_status,
+                   u.membership_reason,u.membership_summary,
+                   (SELECT COUNT(*) FROM b2_membership_recommendations r
+                    JOIN b2_users supporter ON supporter.id=r.recommender
+                    WHERE r.applicant=u.id AND supporter.approved=TRUE) recommendation_count
+                   FROM b2_users u WHERE u.approved=FALSE AND u.membership_status='pending'
+                   ORDER BY u.joined DESC LIMIT 100""")
     html=''
     for u in rows:
-        html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p><p><strong>פרטי שירות שנמסרו:</strong> '+e(u["service_claim"] or "לא נמסרו")+'</p><p><strong>סטטוס:</strong> '+e(u["membership_status"])+'</p><p><strong>תקציר הבקשה:</strong> '+e(u["membership_summary"])+'</p>'+button_form(
+        recommendations=sql("""SELECT supporter.name, r.context,r.created
+                         FROM b2_membership_recommendations r
+                         JOIN b2_users supporter ON supporter.id=r.recommender
+                         WHERE r.applicant=%s AND supporter.approved=TRUE
+                         ORDER BY r.created DESC LIMIT 12""",(u["id"],))
+        recommendation_html=''.join('<li><strong>'+e(r["name"])+'</strong>: '+e(r["context"])+'</li>' for r in recommendations)
+        html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p><p><strong>פרטי שירות שנמסרו:</strong> '+e(u["service_claim"] or "לא נמסרו")+'</p><p><strong>סטטוס:</strong> '+e(u["membership_status"])+'</p><p><strong>תקציר הבקשה:</strong> '+e(u["membership_summary"])+'</p><p>המלצות חברים מאושרים: '+str(u["recommendation_count"])+'. הן כלי עזר בלבד ואינן הוכחת זהות.</p>'+('<ul>'+recommendation_html+'</ul>' if recommendation_html else '')+button_form(
             '<input type="hidden" name="id" value="'+str(u["id"])+'"><label class="check"><input type="checkbox" name="identity_checked" value="yes"> אימתתי באופן אישי את זהות החבר, שייכותו לפלוגה ובעלותו על כתובת הדוא״ל</label><button name="action" value="approve" class="primary">אישור חבר</button><label>סיבת דחייה (חובה בדחייה)<textarea name="reason" maxlength="700" rows="2" placeholder="מה חסר, וכיצד ניתן לערער?"></textarea></label><button name="action" value="reject" class="subtle">דחייה עם הסבר</button>','/members')+'</article>'
     return layout("אישור חברים",'<div class="pagehead"><h1>בקשות חברות</h1></div>'+(html or '<div class="note">אין בקשות חברות ממתינות.</div>'))
 
@@ -1263,17 +1285,49 @@ def application_status():
                     ("הוגש ערעור; הבקשה ממתינה לבדיקה חוזרת.",note,u["id"]))
                 if not cur.fetchone():abort(409)
         return redirect("/application",303)
+    # Existing pending accounts can opt into receiving a code on first view.
+    # The token is a private bearer reference, not proof of membership.
+    sql("""UPDATE b2_users SET referral_code=%s
+        WHERE id=%s AND referral_code IS NULL AND approved=FALSE""",
+        (secrets.token_urlsafe(24),u["id"]))
     details=sql("""SELECT membership_status,membership_reason,
-              membership_summary,membership_appealed,approved
+              membership_summary,membership_appealed,approved,referral_code
               FROM b2_users WHERE id=%s""",(u["id"],),True)
     state=details["membership_status"]
     label={"pending":"ממתין לבדיקה ולאימות זהות","rejected":"לא אושר","approved":"חבר מאושר"}.get(state,"בבדיקה")
+    referral=('<section class="story"><h2>המלצות מחברים ותיקים</h2><p>אפשר לשלוח לחבר מאושר שמכיר אותך את הקוד האישי הבא, כדי שיתמוך בבקשה. אל תפרסם אותו בציבור. המלצה אינה אישור אוטומטי.</p><p dir="ltr"><code>'+e(details["referral_code"])+'</code></p><p>החבר מגיש את המלצתו בעמוד <a href="/recommend">המלצה על חבר</a>.</p></section>'
+              if state=="pending" and details["referral_code"] else '')
     appeal=button_form('<label>בקשה לבדיקה חוזרת<textarea name="appeal" required maxlength="500" rows="4" placeholder="פרטו מידע נוסף שיסייע באימות הבקשה."></textarea></label><button class="primary">הגשת ערעור</button>',
        '/application','class="formcard"') if state=="rejected" and not details["membership_appealed"] else ''
     return layout("מצב ההצטרפות שלי",'<div class="pagehead"><h1>בקשת החברות שלי</h1><p>סטטוס: '+e(label)+'</p></div>'+
         '<section class="story"><h2>סיכום הבקשה</h2><p>'+e(details["membership_summary"])+'</p>'+
         '<h2>הסבר להחלטה</h2><p>'+e(details["membership_reason"] or "טרם התקבלה החלטה.")+'</p>'+
-        '<p>הבדיקה הראשונית נעשית אוטומטית, אך גישה לחומר פרטי של הפלוגה ניתנת רק לאחר אימות זהות וחברות.</p></section>'+appeal)
+        '<p>הבדיקה הראשונית נעשית אוטומטית, אך גישה לחומר פרטי של הפלוגה ניתנת רק לאחר אימות זהות וחברות.</p></section>'+referral+appeal)
+
+
+@app.route("/recommend",methods=["GET","POST"])
+@require_approved
+def recommend_member():
+    """A verified member can recommend a pending applicant by private code.
+    The recommendation is not permission, and never auto-approves a member.
+    """
+    if request.method=="POST":
+        protect();limit("recommend:"+str(g.user["id"]),8,3600)
+        code=request.form.get("code","").strip()
+        context=request.form.get("context","").strip()[:600]
+        if len(code)<24 or len(code)>80 or len(context)<20:abort(400)
+        applicant=sql("""SELECT id FROM b2_users
+            WHERE referral_code=%s AND approved=FALSE
+                AND membership_status='pending' AND id<>%s""",
+            (code,g.user["id"]),True)
+        if not applicant:
+            return layout("המלצה לא נקלטה",'<section class="note error">הקוד אינו תקין, אינו פעיל או שהמועמד כבר טופל. לא נחשפו פרטי מועמד.</section>'),400
+        sql("""INSERT INTO b2_membership_recommendations(applicant,recommender,context)
+            VALUES(%s,%s,%s) ON CONFLICT(applicant,recommender) DO UPDATE SET
+            context=EXCLUDED.context,created=NOW()""",(applicant["id"],g.user["id"],context))
+        return layout("ההמלצה נקלטה",'<div class="pagehead"><h1>ההמלצה נרשמה</h1><p>תודה. המידע יוצג לצוות אימות החברות בלבד. אין בכך אישור אוטומטי או הבטחה לקבלת המועמד.</p><a href="/recommend">חזרה לטופס</a></div>')
+    return layout("ממליצים על חבר",'<div class="pagehead"><h1>מכירים חבר מהפלוגה?</h1><p>בקשו ממנו את קוד ההמלצה האישי. תוכלו לציין באיזה מחזור או צוות הכרתם אותו. ההמלצה לא תעניק לו גישה ללא אימות זהות, שייכות לפלוגה ובעלות על כתובת הדוא״ל.</p></div>'+
+        button_form('<label>קוד המלצה שהמועמד מסר<input name="code" maxlength="80" required autocomplete="off" dir="ltr"></label><label>כיצד אתם מכירים אותו מהשירות?<textarea name="context" required maxlength="600" rows="4" placeholder="למשל: שירתנו באותה מחלקה, היכן ומתי. אין לפרסם מידע מסווג."></textarea></label><button class="primary">שליחת המלצה לצוות הקבלה</button>','/recommend','class="formcard"'))
 
 @app.route("/team",methods=["GET","POST"])
 @require_approved
