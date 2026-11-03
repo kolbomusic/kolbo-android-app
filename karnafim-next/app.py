@@ -33,7 +33,8 @@ app.config.update(
     SESSION_COOKIE_SECURE=True,SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",PERMANENT_SESSION_LIFETIME=3600*6,
     MAX_CONTENT_LENGTH=32*1024*1024, MAX_FORM_MEMORY_SIZE=128*1024,
-    TRUSTED_HOSTS=["karnafim-barkan-46.onrender.com","localhost","127.0.0.1"],
+    TRUSTED_HOSTS=["karnafim-barkan-46.onrender.com",
+                   "karnafim-community-46.onrender.com","localhost","127.0.0.1"],
 )
 ORIGIN=os.environ.get("BARKAN_PUBLIC_ORIGIN","https://karnafim-barkan-46.onrender.com").rstrip("/")
 # Public account forms are a separate switch. Never enable until the new origin
