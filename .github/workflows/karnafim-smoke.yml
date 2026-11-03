@@ -25,3 +25,5 @@ jobs:
         run: python -m compileall -q karnafim-site
       - name: Verify RTL pages, links, accessibility, privacy and closed authentication
         run: python karnafim-site/tests/test_rebuilt_design.py
+      - name: Verify live original-domain PostgreSQL readiness and closed auth
+        run: python karnafim-site/tests/check_live_readiness.py
