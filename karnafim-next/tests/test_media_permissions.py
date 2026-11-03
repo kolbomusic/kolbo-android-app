@@ -20,9 +20,11 @@ try:
             "mime":"image/jpeg","body":b"test"}
     site.sql=lambda *args,**kwargs: record
     client=site.app.test_client()
-    with client.session_transaction() as session:
-        session["uid"]=22
     base="https://karnafim-barkan-46.onrender.com"
+    # A Secure session cookie must be created for the same HTTPS origin as
+    # the requests under test; localhost session cookies aren't shared.
+    with client.session_transaction(base_url=base) as session:
+        session["uid"]=22
     res=client.get("/media/51",base_url=base)
     assert res.status_code==403, res.status_code
     record["author_approved"]=True
