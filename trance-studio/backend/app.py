@@ -51,7 +51,7 @@ def create_app(config=None):
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
     if config:app.config.update(config)
     root=Path(app.config['JOB_DIR']);root.mkdir(parents=True,exist_ok=True)
-    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(2);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
+    jobs={};lock=threading.Lock();admission=threading.BoundedSemaphore(1);queue_slots=threading.BoundedSemaphore(2);link_admission=threading.BoundedSemaphore(1);executor=ThreadPoolExecutor(max_workers=1)
     static=Path(__file__).resolve().parents[1]/'dist'
     web=Path(__file__).resolve().parents[1]/'web'
     def stream_temporary_media(media_path,mime,folder):
@@ -104,6 +104,9 @@ def create_app(config=None):
         with lock:jobs[job_id].update(values)
 
     def work(job_id,paths,options):
+        # Exclusive heavy CPU/memory gate shared with phone AI-clip mux.
+        # The second mix waits on disk; no simultaneous H264 or DSP render.
+        admission.acquire()
         stage='decode'
         try:
             update(job_id,state='processing',percent=4,label='קורא ומאמת את אורך ההקלטות')
@@ -509,6 +512,7 @@ def create_app(config=None):
         finally:
             for p in paths:p.unlink(missing_ok=True)
             admission.release()
+            queue_slots.release()
 
     @app.before_request
     def origin_check():
@@ -553,9 +557,9 @@ def create_app(config=None):
         the one active and one queued slot are occupied. It never reserves
         a slot: the actual POST still atomically acquires admission.
         """
-        available=admission.acquire(blocking=False)
+        available=queue_slots.acquire(blocking=False)
         if available:
-            admission.release()
+            queue_slots.release()
         response=jsonify(available=available,maximum_jobs=2,
                          workers=1,queue_enabled=True)
         response.headers['Cache-Control']='no-store'
@@ -674,7 +678,7 @@ def create_app(config=None):
                 return jsonify(error='נדרש אישור זכויות שימוש בקובץ המוזיקה'),400
             if Path(backing_file.filename).suffix.lower() not in AUTHORIZED_MUSIC_EXT:
                 return jsonify(error='קובץ מוזיקה אינו בפורמט נתמך'),400
-        if not admission.acquire(blocking=False):
+        if not queue_slots.acquire(blocking=False):
             response=jsonify(error='כל מקומות התור תפוסים כרגע. הקובץ לא נקלט; אפשר לנסות שוב כשהתור יתפנה.')
             response.headers['Retry-After']='20'
             return response,429
@@ -700,12 +704,12 @@ def create_app(config=None):
                 total_bytes+=saved
                 paths.append(path)
         except ValueError as exc:
-            admission.release();shutil.rmtree(directory,ignore_errors=True)
+            queue_slots.release();shutil.rmtree(directory,ignore_errors=True)
             if str(exc).startswith('source_fingerprint'):
                 return jsonify(error='קובץ המקור השתנה בין התמלול להעלאה. יש לשלוח שוב את ההקלטה המקורית.'),409
             return jsonify(error='גודל הקובץ אינו תקין: עד 15MB לשמע, 45MB לסרטון ו־60MB לכל הקבצים יחד'),400
         except Exception:
-            admission.release();shutil.rmtree(directory,ignore_errors=True)
+            queue_slots.release();shutil.rmtree(directory,ignore_errors=True)
             return jsonify(error='לא ניתן לקרוא את הקובץ המקורי'),400
         backing_music_path=None
         if backing_file and backing_file.filename:
@@ -716,7 +720,7 @@ def create_app(config=None):
                     backing_file.stream,backing_music_path,MAX_BACKING_UPLOAD,
                     MAX_COMBINED_UPLOAD,already_saved=total_bytes)
             except (OSError,ValueError):
-                admission.release();shutil.rmtree(directory,ignore_errors=True)
+                queue_slots.release();shutil.rmtree(directory,ignore_errors=True)
                 return jsonify(error='המוזיקה או סך הקבצים חורגים ממגבלת ההעלאה המורשית'),400
         with lock:jobs[job_id]={'state':'queued','percent':0,'label':'ממתין לעיבוד','created':time.time(),'seconds':seconds,'bpm':bpm}
         executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'video_requested':video_requested,'transcription_failed':transcription_failed,'transcript':transcript,'transcript_origin':transcript_origin,'source_hashes':source_hashes,'ai_video_consent':ai_video_consent and video_requested,
