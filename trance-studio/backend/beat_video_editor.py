@@ -198,21 +198,35 @@ def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
     shots=synced if synced else edit_decisions(duration,bpm,src_duration,transcript_hint)
     if not shots:raise UnavailableVideo("לא נמצאו קטעי צילום לעריכה")
     files=[]
+    # The audio timeline is authoritative. An FFmpeg setpts slow-motion
+    # effect changes *output* duration; passing the unadjusted requested
+    # seconds to -t used to create longer/slower shots, pushing every later
+    # vocal effect out of sync before the final MP4 was cut to audio length.
+    # Reserve exact, non-overlapping 12-fps frame budgets at the FINAL
+    # timeline positions, then read enough input for the chosen speed.
+    fps=12
+    expected_frames=max(1,round(duration*fps))
+    exported_frames=0
     for idx,shot in enumerate(shots):
+        start_frame=round(shot["start"]*fps)
+        end_frame=round((shot["start"]+shot["duration"])*fps)
+        frames=max(0,end_frame-start_frame)
+        if not frames:
+            continue  # Sub-frame FX are audible but cannot be seen at 12fps.
         clip=work/("shot-%02d.mp4"%idx)
         speed=shot["speed"]
-        zoom=shot["zoom"]
-        bias=shot["crop_bias"]
-        # Decode actual captured frames, select new chronological portions,
-        # zoom modestly around a safe central point. No fake scene content.
+        # Reserve a little source decoding beyond the last required frame;
+        # -frames:v is the exact final-length cap, independent of setpts.
+        input_seconds=max(.25,frames/fps*speed+.25)
         vf=_visual_filter(shot)
         cmd=[
             "ffmpeg","-nostdin","-v","error","-y",
             "-stream_loop","-1","-ss",str(shot["source_seek"]),
-            "-i",str(src),"-t",str(shot["duration"]),
+            "-t","%.5f"%input_seconds,"-i",str(src),
             "-vf",vf,"-map","0:v:0","-an",
             "-c:v","libx264","-profile:v","baseline","-level","3.0",
-            "-preset","ultrafast","-crf","29","-r","12","-g","24",
+            "-preset","ultrafast","-crf","29","-r",str(fps),"-g","24",
+            "-frames:v",str(frames),
             "-movflags","+faststart",str(clip)
         ]
         try:
@@ -222,10 +236,13 @@ def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
         if not clip.is_file() or clip.stat().st_size<2048:
             raise UnavailableVideo("לא הופק קטע צילום מעובד")
         files.append(clip)
+        exported_frames+=frames
         if progress:
             progress(88+min(7,round(7*(idx+1)/max(1,len(shots)))),
                      "מסנכרן תנועה ומראה עם אפקטי הקול: "+
                      str(idx+1)+" מתוך "+str(len(shots)))
+    if not files or abs(exported_frames-expected_frames)>1:
+        raise UnavailableVideo("תזמון פריימי הווידאו אינו תואם את המיקס")
     concat_list=work/"shots.txt"
     concat_list.write_text("".join("file '%s'\n"%p.name for p in files),
                            encoding="utf-8")
@@ -252,6 +269,8 @@ def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
     if abs(_duration(output)-duration)>.8:
         raise UnavailableVideo("אורך הווידאו אינו תואם את המיקס")
     return {"video_mode":"original_input_video",
+            "video_edit_fps":fps,
+            "video_edit_frames":exported_frames,
             "video_edit_style":("voice_fx_synced_motion_warp" if synced
                                 else "beat_cut_punch_in_speed_ramp"),
             "video_edit_fx_cues":sum(1 for shot in shots
