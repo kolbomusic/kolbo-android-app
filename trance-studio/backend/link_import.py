@@ -16,7 +16,7 @@ from pathlib import Path
 from html import unescape
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote, urljoin, urlsplit
+from urllib.parse import parse_qs, quote, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 MAX_VIDEO=45*1024*1024
@@ -68,6 +68,86 @@ def validate_public_link(raw):
     if url.path.startswith("//"):
         raise LinkImportError("כתובת הקישור אינה תקינה.")
     return value
+
+
+def _tiktok_host(host):
+    host=str(host or "").lower().rstrip(".")
+    return (host in ("tiktok.com","tiktokv.com") or
+            host.endswith(".tiktok.com") or host.endswith(".tiktokv.com"))
+
+
+def _canonical_tiktok_video(value):
+    """Preserve only an authentic public TikTok video permalink.
+
+    A vt.tiktok.com share redirect may be resolvable without login even when
+    yt-dlp cannot extract from the opaque short URL. The resolved URL still
+    goes through the normal yt-dlp public extractor: no cookies or DRM bypass.
+    """
+    try:
+        p=urlsplit(str(value))
+        host=(p.hostname or "").lower().rstrip(".")
+        path=p.path.rstrip("/")
+        if (p.scheme!="https" or not _tiktok_host(host) or
+            p.port not in (None,443) or p.username or p.password or
+            "\\" in value or len(value)>2048 or
+            not re.fullmatch(r"/@[A-Za-z0-9_.-]{1,64}/video/[0-9]{15,23}",path)):
+            return None
+        return urlunsplit(("https",host,path,"",""))
+    except (ValueError,TypeError):
+        return None
+
+
+class _TikTokOnlyRedirects(HTTPRedirectHandler):
+    """Never chase a short-link redirect outside public TikTok HTTPS hosts."""
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        try:
+            p=urlsplit(newurl)
+            if (p.scheme!="https" or not _tiktok_host(p.hostname) or
+                p.port not in (None,443) or p.username or p.password or
+                "\\" in newurl or len(newurl)>2048):
+                raise LinkImportError("TikTok הפנתה לאתר שאינו מאושר.",
+                                      code="unsafe_redirect")
+        except ValueError as exc:
+            raise LinkImportError("קישור ההפניה אינו תקין.",
+                                  code="unsafe_redirect") from exc
+        return super().redirect_request(req,fp,code,msg,headers,newurl)
+
+
+def _public_tiktok_candidates(url, *, opener=None, timeout=6):
+    """Resolve only public short-link HTTPS redirects; no login/cookies.
+
+    If TikTok refuses to resolve the link server-side, retain the original
+    short URL so yt-dlp still gets its own legitimate extraction attempt.
+    """
+    p=urlsplit(url)
+    host=(p.hostname or "").lower().rstrip(".")
+    if not _tiktok_host(host):
+        return [url]
+    direct=_canonical_tiktok_video(url)
+    if direct:
+        return [direct]
+    if not (host.startswith(("vt.","vm.","www.")) or
+            p.path.startswith(("/t/","/Z"))):
+        return [url]
+    client=opener or build_opener(_TikTokOnlyRedirects)
+    for method in ("HEAD","GET"):
+        try:
+            headers={
+                "User-Agent":"Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+                "Accept":"text/html,application/xhtml+xml",
+            }
+            if method=="GET":
+                headers["Range"]="bytes=0-0"
+            req=Request(url,headers=headers,method=method)
+            with client.open(req,timeout=timeout) as response:
+                resolved=_canonical_tiktok_video(response.geturl())
+                if resolved and resolved!=url:
+                    return [resolved,url]
+                if resolved:
+                    return [resolved]
+        except (OSError,URLError,HTTPError,LinkImportError,ValueError):
+            pass
+    return [url]
 
 
 def _media_probe(path):
@@ -482,10 +562,21 @@ def _try_public_download(url, folder, *, deadline, format_spec, impersonate=Fals
                 if size>MAX_VIDEO+3*1024*1024:
                     return "size"
                 time.sleep(.3)
-            if process.returncode==0:
-                return "ok"
+            # yt-dlp may exit with code zero when --match-filter SKIPS a
+            # longer-than-120s TikTok clip. A successful process is NOT
+            # evidence that a media file was downloaded. Keep the original
+            # filter diagnostics and never misreport a skipped video as OK.
             error_stream.seek(0)
-            return _readable_failure(error_stream.read(12000).decode("utf-8","replace"))
+            error_text=error_stream.read(12000).decode("utf-8","replace")
+            if process.returncode==0:
+                files=[p for p in folder.iterdir()
+                       if p.is_file() and p.name.startswith("shared.") and
+                       p.suffix.lower() in MEDIA_EXT and p.stat().st_size>=2048]
+                if files:
+                    return "ok"
+                reason=_readable_failure(error_text)
+                return reason if reason!="unavailable" else "invalid_file"
+            return _readable_failure(error_text)
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -506,10 +597,19 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     folder=Path(directory)
     folder.mkdir(parents=True,exist_ok=True)
     deadline=time.monotonic()+min(max(timeout,1),90)
-    candidates=_facebook_public_candidates(url,timeout=min(6,max(1,deadline-time.monotonic())))
+    host=(urlsplit(url).hostname or "").lower().rstrip(".")
+    is_facebook=host.endswith("facebook.com") or host=="fb.watch"
+    is_tiktok=_tiktok_host(host)
+    if is_facebook:
+        candidates=_facebook_public_candidates(
+            url,timeout=min(6,max(1,deadline-time.monotonic())))
+    elif is_tiktok:
+        candidates=_public_tiktok_candidates(
+            url,timeout=min(6,max(1,deadline-time.monotonic())))
+    else:
+        candidates=[url]
     failures=[]
     safe_steps=[]
-    is_facebook=(urlsplit(url).hostname or "").lower().rstrip(".").endswith("facebook.com") or (urlsplit(url).hostname or "").lower().rstrip(".")=="fb.watch"
     # Facebook short share -> canonical/mobile/embed; direct public MP4
     # takes priority. Non-Facebook links use their existing single URL.
     # Direct public CDN bytes can succeed even when yt-dlp fails parsing a
@@ -519,18 +619,27 @@ def fetch_public_social_media(url, directory, *,timeout=70):
     pages=[c for c in candidates if not _trusted_facebook_media_url(c)]
     attempts=(direct+pages) if is_facebook else candidates
     if len(attempts)>1:
-        # Avoid a single dead extractor using the entire 70-second budget.
-        attempt_limit=max(7,min(19,(deadline-time.monotonic())/len(attempts)))
+        # TikTok's verified permalink and short link get separate bounded
+        # attempts. Facebook may contain many more candidate URLs.
+        limit=29 if is_tiktok else 19
+        attempt_limit=max(7,min(limit,(deadline-time.monotonic())/len(attempts)))
     else:
         attempt_limit=max(1,deadline-time.monotonic())
     for index, candidate in enumerate(attempts):
         for output in folder.iterdir():
             if output.is_file():output.unlink(missing_ok=True)
         if deadline-time.monotonic()<2:break
-        format_spec=(
-            "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/"
-            "b[height<=720]/ba[ext=m4a]/bestaudio"
-        ) if index==0 else "b[ext=mp4]/b[height<=720]/best"
+        if is_tiktok:
+            # TikTok link imports must yield an actual video, never silently
+            # fall back to a music-only stream. Prefer combined MP4.
+            format_spec=("b[height<=720][ext=mp4]/best[ext=mp4]/"
+                         "bv*[height<=720][ext=mp4]+ba[ext=m4a]/"
+                         "b[height<=720]/best")
+        else:
+            format_spec=(
+                "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/"
+                "b[height<=720]/ba[ext=m4a]/bestaudio"
+            ) if index==0 else "b[ext=mp4]/b[height<=720]/best"
         if _trusted_facebook_media_url(candidate):
             code=_try_public_facebook_cdn(candidate,folder,
                     deadline=min(deadline,time.monotonic()+attempt_limit))
@@ -565,9 +674,14 @@ def fetch_public_social_media(url, directory, *,timeout=70):
                p.name.startswith("shared.") and p.suffix.lower() in MEDIA_EXT]
         if len(media)!=1:
             failures.append("invalid_file")
+            safe_steps.append(("tiktok" if is_tiktok else "other")+":invalid_file")
             continue
         result=media[0]
         mime=MEDIA_EXT[result.suffix.lower()]
+        if is_tiktok and not mime.startswith("video/"):
+            failures.append("invalid_file")
+            safe_steps.append("tiktok:audio_only")
+            continue
         cap=MAX_VIDEO if mime.startswith("video/") else MAX_AUDIO
         if not 2048<=result.stat().st_size<=cap:
             failures.append("size")
@@ -576,6 +690,7 @@ def fetch_public_social_media(url, directory, *,timeout=70):
             _media_probe(result)
         except LinkImportError:
             failures.append("duration")
+            safe_steps.append(("tiktok" if is_tiktok else "other")+":invalid_duration")
             continue
         return result,mime
     details=",".join(safe_steps[:8])
@@ -583,14 +698,16 @@ def fetch_public_social_media(url, directory, *,timeout=70):
         raise LinkImportError("גודל הסרטון חורג מ־45MB.",code="size",attempts=len(failures),steps=details)
     if "duration" in failures:
         raise LinkImportError("המדיה ארוכה משתי דקות או אינה בפורמט נתמך.",code="duration",attempts=len(failures),steps=details)
+    provider="TikTok" if is_tiktok else "Facebook" if is_facebook else "האתר"
     if "private" in failures or "restricted" in failures:
         raise LinkImportError(
-            "השרת קיבל שגיאת הרשאה או הגבלת גישה מ־Facebook. אי אפשר לייבא סרטון שמוגבל לצפייה ללא הרשאה.",
+            provider+" הגבילה את הגישה למדיה מהשרת. אפשר לבחור קובץ וידאו "
+            "מורשה מהמכשיר, בלי להזין מחדש את הקישור.",
             code="access_restricted",attempts=len(failures),steps=details)
     if "extractor" in failures:
         raise LinkImportError(
-            "Facebook לא החזירה קובץ וידאו שהשרת הצליח לקרוא. "
-            "אפשר לבחור את הסרטון או הקלטת המסך מהמכשיר ולהמשיך ליצירה.",
+            provider+" לא החזירה קובץ וידאו שהשרת הצליח לקרוא. "
+            "אפשר לבחור סרטון מורשה מהמכשיר ולהמשיך ליצירה.",
             code="extractor_parse",attempts=len(failures),steps=details)
     raise LinkImportError(
         "לא התקבל קובץ וידאו תקין מהמקורות הציבוריים שנבדקו.",
