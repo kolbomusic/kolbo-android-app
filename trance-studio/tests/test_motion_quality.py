@@ -30,6 +30,39 @@ class MotionQualityTests(unittest.TestCase):
             self.assertGreater(motion_score(p),0.3)
             self.assertGreater(require_visible_motion(p),0.3)
 
+    def test_54_second_whatsapp_movie_with_real_motion_only_after_46_seconds(self):
+        # User-visible regression: four old probes stopped at 18 seconds
+        # and mislabelled an authentic long WhatsApp movie as static.
+        with tempfile.TemporaryDirectory() as temp:
+            path=pathlib.Path(temp)/'long-still-intro-real-motion.mp4'
+            subprocess.run([
+                'ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i',
+                'color=c=black:s=320x240:r=12:d=46',
+                '-f','lavfi','-i',
+                'testsrc2=size=320x240:rate=12:duration=8',
+                '-filter_complex','[0:v][1:v]concat=n=2:v=1:a=0[v]',
+                '-map','[v]','-c:v','libx264','-preset','ultrafast',
+                '-pix_fmt','yuv420p',str(path),
+            ],check=True,timeout=45)
+            from motion_quality import require_visible_motion_somewhere
+            self.assertLess(motion_score(path,start_seconds=15),.15)
+            self.assertGreater(motion_score(path,start_seconds=49),.15)
+            self.assertGreater(
+                require_visible_motion_somewhere(path,duration=54,threshold=.15),
+                .15)
+
+    def test_54_second_entirely_static_movie_is_still_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=pathlib.Path(temp)/'54-seconds-frozen.mp4'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i','color=c=black:s=320x240:r=12:d=54',
+                '-c:v','libx264','-preset','ultrafast',
+                '-pix_fmt','yuv420p',str(path)],check=True,timeout=40)
+            from motion_quality import require_visible_motion_somewhere
+            with self.assertRaises(NoVisibleMotion):
+                require_visible_motion_somewhere(path,duration=54,threshold=.15)
+
     def test_audio_file_does_not_masquerade_as_moving_video(self):
         with tempfile.TemporaryDirectory() as temp:
             fake=pathlib.Path(temp)/'fake.mp4'
