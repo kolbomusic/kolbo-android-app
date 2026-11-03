@@ -1,0 +1,45 @@
+name: Karnafim backup schedule safety CI
+on:
+  push:
+    branches: [karnafim-daily-backup-schedule-20261103]
+    paths:
+      - '.github/workflows/karnafim-production-encrypted-backup.yml'
+      - '.github/workflows/karnafim-backup-schedule-safety-ci.yml'
+permissions:
+  contents: read
+jobs:
+  static-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check guarded production backup schedule without any credentials
+        shell: bash
+        run: |
+          python -m pip install 'PyYAML==6.0.2' -q
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          path=Path(".github/workflows/karnafim-production-encrypted-backup.yml")
+          document=yaml.load(path.read_text(),Loader=yaml.BaseLoader)
+          assert document['on']['schedule']==[{'cron':'37 2 * * *'}]
+          assert 'workflow_dispatch' in document['on']
+          assert document['permissions']=={'contents':'read'}
+          assert document['concurrency']['cancel-in-progress']=='false'
+          job=document['jobs']['encrypted-backup']
+          assert job['timeout-minutes']=='18'
+          steps=job['steps']
+          assert steps[0]['id']=='gate'
+          assert 'ready=false' in steps[0]['run']
+          assert 'no production data read' in steps[0]['run'].lower()
+          for step in steps[1:]:
+              assert "steps.gate.outputs.ready == 'true'" in step.get('if','')
+          checkout=next(s for s in steps if s['name'].startswith('Checkout'))
+          assert checkout['with']['ref']=='e914d52bbe4b070ac4e3a5a1b731f8fdcb23d373'
+          artifact=next(s for s in steps if s['name'].startswith('Upload ciphertext'))
+          assert artifact['with']['retention-days']=='7'
+          assert '*.pgdump.gpg' in artifact['with']['path']
+          assert '*.pgdump.gpg.sha256' in artifact['with']['path']
+          assert '*.dump' not in artifact['with']['path'].replace('.pgdump.gpg','')
+          print('PASS: daily schedule is guarded, pinned, no-op without secrets, ciphertext-only')
+          PY
