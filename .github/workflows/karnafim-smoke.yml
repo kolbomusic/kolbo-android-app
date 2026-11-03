@@ -27,3 +27,5 @@ jobs:
         run: python karnafim-site/tests/test_rebuilt_design.py
       - name: Verify live original-domain PostgreSQL readiness and closed auth
         run: python karnafim-site/tests/check_live_readiness.py
+
+# Live manual-registration check rerun after deployment of the manual approval gate.
