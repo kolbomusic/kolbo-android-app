@@ -31,6 +31,7 @@ import android.widget.ProgressBar;
 import android.widget.Button;
 import android.widget.TextView;
 import android.view.Gravity;
+import android.view.WindowManager;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.webkit.WebResourceError;
@@ -89,6 +90,11 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
+        // Keep the display awake for the ENTIRE visible studio session,
+        // including Render wake-up, upload, remix and result preview.
+        // Android applies this flag only while the Activity window is visible;
+        // it does not keep a background app or the device awake after exit.
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setStatusBarColor(Color.rgb(18,10,34));
         getWindow().setNavigationBarColor(Color.rgb(12,8,22));
         LinearLayout root=new LinearLayout(this);
