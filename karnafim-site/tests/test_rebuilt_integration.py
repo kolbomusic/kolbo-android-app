@@ -475,6 +475,13 @@ with site.app.test_client() as browser:
     assert browser.post("/team",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(admin_id),"action":"revoke"}).status_code==403
 
+    # A revoked author's published audio must become unavailable to other
+    # ordinary members, even while its post still has status='published'.
+    assert delegate.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==200
+    site.sql("UPDATE b2_users SET approved=FALSE WHERE id=%s",(member["id"],))
+    assert delegate.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==403
+    assert browser.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==200
+
     browser.post("/logout",base_url=ORIGIN,data={"csrf":get_csrf(browser)})
     assert browser.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==303
 
