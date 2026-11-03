@@ -112,6 +112,11 @@ for path in ("/verify-email?token=secret", "/login", "/signup",
     blocked=c.get(path,base_url=base)
     assert blocked.status_code!=302,(path,blocked.status_code)
 assert c.get("/memorial?token=secret",base_url=base).status_code==200
+# Once member access is active, even public routes must stay on this host.
+app.PUBLIC_AUTH=True
+assert c.get("/photos",base_url=base).status_code==200
+assert c.get("/memorial",base_url=base).status_code==200
+app.PUBLIC_AUTH=False
 '''],cwd=ROOT,env=handoff_env,capture_output=True,text=True,timeout=20)
 assert handoff.returncode==0,(handoff.stdout,handoff.stderr[-2000:])
 
