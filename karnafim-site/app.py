@@ -864,8 +864,8 @@ def manage_team():
     activity=''.join('<li><strong>'+e(labels.get(event["action"],"פעולת ניהול"))+
         '</strong> · '+e(event["subject_name"])+' · בוצע על ידי '+e(event["actor_name"])+
         ' · '+e(event["created"].strftime("%d/%m/%Y %H:%M"))+'</li>' for event in events)
-    history='<section class="story"><h2>פעולות ניהול אחרונות</h2><ol>'+
-            (activity or '<li>לא נרשמו עדיין פעולות.</li>')+'</ol></section>'
+    history=('<section class="story"><h2>פעולות ניהול אחרונות</h2><ol>'+
+             (activity or '<li>לא נרשמו עדיין פעולות.</li>')+'</ol></section>')
     return layout("ניהול הרשאות",'<div class="pagehead"><h1>צוות ניהול והרשאות</h1><p>רק מנהל הקהילה הראשי יכול למנות בעלי תפקידים או לבטל הרשאות. אפשר לשלב כמה תפקידים לאותו חבר מאושר. כל שינוי תקף גם לסשנים קיימים.</p></div>'+(cards or '<div class="note">עדיין אין חברים מאושרים נוספים למינוי. ניתן להזמין חברים דרך קישור ההרשמה.</div>')+history)
 
 @app.get("/invite")
