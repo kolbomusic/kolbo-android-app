@@ -82,6 +82,11 @@ with site.app.test_client() as browser:
         assert r.status_code==200,(route,r.status_code)
         assert 'lang="he" dir="rtl"' in r.get_data(as_text=True)
         assert "default-src 'none'" in r.headers["Content-Security-Policy"]
+    ready=browser.get("/ready",base_url=ORIGIN)
+    assert ready.status_code==200,ready.status_code
+    assert ready.get_json()=={"status":"ready","database":"available",
+                              "member_portal":"enabled","signup":"enabled"}
+    assert "DATABASE_URL" not in ready.get_data(as_text=True)
     r=browser.get("/signup",base_url=ORIGIN)
     assert r.status_code==200
     assert 'id="account-password"' in r.get_data(as_text=True)
@@ -189,6 +194,8 @@ assert c.get("/signup",base_url=base).status_code==503
 assert c.get("/login",base_url=base).status_code==503
 assert c.get("/media/1",base_url=base).status_code==503
 assert c.get("/health",base_url=base).get_json()["auth_enabled"] is False
+assert c.get("/ready",base_url=base).status_code==200
+assert c.get("/ready",base_url=base).get_json()["member_portal"]=="closed"
 '''],cwd=APP,env=off_env,capture_output=True,text=True,timeout=25)
 assert off.returncode==0,(off.stdout,off.stderr[-3000:])
 print("PASS: independent Barkan rebuild - public routes, email verification, password, uploads, privacy, moderation, chat, read-only safety gate")
