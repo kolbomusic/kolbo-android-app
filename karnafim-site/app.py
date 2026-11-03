@@ -89,6 +89,13 @@ def init():
                 email_verified BOOLEAN NOT NULL DEFAULT FALSE,
                 email_verification_required BOOLEAN NOT NULL DEFAULT FALSE,
                 joined TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_staff_roles(
+                user_id BIGINT PRIMARY KEY REFERENCES b2_users(id) ON DELETE CASCADE,
+                can_approve BOOLEAN NOT NULL DEFAULT FALSE,
+                can_moderate BOOLEAN NOT NULL DEFAULT FALSE,
+                can_invite BOOLEAN NOT NULL DEFAULT FALSE,
+                granted_by BIGINT REFERENCES b2_users(id),
+                updated TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_tokens(
                 user_id BIGINT PRIMARY KEY REFERENCES b2_users(id) ON DELETE CASCADE,
                 digest CHAR(64) NOT NULL UNIQUE,expires TIMESTAMPTZ NOT NULL)""")
@@ -187,6 +194,19 @@ def admin():
     return bool(g.user and g.user["approved"] and
                 g.user["email"].lower()==os.environ.get("BARKAN_ADMIN_EMAIL","").lower())
 
+def staff_permissions():
+    """Owner alone grants and revokes permissions; never infer from form values."""
+    if not g.user or not g.user["approved"]:
+        return {"approve":False,"moderate":False,"invite":False}
+    if admin():
+        return {"approve":True,"moderate":True,"invite":True}
+    role=sql("SELECT can_approve,can_moderate,can_invite FROM b2_staff_roles WHERE user_id=%s",
+             (g.user["id"],),True)
+    return {"approve":bool(role and role["can_approve"]),
+            "moderate":bool(role and role["can_moderate"]),
+            "invite":bool(role and role["can_invite"])}
+
+
 def protect():
     if not hmac.compare_digest(str(request.form.get("csrf","")),session.get("csrf","")):abort(400)
 
@@ -210,7 +230,11 @@ def layout(title,body):
     menu=[("/","בית"),("/heritage","מורשת"),("/memorial","הנצחה"),("/photos","תמונות"),("/about","על הקהילה"),("/help","עזרה")]
     if PUBLIC_AUTH and u:
         menu += [("/feed","הקהילה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
-        if admin():menu += [("/moderation","בקרת פרסומים"),("/members","אישור חברים")]
+        permissions=staff_permissions() if u["approved"] else {"approve":False,"moderate":False,"invite":False}
+        if permissions["moderate"]:menu += [("/moderation","בקרת פרסומים")]
+        if permissions["approve"]:menu += [("/members","אישור חברים")]
+        if permissions["invite"]:menu += [("/invite","הזמנת חברים")]
+        if admin():menu += [("/team","הרשאות ניהול")]
     elif PUBLIC_AUTH:
         menu += [("/login","כניסה")]
         if ALLOW_SIGNUP:menu += [("/signup","הצטרפות")]
@@ -521,11 +545,17 @@ def logout():
 def profile():
     u=g.user
     checked="checked" if u["show_profile"] else ""
-    role=("מנהל קהילה" if admin() else "חבר מאושר" if u["approved"] else "בקשת חברות בהמתנה לאישור")
-    access=('<p><a class="primary" href="/members">ניהול בקשות חברות</a> <a href="/moderation">בקרת פרסומים</a></p>'
-            if admin() else
+    permissions=staff_permissions()
+    role=("מנהל הקהילה הראשי" if admin() else
+          "צוות ניהול" if any(permissions.values()) else
+          "חבר מאושר" if u["approved"] else "בקשת חברות בהמתנה לאישור")
+    links=([('<a class="primary" href="/members">אישור חברים</a>' if permissions["approve"] else ''),
+            ('<a href="/moderation">בקרת פרסומים</a>' if permissions["moderate"] else ''),
+            ('<a href="/invite">הזמנת חברים</a>' if permissions["invite"] else ''),
+            ('<a href="/team">ניהול הרשאות</a>' if admin() else '')])
+    access=('<p>'+' '.join(x for x in links if x)+'</p>' if any(permissions.values()) else
             '<p>לאחר אימות זהות ואישור מנהל, ייפתחו הגישה לאיתור חברים ולהודעות.</p>'
-            if not u["approved"] else "")
+            if not u["approved"] else '')
     return layout("פרופיל",'<div class="pagehead"><h1>הפרופיל שלי</h1><p>מעמד החשבון: '+e(role)+'</p>'+access+'</div>'+button_form(
         '<label>כינוי מתקופת השירות<input name="nickname" maxlength="100" value="'+e(u["nickname"])+'"></label><label>שנים / מחזור<input name="unit_year" maxlength="50" value="'+e(u["unit_year"] or "")+'"></label><label>כמה מילים עליך<textarea name="about" maxlength="500">'+e(u["about"])+'</textarea></label><label class="check"><input name="visible" type="checkbox" '+checked+'> הצגת הפרופיל לחברים מאושרים בלבד</label><button class="primary">שמירת הפרופיל</button>','/profile','class="formcard"')+button_form('<button class="subtle">התנתקות</button>','/logout'))
 
@@ -702,7 +732,7 @@ def chat(peer):
 @app.route("/moderation",methods=["GET","POST"])
 @require_approved
 def moderation():
-    if not admin():abort(403)
+    if not staff_permissions()["moderate"]:abort(403)
     if request.method=="POST":
         protect()
         pid=request.form.get("id","")
@@ -729,7 +759,7 @@ def moderation():
 @app.route("/members",methods=["GET","POST"])
 @require_approved
 def members():
-    if not admin():abort(403)
+    if not staff_permissions()["approve"]:abort(403)
     if request.method=="POST":
         protect()
         uid=request.form.get("id","")
@@ -746,6 +776,65 @@ def members():
         html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p>'+button_form(
             '<input type="hidden" name="id" value="'+str(u["id"])+'"><label class="check"><input type="checkbox" name="identity_checked" value="yes"> אימתתי באופן אישי את זהות החבר, שייכותו לפלוגה ובעלותו על כתובת הדוא״ל</label><button name="action" value="approve" class="primary">אישור חבר</button><button name="action" value="reject" class="subtle">דחייה</button>','/members')+'</article>'
     return layout("אישור חברים",'<div class="pagehead"><h1>בקשות חברות</h1></div>'+(html or '<div class="note">אין בקשות חברות ממתינות.</div>'))
+
+
+@app.route("/team",methods=["GET","POST"])
+@require_approved
+def manage_team():
+    """Owner-only permission delegation; never change ownership here."""
+    if not admin():abort(403)
+    if request.method=="POST":
+        protect()
+        limit("role-change:"+str(g.user["id"]),30,60)
+        uid=request.form.get("id","")
+        if not uid.isdecimal():abort(400)
+        uid=int(uid)
+        if uid==g.user["id"]:abort(403)
+        target=sql("SELECT id,approved,email_verification_required,email FROM b2_users WHERE id=%s",(uid,),True)
+        if not target or not target["approved"] or target["email_verification_required"]:
+            abort(403)
+        if target["email"].lower()==os.environ.get("BARKAN_ADMIN_EMAIL","").lower():
+            abort(403)
+        if request.form.get("action")=="revoke":
+            sql("DELETE FROM b2_staff_roles WHERE user_id=%s",(uid,))
+        elif request.form.get("action")=="save":
+            # Only these three capabilities may be granted. No self-approval.
+            a=request.form.get("can_approve")=="yes"
+            m=request.form.get("can_moderate")=="yes"
+            i=request.form.get("can_invite")=="yes"
+            sql("""INSERT INTO b2_staff_roles(user_id,can_approve,can_moderate,can_invite,granted_by)
+                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(user_id) DO UPDATE SET
+                can_approve=EXCLUDED.can_approve,can_moderate=EXCLUDED.can_moderate,
+                can_invite=EXCLUDED.can_invite,granted_by=EXCLUDED.granted_by,
+                updated=NOW()""",(uid,a,m,i,g.user["id"]))
+        else:abort(400)
+        return redirect("/team",303)
+    rows=sql("""SELECT u.id,u.name,u.email,u.approved,
+               COALESCE(r.can_approve,FALSE) can_approve,
+               COALESCE(r.can_moderate,FALSE) can_moderate,
+               COALESCE(r.can_invite,FALSE) can_invite
+        FROM b2_users u LEFT JOIN b2_staff_roles r ON r.user_id=u.id
+        WHERE u.approved=TRUE AND u.id<>%s AND u.email_verification_required=FALSE
+        ORDER BY u.name LIMIT 150""",(g.user["id"],))
+    cards=''
+    for person in rows:
+        check=lambda key: ' checked' if person[key] else ''
+        form=('<input type="hidden" name="id" value="'+str(person["id"])+'">'
+              '<label class="check"><input type="checkbox" name="can_approve" value="yes"'+check("can_approve")+'> אישור חברים אחרי אימות זהות</label>'
+              '<label class="check"><input type="checkbox" name="can_moderate" value="yes"'+check("can_moderate")+'> ביקורת פרסומים</label>'
+              '<label class="check"><input type="checkbox" name="can_invite" value="yes"'+check("can_invite")+'> גיוס והזמנת חברים</label>'
+              '<button class="primary" name="action" value="save">שמירת הרשאות</button> '
+              '<button class="subtle" name="action" value="revoke">ביטול כל ההרשאות</button>')
+        cards+='<article class="person"><h2>'+e(person["name"])+'</h2><p>'+e(person["email"])+'</p>'+button_form(form,"/team",'class="formcard"')+'</article>'
+    return layout("ניהול הרשאות",'<div class="pagehead"><h1>צוות ניהול והרשאות</h1><p>רק מנהל הקהילה הראשי יכול למנות בעלי תפקידים או לבטל הרשאות. אפשר לשלב כמה תפקידים לאותו חבר מאושר. כל שינוי תקף גם לסשנים קיימים.</p></div>'+(cards or '<div class="note">עדיין אין חברים מאושרים נוספים למינוי. ניתן להזמין חברים דרך קישור ההרשמה.</div>'))
+
+@app.get("/invite")
+@require_approved
+def invite_members():
+    if not staff_permissions()["invite"]:abort(403)
+    signup=ORIGIN+"/signup"
+    whatsapp="https://wa.me/?text="+__import__("urllib.parse",fromlist=["quote"]).quote("חברי פלוגה ב׳ הקרנפים / ברקן — מוזמנים להירשם לקהילה שלנו: "+signup,safe="")
+    return layout("מזמינים חברים",'<div class="pagehead"><h1>מחזירים את החברים הביתה</h1><p>שלחו את קישור ההרשמה ישירות לחברים מהפלוגה. ההרשמה אינה מקנה גישה לפני אישור זהות ושייכות לפלוגה.</p></div><section class="story"><p><a class="primary" href="'+e(signup)+'">פתיחת הרשמה</a> <a class="outline" href="'+e(whatsapp)+'" target="_blank" rel="noopener noreferrer">שיתוף הזמנה בוואטסאפ</a></p><p dir="ltr">'+e(signup)+'</p><p>נא לא לפרסם רשימות טלפונים או פרטים אישיים של חברים ללא הסכמתם.</p></section>')
 
 @app.errorhandler(404)
 def not_found(err):return layout("העמוד לא נמצא",'<div class="pagehead"><h1>העמוד לא נמצא</h1><a href="/">חזרה לדף הבית</a></div>'),404
