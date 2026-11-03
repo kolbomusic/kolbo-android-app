@@ -291,6 +291,39 @@ with site.app.test_client() as browser:
         "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve","identity_checked":"yes"})
     assert r.status_code==303
     assert site.sql("SELECT action FROM b2_admin_audit ORDER BY id DESC LIMIT 1",one=True)["action"]=="member_approved"
+    # Private referral: another approved member can vouch for a pending
+    # applicant exactly once. Recommendation cannot change approval status.
+    candidate=site.sql("""INSERT INTO b2_users(name,email,passhash,approved,
+          membership_status,service_claim,referral_code)
+          VALUES(%s,%s,%s,FALSE,'pending',%s,%s) RETURNING id""",
+          ("מועמד ניסוי","candidate@example.test",
+           site.hashpw("CandidateTestPassword!2026"),
+           "פלוגה ב נובמבר 2003, נהג מרכבה","synthetic-private-code-abcdefghijklmnopqrstuvwxyz"),
+           True)
+    recommender=site.app.test_client()
+    assert recommender.post("/login",base_url=ORIGIN,data={
+        "csrf":get_csrf(recommender),"email":email,
+        "password":"SyntheticTestPassword#2026"}).status_code==303
+    assert recommender.get("/recommend",base_url=ORIGIN).status_code==200
+    assert recommender.post("/recommend",base_url=ORIGIN,data={
+        "csrf":get_csrf(recommender),"code":"invalid-private-code-abcdefghijklmnopqrst",
+        "context":"שירתנו באותה מחלקה בפלוגה ב בשנת 2003"}).status_code==400
+    referral_form={
+        "csrf":get_csrf(recommender),
+        "code":"synthetic-private-code-abcdefghijklmnopqrstuvwxyz",
+        "context":"שירתנו באותה מחלקה בפלוגה ב בשנת 2003"}
+    assert recommender.post("/recommend",base_url=ORIGIN,data=referral_form).status_code==200
+    assert recommender.post("/recommend",base_url=ORIGIN,data=referral_form).status_code==200
+    assert site.sql("SELECT count(*) n FROM b2_membership_recommendations WHERE applicant=%s",
+        (candidate["id"],),True)["n"]==1
+    assert site.sql("SELECT approved FROM b2_users WHERE id=%s",
+        (candidate["id"],),True)["approved"] is False
+    review=browser.get("/members",base_url=ORIGIN).get_data(as_text=True)
+    assert "מועמד ניסוי" in review and "המלצות חברים מאושרים: 1" in review
+    assert "שירתנו באותה מחלקה" in review
+    # Recommendation code and applicant identity are not exposed in public URLs.
+    assert "synthetic-private-code" not in browser.get("/",base_url=ORIGIN).get_data(as_text=True)
+
     r=browser.post("/moderation",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
     assert r.status_code==303
@@ -584,6 +617,8 @@ assert c.get("/dashboard",base_url=origin).status_code==403
 response=c.get("/application",base_url=origin)
 assert response.status_code==200
 assert "ממתין לבדיקה" in response.get_data(as_text=True)
+assert "קוד אישי" in response.get_data(as_text=True)
+assert app.sql("SELECT referral_code FROM b2_users WHERE id=%s",(user["id"],),True)["referral_code"]
 # Rejection/appeal route is tested with a synthetic state, not a real applicant.
 app.sql("UPDATE b2_users SET membership_status='rejected',membership_reason=%s WHERE id=%s",
         ("דרוש מידע נוסף על שנות השירות והמחלקה לצורך אימות.",user["id"]))
