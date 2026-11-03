@@ -26,6 +26,10 @@ async function execute(replies){
  await assert.rejects(html502.context.submitMixJob({}),e=>
    /HTTP 502/.test(e.message)&&/לא תישלח הקלטה שוב אוטומטית/.test(e.message));
  assert.equal(html502.count,1,'A 502 during POST cannot cause an automatic duplicate upload');
+ const html429=await execute([response(429,'text/html','Render overloaded')]);
+ await assert.rejects(html429.context.submitMixJob({}),/429/);
+ assert.equal(html429.count,1,
+   'An HTML 429 from the free proxy is backpressure, never a repeat upload');
  const html200=await execute([response(200,'text/html','wake splash')]);
  await assert.rejects(html200.context.submitMixJob({}),/עמוד במקום נתוני מיקס \(HTTP 200\)/);
  assert.equal(html200.count,1);
