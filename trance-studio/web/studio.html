@@ -794,6 +794,37 @@ async function submitMixJob(form){
  if(!body.status_url||!body.id)throw new Error('השרת לא החזיר פרטי עבודה תקינים');
  return body;
 }
+async function readExistingJobStatus(statusUrl){
+ // Long media on Free Render can take minutes. Do not abort a successful
+ // POST because transient gateway 429's lasted 14 seconds. The opaque job
+ // ID remains in tab recovery storage; this function performs GETs ONLY.
+ for(var busy=0;busy<32;busy++){
+  var response=null;
+  try{
+   response=await fetch(statusUrl,{
+    method:'GET',credentials:'same-origin',cache:'no-store',
+    headers:{Accept:'application/json'}
+   });
+  }catch(networkError){}
+  if(response&&response.status===404){
+   throw new Error('שרת העיבוד הופעל מחדש ואיבד את המשימה. הקובץ נשאר במכשיר; לא נשלחה הקלטה מחדש.');
+  }
+  if(response&&response.status!==429&&
+     ![502,503,504].includes(response.status)&&
+     !(response.ok&&!studioResponseIsJson(response)))
+    return response;
+  if(busy>=31)break;
+  var waiting=response&&response.status===429;
+  message(waiting?
+     'שרת Render מגביל זמנית את בדיקת ההפקה (429). ממשיך לעקוב אחר אותה משימה — בלי העלאה חדשה...':
+     'החיבור לשרת מתחדש. משאיר את המשימה הקיימת ומנסה לבדוק אותה שוב...');
+  var suggested=Number(response&&response.headers&&response.headers.get('Retry-After'));
+  var backoff=Number.isFinite(suggested)&&suggested>=2&&suggested<=30?
+      suggested*1000:Math.min(15000,6000+busy*450);
+  await pause(backoff);
+ }
+ throw new Error('לא ניתן לבדוק את ההפקה הקיימת בגלל עומס מתמשך. מספר המשימה נשמר בלשונית; השתמש ב״בדיקת מצב המשימה הקודמת״ ללא העלאה חוזרת.');
+}
 async function run(){
 if(active||runLock)return;
 runLock=true;
@@ -888,41 +919,12 @@ form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);
 await waitForJobCapacity();
 var data=await submitMixJob(form);
 if(window.KolboJobRecovery)window.KolboJobRecovery.storeJob(data);
-var temporaryStatusFailures=0;
 for(var attempt=0;attempt<600;attempt++){
-await pause(1000);
-var statusResponse;
-try{statusResponse=await fetch(data.status_url,{credentials:'same-origin'});}
-catch(networkError){
-  temporaryStatusFailures++;
-  if(temporaryStatusFailures<=4){
-    message('החיבור לשרת נקטע. בודק אם ההפקה עדיין קיימת...');
-    await pause(3500);continue;
-  }
-  throw new Error('החיבור לשרת נקטע מספר פעמים. לא יצרנו משימה נוספת כדי למנוע כפילות.');
-}
-if([502,503,504].indexOf(statusResponse.status)>=0||
-   (statusResponse.ok&&!studioResponseIsJson(statusResponse))){
-  temporaryStatusFailures++;
-  if(temporaryStatusFailures<=4){
-    message('השרת מתחבר מחדש. בודק את המשימה הקיימת בלי לשלוח שוב את הקובץ...');
-    await pause(3500);
-    continue;
-  }
-}
-if(statusResponse.status===404){
- throw new Error('שרת העיבוד הופעל מחדש ואיבד את המשימה. הקובץ עדיין נבחר במכשיר; לחץ שוב על ״צור״ רק לאחר שהשרת התייצב. אין העלאה כפולה אוטומטית.');
-}
-if(statusResponse.status===429){
- temporaryStatusFailures++;
- if(temporaryStatusFailures<=4){
-   message('השרת עסוק. ממשיך לבדוק את המשימה הקיימת בלי להעלות את הקובץ מחדש...');
-   await pause(3500);
-   continue;
- }
- throw new Error('השרת עמוס מדי לבדיקת המשימה כרגע (429). הקובץ נשאר במכשיר ולא נוצרה משימה נוספת.');
-}
-temporaryStatusFailures=0;
+await pause(2500);
+// A GET status check is never a reason to upload media again.
+// Render's free proxy may return 429/502/HTML while the ORIGINAL
+// job continues. Recover using only bounded read-only GET requests.
+var statusResponse=await readExistingJobStatus(data.status_url);
 var j=await studioJson(statusResponse);
 if(!statusResponse.ok)throw new Error(j.error||('השירות אינו זמין (HTTP '+statusResponse.status+')'));
 var completed=Number(j.percent||0);

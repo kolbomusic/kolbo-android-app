@@ -1118,7 +1118,14 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # Keep the voice solo clean, including in the reserved FX slots.
     # Echo and other delayed copies previously collided with the next line.
     # Conservative master gain / limiter: no global overdrive or loudness pumping.
-    fade=np.clip(np.arange(n)/(sr*.025),0,1)*np.clip((n-1-np.arange(n))/(sr*.65),0,1)
+    # Shape the same intro/outro in float32, without two full-length
+    # float64 arange/clipping arrays (up to >170 MiB transient on 6m).
+    # Only the short fade boundaries need ramps; the middle is unity.
+    fade=np.ones(n,dtype=np.float32)
+    attack=min(n,max(1,int(round(sr*.025))))
+    release=min(n,max(1,int(round(sr*.65))))
+    fade[:attack]*=np.arange(attack,dtype=np.float32)/(sr*.025)
+    fade[-release:]*=np.arange(release-1,-1,-1,dtype=np.float32)/(sr*.65)
     music*=fade[:,None]
     np.nan_to_num(music,copy=False)
     music*=.91/max(.91,float(np.max(np.abs(music))))
@@ -1128,13 +1135,32 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     return (music,vocal) if return_voice else music
 
 def export_mp3(audio,path,sr=32000):
-    audio=np.asarray(audio,dtype=np.float32)
-    if audio.ndim==1:channels=1
-    elif audio.ndim==2 and audio.shape[1]==2:channels=2
+    # A 6-minute stereo float32 mix occupies ~88 MiB. The old
+    # previous whole-buffer subprocess input created an
+    # additional 88-MiB Python bytes buffer at the worst memory peak,
+    # which repeatedly evicted Render Free workers (512 MiB cgroup).
+    # Stream a zero-copy memoryview in bounded pipe writes instead.
+    data=np.ascontiguousarray(audio,dtype='<f4')
+    if data.ndim==1:channels=1
+    elif data.ndim==2 and data.shape[1]==2:channels=2
     else:raise ValueError('expected mono or stereo audio')
-    subprocess.run(['ffmpeg','-v','error','-y','-f','f32le','-ar',str(sr),
-                    '-ac',str(channels),'-i','pipe:0',
-                    '-af','alimiter=limit=0.92:level=false',
-                    '-codec:a','libmp3lame','-b:a','192k',str(path)],
-                   input=audio.astype('<f4').tobytes(),check=True,
-                   capture_output=True,timeout=65)
+    command=['ffmpeg','-v','error','-nostdin','-y','-f','f32le',
+             '-ar',str(sr),'-ac',str(channels),'-i','pipe:0',
+             '-af','alimiter=limit=0.92:level=false',
+             '-codec:a','libmp3lame','-b:a','192k',str(path)]
+    encoder=subprocess.Popen(command,stdin=subprocess.PIPE,
+                             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    try:
+        samples=memoryview(data).cast('B')
+        for position in range(0,len(samples),256*1024):
+            encoder.stdin.write(samples[position:position+256*1024])
+        encoder.stdin.close()
+        encoder.stdin=None
+        result=encoder.wait(timeout=100)
+        if result:
+            raise subprocess.CalledProcessError(result,command)
+    except BaseException:
+        if encoder.poll() is None:
+            encoder.kill()
+        encoder.wait()
+        raise
