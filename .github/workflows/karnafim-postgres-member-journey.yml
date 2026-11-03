@@ -1,4 +1,4 @@
-name: Karnafim disposable PostgreSQL member journey
+name: Karnafim rebuilt disposable PostgreSQL member journey
 on:
   push:
     branches: [karnafim-veterans-portal-20261031]
@@ -11,39 +11,37 @@ permissions:
 jobs:
   member-journey:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: karnafim_ci
-          POSTGRES_PASSWORD: disposable_ci_password_only
-          POSTGRES_DB: karnafim_ci
+          POSTGRES_USER: barkan_ci
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: barkan_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U karnafim_ci -d karnafim_ci"
+          --health-cmd "pg_isready -U barkan_ci -d barkan_ci"
           --health-interval 3s
           --health-timeout 3s
           --health-retries 15
     env:
-      DATABASE_URL: postgresql://karnafim_ci:disposable_ci_password_only@localhost:5432/karnafim_ci
-      SECRET_KEY: synthetic-session-secret-2026-not-production
-      ADMIN_EMAIL: admin@example.test
-      KARNAFIM_MAINTENANCE: '0'
-      KARNAFIM_LOCAL_AUTH_ENABLED: '1'
-      KARNAFIM_SAFETY_RELEASE_APPROVED: '1'
-      KARNAFIM_ALLOW_REGISTRATION: '1'
-      KARNAFIM_RESEND_API_KEY: mock-no-outbound-requests
-      KARNAFIM_MAIL_FROM: Unit Test <noreply@example.test>
+      DATABASE_URL: postgresql://barkan_ci:synthetic_ci_only@localhost:5432/barkan_ci
+      BARKAN_DATABASE_URL: postgresql://barkan_ci:synthetic_ci_only@localhost:5432/barkan_ci
+      BARKAN_SESSION_SECRET: synthetic-test-only-not-for-production
+      BARKAN_SAFETY_RELEASE_APPROVED: '1'
+      BARKAN_PUBLIC_AUTH: '1'
+      BARKAN_ALLOW_SIGNUP: '1'
+      BARKAN_RESEND_API_KEY: synthetic-no-outbound-email
+      BARKAN_MAIL_FROM: Synthetic <noreply@example.test>
+      BARKAN_ADMIN_EMAIL: admin@example.test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install Flask and PostgreSQL client dependencies
+      - name: Install isolated dependencies
         run: python -m pip install -r karnafim-site/requirements.txt
-      - name: Ensure free FFmpeg test encoder is available
-        run: command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
-      - name: Exercise actual PostgreSQL account flow, photo and video moderation
-        run: python karnafim-site/tests/test_postgres_member_journey.py
+      - name: Test legacy password migration, login, verification, media, moderation, messaging
+        run: python karnafim-site/tests/test_rebuilt_integration.py
