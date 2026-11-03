@@ -1,0 +1,47 @@
+name: Barkan static site export validation
+on:
+  push:
+    branches: [karnafim-barkan-rebuild-20261102]
+    paths:
+      - 'karnafim-next/**'
+      - '.github/workflows/barkan-static-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install clean rebuild dependencies
+        run: pip install -r karnafim-next/requirements.txt
+      - name: Build independent public-only site
+        run: python karnafim-next/export_static.py
+      - name: Validate all public pages and media
+        shell: bash
+        run: |
+          set -euo pipefail
+          for page in index.html heritage/index.html memorial/index.html photos/index.html about/index.html help/index.html privacy/index.html terms/index.html safety/index.html status/index.html; do
+            test -s "karnafim-next/public/$page"
+            grep -q 'lang="he" dir="rtl"' "karnafim-next/public/$page"
+            if grep -Eiq '<input[^>]+type="password"|google-signin|accounts.google.com' "karnafim-next/public/$page"; then
+              echo "::error::Forbidden sign-in component in $page"
+              exit 1
+            fi
+          done
+          test -s karnafim-next/public/static/site.css
+          test -s karnafim-next/public/static/site.js
+          test -s karnafim-next/public/404.html
+          test ! -f karnafim-next/public/.env
+          echo "PASS: Ten public pages, CSS, JS, Hebrew RTL and no login forms"
+      - name: Package tested static site
+        uses: actions/upload-artifact@v4
+        with:
+          name: barkan-public-static
+          path: karnafim-next/public
+          if-no-files-found: error
+          retention-days: 7
