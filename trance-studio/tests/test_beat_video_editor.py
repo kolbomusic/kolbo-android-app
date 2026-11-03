@@ -170,4 +170,23 @@ class BeatVideoEditTests(unittest.TestCase):
         self.assertTrue(any(e['effect']=='stretch' and e['kind']=='voice_fx'
                             for e in cues))
 
+
+    def test_short_source_video_does_not_become_30_second_repeated_montage(self):
+        from engine import render_mix
+        import numpy as np
+        sr=8000
+        t=np.arange(sr*5,dtype=np.float32)/sr
+        voice=.28*np.sin(2*np.pi*330*t)
+        media,processed=render_mix([voice],sample_rate=sr,seconds=0,
+            bpm=145,humor='stretch',fx_intensity=2,
+            source_video_length=True,return_voice=True)
+        self.assertLess(len(media)/sr,30.,
+                        'Video should follow source+FX instead of 30s default')
+        self.assertGreater(len(media)/sr,5.)
+        self.assertEqual(len(media),len(processed))
+        # A deliberate 30-second choice must remain exactly 30 seconds.
+        deliberate=render_mix([voice],sample_rate=sr,seconds=30,
+            bpm=145,humor='stretch',source_video_length=True)
+        self.assertEqual(len(deliberate),30*sr)
+
 if __name__=='__main__':unittest.main()
