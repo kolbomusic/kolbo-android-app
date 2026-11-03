@@ -706,7 +706,7 @@ def members():
             (approved,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()),True)
         if not result:abort(409)
         return redirect("/members",303)
-    rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE ORDER BY joined DESC LIMIT 100")
+    rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE AND email_verification_required=FALSE AND role='member' ORDER BY joined DESC LIMIT 100")
     html=''
     for u in rows:
         html+='<article class="person"><h3>'+e(u["name"])+'</h3><p>'+e(u["email"])+'</p>'+button_form(
