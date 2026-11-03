@@ -474,14 +474,18 @@ def memorial_source_review():
         record=MEMORIAL_PEOPLE.get(r["person_key"])
         if not record or record["izkor_id"]!=r["izkor_id"]:
             continue
-        cards+='<article class="post"><h2>'+e(record["name"])+'</h2><p>הוגש על ידי: '+e(r["name"])+
-            '</p><p>מקור: '+e(r["source_url"])+'</p><p>'+e(r["context"])+
-            '</p><p>זכויות: '+e(r["permission_details"])+'</p>'+button_form(
-            '<input type="hidden" name="id" value="'+str(r["id"])+'">'+
-            '<label>נימוק ההחלטה<input name="reason" required minlength="8" maxlength="400"></label>'+
-            '<button name="action" value="reviewed" class="primary">נבדק — לא לפרסום אוטומטי</button>'+
-            '<button name="action" value="rejected" class="subtle">דחייה</button>',
-            "/memorial-source-review")+'</article>'
+        cards+=(
+            '<article class="post"><h2>'+e(record["name"])+
+            '</h2><p>הוגש על ידי: '+e(r["name"])+
+            '</p><p>מקור: '+e(r["source_url"])+
+            '</p><p>'+e(r["context"])+
+            '</p><p>זכויות: '+e(r["permission_details"])+
+            '</p>'+button_form(
+                '<input type="hidden" name="id" value="'+str(r["id"])+'">'+
+                '<label>נימוק ההחלטה<input name="reason" required minlength="8" maxlength="400"></label>'+
+                '<button name="action" value="reviewed" class="primary">נבדק — לא לפרסום אוטומטי</button>'+
+                '<button name="action" value="rejected" class="subtle">דחייה</button>',
+                "/memorial-source-review")+'</article>')
     return layout("בקרת מקורות הנצחה",
         '<div class="pagehead"><h1>מקורות תמונות לבדיקה</h1><p>אישור בדיקת מקור אינו מעניק רישיון לפרסום תמונה ולא מפעיל את תצוגת התמונות.</p></div>'+
         (cards or '<p>אין מקורות ממתינים.</p>'))
