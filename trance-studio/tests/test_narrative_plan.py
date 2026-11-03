@@ -5,6 +5,7 @@ No customer audio/text is used; all fictional Hebrew samples are synthetic.
 import sys
 import pathlib
 import unittest
+import math
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'backend'))
 from narrative_plan import (
     narrative_beats,duration_beats,scene_prompts,scene_weights,scene_prompt,MAX_STORY_SCENES,
@@ -134,6 +135,24 @@ class NarrativePlanTests(unittest.TestCase):
         self.assertEqual(long[0].shot_index,1)
         self.assertIn('המשאית',long[0].spoken_text)
         self.assertIn('החמור',long[-1].spoken_text)
+
+    def test_uneven_clauses_get_enough_distinct_shots_for_real_five_second_clips(self):
+        # Two semantic beats alone would allocate >5s to the longer line,
+        # incorrectly rejecting a 9s story before any actual GPU attempt.
+        spoken=('האיש נופל. אחר כך המשאית נוסעת בכביש, '
+                'עוצרת ברמזור ואנשים צוחקים בקול רם.')
+        for duration in (9,39):
+            beats=duration_beats(spoken,duration)
+            weights=scene_weights(spoken,duration=duration)
+            self.assertEqual(len(weights),len(beats))
+            self.assertGreaterEqual(len(beats),math.ceil(duration/5))
+            self.assertLessEqual(len(beats),24)
+            self.assertLessEqual(max(duration*w/sum(weights) for w in weights),
+                                 5.12)
+            self.assertEqual(len(set(scene_prompts(spoken,duration=duration))),
+                             len(beats))
+            self.assertIn('האיש נופל',beats[0].spoken_text)
+            self.assertIn('צוחקים',beats[-1].spoken_text)
 
     def test_no_infinite_or_unbounded_segments(self):
         self.assertEqual(narrative_beats(''),[])
