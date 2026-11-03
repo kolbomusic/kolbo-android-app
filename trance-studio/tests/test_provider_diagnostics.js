@@ -38,5 +38,27 @@ assert.throws(()=>parse('event: error\ndata: '+JSON.stringify({message:'internal
  await assert.rejects(vm.runInContext(
    "getResponse('https://lightricks-ltx-2-5.hf.space/gradio_api/call/v2/run',{},200)",context),
    err=>err.providerTransient===true&&err.message.includes('503'));
+ context.fetch=async()=>({status:429,ok:false});
+ await assert.rejects(vm.runInContext(
+   "readTextWithDeadline('https://lightricks-ltx-2-5.hf.space/gradio_api/call/run/fake',200)",context),
+   err=>err.providerQuota===true&&/GPU/.test(err.message));
+ context.fetch=async()=>({status:503,ok:false});
+ await assert.rejects(vm.runInContext(
+   "readTextWithDeadline('https://lightricks-ltx-2-5.hf.space/gradio_api/call/run/fake',200)",context),
+   err=>err.providerTransient===true);
+ const browser={
+   window:{},document:{getElementById:()=>({checked:true})},
+   URL,AbortController,Promise,setTimeout,clearTimeout,
+   fetch:async()=>({status:429,ok:false})
+ };
+ vm.createContext(browser);
+ vm.runInContext(src,browser);
+ const fakeScene='A cinematic scene: האדם הולך ברחוב והמשאית נוסעת';
+ await assert.rejects(
+   browser.window.KolboAIFallback.generate('a'.repeat(48),()=>{},'',
+       [fakeScene]),
+   err=>err.message.includes('סצנת AI מספר 1')&&
+       err.message.includes('GPU')&&err.message.includes('המיקס המקורי נשמר')
+ );
  console.log('PUBLIC_VIDEO_FAILURES_CATEGORIZED_WITHOUT_LEAKING_PRIVATE_TRANSCRIPT_PASS');
 })().catch(err=>{console.error(err);process.exitCode=1});

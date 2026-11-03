@@ -487,7 +487,7 @@ def _semantic_comedy_cue(transcript, fraction):
     return None
 
 
-def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcript_hint='',timed_phrases=None):
+def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcript_hint='',timed_phrases=None,fx_events=None):
     """Pause-aware, beat-length vocal solos without slicing spoken words.
 
     This is an automatic editing heuristic, not phoneme/word-level ASR
@@ -660,9 +660,14 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
             pause=np.zeros(int(sr*pad),dtype=np.float32)
             pieces.append(pause);masks.append(np.zeros(len(pause),np.float32))
             offset+=len(pause)
+        effect_start=offset
         pieces.append(effect)
         masks.append(np.ones(len(effect),dtype=np.float32))
         offset+=len(effect)
+        if fx_events is not None:
+            # Exact audio samples and the actual selected DSP mode.
+            # Never infer "pitch"/"stretch" from the index later.
+            fx_events.append((effect_start,offset,mode))
         total_fx_seconds+=len(effect)/sr+pad
     if position<len(x):
         rest=x[position:].copy()
@@ -738,6 +743,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                      or not transcript_hint.strip()
                      or len(voices[0])/sr<=2.6))
     transcript_timeline=transcript_timeline or []
+    fx_events_per_voice=([[] for _ in voices] if return_video_timeline else None)
     if short_form:
         cue=_semantic_comedy_cue(transcript_hint,.5) if transcript_hint else None
         arranged=[arrange_micro_phrase(
@@ -747,7 +753,8 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     else:
         arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
                                        transcript_hint=transcript_hint,
-                                       timed_phrases=(transcript_timeline[i] if i<len(transcript_timeline) else None))
+                                       timed_phrases=(transcript_timeline[i] if i<len(transcript_timeline) else None),
+                                       fx_events=(fx_events_per_voice[i] if fx_events_per_voice is not None else None))
                   for i,v in enumerate(voices)]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
     needed=(beat*5 if short_form else beat*10)+total_vocal_duration+max(0,len(voices)-1)*beat*3
@@ -1025,10 +1032,15 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                     before=[src_end for _,src_end,_,clip_end in spans
                             if clip_end<=fx_start]
                     source_at=(max(before)/sr if before else 0.)
-                    visual_mode=(('dj','stretch','comic_roll','pitch')[fx_index%4]
-                                 if humor=='auto' else
-                                 ('pitch','monster','rewind','stretch','glitch')[fx_index%5]
-                                 if humor=='chaos' else humor)
+                    actual_fx=(fx_events_per_voice[clip_index]
+                               if fx_events_per_voice is not None else [])
+                    visual_mode=next((mode for left,right,mode in actual_fx
+                                      if abs(left-fx_start)<=2 and
+                                         abs(right-fx_end)<=2),None)
+                    if visual_mode is None:
+                        # Micro-remix voice FX may not expose a full arranger
+                        # cue list. Do not pretend to know a specific effect.
+                        visual_mode=humor if humor not in ('auto','chaos') else 'dj'
                     video_fx_timeline.append({
                         'kind':'voice_fx','source_file':clip_index,
                         'start':round(cursor+fx_start/sr,5),

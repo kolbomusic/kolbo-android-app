@@ -189,4 +189,44 @@ class BeatVideoEditTests(unittest.TestCase):
             bpm=145,humor='stretch',source_video_length=True)
         self.assertEqual(len(deliberate),30*sr)
 
+
+    def test_actual_chaos_fx_type_is_forwarded_to_video_not_guessed(self):
+        import numpy as np
+        from engine import render_mix
+        sr=8000
+        speech=np.zeros(sr*5,dtype=np.float32)
+        for start,end,pitch in ((0,.9,310),(1.4,2.3,440),(3.0,4.85,275)):
+            length=int(sr*(end-start))
+            t=np.arange(length,dtype=np.float32)/sr
+            speech[int(sr*start):int(sr*start)+length]=.31*np.sin(2*np.pi*pitch*t)
+        audio,voice,events=render_mix([speech],sample_rate=sr,seconds=30,
+                         humor='chaos',fx_intensity=3,return_voice=True,
+                         return_video_timeline=True)
+        modes=[event['effect'] for event in events
+               if event['kind']=='voice_fx']
+        self.assertTrue(modes,events)
+        # The ACTUAL first chaos effect is helium. Prior visual code
+        # guessed pitch by its index even when audio used helium.
+        self.assertEqual(modes[0],'helium',modes)
+        self.assertEqual(len(audio),len(voice))
+        self.assertTrue(all(event['start']<event['end']
+                            for event in events),events)
+
+    def test_explicit_arranger_fx_emits_matching_sample_bounds(self):
+        from engine import arranged_vocal_track
+        import numpy as np
+        sr=8000
+        t=np.arange(sr*5,dtype=np.float32)/sr
+        x=(.26*np.sin(2*np.pi*320*t)).astype(np.float32)
+        events=[]
+        track,mask,spans=arranged_vocal_track(
+             x,sr,145,'stretch',3,1.15,np.random.default_rng(33),
+             fx_events=events)
+        self.assertTrue(events)
+        for left,right,effect in events:
+            self.assertEqual(effect,'stretch')
+            self.assertGreater(right,left)
+            self.assertTrue(np.all(mask[left:right]>.5))
+            self.assertLessEqual(right,len(track))
+
 if __name__=='__main__':unittest.main()
