@@ -229,6 +229,10 @@ with site.app.test_client() as browser:
         "csrf":get_csrf(browser),"id":str(photo["id"]),"action":"add"}).status_code==403
 
     # Non-admin pending applicants cannot list, approve or reject other members.
+    assert browser.get("/photo-review",base_url=ORIGIN).status_code==403
+    assert browser.post("/photos/report",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(photo["id"]),
+        "reason":"בקשה של חבר לא מאושר"}).status_code==403
     assert browser.get("/members",base_url=ORIGIN).status_code==403
     assert browser.post("/members",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve",
@@ -282,6 +286,39 @@ with site.app.test_client() as browser:
     assert browser.post("/photos/self-tag",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(photo["id"]),"action":"remove"}).status_code==303
     assert site.sql("SELECT count(*) n FROM b2_photo_self_tags WHERE media_id=%s",(photo["id"],),True)["n"]==0
+    # Photo memories remain unpublished until moderator review.
+    memory=browser.post("/photos/memory",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(photo["id"]),
+        "body":"סיפור מקורי של חברי הפלוגה מהצילום"})
+    assert memory.status_code==303
+    mem=site.sql("SELECT id,status FROM b2_photo_memories WHERE media_id=%s",
+                 (photo["id"],),True)
+    assert mem["status"]=="pending"
+    assert "סיפור מקורי של חברי הפלוגה" not in browser.get(
+        "/photos",base_url=ORIGIN).get_data(as_text=True)
+    assert browser.post("/photo-review",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(mem["id"]),
+        "action":"publish_memory"}).status_code==303
+    assert "סיפור מקורי של חברי הפלוגה" in browser.get(
+        "/photos",base_url=ORIGIN).get_data(as_text=True)
+    # A privacy request is private to reviewers until resolved.
+    report=browser.post("/photos/report",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(photo["id"]),
+        "reason":"נא לבדוק את התמונה בהיבט הפרטיות"})
+    assert report.status_code==303
+    case=site.sql("SELECT id,status FROM b2_photo_reports WHERE media_id=%s",
+                  (photo["id"],),True)
+    assert case["status"]=="open"
+    assert "נא לבדוק את התמונה בהיבט הפרטיות" not in browser.get(
+        "/photos",base_url=ORIGIN).get_data(as_text=True)
+    assert browser.post("/photo-review",base_url=ORIGIN,data={
+        "csrf":get_csrf(browser),"id":str(case["id"]),
+        "action":"hide_photo"}).status_code==303
+    assert site.sql("SELECT status FROM b2_posts WHERE id=%s",
+                    (post["id"],),True)["status"]=="hidden"
+    assert "/media/"+str(photo["id"]) not in browser.get(
+        "/photos",base_url=ORIGIN).get_data(as_text=True)
+
     assert browser.get("/find",base_url=ORIGIN).status_code==200
     # The directory is strictly opt-in: approved members stay invisible
     # until they deliberately enable visibility in their own profile.
@@ -420,6 +457,8 @@ assert c.get("/feed",base_url=origin).status_code==403
 assert c.get("/find",base_url=origin).status_code==403
 assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
 assert c.get("/inbox",base_url=origin).status_code==403
+assert c.get("/photo-review",base_url=origin).status_code==403
+assert c.post("/photos/memory",base_url=origin,data={"id":"1","body":"סיפור לא מאושר"}).status_code==403
 assert c.get("/meetups",base_url=origin).status_code==403
 assert c.post("/photos/self-tag",base_url=origin,data={
   "id":"1","action":"add"}).status_code==403
