@@ -1,5 +1,11 @@
 name: Kolbo Trance Studio audio regression
 on:
+  pull_request:
+    branches:
+      - kolbo-trance-studio-20261031
+    paths:
+      - 'trance-studio/**'
+      - '.github/workflows/kolbo-trance-tests.yml'
   push:
     branches:
       - kolbo-trance-studio-20261031

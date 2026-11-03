@@ -6,11 +6,26 @@ import subprocess
 import numpy as np
 from scipy.signal import butter, sosfilt, lfilter, stft, istft
 
+class AudioDecodeError(ValueError):
+    """Safe, user-facing errors for input media, without exposing file contents."""
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code=code
+
+
 def load_audio(path, sample_rate=32000):
     command=['ffmpeg','-v','error','-nostdin','-protocol_whitelist','file,pipe','-i',str(path),'-t','120.02','-ac','1','-ar',str(sample_rate),'-f','f32le','-']
-    result=subprocess.run(command,check=True,capture_output=True,timeout=45)
+    try:
+        result=subprocess.run(command,check=True,capture_output=True,timeout=45)
+    except subprocess.TimeoutExpired as exc:
+        raise AudioDecodeError('decode_timeout','פענוח ההקלטה חרג מזמן העיבוד. נסה לשתף את קובץ המקור מחדש.') from exc
+    except (subprocess.CalledProcessError,OSError) as exc:
+        raise AudioDecodeError('decode_failed','לא ניתן לפענח את השמע בקובץ. בדוק שההקלטה ניתנת לניגון ושיש בה ערוץ שמע תקין.') from exc
     x=np.frombuffer(result.stdout,dtype='<f4').copy()
-    if len(x)>sample_rate*120:raise ValueError('הקלטה ארוכה מ־120 שניות')
+    if not len(x):
+        raise AudioDecodeError('no_audio_stream','בקובץ המקור לא נמצא ערוץ שמע שניתן לעבד. בדוק שהסרטון או ההקלטה כוללים קול.')
+    if len(x)>sample_rate*120:
+        raise AudioDecodeError('recording_too_long','ההקלטה חורגת מ־120 שניות. מגבלה זו חלה על כל קובץ בנפרד.')
     return x
 
 def prepare_voice(x,sr):
