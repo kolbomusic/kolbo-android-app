@@ -477,9 +477,18 @@ with site.app.test_client() as browser:
 
     # A revoked author's published audio must become unavailable to other
     # ordinary members, even while its post still has status='published'.
-    assert delegate.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==200
+    site.sql("""INSERT INTO b2_users(name,email,passhash,approved)
+        VALUES(%s,%s,%s,TRUE)""",
+        ("צופה בדיקה","synthetic.viewer@example.test",
+         site.hashpw("SyntheticViewerPassword!2026")))
+    viewer=site.app.test_client()
+    assert viewer.post("/login",base_url=ORIGIN,data={
+        "csrf":get_csrf(viewer),"email":"synthetic.viewer@example.test",
+        "password":"SyntheticViewerPassword!2026"}).status_code==303
+    assert viewer.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==200
     site.sql("UPDATE b2_users SET approved=FALSE WHERE id=%s",(member["id"],))
-    assert delegate.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==403
+    assert viewer.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==403
+    # The moderator can still inspect the evidence for appeals/decisions.
     assert browser.get("/media/"+str(voice_media["id"]),base_url=ORIGIN).status_code==200
 
     browser.post("/logout",base_url=ORIGIN,data={"csrf":get_csrf(browser)})
