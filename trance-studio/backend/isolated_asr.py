@@ -17,6 +17,35 @@ class IsolatedAsrUnavailable(RuntimeError):
     pass
 
 
+
+def _safe_memory_for_asr():
+    """Avoid starting Whisper if another process leaves too little cgroup RAM.
+
+    This guards the *512 MiB* Render Free worker only. Unknown/non-cgroup
+    environments keep the old behavior. Never send audio off-box to cope
+    with insufficient resources.
+    """
+    mib=1024*1024
+    for limit_file, usage_file in (
+        ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+        ("/sys/fs/cgroup/memory/memory.limit_in_bytes",
+         "/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+    ):
+        try:
+            raw=Path(limit_file).read_text().strip()
+            if raw == "max":
+                return True
+            limit=int(raw)
+            usage=int(Path(usage_file).read_text().strip())
+            if 0<limit<=768*mib:
+                # Tiny multilingual ASR + decoder + OS/FFmpeg reserve.
+                return limit-usage>=230*mib
+            return True
+        except (OSError,ValueError):
+            continue
+    return True
+
+
 def transcribe_in_child(paths, *, timeout=240):
     """Return (original Hebrew words, complete, per-file timestamp lists).
 
@@ -25,6 +54,8 @@ def transcribe_in_child(paths, *, timeout=240):
     """
     if not 1 <= len(paths) <= 4:
         raise IsolatedAsrUnavailable("invalid original media count")
+    if not _safe_memory_for_asr():
+        raise IsolatedAsrUnavailable("Insufficient local ASR memory budget")
     safe_paths = [str(Path(p).resolve()) for p in paths]
     try:
         response = subprocess.run(
