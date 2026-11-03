@@ -126,7 +126,8 @@ jobs:
           APK="dist/Kolbo-Trance-Story-v2.4.7-beta.1.apk"
           # Debug signing keys are runner-specific. Never overwrite an
           # already published APK with an incompatible signing certificate.
-          # Each beta receives its own Android applicationId and immutable tag.
+          # Each beta has an immutable tag; a reused applicationId requires
+          # an existing matching signing key, otherwise uninstall the prior beta.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; retaining the original signed APK."
           else
