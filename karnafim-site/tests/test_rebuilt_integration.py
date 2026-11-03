@@ -233,6 +233,7 @@ with site.app.test_client() as browser:
     assert browser.post("/photos/report",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(photo["id"]),
         "reason":"בקשה של חבר לא מאושר"}).status_code==403
+    assert browser.get("/dashboard",base_url=ORIGIN).status_code==403
     assert browser.get("/members",base_url=ORIGIN).status_code==403
     assert browser.post("/members",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(member["id"]),"action":"approve",
@@ -270,6 +271,12 @@ with site.app.test_client() as browser:
     assert admin_page.status_code==200
     assert "מנהל הקהילה הראשי" in admin_page.get_data(as_text=True)
     assert 'href="/members"' in admin_page.get_data(as_text=True)
+    dashboard=browser.get("/dashboard",base_url=ORIGIN)
+    assert dashboard.status_code==200
+    assert "לוח הבקרה של מנהל הקהילה" in dashboard.get_data(as_text=True)
+    assert 'href="/members"' in dashboard.get_data(as_text=True)
+    assert 'href="/moderation"' in dashboard.get_data(as_text=True)
+    assert "synthetic.member@example.test" not in dashboard.get_data(as_text=True)
     r=browser.post("/moderation",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
     assert r.status_code==409,"Publishing unapproved member's post must fail"
@@ -427,6 +434,7 @@ with site.app.test_client() as browser:
     assert delegate.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==200
     assert delegate.get("/members",base_url=ORIGIN).status_code==403
     assert delegate.get("/team",base_url=ORIGIN).status_code==403
+    assert delegate.get("/dashboard",base_url=ORIGIN).status_code==403
     assert delegate.post("/team",base_url=ORIGIN,data={
         "csrf":get_csrf(delegate),"id":str(member["id"]),"action":"save",
         "can_approve":"yes"}).status_code==403
@@ -484,6 +492,7 @@ assert c.post("/login",base_url=origin,data={"csrf":csrf,
   "email":"manual-pending@example.test","password":"SyntheticOnlyManualPassword!2026"}).status_code==303
 assert c.get("/feed",base_url=origin).status_code==403
 assert c.get("/voices",base_url=origin).status_code==403
+assert c.get("/dashboard",base_url=origin).status_code==403
 assert c.get("/find",base_url=origin).status_code==403
 assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
 assert c.get("/inbox",base_url=origin).status_code==403
