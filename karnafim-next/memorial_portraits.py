@@ -4,7 +4,10 @@ Portraits are displayed locally only after documented authorization.
 A publicly available source portrait is NOT an image re-publication license.
 Each record has a stable official Izkor ID to prevent same-name mismatches.
 """
+import hashlib
+import re
 from pathlib import Path
+from PIL import Image, UnidentifiedImageError
 from urllib.parse import urlsplit, unquote
 
 # The registered identity is the official individual record, not a web image
@@ -32,14 +35,36 @@ def portrait_for(person_key, static_dir):
     approval=record.get("photo_approval")
     if not isinstance(approval,dict):
         return None
+    # Every release requires documented identity, explicit permission and an
+    # exact SHA-256 of the reviewed image bytes. No arbitrary remote image URLs.
+    checksum=approval.get("sha256")
     if (approval.get("status")!="approved" or
-            not approval.get("permission_reference") or
-            not approval.get("source_url") or
-            approval.get("izkor_id")!=record["izkor_id"]):
+            approval.get("izkor_id")!=record["izkor_id"] or
+            not isinstance(approval.get("permission_reference"),str) or
+            len(approval["permission_reference"].strip())<8 or
+            not isinstance(approval.get("source_url"),str) or
+            not approval["source_url"].strip() or
+            not isinstance(approval.get("reviewed_by"),str) or
+            not approval["reviewed_by"].strip() or
+            not isinstance(checksum,str) or
+            not re.fullmatch(r"[a-f0-9]{64}",checksum)):
         return None
     filename=person_key+".jpg"
     path=Path(static_dir)/"memorial"/filename
-    if not path.is_file():
+    if path.is_symlink() or not path.is_file():
+        return None
+    try:
+        if path.stat().st_size>6*1024*1024:
+            return None
+        data=path.read_bytes()
+        if hashlib.sha256(data).hexdigest()!=checksum:
+            return None
+        with Image.open(path) as image:
+            image.verify()
+        with Image.open(path) as image:
+            if image.format!="JPEG" or image.width*image.height>12_000_000:
+                return None
+    except (OSError,ValueError,UnidentifiedImageError,Image.DecompressionBombError):
         return None
     return "/static/memorial/"+filename
 
