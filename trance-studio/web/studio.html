@@ -1100,6 +1100,14 @@ if(wantsVideo&&!j.video_url){
   $('videoNotice').hidden=false;
  }
 }
+if(j.mix_quality==='voice_rescue'){
+ $('resultTitle').textContent='קול ההקלטה נשמר — מיקס הטראנס הכבד לא הושלם';
+ $('videoNotice').textContent=(j.video_url?
+  'הסרטון משתמש באודיו חילוץ במקום במיקס הטראנס המלא. ':
+  'עיבוד הטראנס המתקדם נעצר בגלל עומס זיכרון, אבל הקול המקורי חולץ לכל אורכו לקובץ MP3. ')+
+  'זו תוצאת חילוץ בסיסית, לא מיקס מקצועי. אפשר לשמור את הקובץ; אין העלאה חוזרת אוטומטית.';
+ $('videoNotice').hidden=false;
+}
 markStage('ready');$('player').src=resultUrl;$('result').classList.add('visible');
 $('summary').textContent='משך המיקס: '+Math.round(j.audio_seconds||0)+' שניות. '+(videoReason?'לא הופק סרטון לא קשור: '+videoReason:'אפשר להשוות בין הקול המקורי לקול המעובד.');
 message(j.video_url?'ה־MP4 והמיקס המצולם מוכנים.':(videoReason||'המיקס מוכן, אבל לא נמצא צילום התואם לכל הדיבור.'));$('result').scrollIntoView({behavior:'smooth'});
