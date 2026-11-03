@@ -48,3 +48,25 @@ def require_visible_motion(video_path, *, threshold=0.30, start_seconds=0):
     if score<threshold:
         raise NoVisibleMotion("נוצר סרטון סטטי ללא תנועה חזותית מספקת")
     return score
+
+
+def require_visible_motion_somewhere(video_path, *, duration, threshold=0.30):
+    """Validate real motion after a possible title-card intro.
+
+    All real-source video code paths must share the same checks. Returning
+    from only the first-three-second validation rejects real videos that
+    start with a stationary card. Never accept a completely frozen image,
+    and cap CPU work to four short original-video samples.
+    """
+    duration=float(duration)
+    if not .8<=duration<=600:
+        raise NoVisibleMotion("משך סרטון המקור אינו תקין")
+    for offset in (0,3,8,15):
+        if duration<offset+1:
+            continue
+        try:
+            return require_visible_motion(video_path,threshold=threshold,
+                                          start_seconds=offset)
+        except NoVisibleMotion:
+            continue
+    raise NoVisibleMotion("קובץ המקור לא מכיל תנועה חזותית מספקת")
