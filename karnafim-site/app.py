@@ -46,9 +46,15 @@ ORIGIN=os.environ.get("BARKAN_PUBLIC_ORIGIN","https://karnafim-community-46.onre
 PUBLIC_AUTH=(bool(CONFIGURED_SECRET and DB)
              and os.environ.get("BARKAN_PUBLIC_AUTH","0")=="1"
              and os.environ.get("BARKAN_SAFETY_RELEASE_APPROVED","0")=="1")
-EMAIL_PROVIDER=os.environ.get("BARKAN_RESEND_API_KEY","")
-MAIL_FROM=os.environ.get("BARKAN_MAIL_FROM","")
-MAIL_READY=bool(EMAIL_PROVIDER.strip() and MAIL_FROM.strip())
+EMAIL_PROVIDER=os.environ.get("BARKAN_RESEND_API_KEY","").strip()
+BREVO_API_KEY=os.environ.get("BARKAN_BREVO_API_KEY","").strip()
+MAIL_FROM=os.environ.get("BARKAN_MAIL_FROM","").strip()
+# Prefer a configured Brevo sender. Do not allow conflicting simultaneous
+# providers: deployments must intentionally select a single email transport.
+EMAIL_TRANSPORT=("brevo" if BREVO_API_KEY and not EMAIL_PROVIDER else
+                 "resend" if EMAIL_PROVIDER and not BREVO_API_KEY else "")
+MAIL_READY=bool(EMAIL_TRANSPORT and MAIL_FROM and
+                re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+",MAIL_FROM))
 # Configuration is not proof of delivery. A separate explicit release attests
 # that a real end-to-end verification message reached a controlled mailbox.
 MAIL_DELIVERY_VERIFIED=(MAIL_READY and
@@ -400,23 +406,45 @@ def signup():
         button_form('<label>שם מלא<input name="name" required maxlength="90" autocomplete="name" placeholder="איך קוראים לך?"></label><label>כתובת דוא״ל<input name="email" type="email" inputmode="email" dir="ltr" required autocomplete="email" placeholder="you@example.com"></label>' + password_control("password","new-password") + '<p id="password-help" class="muted">לפחות 12 תווים. מומלץ להשתמש בסיסמה ייחודית.</p><input name="website" tabindex="-1" class="honeypot" aria-hidden="true"><label class="check"><input type="checkbox" name="agree" value="yes" required> אני מסכים לשמירת הפרטים לצורך קבלה לקהילה</label><button class="primary">שליחת בקשת הצטרפות</button>','/signup','class="formcard"')+'</section>')
 
 def send_verification(email,uid):
+    """Send a single-use email link with an explicitly selected API provider.
+
+    Provider keys and verification tokens are never returned to the client.
+    MAIL_DELIVERY_VERIFIED remains a separate deployment approval.
+    """
     if not MAIL_READY:return False
     import json
     from urllib.request import Request,urlopen
     token=secrets.token_urlsafe(36)
     with connect() as c:
         with c.cursor() as cur:
-            cur.execute("""INSERT INTO b2_tokens(user_id,digest,expires) VALUES(%s,%s,NOW()+INTERVAL '24 hours')
-                ON CONFLICT(user_id) DO UPDATE SET digest=EXCLUDED.digest,expires=EXCLUDED.expires""",
+            cur.execute("""INSERT INTO b2_tokens(user_id,digest,expires)
+                VALUES(%s,%s,NOW()+INTERVAL '24 hours')
+                ON CONFLICT(user_id) DO UPDATE
+                SET digest=EXCLUDED.digest,expires=EXCLUDED.expires""",
                 (uid,hashlib.sha256(token.encode()).hexdigest()))
     link=ORIGIN+"/verify-email?token="+token
-    req=Request("https://api.resend.com/emails",data=json.dumps({
-        "from":MAIL_FROM,"to":[email],"subject":"אימות דוא״ל — הקרנפים / ברקן",
-        "html":'<p dir="rtl">אמתו את הכתובת: <a href="'+e(link)+'">קישור אימות</a>. הקישור תקף 24 שעות.</p>'
-    }).encode(),headers={"Authorization":"Bearer "+EMAIL_PROVIDER,"Content-Type":"application/json"},method="POST")
+    html='<p dir="rtl">לאימות כתובת הדוא״ל שלך באתר הקרנפים / ברקן: <a href="'+e(link)+'">לחצו כאן לאימות</a>. הקישור תקף 24 שעות.</p>'
+    if EMAIL_TRANSPORT=="brevo":
+        endpoint="https://api.brevo.com/v3/smtp/email"
+        payload={"sender":{"name":"הקרנפים / ברקן","email":MAIL_FROM},
+                 "to":[{"email":email}],"subject":"אימות דוא״ל — הקרנפים / ברקן",
+                 "htmlContent":html}
+        headers={"api-key":BREVO_API_KEY,"content-type":"application/json"}
+    elif EMAIL_TRANSPORT=="resend":
+        endpoint="https://api.resend.com/emails"
+        payload={"from":MAIL_FROM,"to":[email],
+                 "subject":"אימות דוא״ל — הקרנפים / ברקן","html":html}
+        headers={"Authorization":"Bearer "+EMAIL_PROVIDER,
+                 "Content-Type":"application/json"}
+    else:
+        return False
+    req=Request(endpoint,data=json.dumps(payload).encode("utf-8"),
+                headers=headers,method="POST")
     try:
-        with urlopen(req,timeout=7) as result:return result.status in (200,201,202)
-    except (OSError,TimeoutError):return False
+        with urlopen(req,timeout=7) as result:
+            return result.status in (200,201,202)
+    except (OSError,TimeoutError):
+        return False
 
 @app.route("/resend-verification",methods=["GET","POST"])
 def resend_verification():
