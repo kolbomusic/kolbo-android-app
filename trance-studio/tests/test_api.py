@@ -130,6 +130,26 @@ class ApiTests(unittest.TestCase):
                 executor.return_value.submit.assert_called_once()
 
 
+    def test_512mb_worker_rejects_second_job_without_queuing_or_processing(self):
+        # One actual CPU worker cannot safely process two 66-second mixes
+        # while resident Whisper and H264 allocations exceed 512 MiB.
+        from unittest import mock
+        from app import create_app
+        with tempfile.TemporaryDirectory() as folder:
+            with mock.patch('app.ThreadPoolExecutor') as executor:
+                app=create_app({'TESTING':True,'JOB_DIR':folder})
+                client=app.test_client()
+                first=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'first'),'voice1.opus')})
+                self.assertEqual(first.status_code,202,first.get_json())
+                second=client.post('/api/jobs',data={
+                    'audio':(io.BytesIO(b'second'),'voice2.opus')})
+                self.assertEqual(second.status_code,429,second.get_json())
+                self.assertEqual(second.headers.get('Retry-After'),'20')
+                self.assertIn('משימה אחרת',second.get_json()['error'])
+                executor.return_value.submit.assert_called_once()
+                self.assertEqual(client.get(first.get_json()['status_url']).status_code,200)
+
     def test_video_strategy_and_licensed_music_are_explicit_and_forwarded(self):
         from unittest import mock
         from app import create_app
