@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 from flask import Flask, Response, abort, g, redirect, request, send_file, session, url_for
 from markupsafe import Markup
 from PIL import Image, ImageOps, UnidentifiedImageError
+from review_rules import triage
 
 BASE=Path(__file__).resolve().parent
 app=Flask(__name__,static_folder=str(BASE/"static"))
@@ -82,6 +83,15 @@ def init():
                 kind TEXT NOT NULL DEFAULT 'story',
                 year_text TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'pending',
+                review_level TEXT NOT NULL DEFAULT 'standard',
+                review_note TEXT NOT NULL DEFAULT '',
+                created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            cur.execute("ALTER TABLE b2_posts ADD COLUMN IF NOT EXISTS review_level TEXT NOT NULL DEFAULT 'standard'")
+            cur.execute("ALTER TABLE b2_posts ADD COLUMN IF NOT EXISTS review_note TEXT NOT NULL DEFAULT ''")
+            cur.execute("""CREATE TABLE IF NOT EXISTS b2_review_log(
+                id BIGSERIAL PRIMARY KEY,post_id BIGINT NOT NULL REFERENCES b2_posts(id),
+                actor BIGINT NOT NULL REFERENCES b2_users(id),
+                decision TEXT NOT NULL,reason TEXT NOT NULL,
                 created TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             cur.execute("CREATE INDEX IF NOT EXISTS b2_posts_status_idx ON b2_posts(status,created DESC)")
             cur.execute("""CREATE TABLE IF NOT EXISTS b2_media(
@@ -544,9 +554,10 @@ def create_post():
         if sum(len(v[2]) for v in safe)>16*1024*1024:abort(413)
         with connect() as c:
             with c.cursor() as cur:
-                cur.execute("""INSERT INTO b2_posts(author,title,body,kind,year_text)
-                    VALUES(%s,%s,%s,%s,%s) RETURNING id""",
-                    (g.user["id"],title,body,kind,year))
+                review_level,review_note=triage(title,body,kind,len(safe))
+                cur.execute("""INSERT INTO b2_posts(author,title,body,kind,year_text,review_level,review_note)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (g.user["id"],title,body,kind,year,review_level,review_note))
                 pid=cur.fetchone()["id"]
                 for mime,typ,data in safe:
                     cur.execute("""INSERT INTO b2_media(post_id,owner,mime,kind,body,length)
@@ -588,8 +599,9 @@ def myposts():
     items=''
     for p in posts:
         files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
-        status="פורסם" if p["status"]=="published" else "ממתין לבדיקת מנהל"
-        items+='<article class="post"><span class="tag">'+status+'</span><h2>'+e(p["title"])+'</h2><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div></article>'
+        status={"published":"פורסם","rejected":"לא אושר","pending":"ממתין לבדיקה"}.get(p["status"],"בבדיקה")
+        reason=('<p class="muted">הערת בדיקה: '+e(p["review_note"])+'</p>') if p["review_note"] else ''
+        items+='<article class="post"><span class="tag">'+status+'</span><h2>'+e(p["title"])+'</h2><p>'+e(p["body"])+'</p>'+reason+'<div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div></article>'
     return layout("הפרסומים שלי",'<div class="pagehead"><h1>הפרסומים שלי</h1><p>רק אתה והמנהל רואים פרסומים שעדיין לא אושרו.</p><a class="primary" href="/new">פרסום חדש</a></div>'+(items or '<div class="note">אין לך עדיין פרסומים.</div>'))
 
 @app.get("/feed")
@@ -672,12 +684,23 @@ def moderation():
         pid=request.form.get("id","")
         action=request.form.get("action","")
         if not pid.isdecimal() or action not in ("publish","reject"):abort(400)
-        if action=="publish":
-            result=sql("""UPDATE b2_posts p SET status='published' FROM b2_users u
-                WHERE p.id=%s AND p.author=u.id AND u.approved=TRUE
-                AND p.status='pending' RETURNING p.id""",(int(pid),),True)
-            if not result:abort(409)
-        else:sql("UPDATE b2_posts SET status='rejected' WHERE id=%s AND status='pending'",(int(pid),))
+        reason=request.form.get("reason","").strip()[:500]
+        if action=="reject" and len(reason)<8:abort(400)
+        if action=="publish" and not reason:reason="אושר לאחר בדיקת מנהל"
+        with connect() as c:
+            with c.cursor() as cur:
+                if action=="publish":
+                    cur.execute("""UPDATE b2_posts p SET status='published',review_note=%s
+                        FROM b2_users u WHERE p.id=%s AND p.author=u.id
+                        AND u.approved=TRUE AND p.status='pending' RETURNING p.id""",
+                        (reason,int(pid)))
+                else:
+                    cur.execute("""UPDATE b2_posts SET status='rejected',review_note=%s
+                        WHERE id=%s AND status='pending' RETURNING id""",(reason,int(pid)))
+                row=cur.fetchone()
+                if not row:abort(409)
+                cur.execute("""INSERT INTO b2_review_log(post_id,actor,decision,reason)
+                    VALUES(%s,%s,%s,%s)""",(int(pid),g.user["id"],action,reason))
         return redirect("/moderation",303)
     posts=sql("""SELECT p.*,u.name,u.approved FROM b2_posts p
         JOIN b2_users u ON u.id=p.author WHERE p.status='pending'
@@ -687,7 +710,7 @@ def moderation():
         files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
         controls=('<button name="action" value="publish" class="primary">אישור לפרסום</button>' if p["approved"] else '<span>נדרש קודם אישור החבר</span>')
         controls+='<button name="action" value="reject" class="subtle">דחיית פרסום</button>'
-        cards+='<article class="post"><h2>'+e(p["title"])+'</h2><p>מאת '+e(p["name"])+'</p><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div>'+button_form('<input type="hidden" name="id" value="'+str(p["id"])+'">'+controls,'/moderation')+'</article>'
+        cards+='<article class="post"><h2>'+e(p["title"])+'</h2><p>מאת '+e(p["name"])+'</p><p>'+e(p["body"])+'</p><p class="muted">בדיקה ראשונית: '+e(p["review_note"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div>'+button_form('<input type="hidden" name="id" value="'+str(p["id"])+'"><label>נימוק ההחלטה<input name="reason" maxlength="500" placeholder="חובה בעת דחייה"></label>'+controls,'/moderation')+'</article>'
     return layout("בקרת פרסומים",'<div class="pagehead"><h1>בקרת פרסומים</h1></div>'+(cards or '<p>אין פרסומים ממתינים.</p>'))
 
 @app.route("/members",methods=["GET","POST"])
