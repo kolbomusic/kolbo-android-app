@@ -42,18 +42,18 @@ def check():
     for path in ("/","/memorial","/status"):
         status,headers,body=fetch(path)
         assert status==200,(path,status)
-        csp=headers.get("Content-Security-Policy","")
+        csp=next((value for key,value in headers.items() if key.lower()=="content-security-policy"),"")
         assert "default-src 'none'" in csp,(path,"missing CSP")
         assert b'lang="he" dir="rtl"' in body,(path,"RTL missing")
     print("PASS: live original origin and database healthy, auth/signup blocked, public RTL routes intact")
 
 if __name__=="__main__":
-    for attempt in range(1,9):
+    for attempt in range(1,5):
         try:
             check()
             sys.exit(0)
         except (AssertionError, URLError, TimeoutError, ValueError) as exc:
             print("Read-only verification attempt",attempt,"not ready:",str(exc)[:200],flush=True)
-            if attempt==8:
+            if attempt==4:
                 raise
             time.sleep(12)
