@@ -5,6 +5,7 @@ A publicly available source portrait is NOT an image re-publication license.
 Each record has a stable official Izkor ID to prevent same-name mismatches.
 """
 from pathlib import Path
+from urllib.parse import urlsplit, unquote
 
 # The registered identity is the official individual record, not a web image
 # search result. No face recognition or heuristic name-to-image matching.
@@ -41,3 +42,24 @@ def portrait_for(person_key, static_dir):
     if not path.is_file():
         return None
     return "/static/memorial/"+filename
+
+def official_source_matches(person_key, source_url):
+    """Require an HTTPS Izkor individual-record URL for the exact identity.
+
+    Do not resolve redirects or load remote content at render time. This is a
+    structural integrity check, not a substitute for verifying a record manually.
+    """
+    record=MEMORIAL_PEOPLE.get(person_key)
+    if not record or not isinstance(source_url,str):
+        return False
+    try:
+        parsed=urlsplit(source_url)
+        parts=unquote(parsed.path).strip("/").split("/")
+        return (parsed.scheme=="https"
+                and parsed.hostname=="www.izkor.gov.il"
+                and parsed.port is None
+                and parsed.username is None and parsed.password is None
+                and not parsed.query and not parsed.fragment
+                and len(parts)==2 and parts[1]==record["izkor_id"])
+    except ValueError:
+        return False
