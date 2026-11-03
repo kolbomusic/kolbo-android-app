@@ -240,7 +240,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 'use strict';
 var $=function(id){return document.getElementById(id)};
 var audio=$('audio'),files=[],resultUrl='',resultBlob=null,resultServerUrl='',deferredInstall=null,voiceUrl='',originalUrl='',videoUrl='',videoServerUrl='',videoBlob=null;
-var active=false;
+var active=false,runLock=false;
 var socialImported=false,sharedLinkSerial=0,linkImportController=null;
 var videoModeChosenByUser=false;
 if(window.KolboAndroid){$('nativeStatus').hidden=false;$('install').hidden=true;}
@@ -310,7 +310,7 @@ async function hasDecodableVideoTrack(file){
 }
 function syncFiles(){var out=files.map(function(f,i){return (i+1)+'. '+(isVideoFile(f)?'סרטון':'שמע')+' · '+f.name+' — '+(f.size/1048576).toFixed(1)+' MB'});$('files').textContent=out.length?out.join('\n'):'בחר הקלטות או סרטונים מהמכשיר או מתוך WhatsApp'}
 function setFiles(items){
- if(active){message('כבר מתבצעת יצירה. ההקלטה החדשה לא תחליף את ההקלטה שבתהליך.');return;}
+ if(active||runLock){message('כבר מתבצעת יצירה. ההקלטה החדשה לא תחליף את ההקלטה שבתהליך.');return;}
  files=Array.from(items||[]).filter(Boolean).slice(0,4);
  socialImported=false;
  // Never allow an old manually selected video-remix mode to survive a
@@ -739,22 +739,25 @@ async function studioJson(response){
  }
 }
 async function submitMixJob(form){
- // Reuse one helper for normal upload and a single post-restart recovery.
- // Render 429 means the job was NOT admitted: retry only this case.
- var response,body;
- for(var busyAttempt=0;busyAttempt<3;busyAttempt++){
-  response=await fetch('/api/jobs',{method:'POST',credentials:'same-origin',body:form});
-  body=await studioJson(response);
-  if(response.status!==429||busyAttempt===2)break;
-  message('שרת העיבוד עסוק. ההקלטה נשמרה; מנסה שוב ללא יצירה כפולה...');
-  await pause(busyAttempt===0?6000:12000);
+ // Exactly ONE media POST per explicit Create tap. Never upload multiple
+ // times because a Render Free worker is busy or sent an HTML 429 response.
+ // A restart can lose in-memory jobs; a separate user tap is then required.
+ var response=await fetch('/api/jobs',{
+   method:'POST',credentials:'same-origin',body:form
+ });
+ if(response.status===429){
+   throw new Error('שרת העיבוד עסוק במשימה אחרת (429). הקובץ נשאר במכשיר, ולא נשלחה העלאה נוספת. נסה שוב לאחר שהשרת יתפנה.');
  }
+ var body=await studioJson(response);
  if(!response.ok)throw new Error(body.error||'לא ניתן לשלוח את ההקלטה');
  if(!body.status_url||!body.id)throw new Error('השרת לא החזיר פרטי עבודה תקינים');
  return body;
 }
 async function run(){
-if(active)return;
+if(active||runLock)return;
+runLock=true;
+$('generate').disabled=true;
+try{
 // run() is bound only to an explicit #generate button press. Sharing audio
 // never invokes this function or schedules background processing.
 if(!files.length){message('יש לבחור לפחות הקלטה אחת.');return}
@@ -837,11 +840,9 @@ form.set('transcript_origin','auto');
 var variation=$('variation').value;
 form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99999)):variation);
 form.set('bpm',$('bpm').value);form.set('fx_intensity',$('fx_intensity').value);form.set('fx_gain',String(Number($('fx_gain').value)/100));form.set('voice_level',String(Number($('voice').value)/100));
-// One explicit Create click may submit the same source at most twice:
-// only a proven 404 (job lost on a Render restart) authorizes recovery.
-// A short proxy outage is retried in place, never duplicated.
+// One explicit Create click must create at most one server job, even
+// if Render restarts. The original file remains selected for a manual retry.
 var data=await submitMixJob(form);
-var lostJobRecovery=0;
 var temporaryStatusFailures=0;
 for(var attempt=0;attempt<600;attempt++){
 await pause(1000);
@@ -865,13 +866,17 @@ if([502,503,504].indexOf(statusResponse.status)>=0||
   }
 }
 temporaryStatusFailures=0;
-if(statusResponse.status===404&&lostJobRecovery<1){
- lostJobRecovery++;
- message('השרת אותחל באמצע העיבוד. משחזר פעם אחת את היצירה מההקלטה שכבר בחרת...');
- markStage('upload');
- data=await submitMixJob(form);
- attempt=0;
- continue;
+if(statusResponse.status===404){
+ throw new Error('שרת העיבוד הופעל מחדש ואיבד את המשימה. הקובץ עדיין נבחר במכשיר; לחץ שוב על ״צור״ רק לאחר שהשרת התייצב. אין העלאה כפולה אוטומטית.');
+}
+if(statusResponse.status===429){
+ temporaryStatusFailures++;
+ if(temporaryStatusFailures<=4){
+   message('השרת עסוק. ממשיך לבדוק את המשימה הקיימת בלי להעלות את הקובץ מחדש...');
+   await pause(3500);
+   continue;
+ }
+ throw new Error('השרת עמוס מדי לבדיקת המשימה כרגע (429). הקובץ נשאר במכשיר ולא נוצרה משימה נוספת.');
 }
 var j=await studioJson(statusResponse);
 if(!statusResponse.ok)throw new Error(j.error||('השירות אינו זמין (HTTP '+statusResponse.status+')'));
@@ -1057,6 +1062,10 @@ return;
 throw new Error('העיבוד לא הסתיים במסגרת הזמן, אפשר לנסות שנית.');
  }catch(error){markStage('error');message('שגיאה: '+(error.message||String(error)))}
 finally{active=false;$('generate').disabled=false;$('progress').hidden=true}
+}finally{
+ runLock=false;
+ if(!active)$('generate').disabled=!files.length;
+}
 }
 $('generate').onclick=run;
 $('downloadVideo').onclick=function(){
