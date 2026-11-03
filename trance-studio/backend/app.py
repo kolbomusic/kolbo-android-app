@@ -165,6 +165,8 @@ def create_app(config=None):
                 # spending a public AI quota. This is a video remix, not
                 # an invented visual reconstruction of the narration.
                 from source_video_fallback import VIDEO_TYPES
+                original_video_issue=''
+                original_video_error_code=''
                 if options.get('video_strategy') in ('remix_original','auto_legacy') and any(Path(p).suffix.lower() in VIDEO_TYPES for p in paths):
                     try:
                         from source_video_fallback import compose_original_video_with_mix
@@ -182,9 +184,31 @@ def create_app(config=None):
                               'transcript_origin':detected_origin,
                               'visual_beats':remixed.get('video_edit_shots',1)}
                     except (UnavailableVideo,OSError,ValueError,
-                            subprocess.SubprocessError):
-                        # If the original has no genuine motion, proceed to
-                        # accurately grounded action footage/consented AI.
+                            subprocess.SubprocessError) as exc:
+                        # Never swallow a video failure and then claim a bad
+                        # source was proven: encode errors and absent video
+                        # tracks are different problems. Expose only known
+                        # fixed Hebrew categories, not private file paths.
+                        cause=str(exc) if isinstance(exc,UnavailableVideo) else ''
+                        if 'תנועת תמונה מספקת' in cause:
+                            original_video_error_code='motion_not_detected'
+                            original_video_issue='בסרטון המקור כמעט לא זוהתה תנועה חזותית.'
+                        elif 'ערוץ תמונה' in cause or 'ללא ערוץ וידאו' in cause:
+                            original_video_error_code='no_video_track'
+                            original_video_issue='הקובץ אינו מכיל ערוץ תמונה שניתן לפענוח.'
+                        elif 'קצר מדי' in cause:
+                            original_video_error_code='source_too_short'
+                            original_video_issue='הסרטון קצר מדי ביחס למיקס.'
+                        elif 'הגיבוי נכשלו' in cause:
+                            original_video_error_code='both_encoders_failed'
+                            original_video_issue='זוהה סרטון נע, אך קידוד העריכה והגיבוי נכשל.'
+                        else:
+                            original_video_error_code='source_video_unavailable'
+                            original_video_issue='לא ניתן להשלים את עריכת הסרטון המקורי.'
+                        app.logger.warning(
+                            'Kolbo real-source MP4 unavailable ref=%s code=%s exc=%s',
+                            job_id[:8],original_video_error_code,
+                            type(exc).__name__)
                         (root/job_id/'story.mp4').unlink(missing_ok=True)
                 if meta.get('video_status')=='done':
                     pass
@@ -197,10 +221,13 @@ def create_app(config=None):
                               'כדי לקבל סרטון מהקול בחר ״סרטון AI חדש לפי הדיבור״ '
                               'ואשר שימוש בתמלול.'
                               if not has_video_source else
-                              'הקובץ מכיל וידאו שאינו ניתן לעיבוד כתמונה נעה, '
-                              'או שהרכבת הווידאו נכשלה. '
-                              'אפשר לבחור סרטון MP4 נע אחר או ליצור סיפור חדש מהדיבור.'
+                              (original_video_issue or
+                               'לא ניתן להפיק סרטון MP4 מהמקור.')
+                              +' אפשר לבחור סרטון מקור אחר או ליצור סיפור חדש.'
                           ),
+                          'video_error_code':(
+                              'no_video_file' if not has_video_source
+                              else original_video_error_code or 'unknown_video_failure'),
                           'storyboard_source':(
                               'no_video_track' if not has_video_source else
                               'original_video_not_usable'),
@@ -470,7 +497,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.7',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.8',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():

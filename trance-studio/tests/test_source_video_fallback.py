@@ -36,6 +36,52 @@ class OriginalMovingVideoTests(unittest.TestCase):
                              ('h264',360,640))
             self.assertGreater(result.stat().st_size,15000)
 
+    def test_safe_single_pass_mp4_when_multi_shot_editor_fails(self):
+        # The source has real camera motion: a failed complex FFmpeg shot
+        # must not silently turn a video request into MP3-only output.
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            movie=root/'original-whatsapp.mp4'
+            music=root/'trance.mp3';out=root/'rescued.mp4'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i',
+                'testsrc2=size=320x240:rate=12:duration=3',
+                '-c:v','libx264','-preset','ultrafast',
+                '-pix_fmt','yuv420p',str(movie)],
+                check=True,timeout=25)
+            self.make_music(music) # 5s soundtrack; the 3s source is slowed.
+            with mock.patch('beat_video_editor.compose_edited_original_video',
+                            side_effect=UnavailableVideo('complex filter failed')):
+                meta=compose_original_video_with_mix(
+                    [movie],music,out,root/'backup')
+            self.assertEqual(meta['video_status'],'done')
+            self.assertEqual(meta['video_edit_style'],'single_pass_source_rescue')
+            self.assertFalse(meta['video_edit_audio_synced'])
+            self.assertTrue(out.is_file())
+            streams=json.loads(subprocess.check_output([
+                'ffprobe','-v','error','-show_streams','-show_format',
+                '-of','json',str(out)],timeout=15))
+            self.assertEqual({t['codec_type'] for t in streams['streams']},
+                             {'audio','video'})
+            self.assertAlmostEqual(float(streams['format']['duration']),5.0,
+                                   delta=.8)
+            self.assertEqual(next(t['codec_name'] for t in streams['streams']
+                                  if t['codec_type']=='video'),'h264')
+
+    def test_truly_audio_only_mp4_does_not_get_fake_fallback_video(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            movie=root/'only-audio.mp4'
+            music=root/'trance.mp3';out=root/'not-a-video.mp4'
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',
+                '-f','lavfi','-i','sine=frequency=300:duration=3',
+                '-c:a','aac',str(movie)],check=True,timeout=25)
+            self.make_music(music)
+            with self.assertRaises(UnavailableVideo) as err:
+                compose_original_video_with_mix([movie],music,out,root/'work')
+            self.assertIn('ערוץ תמונה',str(err.exception))
+            self.assertFalse(out.exists())
+
     def test_backend_job_survives_asr_failure_using_original_video(self):
         import app as server
         import source_asr

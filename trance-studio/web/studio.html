@@ -228,7 +228,7 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <audio controls id="player" preload="metadata"></audio>
 <label for="voicePreview">2. הקול שלך בלבד, עם האפקטים (ללא מוזיקת רקע)</label>
 <audio controls id="voicePreview" preload="metadata"></audio>
-<label for="originalPreview">3. השמע מתוך הקובץ המקורי מ־WhatsApp (כולל סרטון)</label>
+<label for="originalPreview" id="sourcePreviewLabel">3. השמע מתוך קובץ המקור</label>
 <audio controls id="originalPreview" preload="metadata"></audio>
 <p id="summary" class="hint"></p>
 <div class="actions"><button id="download">הורדת MP3</button><button id="share" class="secondary">שיתוף ל־WhatsApp ולאפליקציות</button></div></section>
@@ -896,7 +896,10 @@ if(j.voice_url){
   var voiceResponse=await fetch(j.voice_url,{credentials:'same-origin'});
   if(voiceResponse.ok){voiceUrl=URL.createObjectURL(await voiceResponse.blob());$('voicePreview').src=voiceUrl;}
 }
-if(files.length){originalUrl=URL.createObjectURL(files[0]);$('originalPreview').src=originalUrl;}
+if(files.length){originalUrl=URL.createObjectURL(files[0]);$('originalPreview').src=originalUrl;
+  $('sourcePreviewLabel').textContent=files.some(isVideoFile)?
+    '3. השמע מתוך סרטון המקור ששיתפת':
+    '3. ההקלטה הקולית המקורית ששיתפת';}
 $('player').src=resultUrl;
 $('resultTitle').textContent=wantsVideo?
   ($('video_strategy').value==='new_story'?
@@ -931,6 +934,8 @@ if(j.video_url){
    (j.video_edit_style==='voice_fx_synced_motion_warp'?
     'הווידאו המקורי נערך לפי אפקטי הקול: '+(j.video_edit_fx_cues||0)+
     ' רגעי אפקטים עם האטה, האצה, שינוי תנועה ועיוות חזותי של הצילום המקורי בזמן הנכון. לא בוצעו שינוי הבעות פנים או סנכרון שפתיים ב־AI.' :
+    j.video_edit_style==='single_pass_source_rescue'?
+    'עריכת גיבוי של סרטון המקור הצליחה עם האטה וזום מתון. אין במסלול זה סנכרון של כל אפקט קולי לתנועה.' :
     j.video_edit_style==='beat_cut_punch_in_speed_ramp'?
     'צילום WhatsApp המקורי נערך מחדש עם '+(j.video_edit_shots||'כמה')+
     ' חיתוכים בקצב המוזיקה ושינויי מהירות מתונים.' :
@@ -1038,7 +1043,7 @@ if(wantsVideo&&!j.video_url){
  }
 }else{
  $('resultTitle').textContent=j.video_url?'✓ סרטון ומיקס מוכנים':'✓ המיקס מוכן';
- if(j.video_url&&(j.visual_coverage==='partial'||j.visual_coverage==='approximate')){
+ if(j.video_url&&(j.video_edit_style==='single_pass_source_rescue'||j.visual_coverage==='partial'||j.visual_coverage==='approximate')){
   $('videoNotice').textContent=j.video_note||'הסרטון הוא המחשה חלקית בלבד, ולא שחזור מדויק של כל הסיפור שנאמר.';
   $('videoNotice').hidden=false;
  }
