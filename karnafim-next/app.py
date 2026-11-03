@@ -700,9 +700,11 @@ def members():
         if not uid.isdecimal() or request.form.get("action") not in ("approve","reject"):abort(400)
         if int(uid)==g.user["id"]:abort(400)
         approved=request.form["action"]=="approve"
-        sql("""UPDATE b2_users SET approved=%s, role=CASE WHEN %s THEN role ELSE 'member' END
-             WHERE id=%s AND lower(email)<>%s""",
-            (approved,approved,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()))
+        result=sql("""UPDATE b2_users SET approved=%s
+             WHERE id=%s AND approved=FALSE AND email_verification_required=FALSE
+               AND role='member' AND lower(email)<>%s RETURNING id""",
+            (approved,int(uid),os.environ.get("BARKAN_ADMIN_EMAIL","").lower()),True)
+        if not result:abort(409)
         return redirect("/members",303)
     rows=sql("SELECT id,name,email,joined FROM b2_users WHERE approved=FALSE ORDER BY joined DESC LIMIT 100")
     html=''
