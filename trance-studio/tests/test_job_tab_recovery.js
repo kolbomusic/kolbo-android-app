@@ -36,7 +36,7 @@ const ctx={
  window:{},document:{
   hidden:false,visibilityState:'visible',
   getElementById:k=>dom[k],
-  createElement:()=>({}),
+  createElement:()=>({style:{}}),
   addEventListener:()=>{}
  },sessionStorage,Date,setTimeout:()=>0,clearTimeout:()=>{},
  AbortController,fetch:async(path,opts)=>{
