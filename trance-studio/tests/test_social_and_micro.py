@@ -77,6 +77,10 @@ class SocialImportAndMicroRemixTests(unittest.TestCase):
         def test_with_message(message):
             def fake_popen(command,stdout,stderr):
                 self.assertIn('--match-filter',command)
+                limit=command[command.index('--match-filter')+1]
+                self.assertEqual(limit,'duration <= 300')
+                self.assertIn('--max-filesize',command)
+                self.assertEqual(command[command.index('--max-filesize')+1],'45M')
                 stdout.write(message.encode('utf-8'))
                 return FinishedWithoutFile()
             with tempfile.TemporaryDirectory() as folder:
@@ -87,9 +91,40 @@ class SocialImportAndMicroRemixTests(unittest.TestCase):
                         pathlib.Path(folder),deadline=link_import.time.monotonic()+8,
                         format_spec='best')
         self.assertEqual(test_with_message(
-            '[download] example does not pass filter (duration > 120)'),
+            '[download] example does not pass filter (duration > 300)'),
             'duration')
         self.assertEqual(test_with_message(''),'invalid_file')
+
+    def test_public_link_media_duration_allows_five_minutes_not_more(self):
+        with tempfile.TemporaryDirectory() as directory:
+            media=pathlib.Path(directory)/'sample.mp4'
+            media.write_bytes(b'fake-data-for-mocked-ffprobe')
+            for seconds in (119.8,180.0,299.7,300.0):
+                with self.subTest(seconds=seconds),mock.patch.object(
+                    link_import.subprocess,'check_output',
+                    return_value=str(seconds).encode()):
+                    self.assertAlmostEqual(
+                        link_import._media_probe(media),seconds)
+            with mock.patch.object(link_import.subprocess,'check_output',
+                                   return_value=b'301.0'):
+                with self.assertRaises(link_import.LinkImportError) as err:
+                    link_import._media_probe(media)
+                self.assertIn('חמש דקות',str(err.exception))
+
+    def test_tiktok_180_seconds_video_is_accepted_after_safe_import(self):
+        link='https://www.tiktok.com/@test_news/video/1234567890123456789'
+        def mocked_public_download(url,directory,**kwargs):
+            self.assertEqual(url,link)
+            (pathlib.Path(directory)/'shared.mp4').write_bytes(b'clip'*5000)
+            return 'ok'
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(link_import,'_try_public_download',
+                                   side_effect=mocked_public_download),mock.patch.object(
+                link_import.subprocess,'check_output',
+                return_value=b'180.01'):
+                result,mime=link_import.fetch_public_social_media(link,directory)
+                self.assertEqual(result.name,'shared.mp4')
+                self.assertEqual(mime,'video/mp4')
 
     def test_verified_tiktok_public_permalink_attempted_first(self):
         short='https://vt.tiktok.com/ZDemo2026/'
