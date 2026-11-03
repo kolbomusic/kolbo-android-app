@@ -231,6 +231,10 @@ with site.app.test_client() as browser:
     r=browser.post("/login",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"email":admin_email,"password":"SyntheticAdminPassword!2026"})
     assert r.status_code==303
+    admin_page=browser.get("/profile",base_url=ORIGIN)
+    assert admin_page.status_code==200
+    assert "מנהל קהילה" in admin_page.get_data(as_text=True)
+    assert 'href="/members"' in admin_page.get_data(as_text=True)
     r=browser.post("/moderation",base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"id":str(post["id"]),"action":"publish"})
     assert r.status_code==409,"Publishing unapproved member's post must fail"
@@ -287,6 +291,10 @@ assert c.get("/feed",base_url=origin).status_code==403
 assert c.get("/find",base_url=origin).status_code==403
 assert c.get("/new",base_url=origin).status_code==200  # own pending posts only
 assert c.get("/inbox",base_url=origin).status_code==403
+profile=c.get("/profile",base_url=origin)
+assert profile.status_code==200
+assert "בקשת חברות בהמתנה לאישור" in profile.get_data(as_text=True)
+assert "ניהול בקשות חברות" not in profile.get_data(as_text=True)
 '''],cwd=APP,env=manual_env,capture_output=True,text=True,timeout=50)
 assert manual.returncode==0,(manual.stdout,manual.stderr[-1500:])
 
