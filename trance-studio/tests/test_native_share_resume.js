@@ -22,8 +22,15 @@ assert.match(java,/incomingVersion\+\+/);
 assert.match(java,/String js="\(async function\(\)/);
 assert.match(java,/importFailure\(\)/,'Provide visible error when Android content URI expired');
 assert.match(java,/typeof window\.kolboImportSharedAudio==='function'/);
-assert.match(java,/document\.getElementById\('generate'\)\.onclick/,
+assert.match(java,/typeof button\.onclick==='function'/,
  'Only remove native startup overlay when web UI has bound Create button');
+assert.match(java,/private void pollStudioReady\(/,
+ 'Avoid a one-shot WebView DOM-ready race during startup');
+assert.match(java,/mainHandler\.postDelayed\(\(\)->pollStudioReady\(token,attempt\+1\),700\)/);
+assert.match(java,/Button browserOffline=new Button\(this\)/,
+ 'Provide a fallback if Android WebView cannot load the cloud studio');
+assert.match(java,/webView\.clearCache\(true\)/,
+ 'Recover from stale cached startup content');
 assert.match(html,/window\.kolboCanImportSharedAudio=function\(\)\{return !active;\}/);
 assert.match(html,/window\.kolboImportSharedAudio=function\(items\)/);
 assert.match(html,/\$\('generate'\)\.onclick=run/);
