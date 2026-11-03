@@ -1,0 +1,69 @@
+name: Karnafim memorial photo intake isolated verification
+on:
+  push:
+    branches: [karnafim-memorial-source-live-20261103]
+    paths:
+      - 'karnafim-site/**'
+      - '.github/workflows/karnafim-memorial-intake-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BARKAN_PUBLIC_AUTH: '0'
+      BARKAN_SAFETY_RELEASE_APPROVED: '0'
+      BARKAN_ALLOW_SIGNUP: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r karnafim-site/requirements.txt
+      - name: Compile all Python
+        run: python -m compileall -q karnafim-site
+      - name: Test anonymous public pages
+        run: python karnafim-site/tests/test_rebuilt_design.py
+      - name: Test identity-specific memorial photo source intake
+        run: python karnafim-site/tests/test_memorial_sources.py
+  member-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: barkan_ci
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: barkan_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U barkan_ci -d barkan_ci"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql://barkan_ci:synthetic_ci_only@localhost:5432/barkan_ci
+      BARKAN_DATABASE_URL: postgresql://barkan_ci:synthetic_ci_only@localhost:5432/barkan_ci
+      BARKAN_SESSION_SECRET: synthetic-ci-passwordless-secret-not-for-live-use
+      BARKAN_PUBLIC_ORIGIN: https://karnafim-community-46.onrender.com
+      BARKAN_PUBLIC_AUTH: '1'
+      BARKAN_SAFETY_RELEASE_APPROVED: '1'
+      BARKAN_ALLOW_SIGNUP: '1'
+      BARKAN_MAIL_DELIVERY_VERIFIED: '1'
+      BARKAN_RESEND_API_KEY: synthetic-mocked-no-network
+      BARKAN_MAIL_FROM: noreply@example.test
+      BARKAN_ADMIN_EMAIL: admin@example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r karnafim-site/requirements.txt
+      - name: Verify full member flow and memorial photo intake
+        run: python karnafim-site/tests/test_rebuilt_integration.py
