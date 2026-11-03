@@ -291,12 +291,12 @@ def moderate_submission(title,body,kind,files,author_approved):
     if files or kind!="story":
         return ("pending","קובץ קול, תמונה, סרטון או סוג תוכן רגיש מחייבים בדיקת תוכן אנושית.","")
     # Never inspect and infer intent from image/audio bytes in this lightweight engine.
-    if re.search(r"(?:https?://|www\\.|t\\.me/|wa\\.me/|קנו עכשיו|להזמנות|מבצע מיוחד)",compact,re.I):
+    if re.search(r"(?:https?://|www\.|t\.me/|wa\.me/|קנו עכשיו|להזמנות|מבצע מיוחד)",compact,re.I):
         return ("rejected","הפרסום כולל קישור או ביטוי מסחרי שאינו מתאים לארכיון הפלוגה. אפשר לערער אם זו הפניה למקור מורשת.", "")
     if len(body.strip())<80:
         return ("pending","נדרש הקשר נוסף כדי לבדוק באופן מהימן את הסיפור.","")
-    if re.search(r"(?:\\b(?:05[0-9][\\s-]?[0-9]{7}|[0-9]{2,3}[\\s-]?[0-9]{7})\\b|"
-                 r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|"
+    if re.search(r"(?:\b(?:05[0-9][\s-]?[0-9]{7}|[0-9]{2,3}[\s-]?[0-9]{7})\b|"
+                 r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|"
                  r"כתובת מגורים|תעודת זהות|סיסמה|מסווג|סודי ביותר|מיקום כוח|"
                  r"נפל בקרב|נהרג|חלל|פצוע|התאבדות|אונס|הטרדה|אלימות|"
                  r"לשון הרע|שם מלא)",compact,re.I):
@@ -1155,11 +1155,23 @@ def moderation():
         action=request.form.get("action","")
         if not pid.isdecimal() or action not in ("publish","reject"):abort(400)
         if action=="publish":
-            result=sql("""UPDATE b2_posts p SET status='published' FROM b2_users u
-                WHERE p.id=%s AND p.author=u.id AND u.approved=TRUE
-                AND p.status='pending' RETURNING p.id""",(int(pid),),True)
+            note="אושר לאחר בדיקת צוות הבקרה."
+            result=sql("""UPDATE b2_posts p SET status='published',
+                moderation_reason=%s,moderation_source='human'
+                FROM b2_users u WHERE p.id=%s AND p.author=u.id AND u.approved=TRUE
+                AND p.status='pending' RETURNING p.id""",(note,int(pid)),True)
             if not result:abort(409)
-        else:sql("UPDATE b2_posts SET status='rejected' WHERE id=%s AND status='pending'",(int(pid),))
+        else:
+            note=request.form.get("reason","").strip()[:700]
+            if len(note)<8:
+                return layout("נדרש הסבר",'<section class="note error">כדי לדחות פרסום, יש להזין הסבר ברור לחבר. <a href="/moderation">חזרה לבקרה</a></section>'),400
+            result=sql("""UPDATE b2_posts SET status='rejected',
+                 moderation_reason=%s,moderation_source='human'
+                 WHERE id=%s AND status='pending' RETURNING id""",(note,int(pid)),True)
+            if not result:abort(409)
+        sql("""INSERT INTO b2_moderation_events(post_id,decision,reason,source)
+            VALUES(%s,%s,%s,'human')""",(int(pid),
+             "published" if action=="publish" else "rejected",note))
         return redirect("/moderation",303)
     posts=sql("""SELECT p.*,u.name,u.approved FROM b2_posts p
         JOIN b2_users u ON u.id=p.author WHERE p.status='pending'
@@ -1168,7 +1180,7 @@ def moderation():
     for p in posts:
         files=sql("SELECT id,kind FROM b2_media WHERE post_id=%s",(p["id"],))
         controls=('<button name="action" value="publish" class="primary">אישור לפרסום</button>' if p["approved"] else '<span>נדרש קודם אישור החבר</span>')
-        controls+='<button name="action" value="reject" class="subtle">דחיית פרסום</button>'
+        controls+='<label>נימוק לדחייה<input name="reason" maxlength="700" placeholder="מה נדרש לתקן כדי לאשר?"></label><button name="action" value="reject" class="subtle">דחיית פרסום עם הסבר</button>'
         cards+='<article class="post"><h2>'+e(p["title"])+'</h2><p>מאת '+e(p["name"])+'</p><p>'+e(p["body"])+'</p><div class="media-grid">'+''.join(media_html(f["id"],f["kind"]) for f in files)+'</div>'+button_form('<input type="hidden" name="id" value="'+str(p["id"])+'">'+controls,'/moderation')+'</article>'
     return layout("בקרת פרסומים",'<div class="pagehead"><h1>בקרת פרסומים</h1></div>'+(cards or '<p>אין פרסומים ממתינים.</p>'))
 
