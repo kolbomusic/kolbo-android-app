@@ -77,7 +77,7 @@ class SocialImportAndMicroRemixTests(unittest.TestCase):
         def test_with_message(message):
             def fake_popen(command,stdout,stderr):
                 self.assertIn('--match-filter',command)
-                stderr.write(message.encode('utf-8'))
+                stdout.write(message.encode('utf-8'))
                 return FinishedWithoutFile()
             with tempfile.TemporaryDirectory() as folder:
                 with mock.patch.object(link_import.subprocess,'Popen',
