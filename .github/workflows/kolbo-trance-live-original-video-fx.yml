@@ -8,6 +8,10 @@ on:
       - '.github/workflows/kolbo-trance-live-original-video-fx.yml'
 permissions:
   contents: read
+# Serialize real requests to the same free 512 MiB Render instance.
+concurrency:
+  group: kolbo-trance-render-acceptance
+  cancel-in-progress: false
 jobs:
   public-video-fx:
     runs-on: ubuntu-latest
