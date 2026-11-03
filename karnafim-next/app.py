@@ -20,7 +20,7 @@ from flask import Flask, Response, abort, g, redirect, request, send_file, sessi
 from markupsafe import Markup
 from PIL import Image, ImageOps, UnidentifiedImageError
 from review_rules import triage
-from memorial_portraits import portrait_for, MEMORIAL_PEOPLE
+from memorial_portraits import portrait_for, MEMORIAL_PEOPLE, official_source_matches
 
 BASE=Path(__file__).resolve().parent
 app=Flask(__name__,static_folder=str(BASE/"static"))
@@ -348,7 +348,7 @@ def memorial():
     def memorial_card(person_key,name,role,date,iso,source):
         # Bind image and identity using one verified memorial record, not a
         # search for a similar face or identical/partial name.
-        if person_key not in MEMORIAL_PEOPLE:abort(500)
+        if not official_source_matches(person_key,source):abort(500)
         src=portrait_for(person_key,app.static_folder)
         photo=('<img class="memorial-portrait" loading="lazy" alt="תצלום של '+e(name)+'" src="'+e(src)+'">' if src else
                '<div class="memorial-photo-pending" role="note">תמונה מאומתת תוצג כאן לאחר אישור זכויות שימוש</div>')
