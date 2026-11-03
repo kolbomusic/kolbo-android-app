@@ -1,10 +1,8 @@
 name: Publish Barkan public website on GitHub Pages
+# Optional only: this repository currently has GitHub Pages disabled (403).
+# Keep the proven isolated CDN publishing workflow as the automatic route.
+# An operator may manually enable Pages in repository Settings before dispatch.
 on:
-  push:
-    branches: [karnafim-barkan-rebuild-20261102]
-    paths:
-      - 'karnafim-next/**'
-      - '.github/workflows/barkan-github-pages.yml'
   workflow_dispatch:
 permissions:
   contents: read
