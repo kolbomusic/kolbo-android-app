@@ -137,14 +137,16 @@ def current():
 
 @app.before_request
 def before():
-    # Optional canonical handoff: preserve the independent health check, but
-    # forward public GET navigation to the sole community address.
+    # Redirect only approved PUBLIC GET routes. Never forward tokens, private
+    # endpoints, media, query parameters, or account/session operations.
+    public_handoff_routes=frozenset((
+        "/", "/heritage", "/memorial", "/photos", "/about", "/help",
+        "/privacy", "/terms", "/safety", "/status"
+    ))
     if (os.environ.get("BARKAN_CANONICAL_HANDOFF","0")=="1"
-            and request.method=="GET" and request.path!="/health"):
-        target="https://karnafim-community-46.onrender.com"+request.path
-        if request.query_string:
-            target+="?"+request.query_string.decode("latin-1")
-        return redirect(target,code=302)
+            and request.method=="GET" and request.path in public_handoff_routes
+            and not request.query_string):
+        return redirect("https://karnafim-community-46.onrender.com"+request.path,code=302)
     if "csrf" not in session:session["csrf"]=secrets.token_urlsafe(32)
     g.user=current() if PUBLIC_AUTH and session.get("uid") is not None else None
 
