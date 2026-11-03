@@ -83,7 +83,7 @@ assert client.get("/staff",base_url=origin).status_code==503
 source=(ROOT/"app.py").read_text(encoding="utf-8")
 assert "membership_status='pending'" in source
 assert "membership_status=%s" in source
-assert "member_"+"""approved""" in "member_approved"  # status naming invariant
+assert "\"member_\"+decision" in source
 assert "INSERT INTO b2_admin_audit(actor,target,action,details)" in source
 assert "with connect() as c:" in source
 assert "role_changed" in source
