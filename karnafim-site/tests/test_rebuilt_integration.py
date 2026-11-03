@@ -154,6 +154,8 @@ with site.app.test_client() as old_member:
 with site.app.test_client() as browser:
     for route in ("/","/heritage","/memorial","/photos","/about","/privacy","/terms","/safety","/help","/status"):
         r=browser.get(route,base_url=ORIGIN)
+        if route=="/":
+            assert 'href="/signup"' in r.get_data(as_text=True)
         assert r.status_code==200,(route,r.status_code)
         assert 'lang="he" dir="rtl"' in r.get_data(as_text=True)
         assert "default-src 'none'" in r.headers["Content-Security-Policy"]
@@ -283,6 +285,7 @@ with site.app.test_client() as browser:
     assert delegate.get("/invite",base_url=ORIGIN).status_code==200
     assert "wa.me" in delegate.get("/invite",base_url=ORIGIN).get_data(as_text=True)
     assert delegate.get("/moderation",base_url=ORIGIN).status_code==200
+    assert delegate.get("/media/"+str(photo["id"]),base_url=ORIGIN).status_code==200
     assert delegate.get("/members",base_url=ORIGIN).status_code==403
     assert delegate.get("/team",base_url=ORIGIN).status_code==403
     assert delegate.post("/team",base_url=ORIGIN,data={
