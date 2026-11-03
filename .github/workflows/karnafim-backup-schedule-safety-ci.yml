@@ -1,7 +1,7 @@
 name: Karnafim backup schedule safety CI
 on:
   push:
-    branches: [karnafim-daily-backup-schedule-20261103]
+    branches: [main, karnafim-daily-backup-schedule-20261103]
     paths:
       - '.github/workflows/karnafim-production-encrypted-backup.yml'
       - '.github/workflows/karnafim-backup-schedule-safety-ci.yml'
