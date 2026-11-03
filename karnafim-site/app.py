@@ -313,7 +313,7 @@ def ready():
 def home():
     return layout("בית",'''<section class="hero"><div class="eyebrow">חטיבה 401 · גדוד 46 · פלוגה ב׳</div>
 <h1>יש קשרים<br><em>שלא משתחררים.</em></h1><p>בית אחד לחברים מהשירות, לזיכרונות, לתמונות, למורשת ולהנצחת האנשים שאיתם חלקנו דרך.</p>
-<div class="hero-actions"><a class="primary" href="/signup">הצטרפות לקהילה</a><a class="outline" href="/heritage">לסיפורי הפלוגה</a><a class="outline" href="/memorial">לזיכרון ולהנצחה</a></div>
+<div class="hero-actions">'''+('<a class="primary" href="/signup">הצטרפות לקהילה</a>' if ALLOW_SIGNUP else '')+'''<a class="outline" href="/heritage">לסיפורי הפלוגה</a><a class="outline" href="/memorial">לזיכרון ולהנצחה</a></div>
 <div class="hero-index">2003—2006 <span>ומעבר לשנים</span></div></section>
 <section class="intro"><span class="tag">הבית של הפלוגה</span><h2>החברות נשארת. עכשיו יש לה מקום.</h2>
 <p>מיזם עצמאי לחידוש הקשר בין יוצאי הקרנפים, שנקראו בהמשך ברקן, ולהקמת ארכיון שיתופי מכבד.</p></section>
