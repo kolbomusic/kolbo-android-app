@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /signup
+Disallow: /login
+Disallow: /verify-email
+Disallow: /media/
