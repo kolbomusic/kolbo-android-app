@@ -154,8 +154,9 @@ class BeatVideoEditTests(unittest.TestCase):
         sr=8000
         clip=np.zeros(sr*5,dtype=np.float32)
         for left,right,pitch in ((0,.9,310),(1.5,2.35,440),(3,4.8,275)):
-            t=np.arange(int(sr*(right-left)),dtype=np.float32)/sr
-            clip[int(sr*left):int(sr*right)]=.31*np.sin(2*np.pi*pitch*t)
+            left_index=int(round(sr*left));right_index=int(round(sr*right))
+            t=np.arange(right_index-left_index,dtype=np.float32)/sr
+            clip[left_index:right_index]=.31*np.sin(2*np.pi*pitch*t)
         music,voice,cues=render_mix([clip],sample_rate=sr,seconds=30,
                         bpm=145,humor='stretch',fx_intensity=3,
                         return_voice=True,return_video_timeline=True)
