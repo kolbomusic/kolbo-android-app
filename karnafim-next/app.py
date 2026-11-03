@@ -241,8 +241,19 @@ def memorial():
 
 @app.get("/photos")
 def photos():
-    return layout("תמונות",'''<div class="pagehead"><span class="tag">אלבום הפלוגה</span><h1>כל תמונה מחזירה רגע</h1><p>חומרים אישיים יישמרו בצורה פרטית עד אישור בעל החומר ובדיקת פרסום.</p></div>
-<section class="empty-photo"><div>▧</div><h2>האלבום מחכה לסיפורים שלכם</h2><p>תמונות של חברים לא יפורסמו בלא הרשאה. לאחר הפעלת מערכת החברים, העלאות יועברו לבקרה לפני חשיפה.</p></section>''')
+    intro='<div class="pagehead"><span class="tag">אלבום הפלוגה</span><h1>כל תמונה מחזירה רגע</h1><p>רק תמונות שאושרו לפרסום מוצגות לחברים מאושרים.</p></div>'
+    if not PUBLIC_AUTH or not g.user or not g.user["approved"]:
+        return layout("תמונות",intro+'<section class="empty-photo"><h2>אלבום החברים פרטי</h2><p>תמונות מאושרות זמינות רק לחברי הקהילה שאושרו.</p></section>')
+    rows=sql("""SELECT f.id,p.title,p.year_text,u.name
+        FROM b2_media f JOIN b2_posts p ON p.id=f.post_id
+        JOIN b2_users u ON u.id=p.author
+        WHERE f.kind='image' AND p.status='published' AND u.approved=TRUE
+        ORDER BY p.created DESC,f.id DESC LIMIT 80""")
+    tiles=''.join('<article class="post">'+media_html(r["id"],"image")+
+        '<h2>'+e(r["title"])+'</h2><p>'+e(r["name"])+' · '+e(r["year_text"])+'</p></article>'
+        for r in rows)
+    return layout("תמונות",intro+('<section class="media-grid">'+tiles+'</section>' if tiles else
+        '<section class="empty-photo"><h2>עדיין אין תמונות מאושרות</h2><p>תמונות חדשות יופיעו כאן לאחר בדיקת מנהל ואישור פרסום.</p><a href="/new">העלאת זיכרון</a></section>'))
 
 @app.get("/about")
 def about():
