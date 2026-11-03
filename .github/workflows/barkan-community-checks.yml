@@ -36,3 +36,5 @@ jobs:
         run: python tests/test_design_quality.py
       - name: Verify moderation triage
         run: python tests/test_review_rules.py
+      - name: Verify private media access
+        run: python tests/test_media_permissions.py
