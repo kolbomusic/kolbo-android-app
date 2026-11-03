@@ -43,3 +43,5 @@ jobs:
 
       - name: Verify memorial portrait identity and permissions
         run: python tests/test_memorial_portraits.py
+      - name: Verify memorial source intake permissions
+        run: python tests/test_memorial_source_intake.py
