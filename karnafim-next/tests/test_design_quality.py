@@ -38,6 +38,12 @@ unconfigured=client.get("/ready",base_url="https://karnafim-barkan-46.onrender.c
 assert unconfigured.status_code==503
 assert unconfigured.get_json()["member_portal"]=="closed"
 origin="https://karnafim-barkan-46.onrender.com"
+# The same release must accept both intended Render hostnames, but not
+# arbitrary Host headers (host-header injection protection).
+for host in ("karnafim-barkan-46.onrender.com",
+             "karnafim-community-46.onrender.com"):
+    assert client.get("/health",base_url="https://"+host).status_code==200,host
+assert client.get("/health",base_url="https://untrusted.example").status_code==400
 routes=["/","/heritage","/memorial","/photos","/about","/help","/privacy","/terms","/safety","/status"]
 all_links=set()
 for path in routes:
