@@ -33,6 +33,10 @@ class Inspector(HTMLParser):
         if tag=="img":self.images.append(a)
 
 client=site.app.test_client()
+# A public-only deployment must never confuse liveness with readiness.
+unconfigured=client.get("/ready",base_url="https://karnafim-barkan-46.onrender.com")
+assert unconfigured.status_code==503
+assert unconfigured.get_json()["member_portal"]=="closed"
 origin="https://karnafim-barkan-46.onrender.com"
 routes=["/","/heritage","/memorial","/photos","/about","/help","/privacy","/terms","/safety","/status"]
 all_links=set()
