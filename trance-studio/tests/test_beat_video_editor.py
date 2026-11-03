@@ -128,6 +128,34 @@ class BeatVideoEditTests(unittest.TestCase):
             self.assertTrue(meta['video_edit_audio_synced'])
             self.assertEqual(meta['video_edit_fx_cues'],1)
             self.assertTrue(out.stat().st_size>20000)
+            # Prove real FFmpeg motion ramps do NOT change a shot's reserved
+            # screen time or move the NEXT sound effect off its beat.
+            from beat_video_editor import sync_edit_decisions
+            planned=sync_edit_decisions(8.,145,5.,cues,humor='stretch',
+                                        fx_intensity=3)
+            parts=sorted((root/'work').glob('shot-*.mp4'))
+            self.assertEqual(len(parts),len(planned))
+            expected_frames=[
+                round((item['start']+item['duration'])*12)-
+                round(item['start']*12) for item in planned]
+            self.assertEqual(sum(expected_frames),round(8*12))
+            self.assertEqual(meta['video_edit_frames'],round(8*12))
+            self.assertEqual(meta['video_edit_fps'],12)
+            for part,frames in zip(parts,expected_frames):
+                actual=int(subprocess.check_output([
+                   'ffprobe','-v','error','-select_streams','v:0',
+                   '-count_frames','-show_entries','stream=nb_read_frames',
+                   '-of','default=nokey=1:noprint_wrappers=1',str(part)],
+                    text=True,timeout=15).strip())
+                self.assertEqual(actual,frames,(part,frames,actual))
+            # The warped/slow-motion beat is confined to its sample-derived
+            # start and end. Previously setpts would make it ~1.6x too long.
+            warped=parts[2]
+            fx_duration=float(subprocess.check_output([
+                'ffprobe','-v','error','-show_entries','format=duration',
+                '-of','default=nokey=1:noprint_wrappers=1',str(warped)],
+                text=True,timeout=15))
+            self.assertAlmostEqual(fx_duration,.7,delta=1/12+.02)
             probe=json.loads(subprocess.check_output(['ffprobe','-v','error',
                 '-show_streams','-show_format','-of','json',str(out)],timeout=20))
             self.assertEqual({s['codec_type'] for s in probe['streams']},
