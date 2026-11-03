@@ -1,0 +1,62 @@
+name: Karnafim memorial feature production read-only smoke test
+on:
+  push:
+    branches: [karnafim-veterans-portal-20261031]
+    paths:
+      - '.github/workflows/karnafim-memorial-live-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Verify live public memorial and locked photo-intake routes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,time,urllib.parse,urllib.request,urllib.error
+          base="https://karnafim-community-46.onrender.com"
+          record_ids=[
+            "en_f5ccba845584f96f9b9334cf335d2e78",
+            "en_f53b79619b3f27184812b11f14e635a8",
+            "en_e6446f8f52c2b18e0ec560602482bdda",
+            "en_34b2955a02b6a81f8ba932dbf6228e61",
+            "en_53e66dd727188835acbe02a1f641a882",
+          ]
+          headers={"User-Agent":"KarnafimMemorialSafeReadOnly/1.0"}
+          report={}
+          for attempt in range(1,13):
+              try:
+                  req=urllib.request.Request(base+"/memorial",headers=headers)
+                  with urllib.request.urlopen(req,timeout=25) as response:
+                      html=response.read(250000).decode("utf-8","replace")
+                      report["memorial_http"]=response.status
+                      report["all_five_official_ids"]=all(x in html for x in record_ids)
+                      report["new_photo_source_label"]="התמונה תוצג לאחר בדיקת זהות" in html
+                      report["csp_present"]=bool(response.headers.get("Content-Security-Policy"))
+                  destinations={}
+                  for route in ("/memorial-sources","/memorial-source-review"):
+                      req=urllib.request.Request(base+route,headers=headers)
+                      with urllib.request.urlopen(req,timeout=25) as response:
+                          destinations[route]={
+                              "http":response.status,
+                              "final_path":urllib.parse.urlsplit(response.url).path
+                          }
+                  report["anonymous_destinations"]=destinations
+                  good=(report["memorial_http"]==200 and
+                        report["all_five_official_ids"] and
+                        report["new_photo_source_label"] and
+                        report["csp_present"] and
+                        all(r["final_path"]=="/login" for r in destinations.values()))
+                  report["passed"]=good
+                  print("PROBE="+json.dumps({"attempt":attempt,**report},ensure_ascii=False),flush=True)
+                  if good:break
+              except (OSError,TimeoutError,ValueError) as exc:
+                  report["error"]=type(exc).__name__
+                  print("PROBE="+json.dumps({"attempt":attempt,"error":report["error"]}),flush=True)
+              if attempt<12:time.sleep(15)
+          if not report.get("passed"):
+              raise SystemExit("Live photo-source feature not verified or auth protection failed")
+          PY
