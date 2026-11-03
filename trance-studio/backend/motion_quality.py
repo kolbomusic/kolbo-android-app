@@ -53,17 +53,24 @@ def require_visible_motion(video_path, *, threshold=0.30, start_seconds=0):
 def require_visible_motion_somewhere(video_path, *, duration, threshold=0.30):
     """Validate real motion after a possible title-card intro.
 
-    All real-source video code paths must share the same checks. Returning
-    from only the first-three-second validation rejects real videos that
-    start with a stationary card. Never accept a completely frozen image,
-    and cap CPU work to four short original-video samples.
+    The old hard-coded four offsets (0/3/8/15 seconds) falsely rejected
+    long WhatsApp videos with a still opening and actual movement at 30–54s.
+    Preserve those early probes, then inspect up to eight evenly spaced
+    windows THROUGH THE END of the real source. Each window still decodes
+    only three seconds at 48x48; total probes are strictly bounded to 12.
+    Genuine frozen videos remain rejected, and no synthetic frames are used.
     """
     duration=float(duration)
     if not .8<=duration<=600:
         raise NoVisibleMotion("משך סרטון המקור אינו תקין")
-    for offset in (0,3,8,15):
-        if duration<offset+1:
+    last=max(0.0,duration-2.9)
+    offsets=[0.0,3.0,8.0,15.0]
+    offsets.extend(last*i/8 for i in range(1,9))
+    checked=[]
+    for offset in offsets:
+        if duration<offset+1 or any(abs(offset-prev)<.8 for prev in checked):
             continue
+        checked.append(offset)
         try:
             return require_visible_motion(video_path,threshold=threshold,
                                           start_seconds=offset)
