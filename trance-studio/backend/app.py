@@ -127,6 +127,11 @@ def create_app(config=None):
             # private audio or transcript to a new third party.
             audio_options['transcript_hint']=detected_transcript[:4000]
             audio_options['transcript_timeline']=transcript_timeline
+            audio_options['source_video_length']=bool(
+                options.get('video_requested') and
+                options.get('video_strategy') in ('remix_original','auto_legacy') and
+                any(Path(p).suffix.lower() in ('.mp4','.webm','.3gp','.3gpp','.mov')
+                    for p in paths))
             stage='mix'
             rendered=render_mix(clips,**audio_options,return_voice=True,
                                    return_video_timeline=bool(options.get('video_requested')),
@@ -453,7 +458,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.0',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.1',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/capabilities')
     def capabilities():

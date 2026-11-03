@@ -713,7 +713,8 @@ def speech_aware_music_map(arranged, sr, bpm, seconds, frame_seconds=.10):
     smoothed=np.convolve(voiced,np.array([.12,.20,.36,.20,.12],np.float32),mode='same')
     return smoothed.astype(np.float32),fill_locations
 
-def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint='',transcript_timeline=None,return_video_timeline=False):
+def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_level=1,melody='auto',humor='auto',fx_intensity=2,fx_gain=1.15,mix_variation=0,return_voice=False,progress=lambda *args:None,transcript_hint='',transcript_timeline=None,return_video_timeline=False,
+               source_video_length=False):
     if not 120<=bpm<=165 or seconds not in (0,30,60,90,120,180) or style not in STYLES or humor not in HUMOR or not (melody=='auto' or str(melody) in ('1','2','3','4','5','6')) or fx_intensity not in (1,2,3) or not .55<=fx_gain<=1.7 or type(mix_variation) is not int or not 0<=mix_variation<=100000 or not .5<=voice_level<=1.5 or not 8000<=sample_rate<=48000:raise ValueError('הגדרות המיקס אינן תקינות')
     if not 1<=len(clips)<=4:raise ValueError('יש לבחור בין הקלטה אחת לארבע הקלטות')
     if sum(len(clip)/sample_rate for clip in clips)>MAX_COMBINED_SOURCE_SECONDS:
@@ -750,7 +751,13 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                   for i,v in enumerate(voices)]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
     needed=(beat*5 if short_form else beat*10)+total_vocal_duration+max(0,len(voices)-1)*beat*3
-    seconds=max((14.0 if short_form else 30.0),float(seconds),math.ceil(needed))
+    # When remixing the ACTUAL video someone shared, never pad a five-second
+    # source into an arbitrary 30-second montage just to fill our default
+    # audio-only minimum. Keep every original word, its inserted FX and
+    # musical entrance, but use the shortest natural complete arrangement.
+    # Explicit user-selected lengths (30/60/...) are always respected.
+    minimum=(14.0 if short_form else 0.0 if source_video_length and seconds==0 else 30.0)
+    seconds=max(minimum,float(seconds),math.ceil(needed))
     if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
     n=int(round(seconds*sr))
     activity,fx_fill_times=speech_aware_music_map(arranged,sr,bpm,seconds)
