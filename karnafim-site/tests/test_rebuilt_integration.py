@@ -158,6 +158,7 @@ with site.app.test_client() as browser:
             assert 'href="/signup"' in r.get_data(as_text=True)
         assert r.status_code==200,(route,r.status_code)
         assert 'lang="he" dir="rtl"' in r.get_data(as_text=True)
+        assert "default-src 'none'" in r.headers["Content-Security-Policy"]
     memorial_html=browser.get("/memorial",base_url=ORIGIN).get_data(as_text=True)
     assert "יהונתן (יוני) שרעבי" in memorial_html
     assert "לוחם שריון · פלוגה ב׳ הקרנפים, גדוד 46" in memorial_html
@@ -165,7 +166,6 @@ with site.app.test_client() as browser:
     assert "תפקידו כנהג טנק" in memorial_html
     assert "כתותחן" not in memorial_html
     assert "תותחן מרכבה סימן 4 · פלוגה ב׳" not in memorial_html
-        assert "default-src 'none'" in r.headers["Content-Security-Policy"]
     ready=browser.get("/ready",base_url=ORIGIN)
     assert ready.status_code==200,ready.status_code
     assert ready.get_json()=={"status":"ready","database":"available",
