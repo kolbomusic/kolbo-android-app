@@ -813,13 +813,13 @@ if(j.video_url){
  $('videoPlayer').src=videoUrl;
  $('videoResult').hidden=false;
  $('storyboardInfo').textContent=j.video_mode==='original_input_video'?
-   (j.video_edit_style==='beat_cut_punch_in_speed_ramp'?
-    (j.video_edit_style==='voice_fx_synced_motion_warp'?
-     'הווידאו המקורי נערך לפי אפקטי הקול: '+(j.video_edit_fx_cues||0)+
-     ' רגעי קול עם שינויי תנועה, האטה, האצה ועיוות מראה במיקום מסונכרן. אין שינוי הבעות פנים או שפתיים באמצעות AI.' :
-     'צילום WhatsApp המקורי נערך מחדש עם '+(j.video_edit_shots||'כמה')+
-     ' חיתוכים בקצב המוזיקה, הדגשות צילום ושינויי מהירות מתונים. לא נוצרו אירועים חדשים על סמך המילים.') :
-    'שולב צילום המקור עם המיקס. הקלטה מצולמת אינה יצירת AI של אירועים חדשים.') :
+   (j.video_edit_style==='voice_fx_synced_motion_warp'?
+    'הווידאו המקורי נערך לפי אפקטי הקול: '+(j.video_edit_fx_cues||0)+
+    ' רגעי אפקטים עם האטה, האצה, שינוי תנועה ועיוות חזותי של הצילום המקורי בזמן הנכון. לא בוצעו שינוי הבעות פנים או סנכרון שפתיים ב־AI.' :
+    j.video_edit_style==='beat_cut_punch_in_speed_ramp'?
+    'צילום WhatsApp המקורי נערך מחדש עם '+(j.video_edit_shots||'כמה')+
+    ' חיתוכים בקצב המוזיקה ושינויי מהירות מתונים.' :
+    'שולב צילום המקור עם המיקס; לא נוצרו אירועים חדשים ב־AI.') :
    (String(j.video_mode||'').indexOf('ai_generated')===0?
    'סצנות AI נפרדות לאורך המיקס, ללא לולאה של קליפ קצר. זו המחשה משוערת; פירוש הדיבור לא אומת.' :
    (j.visual_coverage==='partial'?

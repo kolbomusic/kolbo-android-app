@@ -80,6 +80,8 @@ jobs:
         run: node trance-studio/tests/test_restart_recovery.js
       - name: Validate licensed music and story-only YouTube UI
         run: node trance-studio/tests/test_video_music_ui.js
+      - name: Verify source video voice-FX synced UI
+        run: node trance-studio/tests/test_fx_synced_video_ui.js
       - name: Verify Android and PWA direct WhatsApp video share limits
         run: node trance-studio/tests/test_pwa_video_share.js
       - name: Verify free AI phone retry keeps MP4 without regenerating
