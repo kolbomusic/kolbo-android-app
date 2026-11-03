@@ -163,6 +163,16 @@ with site.app.test_client() as browser:
     assert "יהונתן (יוני) שרעבי" in memorial_html
     assert "לוחם שריון · פלוגה ב׳ הקרנפים, גדוד 46" in memorial_html
     assert "3.8.2006" in memorial_html or "3 באוגוסט 2006" in memorial_html
+    for name,role in (
+        ("בניה ריין","מפקד כוח בניה"),
+        ("אורי גרוסמן","מפקד טנק ששימש כתותחן בכוח בניה"),
+        ("אדם גורן","טען־קשר בכוח בניה"),
+        ("אלכסנדר (סשה) בונימוביץ","נהג הטנק בכוח בניה")
+    ):
+        assert name in memorial_html,(name,"missing memorial entry")
+        assert role in memorial_html,(name,"crew role mismatch")
+    assert memorial_html.count("12.8.2006")>=4
+    assert "המידע ההיסטורי מקושר לעמודי הנצחה רשמיים" in memorial_html
     assert "תפקידו כנהג טנק" in memorial_html
     assert "כתותחן" not in memorial_html
     assert "תותחן מרכבה סימן 4 · פלוגה ב׳" not in memorial_html
