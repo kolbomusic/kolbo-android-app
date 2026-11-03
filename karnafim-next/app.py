@@ -232,7 +232,7 @@ def layout(title,body):
         menu += [("/feed","הקהילה"),("/find","איתור חברים"),("/new","שיתוף זיכרון"),("/my-posts","הפרסומים שלי"),("/inbox","הודעות"),("/profile","הפרופיל שלי")]
         if can_moderate():menu += [("/moderation","בקרת פרסומים")]
         if can_manage_members():menu += [("/members","אישור חברים")]
-        if owner():menu += [("/staff","הרשאות ניהול")]
+        if owner():menu += [("/staff","הרשאות ניהול"),("/admin-audit","יומן ניהול")]
     elif PUBLIC_AUTH:
         menu += [("/login","כניסה")]
         if ALLOW_SIGNUP:menu += [("/signup","הצטרפות")]
@@ -786,6 +786,26 @@ def staff():
             '<input type="hidden" name="id" value="'+str(u["id"])+'"><label>הרשאה<select name="role">'+
             options+'</select></label><button class="primary">שמירת הרשאה</button>',"/staff")+'</article>'
     return layout("הרשאות ניהול",'<div class="pagehead"><h1>הרשאות מנהלים</h1><p>רק המנהל הראשי יכול להעניק או לבטל הרשאות. מנהלים נוספים אינם רשאים לשנות הרשאות.</p></div>'+ (cards or '<p>אין חברים מאושרים נוספים.</p>'))
+
+@app.get("/admin-audit")
+@require_approved
+def admin_audit():
+    """Founder-only audit view. Never expose users' emails or private messages."""
+    if not owner():abort(403)
+    records=sql("""SELECT a.action,a.details,a.created,
+        actor.name AS actor_name,target.name AS target_name
+        FROM b2_admin_audit a
+        JOIN b2_users actor ON actor.id=a.actor
+        JOIN b2_users target ON target.id=a.target
+        ORDER BY a.created DESC,a.id DESC LIMIT 100""")
+    labels={"member_approved":"אישור חבר","member_rejected":"דחיית בקשה",
+            "role_changed":"שינוי הרשאה"}
+    items=''.join('<article class="person"><h2>'+e(labels.get(r["action"],"פעולת ניהול"))+
+        '</h2><p>בוצע על ידי: '+e(r["actor_name"])+' · חבר: '+e(r["target_name"])+
+        '</p><p>'+e(r["details"])+'</p><p><time>'+e(r["created"])+'</time></p></article>'
+        for r in records)
+    return layout("יומן ניהול",'<div class="pagehead"><h1>יומן פעולות ניהול</h1><p>רישום החלטות אחרונות על חברים והרשאות. גלוי למנהל הראשי בלבד.</p></div>'+
+        (items or '<div class="note">אין עדיין פעולות מתועדות.</div>'))
 
 @app.errorhandler(404)
 def not_found(err):return layout("העמוד לא נמצא",'<div class="pagehead"><h1>העמוד לא נמצא</h1><a href="/">חזרה לדף הבית</a></div>'),404
