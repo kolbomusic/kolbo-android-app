@@ -1,5 +1,7 @@
 name: Barkan community safety checks
 on:
+  pull_request:
+    branches: [karnafim-barkan-rebuild-20261102]
   push:
     branches:
       - karnafim-barkan-rebuild-20261102
@@ -30,6 +32,8 @@ jobs:
           cache-dependency-path: karnafim-next/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+      - name: Verify no JavaScript syntax errors in recovery UI
+        run: node --check karnafim-next/static/site.js
       - name: Check Python syntax
         run: python -m compileall -q app.py review_rules.py memorial_portraits.py tests/
       - name: Verify public navigation and security
