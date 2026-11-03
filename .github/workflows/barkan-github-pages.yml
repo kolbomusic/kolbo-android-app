@@ -41,6 +41,18 @@ jobs:
             fi
           done
           test -f karnafim-next/public/.nojekyll
+      - name: Enable Pages through scoped GitHub Actions API if missing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/pages" >/dev/null 2>&1; then
+            echo "GitHub Pages already enabled"
+          else
+            echo "GitHub Pages not enabled; attempting workflow-only publishing activation"
+            gh api -X POST "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow
+          fi
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact
