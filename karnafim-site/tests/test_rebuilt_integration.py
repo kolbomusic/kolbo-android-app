@@ -107,6 +107,17 @@ assert site.checkpw(legacy_password,legacy["passhash"])
 assert not site.checkpw("incorrect-password",legacy["passhash"])
 ORIGIN="https://karnafim-community-46.onrender.com"
 
+# Free-tier storage hygiene: expired rate-limit fingerprints are discarded,
+# while the current fingerprint remains available to enforce limits.
+site.sql("INSERT INTO b2_throttle(fingerprint,at) VALUES(%s,NOW()-INTERVAL '4 days')",
+         ("expired-ci-fingerprint",))
+with site.app.test_request_context("/",base_url=ORIGIN):
+    site.limit("ci-storage-sweep",5,15)
+assert site.sql("SELECT COUNT(*) AS n FROM b2_throttle WHERE fingerprint=%s",
+                ("expired-ci-fingerprint",),True)["n"]==0
+assert site.sql("SELECT COUNT(*) AS n FROM b2_throttle WHERE at > NOW()-INTERVAL '1 minute'",
+                one=True)["n"]>=1
+
 def get_csrf(client):
     # Logout clears the session, so bootstrap the new CSRF with an ordinary GET.
     client.get("/health",base_url=ORIGIN)
