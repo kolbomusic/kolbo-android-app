@@ -396,7 +396,7 @@ with site.app.test_client() as browser:
     # Disabling visibility immediately removes the profile from search.
     site.sql("UPDATE b2_users SET show_profile=FALSE WHERE id=%s",(member["id"],))
     assert "חבר בדיקות" not in browser.get("/find?q=מרכבה",base_url=ORIGIN).get_data(as_text=True)
-    assert "חבר בדיקות" not in browser.get("/cohorts/2003-11",base_url=ORIGIN).get_data(as_text=True)
+    assert "<h3>חבר בדיקות</h3>" not in browser.get("/cohorts/2003-11",base_url=ORIGIN).get_data(as_text=True)  # public post byline may remain
 
     r=browser.post("/chat/"+str(member["id"]),base_url=ORIGIN,data={
         "csrf":get_csrf(browser),"text":"הודעת ניסיון פרטית"})
