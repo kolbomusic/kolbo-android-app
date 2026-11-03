@@ -7,6 +7,9 @@ on:
     - cron: '37 2 * * *'
 permissions:
   contents: read
+concurrency:
+  group: karnafim-encrypted-production-backup
+  cancel-in-progress: false
 jobs:
   encrypted-backup:
     runs-on: ubuntu-latest
