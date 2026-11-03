@@ -512,6 +512,21 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
             cut=(left[1]+right[0])//2
             if int(.7*sr)<cut<len(x)-int(.25*sr):
                 possible.append(cut)
+    # Whisper's source word ends provide real inter-word boundaries even
+    # where there is no >25ms VAD silence. Use only genuine recognition
+    # timestamps; never guess a word boundary from unrelated music.
+    # Zero-crossing relocation (<=12ms) avoids clicks at the insertion.
+    for phrase in timed_phrases or ():
+        try:
+            end=float(phrase['end'])
+            if .8<end<len(x)/sr-.3:
+                expected=int(end*sr)
+                cut=zero_crossing_cut(x,expected,sr)
+                if abs(cut-expected)<int(.012*sr):
+                    possible.append(cut)
+        except (KeyError,TypeError,ValueError):
+            continue
+    possible=sorted(set(possible))
     # The old fixed five-second gap left most short WhatsApp speech
     # untouched and piled the only comic effect onto the final word.
     # Keep conservative gaps for longer narration, but adapt to 5–10s
@@ -534,6 +549,19 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     # Keep the whole narration intact; reserve up to 19% additional time
     # (capped to 10s) for a few genuinely paced comic punchlines.
     max_extensions=min(10.0,max(.85,len(x)/sr*.19))
+    # Do not spend a 10-second long-form FX budget entirely in the first
+    # minute. Select dramatic beats evenly across the *whole* original,
+    # including its final phrase. All source words remain uncut and in order.
+    slot_cost=beat*(1.0 if density==1 else 2.0)+.07
+    maximum_slots=max(1,int(max_extensions/slot_cost))
+    # Several real short utterances deserve both a setup and a payoff.
+    # They fit inside the short-message time budget despite the conservative
+    # two-beat reservation used for recordings several minutes long.
+    if duration<10 and len(chosen)>=2 and max_extensions>=1.4:
+        maximum_slots=max(2,maximum_slots)
+    if len(chosen)>maximum_slots:
+        picks=np.linspace(0,len(chosen)-1,maximum_slots,dtype=np.int32)
+        chosen=[chosen[int(i)] for i in sorted(set(picks))]
     total_fx_seconds=0.
     pieces=[];masks=[];original_spans=[]
     position=0;offset=0
@@ -541,7 +569,7 @@ def arranged_vocal_track(voice, sr, bpm, humor, density, fx_gain, rng, transcrip
     # random effect family at every pause. These neutral hooks always use
     # copies of the actual spoken syllable; contextual effects require
     # an explicit, non-negated Hebrew story cue.
-    neutral_hooks=('dj','stretch','comic_roll','pitch')
+    neutral_hooks=('comic_roll','stretch','pitch','comic_roll')
     last_story_cue=None
     last_story_cue_cut=-int(sr*20)
     for index,cut in enumerate(chosen):
@@ -740,7 +768,7 @@ def _duck_music_in_chunks(music, vocal, fx_highlight, sr, chunk_frames=32768):
         np.clip(duck,0,1,out=duck)
         duck*=np.float32(-.67)
         duck+=np.float32(1)
-        duck*=np.float32(1)-np.float32(.20)*fx_highlight[start:end]
+        duck*=np.float32(1)-np.float32(.68)*fx_highlight[start:end]
         music[start:end]*=duck[:,None]
 
 
@@ -1086,22 +1114,28 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             source=voices[clip_index]
             phrases=(transcript_timeline[clip_index]
                      if clip_index<len(transcript_timeline) else [])
-            overdub=accent_overdub(
-                source,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
-                vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
-                timed_phrases=phrases,
-                cue_from_text=lambda phrase:_semantic_comedy_cue(phrase,.5))
-            for original_start,original_end,arranged_start,arranged_end in spans:
-                # Original source spans map 1:1 to output, even after pause
-                # inserts. Adding a wet overdub never replaces a spoken word.
-                src=overdub[original_start:original_end]
-                a=start+arranged_start
-                b=min(end,a+len(src))
-                if b>a:
-                    vocal[a:b]+=src[:b-a]*voice_level
-                    if humor!='off':
+            # The automatic comic director already inserts audible,
+            # beat-quantized sample FX into measured phrase breaks.
+            # The old *second* overdub copied syllables ON TOP of the next
+            # words every ~3 seconds: muddled speech, random clashes and
+            # no reliable visual time map. Auto mode now uses ONE coherent
+            # punchline track only; explicit manual processors may still
+            # add traditional turntable overdubs when requested.
+            if humor not in ('auto','chaos'):
+                overdub=accent_overdub(
+                    source,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
+                    vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
+                    timed_phrases=phrases,
+                    cue_from_text=lambda phrase:_semantic_comedy_cue(phrase,.5))
+                for original_start,original_end,arranged_start,arranged_end in spans:
+                    src=overdub[original_start:original_end]
+                    a=start+arranged_start
+                    b=min(end,a+len(src))
+                    if b>a:
+                        vocal[a:b]+=src[:b-a]*voice_level
                         fx_highlight[a:b]=np.maximum(
-                            fx_highlight[a:b],np.minimum(1,np.abs(src[:b-a])*3))
+                            fx_highlight[a:b],
+                            np.minimum(1,np.abs(src[:b-a])*3))
         cursor+=len(track)/sr+beat*3
     progress(80,'מבצע מיקס כשהקול המעובד בחזית')
     # The synth is independent. Duck only its volume during speech so the

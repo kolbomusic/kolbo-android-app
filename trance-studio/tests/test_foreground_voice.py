@@ -172,6 +172,46 @@ class ForegroundVoiceTests(unittest.TestCase):
         np.testing.assert_array_equal(y[:len(source)],source)
         self.assertLess(len(y)-len(source),sr*.9)
 
+    def test_recognized_word_boundaries_add_intentional_fx_without_deleting_speech(self):
+        sr=self.sr
+        duration=21
+        t=np.arange(sr*duration,dtype=np.float32)/sr
+        source=(.24*np.sin(2*np.pi*223*t)).astype(np.float32)
+        words=[{'start':float(i)-.5,'end':float(i),
+                'text':'החמור' if i%4==0 else 'נוסע'}
+               for i in range(2,duration-1,2)]
+        edited,mask,spans=e.arranged_vocal_track(
+            source,sr,145,'auto',3,1.2,np.random.default_rng(47),
+            timed_phrases=words)
+        self.assertGreater(len(spans),1,
+            'Real word-end times should allow humor throughout fluent speech')
+        np.testing.assert_array_equal(
+            np.concatenate([edited[a:b] for _,_,a,b in spans]),source)
+        self.assertTrue(all(np.all(mask[start:end]==0)
+                            for _,_,start,end in spans))
+        self.assertGreater(float(np.sqrt(np.mean(edited[mask>.5]**2))),.02)
+
+    def test_long_voice_spreads_punchlines_until_the_final_words(self):
+        sr=self.sr
+        duration=94
+        source=np.zeros(sr*duration,dtype=np.float32)
+        for start in range(0,duration-1,3):
+            a=int((start+.1)*sr)
+            b=min(len(source),a+int(2.3*sr))
+            t=np.arange(b-a,dtype=np.float32)/sr
+            source[a:b]=.23*np.sin(2*np.pi*225*t)
+        out,mask,spans=e.arranged_vocal_track(
+            source,sr,145,'auto',3,1.2,np.random.default_rng(15))
+        np.testing.assert_array_equal(
+            np.concatenate([out[a:b] for _,_,a,b in spans]),source)
+        marks=np.flatnonzero(mask>.5)
+        self.assertGreater(len(marks),0)
+        self.assertLess(int(marks[0]),sr*15)
+        self.assertGreater(int(marks[-1]),sr*85,
+            'All FX budget must not be spent near the beginning')
+        self.assertLess(len(out)-len(source),sr*11,
+            'Bound long-form inserts to a small fraction of the original')
+
     def test_new_distinct_comedy_voice_modes_change_original_sound(self):
         voice=self.voice(3)
         names=('helium','monster','yo_yo','comic_roll','rewind')

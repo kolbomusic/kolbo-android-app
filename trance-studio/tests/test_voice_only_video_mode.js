@@ -48,15 +48,15 @@ vm.createContext(ctx);
 vm.runInContext(fragment+';this.setFiles=setFiles;this.hasDecodableVideoTrack=hasDecodableVideoTrack;',ctx);
 (async()=>{
  ctx.setFiles([{name:'whatsapp-voice.opus',type:'audio/ogg',size:12345}]);
- assert.equal(elements.video_strategy.value,'new_story',
+ assert.equal(elements.video_strategy.value,'smart_story',
   'A manually chosen original-video mode must not survive a voice-only upload');
  assert.match(elements.status.textContent,/הקלטת קול/);
  assert.equal(elements.generate.disabled,false);
  assert.equal(ctx.files.length,1,'Original voice remains selected');
  assert.equal(ctx.videoModeChosenByUser,false);
  ctx.setFiles([{name:'moving-video.mp4',type:'video/mp4',size:123450}]);
- assert.equal(elements.video_strategy.value,'remix_original',
-  'A genuine video selected after audio automatically returns to video remix');
+ assert.equal(elements.video_strategy.value,'smart_story',
+  'A genuine video selected after audio automatically selects resilient real-video-first routing');
  assert(explanationCalls>=2);
  assert.equal(await ctx.hasDecodableVideoTrack({
    name:'audio-only-file.mp4',type:'video/mp4',size:12000

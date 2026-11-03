@@ -64,7 +64,7 @@ class StreamingMp3ExportTests(unittest.TestCase):
         expected=np.ones((n,2),dtype=np.float32)
         env=maximum_filter1d(np.abs(voice),size=max(1,int(sr*.025)))
         env=lfilter([.003],[1,-.997],env).astype(np.float32)
-        expected*=((1-.67*np.clip(env/.18,0,1))*(1-.20*fx))[:,None]
+        expected*=((1-.67*np.clip(env/.18,0,1))*(1-.68*fx))[:,None]
         actual=np.ones_like(expected)
         engine._duck_music_in_chunks(actual,voice,fx,sr,chunk_frames=4096)
         np.testing.assert_allclose(actual,expected,rtol=2e-5,atol=2e-5)

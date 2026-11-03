@@ -71,7 +71,8 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </details>
 <label for="video_strategy">2. מה להכין מההקלטה?</label>
 <select id="video_strategy">
-<option value="new_story" selected>סרטון AI חדש לפי הדיבור (ניסיוני)</option>
+<option value="smart_story" selected>סרטון לפי הדיבור — קודם מקור מקורי, ואז AI או צילום תואם</option>
+<option value="new_story">סרטון AI חדש בלבד (ניסיוני, לא מובטח)</option>
 <option value="illustrated_story">סרטון המחשה מצילומים קיימים</option>
 <option value="remix_original">ערוך את הווידאו שלי בהתאם לאפקטי הקול והתנועה (מומלץ)</option>
 <option value="audio_only">מיקס טראנס מצחיק — סאונד בלבד</option>
@@ -256,9 +257,11 @@ try{$('ai_video_consent').checked=localStorage.getItem('kolbo_trance_ai_video_co
 function explainVideoStrategy(){
  var mode=$('video_strategy').value;
  $('make_video').checked=mode!=='audio_only';
- $('aiConsentWrap').hidden=mode!=='new_story';
- $('ai_video_consent').disabled=mode!=='new_story';
- $('videoStrategyHelp').textContent=mode==='new_story'?
+ $('aiConsentWrap').hidden=mode!=='new_story'&&mode!=='smart_story';
+ $('ai_video_consent').disabled=mode!=='new_story'&&mode!=='smart_story';
+ $('videoStrategyHelp').textContent=mode==='smart_story'?
+  'אם העלית סרטון, ננסה לערוך את התנועה האמיתית שלו עם אפקטי הקול. אם זו הקלטת קול, ננסה ליצור סצנות AI בהסכמתך; אם השירות לא זמין, נחפש צילומי וידאו מורשים של הפעולות שנאמרו. צילום קיים יסומן ככזה, ולעולם לא יוצג כיצירה חדשה.' :
+  mode==='new_story'?
   'ייווצר מיקס קולי, וננסה גם סרטון חדש לפי הדיבור. יצירת MP4 תלויה בזמינות מנוע AI חינמי ולא מובטחת.' :
   mode==='illustrated_story'?
   'ננסה להרכיב סרטון המחשה מצילומים קיימים ומורשים לפי הדיבור. אין זו יצירת סצנה חדשה ב־AI.' :
@@ -289,7 +292,7 @@ function markStage(stage){
 function message(txt){$('status').textContent=txt}
 function isVideoFile(f){return /^video\//i.test(f.type)||/\.(mp4|webm|3gp|3gpp|mov)$/i.test(f.name)}
 function selectNewStoryFromVoice(explanation){
- $('video_strategy').value='new_story';
+ $('video_strategy').value='smart_story';
  videoModeChosenByUser=false;
  explainVideoStrategy();
  message(explanation||'מקור שמע בלבד: יצירת סרטון AI חדש לפי הדיבור מחייבת אישור תמלול וזמינות ספק.');
@@ -327,7 +330,7 @@ function setFiles(items){
     $('video_strategy').value==='remix_original'){
   selectNewStoryFromVoice('המקור החדש הוא הקלטת קול בלבד. כדי ליצור וידאו נדרש מצב ״סרטון AI חדש״ או צילומי המחשה.');
  }else if(!videoModeChosenByUser&&files.some(isVideoFile)){
-  $('video_strategy').value='remix_original';
+  $('video_strategy').value='smart_story';
   explainVideoStrategy();
  }
  syncFiles();
@@ -875,15 +878,20 @@ try{
 await ensureCloudReady();
 if(wantsVideo){
  markStage('recognize');
- // The native Android WebView already needs cloud connectivity to mix.
- // Use the preloaded server ASR directly to avoid heavy Whisper downloads
- // and memory failures on the phone; upload the same original audio bytes.
- if(window.KolboAndroid){
-   message('מכין תמלול וידאו מתוך ההקלטה המקורית בשרת — ללא אישור מילים...');
- }else{
+ // Use phone ASR opportunistically on capable Android devices as well:
+ // previously native WebView always skipped it, so free 512MiB server
+ // recognition was the sole provider of a meaningful video storyboard.
+ // Never fail the upload if browser ASR or model download is unsupported.
+ var deviceMemory=Number(navigator.deviceMemory||0);
+ var useLocalAsr=!window.KolboAndroid||
+      (deviceMemory>=6&&files.length<=2&&
+       files.every(function(f){return f.size<=8*1048576}));
+ if(useLocalAsr){
    message('מזהה אוטומטית את הדיבור — בלי להציג מילים או לבקש אישור...');
    try{recognized=await recognizeBeforeVideo()}
    catch(error){videoReason='התמלול במכשיר לא הצליח; מנסה אוטומטית פענוח נוסף מקובץ המקור בשרת.';}
+ }else{
+   message('מכין תמלול מתוך ההקלטה המקורית בשרת — ללא אישור מילים...');
  }
 }
 message('מעבד את קובץ ההקלטה המקורי'+(wantsVideo?' ומכין סצנות וידאו לפי הדיבור':'')+'...');
@@ -907,7 +915,7 @@ if(licensedMusic){
 }
 form.set('make_video',wantsVideo?'on':'off');
 form.set('video_requested',wantsVideo?'on':'off');
-form.set('ai_video_consent',wantsVideo&&$('video_strategy').value==='new_story'&&$('ai_video_consent').checked?'on':'off');
+form.set('ai_video_consent',wantsVideo&&['new_story','smart_story'].includes($('video_strategy').value)&&$('ai_video_consent').checked?'on':'off');
 form.set('transcription_failed',wantsVideo&&!verifyTranscript(recognized)?'on':'off');
 form.set('transcript',verifyTranscript(recognized)?recognized:'');
 form.set('transcript_origin','auto');
