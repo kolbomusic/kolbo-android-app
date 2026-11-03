@@ -62,6 +62,24 @@ memorial_html=client.get("/memorial",base_url=origin).get_data(as_text=True)
 for label in ("בניה ריין", "אורי גרוסמן", "אדם גורן", "אלכסנדר", "יוני", "www.izkor.gov.il"):
     assert label in memorial_html, label
 assert memorial_html.count('class="memorial"')==5
+
+# Delegated permissions: only founding owner can manage role assignments.
+from flask import g
+with site.app.test_request_context("/"):
+    os.environ["BARKAN_ADMIN_EMAIL"]="founder@example.org"
+    g.user={"id":1,"email":"founder@example.org","approved":True,"role":"member"}
+    assert site.owner() and site.can_moderate() and site.can_manage_members()
+    g.user={"id":2,"email":"moderator@example.org","approved":True,"role":"moderator"}
+    assert not site.owner() and site.can_moderate() and not site.can_manage_members()
+    g.user={"id":3,"email":"manager@example.org","approved":True,"role":"member_manager"}
+    assert not site.owner() and not site.can_moderate() and site.can_manage_members()
+    g.user={"id":4,"email":"staff@example.org","approved":True,"role":"admin"}
+    assert not site.owner() and site.can_moderate() and site.can_manage_members()
+    g.user={"id":5,"email":"unapproved@example.org","approved":False,"role":"admin"}
+    assert not site.owner() and not site.can_moderate() and not site.can_manage_members()
+    os.environ.pop("BARKAN_ADMIN_EMAIL",None)
+assert client.get("/staff",base_url=origin).status_code==503
+
 # Do not publish a disputed crew position as verified memorial information.
 assert "כתותחן טנק" not in memorial_html
 assert "תותחן מרכבה סימן 4 · פלוגה ב׳ הקרנפים" not in memorial_html
