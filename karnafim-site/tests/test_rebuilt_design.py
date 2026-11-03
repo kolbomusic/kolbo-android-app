@@ -94,5 +94,15 @@ js=(ROOT/"static/site.js").read_text(encoding="utf-8")
 for token in (".auth-page",".auth-trust",":focus-visible","prefers-reduced-motion",
               "prefers-contrast","forced-colors","@media(max-width:680px)"):
     assert token in css,token
+# Recovery UX must never leak member details, auto-submit or poll while idle.
+root=client.get("/",base_url=origin).get_data(as_text=True)
+assert 'id="site-connection-notice"' in root
+assert 'id="site-connection-retry"' in root
+assert 'role="status"' in root
+assert 'document.addEventListener("visibilitychange"' in js
+assert 'method: "GET"' in js and '"/health"' in js
+assert 'method: "POST"' not in js
+assert 'setInterval(' not in js
+assert 'getUserMedia' not in js or 'Audio' in js
 assert 'aria-expanded' in js
 print("PASS: public navigation, RTL, images, auth safety gate and responsive/a11y design hooks")
