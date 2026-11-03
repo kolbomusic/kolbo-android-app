@@ -27,29 +27,32 @@ def check():
     health=json.loads(body)
     assert health["generation"]=="new-build",health
     assert health["auth_enabled"] is True,health
-    assert health["signup_enabled"] is False,health
+    assert health["signup_enabled"] is True,health
+    assert health["registration_mode"]=="manual_review",health
     assert health["email_delivery_release_verified"] is False,health
 
     status,headers,body=fetch("/ready")
     assert status==200,("ready",status,body[:100].decode("utf-8","replace"))
     ready=json.loads(body)
     assert ready["status"]=="ready" and ready["database"]=="available",ready
-    assert ready["member_portal"]=="enabled" and ready["signup"]=="closed",ready
+    assert ready["member_portal"]=="enabled" and ready["signup"]=="enabled",ready
 
     status,headers,body=fetch("/login")
     assert status==200,("login",status)
     assert b'type="password"' in body,("login","password input missing")
     assert b'name="csrf"' in body,("login","csrf missing")
     status,headers,body=fetch("/signup")
-    assert status==503,("signup",status)
-    assert b'type="password"' not in body,("signup","signup must remain closed")
+    assert status==200,("signup",status)
+    assert b'type="password"' in body,("signup","missing password control")
+    assert b'name="csrf"' in body,("signup","missing CSRF")
+    assert "בקשת ההצטרפות" in body.decode("utf-8","replace"),("signup","not an application form")
     for path in ("/","/memorial","/status"):
         status,headers,body=fetch(path)
         assert status==200,(path,status)
         csp=next((value for key,value in headers.items() if key.lower()=="content-security-policy"),"")
         assert "default-src 'none'" in csp,(path,"missing CSP")
         assert b'lang="he" dir="rtl"' in body,(path,"RTL missing")
-    print("PASS: live original origin and database healthy, existing-member login enabled, signup blocked, public RTL routes intact")
+    print("PASS: live original origin and database healthy, existing-member login enabled, moderated registration enabled, public RTL routes intact")
 
 if __name__=="__main__":
     for attempt in range(1,5):
