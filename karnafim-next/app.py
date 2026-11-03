@@ -20,6 +20,7 @@ from flask import Flask, Response, abort, g, redirect, request, send_file, sessi
 from markupsafe import Markup
 from PIL import Image, ImageOps, UnidentifiedImageError
 from review_rules import triage
+from memorial_portraits import portrait_for, MEMORIAL_PEOPLE
 
 BASE=Path(__file__).resolve().parent
 app=Flask(__name__,static_folder=str(BASE/"static"))
@@ -339,26 +340,33 @@ def heritage():
 def memorial():
     """Verified public memorial records; no copying of third-party portraits."""
     force = [
-        ("רס״ן בניה ריין ז״ל", "מפקד כוח בניה", "https://www.izkor.gov.il/בניה%20ריין/en_f5ccba845584f96f9b9334cf335d2e78/"),
-        ("סמ״ר אורי גרוסמן ז״ל", "תותחן ומפקד טנק בכוח בניה", "https://www.izkor.gov.il/אורי%20גרוסמן/en_f53b79619b3f27184812b11f14e635a8/"),
-        ("סמ״ר אדם גורן ז״ל", "טען־קשר בכוח בניה", "https://www.izkor.gov.il/אדם%20גורן/en_e6446f8f52c2b18e0ec560602482bdda"),
-        ("סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל", "נהג הטנק בכוח בניה", "https://www.izkor.gov.il/אלכסנדר%20בונימוביץ/en_34b2955a02b6a81f8ba932dbf6228e61/"),
+        ("benaya-rein","רס״ן בניה ריין ז״ל","מפקד כוח בניה","https://www.izkor.gov.il/בניה%20ריין/en_f5ccba845584f96f9b9334cf335d2e78/"),
+        ("uri-grossman","סמ״ר אורי גרוסמן ז״ל","תותחן ומפקד טנק בכוח בניה","https://www.izkor.gov.il/אורי%20גרוסמן/en_f53b79619b3f27184812b11f14e635a8/"),
+        ("adam-goren","סמ״ר אדם גורן ז״ל","טען־קשר בכוח בניה","https://www.izkor.gov.il/אדם%20גורן/en_e6446f8f52c2b18e0ec560602482bdda"),
+        ("alexander-bunimovitz","סמ״ר אלכסנדר (סשה) בונימוביץ׳ ז״ל","נהג הטנק בכוח בניה","https://www.izkor.gov.il/אלכסנדר%20בונימוביץ/en_34b2955a02b6a81f8ba932dbf6228e61/"),
     ]
-    def memorial_card(name,role,date,iso,source):
-        return ('<article class="memorial"><div class="candle" aria-hidden="true">✦</div>'
+    def memorial_card(person_key,name,role,date,iso,source):
+        # Bind image and identity using one verified memorial record, not a
+        # search for a similar face or identical/partial name.
+        if person_key not in MEMORIAL_PEOPLE:abort(500)
+        src=portrait_for(person_key,app.static_folder)
+        photo=('<img class="memorial-portrait" loading="lazy" alt="תצלום של '+e(name)+'" src="'+e(src)+'">' if src else
+               '<div class="memorial-photo-pending" role="note">תמונה מאומתת תוצג כאן לאחר אישור זכויות שימוש</div>')
+        return ('<article class="memorial">'+photo+'<div class="candle" aria-hidden="true">✦</div>'
                 '<h3>'+e(name)+'</h3><p>'+e(role)+'</p>'
                 '<p><time datetime="'+e(iso)+'">'+e(date)+'</time></p>'
                 '<a href="'+e(source)+'" target="_blank" rel="noopener noreferrer"'
-                ' aria-label="סיפור ההנצחה הרשמי של '+e(name)+'">סיפור החיים באתר יזכור</a></article>')
-    cards=''.join(memorial_card(name,role,"12.8.2006","2006-08-12",source) for name,role,source in force)
-    yoni=memorial_card("סמל יהונתן (יוני) שרעבי ז״ל",
+                ' aria-label="עמוד ההנצחה הרשמי והתמונה של '+e(name)+'">צפייה בתמונה ובהנצחה באתר יזכור</a></article>')
+    cards=''.join(memorial_card(key,name,role,"12.8.2006","2006-08-12",source)
+                  for key,name,role,source in force)
+    yoni=memorial_card("yoni-sharabi","סמל יהונתן (יוני) שרעבי ז״ל",
                        "לוחם שריון · פלוגה ב׳ הקרנפים, גדוד 46",
                        "3.8.2006","2006-08-03",
                        "https://www.izkor.gov.il/יהונתן%20שרעבי/en_53e66dd727188835acbe02a1f641a882")
     return layout("הנצחה",
         '<div class="pagehead solemn"><span class="tag">לזכור בכבוד</span>'
         '<h1>החברים שתמיד איתנו</h1><p>הנצחה מכבדת המבוססת על רשומות אתר יזכור של משרד הביטחון.'
-        'תצלומים אישיים וסיפורי משפחות יפורסמו רק בכפוף לזכויות ולהסכמות מתאימות.</p></div>'
+        'תמונות יוצגו כאן רק לאחר אימות שיוך אישי והרשאת שימוש. בינתיים כל כרטיס מקשר לתמונת החלל באתר יזכור.</p></div>'
         '<section class="story"><h2>כוח בניה — גדוד 46</h2>'
         '<p>ב־12 באוגוסט 2006 נפלו ארבעת אנשי הצוות בדרכם למשימת חילוץ נוספת בלבנון.'
         'אנו זוכרים את כל אנשי הצוות יחד.</p></section>'
