@@ -130,6 +130,18 @@ def create_app(config=None):
                 (audio_director or options.get('video_requested')) and
                 (audio_director or len(detected_transcript.split())<2))
             transcript_timeline=None
+            # A decoded 300-second float32 track can hold ~38 MiB (plus
+            # Python/NumPy allocator overhead) while multilingual Whisper
+            # starts in a child. On a 512-MiB Render container that overlap
+            # pushed combined cgroup RSS near 500 MiB and lost the job.
+            # Fully validate the original audio above, but drop this decoded
+            # copy BEFORE spawning local ASR; reconstruct it after child exit.
+            isolated_original_asr=bool(
+                asr_recovery_attempted and not app.config.get('TESTING') and
+                os.environ.get('KOLBO_ASR_ISOLATED')!='0')
+            if isolated_original_asr:
+                del clips
+                gc.collect()
             if asr_recovery_attempted:
                 update(job_id,percent=5,label='מזהה משפטים ותזמון אפקטים מהקלטת המקור')
                 try:
@@ -163,6 +175,11 @@ def create_app(config=None):
                     # in-memory ASR inference model before DSP allocations.
                     from source_asr import release_model
                     release_model()
+            if isolated_original_asr:
+                # Only re-decode after short-lived ASR has COMPLETELY exited.
+                # All later mixer stages use the same original bytes on disk.
+                update(job_id,percent=9,label='מכין אודיו מקורי למיקס לאחר פינוי זיכרון התמלול')
+                clips=[load_audio(p) for p in paths]
             audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent','video_strategy','backing_music_path','music_license_ack')}
             # Make the already recognized Hebrew speech useful for comic
             # timing/preset decisions. Keep it in-process; never transmit
@@ -546,7 +563,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.17',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.18',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/jobs/capacity')
     def job_capacity():
