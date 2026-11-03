@@ -28,6 +28,21 @@ class SourceAsrRecoveryTests(unittest.TestCase):
                 finally:
                     source_asr._MODEL=old_model
 
+    def test_release_resident_asr_model_before_dsp_memory_peak(self):
+        # Never keep large CTranslate2 model weights loaded during mixing.
+        class FakeWhisperModel:
+            pass
+        previous=source_asr._MODEL
+        try:
+            source_asr._MODEL=FakeWhisperModel()
+            source_asr.release_model()
+            self.assertIsNone(source_asr._MODEL)
+            # Idempotent on a model already released.
+            source_asr.release_model()
+            self.assertIsNone(source_asr._MODEL)
+        finally:
+            source_asr._MODEL=previous
+
     def test_native_android_hands_off_to_server_before_heavy_browser_asr(self):
         page=(ROOT/'web'/'studio.html').read_text(encoding='utf-8')
         self.assertIn('if(window.KolboAndroid)',page)
