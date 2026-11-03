@@ -21,6 +21,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from markupsafe import Markup
 from PIL import Image, ImageOps, UnidentifiedImageError
 from memorial_source_registry import MEMORIAL_PEOPLE, plausible_public_source, official_memorial_link
+from db_endpoint_audit import neon_endpoint_tag
 
 BASE=Path(__file__).resolve().parent
 app=Flask(__name__,static_folder=str(BASE/"static"))
@@ -31,6 +32,10 @@ if os.environ.get("RENDER_SERVICE_ID","").strip():
     app.wsgi_app=ProxyFix(app.wsgi_app,x_for=1,x_proto=0,x_host=0,x_port=0,x_prefix=0)
 CONFIGURED_SECRET=os.environ.get("BARKAN_SESSION_SECRET","").strip()
 DB=os.environ.get("BARKAN_DATABASE_URL","").strip()
+# Diagnostic prints only a one-way hash of the public Neon endpoint label.
+# It never prints connection strings, passwords, database rows or member data.
+if DB:
+    print("KARNAFIM_DB_ENDPOINT_TAG="+neon_endpoint_tag(DB),flush=True)
 app.config.update(
     # An ephemeral key is acceptable only for a public read-only deployment.
     # Account login requires a durable configured secret and a database.
