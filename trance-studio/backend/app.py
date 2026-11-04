@@ -633,7 +633,9 @@ def create_app(config=None):
     @app.post('/api/audio-tools/render')
     def audio_tools_render():
         from audio_tools import render_audio_tool, AudioToolError, SUPPORTED
-        if not link_admission.acquire(blocking=False):
+        # Same bounded 512MiB budget as the full mixer and video encoder.
+        # Do not let mastering/FX overlap another active H264/DSP job.
+        if not admission.acquire(blocking=False):
             return jsonify(error='מנוע האולפן עסוק כעת. ניתן לנסות שוב.'),429
         work=None
         try:
@@ -679,7 +681,7 @@ def create_app(config=None):
             app.logger.exception('Audio studio filesystem error')
             return jsonify(error='לא ניתן לשמור את קובץ האולפן.'),503
         finally:
-            link_admission.release()
+            admission.release()
             if work:shutil.rmtree(work,ignore_errors=True)
 
     @app.post('/api/import-link')
