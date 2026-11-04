@@ -58,8 +58,7 @@ for path in OUTPUT.rglob("*.html"):
     if path.name != "404.html":
         html = html.replace(
             '</nav></div></header>',
-            '<a class="member-link" href="' + BACKEND +
-            '/login" rel="noopener noreferrer">התחברות לחברים</a></nav></div></header>'
+            '<a class="member-link" href="/members/index.html">אזור החברים</a></nav></div></header>'
         ) if '</nav></div></header>' in html else html
     path.write_text(html, encoding="utf-8")
 
