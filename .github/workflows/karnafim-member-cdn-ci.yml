@@ -1,0 +1,42 @@
+name: Karnafim stable member transition verification
+on:
+  push:
+    branches: [karnafim-cdn-member-entry-20261104]
+    paths:
+      - 'render-karnafim-static.py'
+      - '.github/workflows/karnafim-member-cdn-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build public CDN independently of sleeping community backend
+        run: python3 render-karnafim-static.py
+      - name: Validate isolated member entry and static internal links
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("karnafim-render-public")
+          home=(root/"index.html").read_text()
+          member=(root/"members/index.html").read_text()
+          status=(root/"status/index.html").read_text()
+          js=(root/"static/site.js").read_text()
+          assert 'href="/members/index.html"' in home
+          assert "אזור החברים" in home
+          assert "מערכת החברים המאובטחת" in member
+          assert 'href="https://karnafim-community-46.onrender.com/login"' in member
+          assert 'href="https://karnafim-community-46.onrender.com/signup"' in member
+          assert 'type="password"' not in member and '<form' not in member
+          assert 'fetch(' not in member and 'XMLHttpRequest' not in member
+          assert 'name="robots" content="noindex"' in member
+          assert '/status/' in member
+          assert 'מתעורר לאחר חוסר פעילות' in status
+          assert 'fetch("/health"' not in js
+          assert len(list(root.rglob("index.html"))) >= 11
+          print("PASS: fast public pages, no hidden keepalive, correct protected member links")
+          PY
