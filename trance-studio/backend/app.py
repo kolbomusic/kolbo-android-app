@@ -426,7 +426,15 @@ def create_app(config=None):
                             # Continue preparing source footage even if there are
                             # unmatched phrases. Real video may still illustrate
                             # recognized scenes; coverage must be openly partial.
-                            board=align_storyboard_to_vocal(board,vocal,sr=32000)
+                            # Browser/source Whisper word times are grounded
+                            # in source seconds. Map them through the ORIGINAL
+                            # dry-audio sample spans into mixed-output time,
+                            # before falling back to vocal-energy estimates.
+                            from word_scene_alignment import align_storyboard_to_source_words
+                            if not align_storyboard_to_source_words(
+                                    board,transcript_timeline,
+                                    video_fx_timeline,audio_duration_seconds):
+                                board=align_storyboard_to_vocal(board,vocal,sr=32000)
                             video_path=root/job_id/'story.mp4'
                             sources=export_live_story(root/job_id/'mix.mp3',video_path,
                                 board,root/job_id/'footage',
