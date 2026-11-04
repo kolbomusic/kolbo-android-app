@@ -66,14 +66,27 @@ def perform_comic_voice(vocal, start_frame, spans, sr, bpm, humor,
     if not windows:return []
     total=sum(end-begin for begin,end,_ in windows)
     if total<.45*sr:return []
-    duration=total/sr
-    # Short WhatsApp: 2 strong transformations; narration: spaced
-    # character turns over the WHOLE recording, including the final words.
-    count=max(1,min(MAX_EVENTS,int(math.ceil(duration/4.5))))
-    if duration>=3.2:count=max(2,count)
-    # A >5 minute voice message must not produce >70 separately encoded
-    # live-action video shots on Render Free.
-    targets=[(i+.55)/count*total for i in range(count)]
+    # Schedule by REAL speech activity, not wall-clock duration.
+    # A 40s WhatsApp note with 30s of silence must still morph its
+    # actual words at the beginning, middle and end of the recording.
+    # Use short, memory-bounded RMS frames; no server ASR required.
+    step=max(1,int(sr*.085))
+    voiced_positions=[]
+    accumulated=0
+    for begin,end,_ in windows:
+        for relative in range(0,end-begin,step):
+            width=min(step,end-begin-relative)
+            if _rms(vocal[begin+relative:begin+relative+width])>.017:
+                voiced_positions.append(accumulated+relative+width*.5)
+        accumulated+=end-begin
+    if not voiced_positions:return []
+    voiced_duration=len(voiced_positions)*step/sr
+    # Strong transformations ~one per 3.2 seconds of real speech, bounded
+    # to 18 cues for the free 512MiB moving-video transcoder.
+    count=max(1,min(MAX_EVENTS,int(math.ceil(voiced_duration/3.2))))
+    if voiced_duration>=3.:count=max(2,count)
+    targets=[voiced_positions[min(len(voiced_positions)-1,
+             int((i+.5)*len(voiced_positions)/count))] for i in range(count)]
     mode_order=(AUTO_MODES if humor in ("auto","chaos") else (humor,))
     desired_width={1:.58,2:.78,3:1.02}[intensity]
     dry_ratio={1:.46,2:.30,3:.20}[intensity]
