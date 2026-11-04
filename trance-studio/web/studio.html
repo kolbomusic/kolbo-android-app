@@ -588,19 +588,24 @@ async function transcribeOne(file,i){
    if(m.type==='stage'){message('הקלטה '+(i+1)+': '+(m.label||'מזהה דיבור'));}
    if(m.type==='model_progress')message('מוריד מודל תמלול עברי: '+m.percent+'%');
    if(m.type==='error')settle(new Error(m.message||'התמלול נכשל'));
-   if(m.type==='done')settle(null,m.transcript);
+   if(m.type==='done')settle(null,{text:m.transcript,word_timeline:m.word_timeline||[]});
   };
   worker.onerror=function(e){settle(new Error('מנוע התמלול לא נתמך או אינו זמין במכשיר.'))};
   worker.postMessage({id:'audio-'+i,data:{samples:samples,sampleRate:16000}},[samples.buffer]);
  });
 }
 async function recognizeBeforeVideo(){
- var sentences=[];
+ var sentences=[],timelines=[];
+ window.KolboRecognizedWords=[];
  for(var i=0;i<files.length;i++){
-  var found=await transcribeOne(files[i],i);
+  var detected=await transcribeOne(files[i],i);
+  var found=String(detected?.text||'');
   if(!verifyTranscript(found))throw new Error('זיהוי הדיבור אינו מספיק אמין כדי לבנות סיפור.');
   sentences.push(found);
+  timelines.push(Array.isArray(detected.word_timeline)?
+                 detected.word_timeline.slice(0,1200):[]);
  }
+ window.KolboRecognizedWords=timelines;
  return sentences.join('. ').slice(0,4000);
 }
 
@@ -873,6 +878,7 @@ active=true;markStage('upload');$('generate').disabled=true;$('progress').hidden
 // is rejected as busy; the selected original and downloads are retained.
 if(!resultBlob&&!videoServerUrl)$('result').classList.remove('visible');
 var wantsVideo=$('make_video').checked;
+window.KolboRecognizedWords=[];
 var videoAllowed=wantsVideo, recognized='', videoReason='';
 try{
 await ensureCloudReady();
@@ -918,6 +924,14 @@ form.set('video_requested',wantsVideo?'on':'off');
 form.set('ai_video_consent',wantsVideo&&['new_story','smart_story'].includes($('video_strategy').value)&&$('ai_video_consent').checked?'on':'off');
 form.set('transcription_failed',wantsVideo&&!verifyTranscript(recognized)?'on':'off');
 form.set('transcript',verifyTranscript(recognized)?recognized:'');
+if(verifyTranscript(recognized)&&
+   Array.isArray(window.KolboRecognizedWords)&&
+   window.KolboRecognizedWords.length===files.length){
+  // Grounded word times from original speech only. Never invent timing
+  // when the device lacks accurate ASR output.
+  var aligned=JSON.stringify(window.KolboRecognizedWords);
+  if(aligned.length<64000)form.set('transcript_timeline',aligned);
+}
 form.set('transcript_origin','auto');
 var variation=$('variation').value;
 form.set('mix_variation',variation==='auto'?String(1+Math.floor(Math.random()*99999)):variation);
