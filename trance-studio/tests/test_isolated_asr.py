@@ -73,7 +73,7 @@ class IsolatedAsrTests(unittest.TestCase):
         self.assertIn("del audio, rendered, clips",src)
         self.assertLess(src.index("del audio, rendered, clips"),
                         src.index("if options.get('video_requested'):",src.index("del audio, rendered, clips")))
-        self.assertIn("version='1.16.21'",src)
+        self.assertIn("version='1.16.22'",src)
 
     def test_original_audio_is_unloaded_while_local_whisper_child_runs(self):
         src=(ROOT/"backend"/"app.py").read_text(encoding="utf-8")

@@ -64,33 +64,62 @@ self.onmessage=async event=>{
     let recognize=await getRecognizer(id);
     async function recognizeAll(model) {
       const found=[];
+      const timed=[];
       const step=CHUNK_SECONDS*SAMPLE_RATE;
       for(let start=0;start<samples.length;start+=step){
         const segment=samples.slice(start,Math.min(samples.length,start+step));
         if(segment.length<SAMPLE_RATE*.4 && found.length)break;
         send(id,'stage',{label:'מזהה דיבור בעברית מתוך קובץ המקור — קטע '+
            (1+Math.floor(start/step)),percent:Math.min(95,Math.round(start/samples.length*100))});
-        const result=await model(segment,{
-          language:'hebrew',task:'transcribe',
-          max_new_tokens:160,return_timestamps:false
-        });
+        let result;
+        // Transformers.js 3.8 supports per-word Whisper timestamps. They
+        // place comic edits at the real utterance instead of assuming the
+        // text occupies the entire recording at a constant speed.
+        // Fallback to transcription-only on unsupported WASM/runtime paths.
+        try{
+          result=await model(segment,{
+            language:'hebrew',task:'transcribe',
+            max_new_tokens:160,return_timestamps:'word'
+          });
+        }catch(timestampError){
+          send(id,'stage',{label:'זיהוי זמני מילים אינו נתמך במכשיר; ממשיך בתמלול רגיל'});
+          result=await model(segment,{
+            language:'hebrew',task:'transcribe',
+            max_new_tokens:160,return_timestamps:false
+          });
+        }
         const words=normalize(result?.text);
         if(words)found.push({start:start/SAMPLE_RATE,
           end:Math.min(samples.length,start+step)/SAMPLE_RATE,text:words});
+        // Only actual model timestamps, never estimated word positions.
+        for(const entry of Array.isArray(result?.chunks)?result.chunks:[]){
+          const pair=entry?.timestamp;
+          const text=normalize(entry?.text).slice(0,80);
+          if(!Array.isArray(pair)||pair.length!==2||!text)continue;
+          const a=Number(pair[0]),b=Number(pair[1]);
+          if(!Number.isFinite(a)||!Number.isFinite(b)||
+             a<0||b<=a||b>segment.length/SAMPLE_RATE+.25)continue;
+          if(timed.length>=1200)break;
+          timed.push({start:Math.round((start/SAMPLE_RATE+a)*1000)/1000,
+                      end:Math.round((start/SAMPLE_RATE+b)*1000)/1000,
+                      text:text});
+        }
       }
-      return found;
+      return {chunks:found,word_timeline:timed};
     }
-    let chunks;
+    let recognized;
     try{
-      chunks=await recognizeAll(recognize);
+      recognized=await recognizeAll(recognize);
     }catch(primaryError){
       if(loadedModel!==MODEL_IDS[0])throw primaryError;
       send(id,'stage',{label:'מנוע התמלול הראשי נכשל במהלך העיבוד; מנסה מנוע חלופי'});
       pipelinePromise=null;
       recognize=await createRecognizer(id,1);
       pipelinePromise=Promise.resolve(recognize);
-      chunks=await recognizeAll(recognize);
+      recognized=await recognizeAll(recognize);
     }
+    let chunks=recognized.chunks;
+    let wordTimeline=recognized.word_timeline;
     let transcript=normalize(chunks.map(x=>x.text).join(' '));
     let hebrewCount=(transcript.match(/[\u0590-\u05ff]/g)||[]).length;
     if((hebrewCount<3 || transcript.split(/\s+/).filter(Boolean).length<2)
@@ -99,14 +128,17 @@ self.onmessage=async event=>{
       pipelinePromise=null;
       recognize=await createRecognizer(id,1);
       pipelinePromise=Promise.resolve(recognize);
-      chunks=await recognizeAll(recognize);
+      recognized=await recognizeAll(recognize);
+      chunks=recognized.chunks;
+      wordTimeline=recognized.word_timeline;
       transcript=normalize(chunks.map(x=>x.text).join(' '));
       hebrewCount=(transcript.match(/[\u0590-\u05ff]/g)||[]).length;
     }
     if(hebrewCount<3 || transcript.split(/\s+/).filter(Boolean).length<2){
       throw new Error('שני מנועי התמלול לא זיהו מספיק מילים בעברית מתוך ההקלטה המקורית.');
     }
-    send(id,'done',{transcript,chunks,model:loadedModel,language:'hebrew'});
+    send(id,'done',{transcript,chunks,
+      word_timeline:wordTimeline,model:loadedModel,language:'hebrew'});
   }catch(error){
     const details=String(error?.message||error||'Unknown error').slice(0,360);
     const lower=details.toLowerCase();

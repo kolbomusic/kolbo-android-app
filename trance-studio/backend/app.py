@@ -46,6 +46,36 @@ def _save_upload_stream(stream, dest, limit, total_limit, already_saved=0,
     return copied
 
 
+def _safe_browser_word_timeline(raw, file_count):
+    """Validate actual Whisper word timestamps from the user's own device."""
+    if not isinstance(raw,str) or not raw or len(raw)>64000:
+        return None
+    try:
+        parsed=json.loads(raw)
+        if not isinstance(parsed,list) or len(parsed)!=file_count:
+            return None
+        result=[]
+        for group in parsed:
+            if not isinstance(group,list) or len(group)>1200:
+                return None
+            cleaned=[]
+            previous=-1.
+            for item in group:
+                if not isinstance(item,dict):return None
+                start=float(item['start']);end=float(item['end'])
+                word=item['text']
+                if (not isinstance(word,str) or not word or len(word)>80
+                    or not 0<=start<end<=300 or start<previous):
+                    return None
+                previous=start
+                cleaned.append({'start':round(start,3),
+                                'end':round(end,3),'text':word})
+            result.append(cleaned)
+        return result
+    except (ValueError,KeyError,TypeError,OverflowError):
+        return None
+
+
 def create_app(config=None):
     app=Flask(__name__,static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=64*1024*1024,JOB_DIR=os.environ.get('JOB_DIR','/tmp/kolbo-trance-jobs'),API_TOKEN=os.environ.get('API_TOKEN',''),ALLOWED_ORIGINS=os.environ.get('ALLOWED_ORIGINS','https://kolbo-trance-studio.happyblimp1.chatgpt.site'),JOB_TTL=3600)
@@ -132,7 +162,8 @@ def create_app(config=None):
             asr_recovery_attempted=bool(
                 (audio_director or options.get('video_requested')) and
                 len(detected_transcript.split())<2)
-            transcript_timeline=None
+            transcript_timeline=(options.get('browser_timeline')
+                                 if detected_transcript else None)
             # A decoded 300-second float32 track can hold ~38 MiB (plus
             # Python/NumPy allocator overhead) while multilingual Whisper
             # starts in a child. On a 512-MiB Render container that overlap
@@ -183,7 +214,7 @@ def create_app(config=None):
                 # All later mixer stages use the same original bytes on disk.
                 update(job_id,percent=9,label='מכין אודיו מקורי למיקס לאחר פינוי זיכרון התמלול')
                 clips=[load_audio(p) for p in paths]
-            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent','video_strategy','backing_music_path','music_license_ack')}
+            audio_options={k:v for k,v in options.items() if k not in ('make_video','transcript','transcript_origin','video_requested','transcription_failed','source_hashes','ai_video_consent','video_strategy','backing_music_path','music_license_ack','browser_timeline')}
             # Make the already recognized Hebrew speech useful for comic
             # timing/preset decisions. Keep it in-process; never transmit
             # private audio or transcript to a new third party.
@@ -395,7 +426,15 @@ def create_app(config=None):
                             # Continue preparing source footage even if there are
                             # unmatched phrases. Real video may still illustrate
                             # recognized scenes; coverage must be openly partial.
-                            board=align_storyboard_to_vocal(board,vocal,sr=32000)
+                            # Browser/source Whisper word times are grounded
+                            # in source seconds. Map them through the ORIGINAL
+                            # dry-audio sample spans into mixed-output time,
+                            # before falling back to vocal-energy estimates.
+                            from word_scene_alignment import align_storyboard_to_source_words
+                            if not align_storyboard_to_source_words(
+                                    board,transcript_timeline,
+                                    video_fx_timeline,audio_duration_seconds):
+                                board=align_storyboard_to_vocal(board,vocal,sr=32000)
                             video_path=root/job_id/'story.mp4'
                             sources=export_live_story(root/job_id/'mix.mp3',video_path,
                                 board,root/job_id/'footage',
@@ -566,7 +605,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.21',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.22',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/jobs/capacity')
     def job_capacity():
@@ -691,6 +730,9 @@ def create_app(config=None):
             transcript=''
         if transcript_origin not in ('auto','manual'):
             return jsonify(error='מקור התמלול אינו תקין'),400
+        browser_timeline=(_safe_browser_word_timeline(
+            request.form.get('transcript_timeline',''),len(files))
+            if transcript_origin=='auto' and transcript else None)
         if any(Path(f.filename or '').suffix.lower() not in ALLOWED for f in files):return jsonify(error='סוג הקובץ אינו נתמך'),400
         backing_file=request.files.get('backing_music')
         if backing_file and backing_file.filename:
@@ -744,7 +786,8 @@ def create_app(config=None):
                 return jsonify(error='המוזיקה או סך הקבצים חורגים ממגבלת ההעלאה המורשית'),400
         with lock:jobs[job_id]={'state':'queued','percent':0,'label':'ממתין לעיבוד','created':time.time(),'seconds':seconds,'bpm':bpm}
         executor.submit(work,job_id,paths,{'bpm':bpm,'seconds':seconds,'style':style,'voice_level':voice_level,'melody':melody,'humor':humor,'fx_intensity':fx_intensity,'fx_gain':fx_gain,'mix_variation':mix_variation,'make_video':make_video,'video_requested':video_requested,'transcription_failed':transcription_failed,'transcript':transcript,'transcript_origin':transcript_origin,'source_hashes':source_hashes,'ai_video_consent':ai_video_consent and video_requested,
-             'video_strategy':video_strategy,'backing_music_path':backing_music_path,
+             'video_strategy':video_strategy,'browser_timeline':browser_timeline,
+             'backing_music_path':backing_music_path,
              'music_license_ack':music_license_ack})
         return jsonify(id=job_id,status_url='/api/jobs/'+job_id),202
 

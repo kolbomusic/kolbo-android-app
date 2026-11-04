@@ -223,7 +223,10 @@ class SocialImportAndMicroRemixTests(unittest.TestCase):
         voice=(.25*np.sin(2*np.pi*210*t)).astype(np.float32)
         full,raw=engine.render_mix([voice],sample_rate=sr,seconds=0,
                                    humor='off',return_voice=True)
-        self.assertGreaterEqual(len(full)/sr,30)
+        self.assertGreaterEqual(len(full)/sr,8)
+        self.assertLess(len(full)/sr,20)
+        # Humor-off means leave the original understandable and do not force
+        # 30 seconds of unrelated music after a one-second voice note.
         self.assertEqual(len(full),len(raw))
 
 
