@@ -508,7 +508,7 @@ def _make_segment(src,output,length,*,allow_loop=True):
         # zoom animation or a substitute static picture.
         "-vf","fps=12,scale=360:640:force_original_aspect_ratio=increase:"
               "force_divisible_by=2,crop=360:640,setsar=1,format=yuv420p",
-        "-c:v","libx264","-profile:v","baseline","-level","3.0",
+        "-c:v","libx264","-threads:v","1","-profile:v","baseline","-level","3.0",
         "-preset","ultrafast","-crf","30","-movflags","+faststart",str(short)
     ]
     try:
