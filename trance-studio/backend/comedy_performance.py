@@ -87,9 +87,26 @@ def perform_comic_voice(vocal, start_frame, spans, sr, bpm, humor,
     # A single well-delivered punchline is preferable to six tiny, harsh
     # 'effects' on a short sentence. Escalation is slower and deliberate.
     count=max(1,min(MAX_EVENTS,int(math.ceil(voiced_duration/7.5))))
-    if voiced_duration>=8.:count=max(2,count)
-    targets=[voiced_positions[min(len(voiced_positions)-1,
-             int((i+.65)*len(voiced_positions)/count))] for i in range(count)]
+    if voiced_duration>=6.:count=max(2,count)
+    # Preserve rare speech islands rather than applying every transformation
+    # to the first energetic paragraph. Real pauses >1.2s define a new
+    # utterance whose meaningful ending can carry its own comic payoff.
+    groups=[]
+    for position in voiced_positions:
+        if not groups or position-groups[-1][-1]>sr*1.2:
+            groups.append([position])
+        else:
+            groups[-1].append(position)
+    if len(groups)>1:
+        count=min(MAX_EVENTS,max(count,len(groups)))
+    targets=[group[min(len(group)-1,int(.72*len(group)))]
+             for group in groups] if 1<len(groups)<=count else []
+    if len(targets)<count:
+        targets.extend(
+          voiced_positions[min(len(voiced_positions)-1,
+            int((i+.65)*len(voiced_positions)/count))]
+          for i in range(count))
+    targets=sorted(set(targets))[:MAX_EVENTS]
     # A *single* recurring character/effect per source creates callback,
     # rather than a helium->monster->robot random palette.
     grounded_mode=(semantic_cue(transcript_hint,.5)
