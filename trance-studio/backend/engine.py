@@ -1080,7 +1080,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     cursor=beat*4
     # Real voice-sampled accents happen inside the narration, while the
     # original track and its deliberate pause FX remain 100% preserved.
-    from dj_arranger import accent_overdub
+    from comedy_performance import perform_comic_voice
     for clip_index,(track,mask,spans) in enumerate(arranged):
         start=int(round(cursor*sr))
         end=min(n,start+len(track))
@@ -1124,28 +1124,28 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             source=voices[clip_index]
             phrases=(transcript_timeline[clip_index]
                      if clip_index<len(transcript_timeline) else [])
-            # The automatic comic director already inserts audible,
-            # beat-quantized sample FX into measured phrase breaks.
-            # The old *second* overdub copied syllables ON TOP of the next
-            # words every ~3 seconds: muddled speech, random clashes and
-            # no reliable visual time map. Auto mode now uses ONE coherent
-            # punchline track only; explicit manual processors may still
-            # add traditional turntable overdubs when requested.
-            if humor not in ('auto','chaos'):
-                overdub=accent_overdub(
-                    source,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
-                    vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
-                    timed_phrases=phrases,
-                    cue_from_text=lambda phrase:_semantic_comedy_cue(phrase,.5))
-                for original_start,original_end,arranged_start,arranged_end in spans:
-                    src=overdub[original_start:original_end]
-                    a=start+arranged_start
-                    b=min(end,a+len(src))
-                    if b>a:
-                        vocal[a:b]+=src[:b-a]*voice_level
-                        fx_highlight[a:b]=np.maximum(
-                            fx_highlight[a:b],
-                            np.minimum(1,np.abs(src[:b-a])*3))
+            # Actual in-word comedic performance, rather than a random
+            # additive voice overdub. Source spans remain non-destructive
+            # while the audible final stem changes DURING spoken syllables.
+            # A 5-second note now contains 2-3 strong character changes and
+            # longer messages receive spaced, source-aligned punchlines.
+            performance=perform_comic_voice(
+                vocal,start,spans,sr,bpm,humor,fx_intensity,fx_gain,
+                voice_rng,vintage_voice_fx,word_times=phrases,
+                semantic_cue=_semantic_comedy_cue)
+            for cue in performance:
+                a=cue['start_frame'];b=min(n,cue['end_frame'])
+                if b<=a:continue
+                # The backing drops while the character voice speaks,
+                # instead of masking a wet effect behind a loud synth.
+                fx_highlight[a:b]=np.maximum(fx_highlight[a:b],.90)
+                if return_video_timeline:
+                    video_fx_timeline.append({
+                        'kind':'voice_mod','source_file':clip_index,
+                        'start':round(a/sr,5),'end':round(b/sr,5),
+                        'source_seek':round(cue['source_seek'],5),
+                        'effect':cue['effect'],'intensity':fx_intensity,
+                        'strength':cue['strength']})
         cursor+=len(track)/sr+beat*3
     progress(80,'מבצע מיקס כשהקול המעובד בחזית')
     # The synth is independent. Duck only its volume during speech so the
