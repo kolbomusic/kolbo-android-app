@@ -85,12 +85,12 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </div>
 </section>
 <section class="panel"><h2>3. בוחרים סגנון סאונד</h2>
-<p class="hint">המיקס מסודר סביב הקול המקורי: המלודיה מגיבה להפסקות ולמשפטים, האפקטים מתוזמנים לפי הפסקות אמיתיות והסיפור שזוהה. אין הבטחה לזיהוי כל מילה במדויק.</p>
+<p class="hint">מנוע ההומור החדש מעצב את הקול **בזמן הדיבור עצמו**: קולות דמויות, שינוי טון, הפתעות והדגשת פאנצ׳ים בתוך המילים. המוזיקה נחלשת בזמן האפקטים. הדיבור המקורי נשמר מתחת לעיבוד כדי שיהיה אפשר להבין אותו. יצירת סרטון AI חדש עדיין תלויה בזמינות שירות חינמי.</p>
 <label for="creativePreset">איך יישמע המיקס?</label>
 <select id="creativePreset">
-<option value="balanced" selected>מאוזן ומצחיק — מומלץ</option>
+<option value="balanced">מאוזן ומצחיק — עדין יותר</option>
 <option value="subtle">עדין ומוזיקלי — פחות בדיחות קול</option>
-<option value="bold">קומי מוגבר — יותר רולים ומשחקי קול</option>
+<option value="bold" selected>מופע קומי חזק — הדגשה ושינויי דמות בתוך הדיבור (מומלץ)</option>
 <option value="music">טראנס נקי — קול מקורי בלי אפקטים קומיים</option>
 <option value="custom">מותאם אישית — הגדרות מתקדמות</option>
 </select>
@@ -119,11 +119,11 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <option value="ring">Ring Modulator — צליל קולי מכני משונה</option>
 <option value="chaos">מסיבה פרועה — יותר חיתוכים ואפקטים</option>
 <option value="off">ללא הומור — מוזיקה וקול בלבד</option></select>
-<label for="fx_intensity">תדירות קטעי הקול המעובדים — <output id="fxText">רגילה — תזמון לפי משפטים</output></label>
-<input id="fx_intensity" type="range" min="1" max="3" value="2" step="1">
+<label for="fx_intensity">תדירות קטעי הקול המעובדים — <output id="fxText">גבוהה — שינויים חזקים גם בתוך המילים</output></label>
+<input id="fx_intensity" type="range" min="1" max="3" value="3" step="1">
 <small>1 — מדי פעם · 2 — רגיל · 3 — כמה שיותר במהלך הדיבור</small>
-<label for="fx_gain">עוצמת האפקטים ביחס לקול המקורי — <output id="fxGainText">130%</output></label>
-<input id="fx_gain" type="range" min="55" max="170" value="130" step="5">
+<label for="fx_gain">עוצמת האפקטים ביחס לקול המקורי — <output id="fxGainText">150%</output></label>
+<input id="fx_gain" type="range" min="55" max="170" value="150" step="5">
 <small>כעת העיבוד פועל גם בתוך דיבור רצוף כהעתקי קול קצביים ובלי למחוק את הדיבור המקורי. בחירה ידנית משנה את המעבד, והעוצמה והתדירות קובעות כמה הוא נשמע.</small>
 </details>
 <details class="advanced"><summary>בחירת מוזיקה ישראלית / עברית וחיבור קובץ מורשה</summary>
@@ -488,13 +488,13 @@ window.kolboImportSharedAudio=function(items){
 audio.addEventListener('change',function(){setFiles(audio.files)});
 $('bpm').oninput=function(){$('bpmText').textContent=this.value};
 $('voice').oninput=function(){$('voiceText').textContent=this.value+'%'};
-$('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'נמוכה','2':'רגילה — תזמון לפי משפטים','3':'גבוהה'})[this.value]};
+$('fx_intensity').oninput=function(){$('fxText').textContent=({'1':'נמוכה','2':'רגילה','3':'גבוהה — שינויים חזקים גם בתוך המילים'})[this.value]};
 $('fx_gain').oninput=function(){$('fxGainText').textContent=this.value+'%'};
 $('creativePreset').onchange=function(){
  var p={
   balanced:['auto','2','130'],
   subtle:['auto','1','105'],
-  bold:['auto','3','140'],
+  bold:['auto','3','150'],
   music:['off','1','100']
  }[this.value];
  if(!p)return;

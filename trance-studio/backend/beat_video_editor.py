@@ -68,6 +68,15 @@ def _video_effect_parameters(kind, effect, intensity):
     movement speed, punch-in and color are real MP4 pixel transforms.
     """
     intensity=max(1,min(3,int(intensity)))
+    if kind=="voice_mod":
+        # In-word effects are changes to the ORIGINAL performance, not
+        # extra inserted time. Keep frame-time mapping exactly 1:1 while
+        # reframing/warping the actual moving source at the audible cue.
+        if effect in ("stretch","tape","monster","rewind","yo_yo"):
+            return (1.,1.16+.04*intensity,"stretch")
+        if effect in ("pitch","helium","robot","ring"):
+            return (1.,1.17+.045*intensity,"pitch")
+        return (1.,1.13+.04*intensity,"glitch")
     if kind=="voice_fx":
         if effect in ("stretch","tape","monster","rewind","yo_yo"):
             return (.62 if intensity>=2 else .78,
@@ -105,8 +114,39 @@ def sync_edit_decisions(duration,bpm,source_duration,events,
         if start<0 or end<=start or seek<0:
             continue
         selected.append({**e,"start":start,"end":end,"source_seek":seek})
+    # "voice_mod" events sit INSIDE the ordinary 1:1 voice spans.
+    # The old sequential walker consumed a whole voice first and silently
+    # skipped every overlapping in-word FX. Split only those original spans
+    # into dry and transformed sub-shots, retaining their source time.
+    modifiers=sorted((e for e in selected if e.get("kind")=="voice_mod"),
+                     key=lambda e:e["start"])
+    if modifiers:
+        resolved=[]
+        for e in selected:
+            if e.get("kind")!="voice":
+                if e.get("kind")=="voice_fx":
+                    resolved.append(e)
+                continue
+            cursor=e["start"]
+            for fx in modifiers:
+                left=max(cursor,e["start"],fx["start"])
+                right=min(e["end"],fx["end"])
+                if right-left<.085:continue
+                if left-cursor>.00001:
+                    resolved.append({**e,"start":cursor,"end":left,
+                                     "source_seek":e["source_seek"]+
+                                                   cursor-e["start"]})
+                resolved.append({
+                    **fx,"start":left,"end":right,
+                    "source_seek":e["source_seek"]+left-e["start"]})
+                cursor=right
+            if e["end"]-cursor>.00001:
+                resolved.append({**e,"start":cursor,"end":e["end"],
+                                 "source_seek":e["source_seek"]+
+                                               cursor-e["start"]})
+        selected=resolved
     selected.sort(key=lambda e:(e["start"],e["kind"]!="voice"))
-    if not any(e["kind"]=="voice" for e in selected):
+    if not any(e["kind"] in ("voice","voice_mod") for e in selected):
         return []
     shots=[]
     cursor=0.
@@ -121,7 +161,8 @@ def sync_edit_decisions(duration,bpm,source_duration,events,
         while time_left>.085:
             length=min(14.,time_left)
             # Exact source mapping for unmodified spoken voice (1:1).
-            seek=(source_seek+elapsed if kind=="voice" else source_seek)
+            seek=(source_seek+elapsed if kind in ("voice","voice_mod")
+                  else source_seek)
             if source_duration>.3:
                 seek=seek%source_duration
             else:
@@ -140,11 +181,12 @@ def sync_edit_decisions(duration,bpm,source_duration,events,
             continue
         if start>cursor+.085:
             push(cursor,start,source_cursor,"music","off")
-        kind="voice_fx" if e["kind"]=="voice_fx" else "voice"
-        push(start,end,e["source_seek"]+max(0.,start-e["start"]) if kind=="voice"
+        kind=(e["kind"] if e["kind"] in ("voice_fx","voice_mod") else "voice")
+        push(start,end,e["source_seek"]+max(0.,start-e["start"])
+             if kind in ("voice","voice_mod")
              else e["source_seek"],kind,e.get("effect",humor))
         cursor=end
-        if kind=="voice":
+        if kind in ("voice","voice_mod"):
             source_cursor=e["source_seek"]+(end-e["start"])
         else:
             source_cursor=e["source_seek"]
@@ -345,7 +387,7 @@ def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
             "video_edit_style":("voice_fx_synced_motion_warp" if synced
                                 else "beat_cut_punch_in_speed_ramp"),
             "video_edit_fx_cues":sum(1 for shot in shots
-                                        if shot.get("kind")=="voice_fx"),
+                                        if shot.get("kind") in ("voice_fx","voice_mod")),
             "video_edit_audio_synced":bool(synced),
             "video_edit_shots":len(shots),
             "video_status":"done",
