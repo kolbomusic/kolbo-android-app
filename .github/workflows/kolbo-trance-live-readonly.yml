@@ -1,0 +1,20 @@
+name: Kolbo Trance public production readiness (no generation)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - kolbo-trance-studio-20261031
+      - kolbo-trance-live-readonly-smoke-20261104
+    paths:
+      - 'trance-studio/**'
+      - '.github/workflows/kolbo-trance-live-readonly.yml'
+permissions:
+  contents: read
+jobs:
+  live-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe actual deployed Render version, free engines and comedy UI
+        run: python3 trance-studio/tests/live_readonly_production_smoke.py
