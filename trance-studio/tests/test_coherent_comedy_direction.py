@@ -41,7 +41,7 @@ class CoherentComicDirectionTests(unittest.TestCase):
         result,cues=self.perform(original)
         self.assertEqual(len(cues),1,cues)
         cue=cues[0]
-        self.assertEqual(cue["effect"],"stretch")
+        self.assertEqual(cue["effect"],"character")
         self.assertGreater((cue["end_frame"]-cue["start_frame"])/self.SR,.90)
         self.assertEqual(len(result),len(original))
         self.assertTrue(np.isfinite(result).all())
@@ -51,7 +51,7 @@ class CoherentComicDirectionTests(unittest.TestCase):
         original=self.voice(27,[(0,8),(10,16),(19,26)])
         result,cues=self.perform(original,transcript="הוא סיפר לנו מה קרה בבית")
         self.assertGreaterEqual(len(cues),2,cues)
-        self.assertEqual({cue["effect"] for cue in cues},{"stretch"})
+        self.assertEqual({cue["effect"] for cue in cues},{"character"})
         self.assertLessEqual(len(cues),5)
         self.assertLess(float(np.max(np.abs(result))),1.0)
 
@@ -65,7 +65,7 @@ class CoherentComicDirectionTests(unittest.TestCase):
         x=self.voice(6,[(.1,5.7)])
         _,cues=self.perform(x,transcript="נדבר שוב מחר בבוקר")
         self.assertTrue(cues)
-        self.assertEqual({x["effect"] for x in cues},{"stretch"})
+        self.assertEqual({x["effect"] for x in cues},{"character"})
         self.assertNotIn("robot",{x["effect"] for x in cues})
         self.assertNotIn("helium",{x["effect"] for x in cues})
 
