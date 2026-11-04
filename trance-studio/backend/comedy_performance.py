@@ -16,7 +16,7 @@ import numpy as np
 # effects every eighth note. Each source alternates setup, surprise, payoff.
 # Automatic comedy favors a coherent performance over a rapid parade of
 # incompatible voices. Experimental cartoon FX remain explicit manual choices.
-AUTO_MODES=("stretch",)
+AUTO_MODES=("character",)
 MAX_EVENTS=12
 
 
@@ -118,9 +118,9 @@ def perform_comic_voice(vocal, start_frame, spans, sr, bpm, humor,
         grounded_mode="stretch"
     if grounded_mode not in ("stretch","pitch","tape","monster","helium"):
         grounded_mode=None
-    default_mode=grounded_mode or "stretch"
+    default_mode=grounded_mode or "character"
     mode_order=((default_mode,) if humor=="auto" else
-                ("stretch",) if humor=="chaos" else (humor,))
+                ("character",) if humor=="chaos" else (humor,))
     desired_width={1:.95,2:1.32,3:1.55}[intensity]
     dry_ratio={1:.55,2:.43,3:.34}[intensity]
     events=[]
