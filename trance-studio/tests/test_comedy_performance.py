@@ -7,6 +7,8 @@ source alignment, and visible-video edit decisions for the SAME FX times.
 import pathlib
 import sys
 import unittest
+import subprocess
+import tempfile
 import numpy as np
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
@@ -133,6 +135,47 @@ class VocalComedyPerformanceTests(unittest.TestCase):
                     (stem[a:a+count]-prepared[src:src+count])**2))))
         self.assertGreater(max(deviations),.025)
         self.assertLess(len(music)/self.sr,24)
+
+    def test_real_mp4_warps_original_moving_frames_at_spoken_voice_fx(self):
+        from beat_video_editor import compose_edited_original_video
+        from live_video import _duration
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder)
+            source=root/"original-moving-person.mp4"
+            soundtrack=root/"comedy-voice.mp3"
+            output=root/"comic-synced.mp4"
+            subprocess.run([
+                "ffmpeg","-nostdin","-v","error","-y","-f","lavfi",
+                "-i","testsrc2=size=360x640:rate=12:duration=4",
+                "-c:v","libx264","-threads:v","1","-preset","ultrafast",
+                "-pix_fmt","yuv420p",str(source)
+            ],check=True,timeout=25)
+            subprocess.run([
+                "ffmpeg","-nostdin","-v","error","-y","-f","lavfi",
+                "-i","sine=frequency=440:duration=6.7",
+                "-c:a","libmp3lame",str(soundtrack)
+            ],check=True,timeout=25)
+            events=[
+                {"kind":"voice","source_file":0,"start":1.4,"end":5.4,
+                 "source_seek":0.,"effect":"auto","intensity":3},
+                {"kind":"voice_mod","source_file":0,"start":2.3,"end":3.05,
+                 "source_seek":.9,"effect":"monster","intensity":3},
+            ]
+            meta=compose_edited_original_video(
+                source,soundtrack,output,root/"edits",bpm=145,
+                fx_timeline=events,humor="auto",fx_intensity=3)
+            self.assertEqual(meta["video_status"],"done")
+            self.assertTrue(meta["video_edit_audio_synced"],meta)
+            self.assertEqual(meta["video_edit_style"],
+                             "voice_fx_synced_motion_warp")
+            self.assertGreaterEqual(meta["video_edit_fx_cues"],1,meta)
+            self.assertGreater(output.stat().st_size,20000)
+            self.assertAlmostEqual(_duration(output),_duration(soundtrack),
+                                   delta=.35)
+            decisions=sync_edit_decisions(_duration(soundtrack),145,4,
+                                          events,fx_intensity=3)
+            self.assertTrue(any(c["kind"]=="voice_mod" and c["look"]=="stretch"
+                                for c in decisions))
 
     def test_video_must_react_to_in_word_audio_without_resetting_source(self):
         cues=[
