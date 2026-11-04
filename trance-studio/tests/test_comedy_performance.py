@@ -54,6 +54,26 @@ class VocalComedyPerformanceTests(unittest.TestCase):
         self.assertGreater(float(np.sqrt(np.mean(wet[-self.sr:]**2))),.04)
         self.assertEqual(len(out),len(original)+3*self.sr)
 
+    def test_long_pauses_do_not_hide_late_source_speech(self):
+        seconds=42
+        original=np.zeros(self.sr*seconds,dtype=np.float32)
+        for a,b,pitch in ((2,4.5,220),(20,23,320),(35,38,265)):
+            start=int(a*self.sr);end=int(b*self.sr)
+            t=np.arange(end-start,dtype=np.float32)/self.sr
+            original[start:end]=.24*np.sin(2*np.pi*pitch*t)
+        after=original.copy()
+        cues=perform_comic_voice(
+            after,0,[(0,len(original),0,len(original))],
+            self.sr,145,"auto",3,1.5,np.random.default_rng(18),
+            engine.vintage_voice_fx)
+        self.assertGreaterEqual(len(cues),2,cues)
+        self.assertTrue(any(c["start_frame"]<self.sr*6 for c in cues))
+        self.assertTrue(any(c["start_frame"]>self.sr*31 for c in cues),
+            "Do not spend the comic budget on long silent pauses")
+        self.assertGreater(
+            float(np.sqrt(np.mean((after-original)**2))),.008)
+        self.assertEqual(len(after),len(original))
+
     def test_no_humor_keeps_original_speech_bit_identical(self):
         original,out,start,events=self.treatment(humor="off")
         self.assertEqual(events,[])
