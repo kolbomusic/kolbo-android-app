@@ -200,6 +200,31 @@ def action_for_clause(sentence):
                     "basis":"explicit_subject_only"}
     return None
 
+def require_faithful_action_footage(board):
+    """Prevent a loosely related noun/stock shot from posing as the story.
+
+    The automatic voice-only fallback must not use a static donkey,
+    generic street, or the first recognized action for *unmatched* speech.
+    Exact, positive actions are acceptable; if the story lacks coverage,
+    show an honest video-unavailable result rather than misleading footage.
+    Manually selected 'illustrated story' can still opt into partial shots.
+    """
+    scenes=board.get("scenes",[]) if isinstance(board,dict) else []
+    if not scenes or board.get("unmatched_clauses",0):
+        raise UnavailableVideo(
+            "לא זוהו מספיק פעולות מצולמות שמתאימות לכל המשפטים. "
+            "לא נחליף את הדיבור בצילומים לא קשורים.")
+    allowed={"subject_and_action","explicit_intransitive_action"}
+    if any(x.get("basis") not in allowed for x in scenes):
+        raise UnavailableVideo(
+            "זוהה נושא כללי אך לא פעולה מדויקת. "
+            "נמנעים מסרטון רקע שאינו ממחיש את הנאמר.")
+    if board.get("visual_coverage")=="partial":
+        raise UnavailableVideo(
+            "כיסוי הסצנות חלקי. הסרטון האוטומטי לא יתחזה להמחשה מלאה.")
+    return board
+
+
 def visual_plan(transcript,duration):
     """Extract grounded visual beats from the FULL speech transcript.
 
