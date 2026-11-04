@@ -105,7 +105,12 @@ def render_audio_tool(source,output,*,mode="master",voice=None,
       "punchy":"highpass=f=36,equalizer=f=3500:t=q:w=1.1:g=1.0,acompressor=threshold=-21dB:ratio=3.0:attack=7:release=100",
       "clean":"highpass=f=25,acompressor=threshold=-16dB:ratio=1.5:attack=24:release=180"
     }[sound]
-    master="loudnorm=I=-14:TP=-1.3:LRA=10,alimiter=limit=0.92"
+    # MP3 encoder inter-sample overshoot can exceed digital full-scale even
+    # after loudnorm + FFmpeg's default auto-makeup limiter. Proven on real
+    # WhatsApp OPUS voice: a +3st vocal hit 1.24 decoded PCM before this fix.
+    # Disable auto makeup, leave post-limiter headroom for MP3 decode,
+    # and retain a natural dynamic range without clipping the jokes.
+    master="loudnorm=I=-14:TP=-1.3:LRA=10,alimiter=limit=0.86:level=0,volume=0.82"
     command=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
              "-y","-i",str(source)]
     if mode=="master":
