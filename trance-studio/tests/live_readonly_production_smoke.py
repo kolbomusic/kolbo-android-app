@@ -5,12 +5,19 @@ free-only capabilities and UI defaults. Heavy authenticated generation is
 INTENTIONALLY excluded: this script has no API_TOKEN and never POSTs media.
 """
 import json
+import pathlib
+import re
 import sys
 import time
 import urllib.error
 import urllib.request
 
 ROOT="https://kolbo-trance-studio.onrender.com"
+SOURCE=pathlib.Path(__file__).resolve().parents[1]
+BACKEND=(SOURCE/"backend"/"app.py").read_text(encoding="utf-8")
+VERSION=re.search(r"version='([0-9.]+)'",BACKEND)
+assert VERSION, "Missing backend release identifier"
+EXPECTED_VERSION=VERSION.group(1)
 
 
 def get(path):
@@ -32,10 +39,17 @@ def get(path):
 
 
 def check():
-    health=json.loads(get("/health"))
+    # A GitHub PR merge can start CI a few seconds before Render Free
+    # finishes its manual deployment. Retry *read-only* health, and fail
+    # if the tested release never reaches production.
+    for attempt in range(8):
+        health=json.loads(get("/health"))
+        if health.get("ok") is True and health.get("version")==EXPECTED_VERSION:
+            break
+        if attempt<7:time.sleep(10)
     assert health.get("ok") is True, "Production health check failed"
-    assert health.get("version")=="1.16.24", (
-        "Expected Kolbo 1.16.24, got "+str(health.get("version")))
+    assert health.get("version")==EXPECTED_VERSION, (
+        "Expected Kolbo "+EXPECTED_VERSION+", got "+str(health.get("version")))
     print("PASS: production health reports",health["version"])
 
     cap=json.loads(get("/api/capabilities"))
@@ -60,7 +74,8 @@ def check():
                     'id="fx_intensity"','id="fx_gain"',
                     'kolboImportSharedAudio'):
         assert snippet in html, f"Missing production UI feature: {snippet}"
-    assert "מופע קומי חזק" in html,"Strong comedy not visible by default"
+    assert "במאי קומי אוטומטי" in html, (
+        "Coherent comedy mode not visible in the deployed studio")
     print("PASS: deployed studio includes strong comic preset and manual creation")
     print("NOTE: authenticated audio/MP4 generation NOT tested from this read-only probe")
 
