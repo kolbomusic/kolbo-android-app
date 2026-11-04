@@ -819,11 +819,11 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                                        fx_events=(fx_events_per_voice[i] if fx_events_per_voice is not None else None))
                   for i,v in enumerate(voices)]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
-    # A beat or two sets up the joke; a 4-8 beat silent prelude is too
-    # long for short WhatsApp voice notes. Keep the original source segments
-    # and meaningful insert duration; do not stretch to meet a bar count.
-    intro_beats=3 if total_vocal_duration<25 else 8
-    needed=(beat*5 if short_form else beat*intro_beats)+total_vocal_duration+max(0,len(voices)-1)*beat*2
+    # This must match speech_aware_music_map and the render cursor EXACTLY:
+    # 4 beats intro, 3 beats between source clips, and 2 beats outro.
+    # Older estimates under-allocated two or more beats, occasionally
+    # cutting off the final spoken word on otherwise 'successful' exports.
+    needed=beat*6+total_vocal_duration+max(0,len(voices)-1)*beat*3
     # When remixing the ACTUAL video someone shared, never pad a five-second
     # source into an arbitrary 30-second montage just to fill our default
     # audio-only minimum. Keep every original word, its inserted FX and
