@@ -58,6 +58,7 @@ class SmartStoryFallbackTests(unittest.TestCase):
 
         plan={"source":"grounded_transcript","transcript":"החמור נוער בחוזקה",
               "scenes":[{"action":"donkey_bray","query":"donkey braying",
+                         "basis":"subject_and_action",
                          "start":0.,"end":2.,"spoken":"החמור נוער בחוזקה"}],
               "visual_coverage":"matched","unmatched_clauses":0}
         with tempfile.TemporaryDirectory() as folder:
