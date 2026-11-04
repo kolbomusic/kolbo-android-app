@@ -1,0 +1,32 @@
+name: Karnafim public CDN live verification
+on:
+  push:
+    branches: [kolbo-trance-studio-20261031]
+    paths:
+      - '.github/workflows/karnafim-public-cdn-live-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify public CDN pages independent of dynamic Render app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://karnafim-barkan-public.onrender.com"
+          for route in / /memorial/ /heritage/ /photos/ /privacy/ /static/site.css /static/site.js; do
+            code="$(curl -L -sS --retry 3 --retry-all-errors --max-time 30 -o /dev/null -w '%{http_code}' "$base$route")"
+            printf 'CDN %s -> %s\n' "$route" "$code"
+            test "$code" = "200"
+          done
+          html="$(mktemp)"
+          curl -L -sS --retry 3 --retry-all-errors --max-time 30 "$base/" > "$html"
+          grep -Fq 'יש קשרים' "$html"
+          grep -Fq 'https://karnafim-community-46.onrender.com/login' "$html"
+          ! grep -Fq '/karnafim/static/site.css' "$html"
+          curl -L -sS --retry 3 --retry-all-errors --max-time 30 "$base/static/site.js" |
+            grep -Fq 'Public static pages never probe'
+          echo "PASS: static Karnafim site reachable over CDN and public links load"
