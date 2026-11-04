@@ -1,0 +1,43 @@
+name: Karnafim public static CDN verification
+on:
+  push:
+    branches: [karnafim-static-cdn-fix-20261104]
+    paths:
+      - 'render-karnafim-static.py'
+      - 'trance-studio/entry/karnafim/**'
+      - '.github/workflows/karnafim-static-cdn-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the offline public heritage and memorial site
+        run: python3 render-karnafim-static.py
+      - name: Verify public assets, no login form, and independent navigation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('karnafim-render-public')
+          html=(root/'index.html').read_text()
+          memorial=(root/'memorial'/'index.html').read_text()
+          status=(root/'status'/'index.html').read_text()
+          script=(root/'static'/'site.js').read_text()
+          assert 'dir="rtl"' in html
+          assert 'href="/static/site.css"' in html
+          assert 'href="/heritage/index.html"' in html
+          assert 'https://karnafim-community-46.onrender.com/login' in html
+          assert 'שרת סטטי שאינו נכנס למצב שינה' in html
+          assert 'אין ספק משלוח מאומת' not in status
+          assert 'מתעורר לאחר חוסר פעילות' in status
+          assert 'fetch("/health"' not in script
+          assert 'en_53e66dd727188835acbe02a1f641a882' in memorial
+          for name in ('index.html','memorial/index.html','photos/index.html',
+                       'heritage/index.html','privacy/index.html','404.html'):
+              assert (root/name).is_file(),name
+          print('PASS: static Karnafim public CDN, no secrets, no backend dependency')
+          PY
