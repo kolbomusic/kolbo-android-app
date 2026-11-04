@@ -819,14 +819,24 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
                                        fx_events=(fx_events_per_voice[i] if fx_events_per_voice is not None else None))
                   for i,v in enumerate(voices)]
     total_vocal_duration=sum(len(track)/sr for track,_,_ in arranged)
-    needed=(beat*5 if short_form else beat*10)+total_vocal_duration+max(0,len(voices)-1)*beat*3
+    # A beat or two sets up the joke; a 4-8 beat silent prelude is too
+    # long for short WhatsApp voice notes. Keep the original source segments
+    # and meaningful insert duration; do not stretch to meet a bar count.
+    intro_beats=3 if total_vocal_duration<25 else 8
+    needed=(beat*5 if short_form else beat*intro_beats)+total_vocal_duration+max(0,len(voices)-1)*beat*2
     # When remixing the ACTUAL video someone shared, never pad a five-second
     # source into an arbitrary 30-second montage just to fill our default
     # audio-only minimum. Keep every original word, its inserted FX and
     # musical entrance, but use the shortest natural complete arrangement.
     # Explicit user-selected lengths (30/60/...) are always respected.
-    minimum=(14.0 if short_form else 0.0 if source_video_length and seconds==0 else 30.0)
-    seconds=max(minimum,float(seconds),math.ceil(needed))
+    # Auto duration means a compact DJ edit of the ACTUAL recording, not a
+    # fixed 30-second empty bed. Two 5-7s WhatsApp notes previously became
+    # 60s+ of instrumental waiting; AI video then needed too many expensive
+    # 5s segments. Preserve all source words and planned effects while
+    # trimming only unrequested instrumental padding.
+    # Explicit user-selected 30/60/90/120/180s lengths remain unchanged.
+    minimum=(8.0 if seconds==0 else float(seconds))
+    seconds=max(minimum,math.ceil(needed))
     if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
     n=int(round(seconds*sr))
     activity,fx_fill_times=speech_aware_music_map(arranged,sr,bpm,seconds)
