@@ -179,11 +179,31 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 </details>
 <p class="hint">כל הדיבור המקורי נשמר לפי הסדר. רול, מתיחה או סקראצ׳ של קול ה־WhatsApp מושמעים במעבר נפרד, ולא על גבי משפט אחר. המנגינה ממשיכה להתפתח ברקע.</p>
 </section>
-<section class="panel" id="audioToolsPanel"><h2>אולפן סאונד — מיקס ומאסטרינג</h2>
-<p class="hint">כלי עיבוד אמיתיים בחינם: מאסטרינג לקובץ שמע או וידאו, או מיקס של פלייבק עם הקלטת שירה נוספת. אינו מבצע עדיין המרת זהות קול של זמר לקאבר AI.</p>
+<section class="panel" id="audioToolsPanel"><h2>אולפן סאונד חינמי — מיקס, מאסטרינג ו־16 אפקטים אמיתיים</h2>
+<p class="hint">עיבוד מקומי ב־FFmpeg: ללא מנוי, רכישת קרדיטים, מפתח API או פרטי תשלום. בוחרים קובץ, אפקט ומפיקים MP3 להאזנה ולהורדה. אין כאן התחזות לקול של זמר ואין הפרדת שירה מתוך שיר מעורב.</p>
 <label for="studioMode">סוג העבודה</label><select id="studioMode">
 <option value="master" selected>מאסטרינג — איזון עוצמות, קומפרסור ולימיטר</option>
 <option value="mix">מיקס — מוזיקת רקע/פלייבק עם שירה מקובץ נוסף</option>
+<optgroup label="שיפור שמע מקצועי — בחינם">
+<option value="speech_clean">ניקוי רעשים והבהרת דיבור</option>
+<option value="podcast">דיבור לפודקאסט — EQ וקומפרסיה</option>
+<option value="radio">שדר רדיו — קול יציב ומוגבר</option>
+</optgroup>
+<optgroup label="אפקטים קומיים ויצירתיים — בחינם">
+<option value="telephone">קול טלפון ישן</option>
+<option value="megaphone">מגפון — רוויה וצליל צר</option>
+<option value="robot">רובוט — מודולציית עוצמה מהירה</option>
+<option value="chorus">מקהלה / שכפול קול מתנודד</option>
+<option value="flanger">פלנג׳ר מסתחרר</option>
+<option value="delay">דיליי DJ והחזרים בקצב</option>
+<option value="room">חדר הד — הדהוד קצר</option>
+<option value="tremolo">טרמולו — קפיצות בעוצמה</option>
+<option value="slow">סלואו מושן — איטי בלי שינוי גובה</option>
+<option value="fast">הילוך מהיר — ללא שינוי גובה</option>
+<option value="pitch_up">קול גבוה ב־3 חצאי טון</option>
+<option value="pitch_down">קול נמוך ב־3 חצאי טון</option>
+<option value="reverse">ריוורס — קול הפוך עד 30 שניות</option>
+</optgroup>
 </select>
 <label for="studioSource">קובץ מקור (או הקובץ שכבר שיתפת לאפליקציה)</label>
 <input type="file" id="studioSource" accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.mov">
@@ -200,10 +220,10 @@ audio{width:100%;margin:15px 0}#videoNotice{padding:15px;border:1px solid #eab46
 <input id="studioVoiceGain" type="range" min="25" max="180" value="100">
 </div>
 <label class="videoToggle"><input type="checkbox" id="studioRights"> <span>יש לי הרשאות להשתמש במוזיקה ובקול שבתוצרים</span></label>
-<button type="button" id="studioRender">הפק MP3 מהקבצים שבחרתי</button>
+<button type="button" id="studioRender">הפק MP3 חינמי מהקבצים שבחרתי</button>
 <div id="studioStatus" class="hint" role="status" aria-live="polite"></div>
 <audio id="studioPlayer" controls hidden preload="metadata" style="width:100%"></audio>
-<p class="hint">הפרדת שירה ופלייבק מתוך שיר מעורב, והחלפת גוון קול ב־AI Cover, יופעלו רק כשיותקן מנוע הפרדה והמרת קול אמיתי. קישור YouTube מיועד לתצוגה מקדימה, לא להורדה ועיבוד מתוך השירות.</p>
+<p class="hint">כל האפקטים כאן עובדים ללא GPU חיצוני. הפרדת ערוצי שירה מתוך שיר מעורב או AI Cover אינם זמינים בשרת החינמי ולכן אינם מוצגים כאפשרויות פעילות. קישור YouTube משמש רק לתצוגה מקדימה מורשית.</p>
 </section>
 <section class="panel"><h2>4. מתחילים יצירה</h2>
 <div id="stages" aria-label="שלבי הפקה"><span data-step="upload" data-state="current">1. העלאה</span><span data-step="recognize">2. דיבור</span><span data-step="mix">3. טראנס</span><span data-step="video">4. סרטון</span></div>
@@ -492,6 +512,9 @@ $('studioMode').onchange=function(){
  var mixing=this.value==='mix';
  $('studioVoiceWrap').hidden=!mixing;
  $('studioLevels').hidden=!mixing;
+ var isFx=this.value!=='master'&&!mixing;
+ $('studioSound').disabled=isFx;
+ $('studioRender').textContent=isFx?'הפק אפקט קול חינמי ל־MP3':'הפק MP3 חינמי מהקבצים שבחרתי';
 };
 $('studioVoiceGain').oninput=function(){$('studioVoiceValue').textContent=this.value+'%'};
 $('studioBackingGain').oninput=function(){$('studioBackingValue').textContent=this.value+'%'};
@@ -515,7 +538,7 @@ $('studioRender').onclick=async function(){
  form.set('backing_gain',$('studioBackingGain').value);
  form.set('rights','yes');
  var btn=$('studioRender');btn.disabled=true;
- $('studioStatus').textContent='מעבד שמע ומבצע איזון עוצמות, מיקס ומאסטרינג...';
+ $('studioStatus').textContent='מבצע את עיבוד הסאונד שנבחר ב־FFmpeg המקומי — בלי שירות בתשלום...';
  try{
   var response=await fetch('/api/audio-tools/render',{
    method:'POST',body:form,credentials:'same-origin'
@@ -530,7 +553,7 @@ $('studioRender').onclick=async function(){
   if(player.dataset.objectUrl)URL.revokeObjectURL(player.dataset.objectUrl);
   var url=URL.createObjectURL(blob);
   player.dataset.objectUrl=url;player.src=url;player.hidden=false;
-  $('studioStatus').textContent='קובץ המאסטר מוכן. ניתן להאזין או לשמור MP3.';
+  $('studioStatus').textContent='קובץ MP3 מוכן. אפשר להאזין ולהוריד — ללא תשלום.';
   if(window.KolboAndroid&&window.KolboAndroid.saveStudioAudio){
    var reader=new FileReader();
    reader.onload=function(){
@@ -539,7 +562,7 @@ $('studioRender').onclick=async function(){
    reader.readAsDataURL(blob);
   }else{
    var link=document.createElement('a');link.href=url;
-   link.download='Kolbo-Studio-Mastered.mp3';
+   link.download='Kolbo-Studio-Free-'+mode+'.mp3';
    document.body.appendChild(link);link.click();link.remove();
   }
  }catch(err){

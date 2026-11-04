@@ -42,6 +42,39 @@ def probe_audio(path):
     return duration
 
 
+# All presets below are deterministic, local FFmpeg filters. There are no
+# external APIs, accounts, billable inference or hidden paid fallbacks.
+# They do not imitate the voice identity of any person or separate stems.
+FREE_VOICE_MODES = {
+    "speech_clean": (
+        "highpass=f=75,lowpass=f=9000,afftdn=nr=12:nf=-40,"
+        "acompressor=threshold=-20dB:ratio=2:attack=18:release=160"),
+    "podcast": (
+        "highpass=f=70,equalizer=f=250:t=q:w=1.2:g=-2,"
+        "equalizer=f=3400:t=q:w=1.1:g=2.0,"
+        "acompressor=threshold=-24dB:ratio=2.8:attack=8:release=130"),
+    "radio": (
+        "highpass=f=140,lowpass=f=7500,"
+        "acompressor=threshold=-26dB:ratio=3.5:attack=5:release=90"),
+    "telephone": "highpass=f=320,lowpass=f=3200,acompressor=threshold=-26dB:ratio=3:attack=5:release=110",
+    "megaphone": "highpass=f=440,lowpass=f=2900,acrusher=bits=9:mix=0.22,acompressor=threshold=-24dB:ratio=3:attack=4:release=85",
+    "robot": "highpass=f=70,tremolo=f=26:d=0.72,acompressor=threshold=-20dB:ratio=2:attack=9:release=130",
+    "chorus": "chorus=0.6:0.9:50|60:0.4|0.32:0.25|0.4:2|1.3",
+    "flanger": "flanger",
+    "delay": "aecho=0.8:0.6:210|420:0.38|0.21",
+    "room": "aecho=0.78:0.67:27|43|79:0.25|0.19|0.11",
+    "tremolo": "tremolo=f=7:d=0.78",
+    "slow": "atempo=0.8",
+    "fast": "atempo=1.25",
+    # Keep source duration approximately stable while pitch changes +/-3st.
+    "pitch_up": "aresample=44100,asetrate=44100*1.189207,aresample=44100,atempo=0.840896",
+    "pitch_down": "aresample=44100,asetrate=44100*0.840896,aresample=44100,atempo=1.189207",
+    "reverse": "areverse",
+}
+
+FREE_STUDIO_MODES=("master","mix",*FREE_VOICE_MODES)
+
+
 def render_audio_tool(source,output,*,mode="master",voice=None,
                       sound="balanced",voice_gain=100,backing_gain=80):
     """Export a playable stereo MP3 from mastering or source+voice mixing.
@@ -49,13 +82,17 @@ def render_audio_tool(source,output,*,mode="master",voice=None,
     An uploaded voice is a performance, not a target timbre. This function
     does NOT clone any singer or transform a singer to sing different lyrics.
     """
-    if mode not in ("master","mix"):
+    if mode not in FREE_STUDIO_MODES:
         raise AudioToolError("מצב עיבוד האולפן אינו נתמך.")
     if sound not in ("balanced","warm","punchy","clean"):
         raise AudioToolError("סגנון המאסטרינג אינו נתמך.")
     if not 25<=voice_gain<=180 or not 15<=backing_gain<=150:
         raise AudioToolError("העוצמות חייבות להיות בטווח התקין.")
-    probe_audio(source)
+    duration=probe_audio(source)
+    # Reverse requires FFmpeg to buffer decoded samples; on a 512MiB
+    # shared free host limit this mode to short WhatsApp voice clips.
+    if mode=="reverse" and duration>30:
+        raise AudioToolError("ריוורס מקומי מוגבל ל־30 שניות כדי למנוע קריסת זיכרון.")
     if mode=="mix":
         if voice is None:
             raise AudioToolError("לצורך מיקס יש להוסיף קובץ שירה שני.")
@@ -68,11 +105,21 @@ def render_audio_tool(source,output,*,mode="master",voice=None,
       "punchy":"highpass=f=36,equalizer=f=3500:t=q:w=1.1:g=1.0,acompressor=threshold=-21dB:ratio=3.0:attack=7:release=100",
       "clean":"highpass=f=25,acompressor=threshold=-16dB:ratio=1.5:attack=24:release=180"
     }[sound]
-    master="loudnorm=I=-14:TP=-1.3:LRA=10,alimiter=limit=0.92"
+    # MP3 encoder inter-sample overshoot can exceed digital full-scale even
+    # after loudnorm + FFmpeg's default auto-makeup limiter. Proven on real
+    # WhatsApp OPUS voice: a +3st vocal hit 1.24 decoded PCM before this fix.
+    # Disable auto makeup, leave post-limiter headroom for MP3 decode,
+    # and retain a natural dynamic range without clipping the jokes.
+    master="loudnorm=I=-14:TP=-1.3:LRA=10,alimiter=limit=0.86:level=0,volume=0.82"
     command=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
              "-y","-i",str(source)]
     if mode=="master":
         command+=["-vn","-map","0:a:0","-af",eq+","+master]
+    elif mode in FREE_VOICE_MODES:
+        # No second voice input and no network calls: transparent solo voice
+        # effect rather than an unrelated dance mix.
+        command+=["-vn","-map","0:a:0","-af",
+                  FREE_VOICE_MODES[mode]+","+master]
     else:
         command+=["-i",str(voice)]
         filters=(
