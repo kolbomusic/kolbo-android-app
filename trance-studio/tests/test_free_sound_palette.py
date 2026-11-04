@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import numpy as np
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"backend"))
@@ -48,11 +49,14 @@ class FreeSoundPaletteTests(unittest.TestCase):
                 # but corrupted or silent MP3 is always an unacceptable result.
                 raw=subprocess.check_output([
                     "ffmpeg","-nostdin","-v","error","-i",str(file),
-                    "-ac","1","-ar","8000","-f","s16le","-"],
+                    "-ac","1","-ar","8000","-f","f32le","-"],
                     timeout=15)
-                self.assertGreater(len(raw),16000)
-                self.assertGreater(len(set(raw[:6000])),20,
-                    "Sound processor returned a silent or near-constant file")
+                samples=np.frombuffer(raw,dtype="<f4")
+                self.assertGreater(len(samples),8000)
+                self.assertGreater(float(np.std(samples)),.003,
+                    "Sound processor returned silent/near-constant PCM")
+                self.assertLess(float(np.max(np.abs(samples))),.99,
+                    "Inter-sample MP3 peaks clipped beyond safe digital headroom")
                 rendered[mode]=raw
         self.assertNotEqual(rendered["pitch_up"],rendered["pitch_down"])
         self.assertNotEqual(rendered["telephone"],rendered["chorus"])
