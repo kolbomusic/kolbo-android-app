@@ -387,7 +387,7 @@ def compose_edited_original_video(source, music_mp3, output_mp4, work_dir,
             "video_edit_style":("voice_fx_synced_motion_warp" if synced
                                 else "beat_cut_punch_in_speed_ramp"),
             "video_edit_fx_cues":sum(1 for shot in shots
-                                        if shot.get("kind")=="voice_fx"),
+                                        if shot.get("kind") in ("voice_fx","voice_mod")),
             "video_edit_audio_synced":bool(synced),
             "video_edit_shots":len(shots),
             "video_status":"done",
