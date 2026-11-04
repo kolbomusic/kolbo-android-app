@@ -835,7 +835,7 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # 5s segments. Preserve all source words and planned effects while
     # trimming only unrequested instrumental padding.
     # Explicit user-selected 30/60/90/120/180s lengths remain unchanged.
-    minimum=(8.0 if seconds==0 else float(seconds))
+    minimum=((14.0 if short_form else 8.0) if seconds==0 else float(seconds))
     seconds=max(minimum,math.ceil(needed))
     if seconds>360:raise ValueError('משך ההקלטות הכולל גדול מדי לעיבוד חינמי')
     n=int(round(seconds*sr))
