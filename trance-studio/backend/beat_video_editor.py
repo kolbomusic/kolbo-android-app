@@ -74,7 +74,7 @@ def _video_effect_parameters(kind, effect, intensity):
         # reframing/warping the actual moving source at the audible cue.
         if effect in ("stretch","tape","monster","rewind","yo_yo"):
             return (1.,1.16+.04*intensity,"stretch")
-        if effect in ("pitch","helium","robot","ring"):
+        if effect in ("pitch","helium","robot","ring","character"):
             return (1.,1.17+.045*intensity,"pitch")
         return (1.,1.13+.04*intensity,"glitch")
     if kind=="voice_fx":

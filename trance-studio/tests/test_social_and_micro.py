@@ -208,14 +208,17 @@ class SocialImportAndMicroRemixTests(unittest.TestCase):
             [voice],sample_rate=sr,seconds=0,humor='auto',style='mixed',
             transcript_hint='חמור',fx_intensity=3,return_voice=True)
         duration=len(wet)/sr
-        self.assertGreaterEqual(duration,14)
-        self.assertLess(duration,30)
+        # Auto mode no longer fabricates a 14-second circus montage from
+        # a 1.15s utterance; one coherent 1s+ vocal accent is sufficient.
+        self.assertGreaterEqual(duration,8)
+        self.assertLess(duration,13)
         self.assertGreater(np.max(np.abs(wet)),.02)
         self.assertTrue(np.isfinite(full).all())
         self.assertEqual(len(full),len(wet))
-        # A single short source is arranged in a multi-stage sound design.
-        tail=wet[int(4*sr):]
-        self.assertGreater(float(np.sqrt(np.mean(tail**2))),.001)
+        # The user's actual source remains in the mixed voice performance,
+        # but no unrelated 14-second filler or extra stingers are created.
+        voiced=wet[int(1.4*sr):int(3.5*sr)]
+        self.assertGreater(float(np.sqrt(np.mean(voiced**2))),.01)
 
     def test_manual_trance_off_still_preserves_short_recording(self):
         sr=8000

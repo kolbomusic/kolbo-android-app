@@ -418,6 +418,9 @@ def create_app(config=None):
                             options.get('video_strategy')!='new_story'):
                         try:
                             board=visual_plan(detected_transcript,audio_duration_seconds)
+                            if options.get('video_strategy')=='smart_story':
+                                from live_video import require_faithful_action_footage
+                                board=require_faithful_action_footage(board)
                             board['transcript_origin']=detected_origin
                             board['transcript_complete']=transcript_complete
                             # A clip must depict every uttered event; do not hide
@@ -605,7 +608,7 @@ def create_app(config=None):
     def too_large(_):return jsonify(error='קובץ גדול מדי: עד 15MB להקלטת קול, 45MB לסרטון ו־60MB יחד.'),413
 
     @app.get('/health')
-    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.24',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
+    def health():return jsonify(ok=True,service='kolbo-trance-studio',version='1.16.25',cloud_ready=bool(app.config['API_TOKEN']),asr_preloaded=bool(os.environ.get('KOLBO_ASR_DIR') and (Path(os.environ['KOLBO_ASR_DIR'])/'model.bin').is_file()))
 
     @app.get('/api/jobs/capacity')
     def job_capacity():
