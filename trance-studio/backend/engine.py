@@ -272,7 +272,16 @@ def vintage_voice_fx(clip, mode, sr, bpm, rng):
             int(rng.integers(0,9))]
     if mode=='chaos':
         mode=('dj','glitch','stretch','tape','pitch')[int(rng.integers(0,5))]
-    if mode=='stretch':
+    if mode=='character':
+        # Natural-ish comic character: transpose the source by +5 semitones
+        # and WSOLA-fit the COMPLETE original phrase duration. Unlike an
+        # equal-and-opposite time stretch, this preserves the audible pitch
+        # change rather than cancelling it. No 100ms repeated grains or
+        # abrupt mid-word jumps in the default automatic director.
+        raised=pitch_speed(x,5,sr)
+        ratio=len(x)/max(1,len(raised))
+        y=stretch_voice(raised,ratio,sr)
+    elif mode=='stretch':
         # Stretch one clean copied sample moderately. The previous 2.3x
         # mid-phoneme duplicate produced unnatural joins and drawn-out vowels.
         y=stretch_voice(x,1.32,sr)
