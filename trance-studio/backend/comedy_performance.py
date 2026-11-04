@@ -159,9 +159,12 @@ def perform_comic_voice(vocal, start_frame, spans, sr, bpm, humor,
         original=vocal[left:left+width].copy()
         src_time=(source_begin+left-begin)/sr
         mode=mode_order[0]
-        # An aligned *positive* spoken word can override the global motif,
-        # but never run a rotation of unrelated characters every 0.8s.
-        timed_mode=_word_mode(humor,word_times,src_time,semantic_cue)
+        # The selected 1.55s window starts BEFORE the expressive syllable.
+        # Semantic word matching must inspect its CENTER, not its first
+        # sample. Using the left edge misidentified words and ignored true
+        # Hebrew triggers even when Whisper supplied accurate word times.
+        source_center=src_time+len(original)/(2.*sr)
+        timed_mode=_word_mode(humor,word_times,source_center,semantic_cue)
         if timed_mode in ("monster","helium","stretch","pitch","tape"):
             mode=timed_mode
         # This DSP effect can shrink the recorded syllable by 40%.
