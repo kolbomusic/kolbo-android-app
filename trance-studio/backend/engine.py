@@ -799,7 +799,10 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
     # An automatic 1–3-word recording must become a complete short DJ gag,
     # never 30 seconds of repetitive backing behind a 1-second utterance.
     from micro_remix import arrange_micro_phrase
-    short_form=(seconds==0 and humor!='off' and len(voices)==1
+    # Keep the old exaggerated micro-roll only for an explicit user
+    # selected manual DJ effect. Automatic comedy is ONE coherent,
+    # full-phrase performance; no 14s collage from a 1s word.
+    short_form=(seconds==0 and humor not in ('auto','off') and len(voices)==1
                 and .12<=len(voices[0])/sr<=4.5
                 and (len(transcript_hint.strip().split())<=3
                      or not transcript_hint.strip()
@@ -813,7 +816,12 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             vintage_effect=vintage_voice_fx,quality=_vocal_hook_quality,
             semantic_cue=cue)]
     else:
-        arranged=[arranged_vocal_track(v,sr,bpm,humor,fx_intensity,fx_gain,voice_rng,
+        # An older automatic pipeline injected a separate 0.4-0.8s stinger
+        # on top of EACH 1s in-word vocal morph. Two independent 'joke'
+        # systems created grating, unrelated noise. The automatic director
+        # now owns the spoken punchline, manual modes keep their DJ inserts.
+        arranger_mode=('off' if humor=='auto' else humor)
+        arranged=[arranged_vocal_track(v,sr,bpm,arranger_mode,fx_intensity,fx_gain,voice_rng,
                                        transcript_hint=transcript_hint,
                                        timed_phrases=(transcript_timeline[i] if i<len(transcript_timeline) else None),
                                        fx_events=(fx_events_per_voice[i] if fx_events_per_voice is not None else None))
@@ -1132,7 +1140,8 @@ def render_mix(clips,sample_rate=32000,seconds=60,bpm=145,style='mixed',voice_le
             performance=perform_comic_voice(
                 vocal,start,spans,sr,bpm,humor,fx_intensity,fx_gain,
                 voice_rng,vintage_voice_fx,word_times=phrases,
-                semantic_cue=_semantic_comedy_cue)
+                semantic_cue=_semantic_comedy_cue,
+                transcript_hint=transcript_hint,quality_fn=_vocal_hook_quality)
             for cue in performance:
                 a=cue['start_frame'];b=min(n,cue['end_frame'])
                 if b<=a:continue
