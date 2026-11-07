@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "historical-frequency-not-prediction",
   "date_israel": "2026-11-07",
-  "generated_at_israel": "2026-11-07T04:21:57+02:00",
+  "generated_at_israel": "2026-11-07T23:44:06+02:00",
   "valid_until_date_israel": "2026-11-07",
   "draw_times_local": [
     "21:30",
@@ -11,8 +11,8 @@
   "draw_times_are_sales_closing_times": true,
   "data_source": "External archive attributed in chance-data/source.txt; verify against pais.co.il",
   "last_recorded_draw": {
-    "id": 53867,
-    "date": "2026-11-06"
+    "id": 53869,
+    "date": "2026-11-07"
   },
   "historical_window": 200,
   "pair": {
