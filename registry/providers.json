@@ -58,7 +58,7 @@
           "supports_explicit_duration": true
         }
       ],
-      "discovered_at": "2026-11-07T11:10:06.225930+00:00",
+      "discovered_at": "2026-11-08T11:22:16.451153+00:00",
       "id": "chopperblu/ltx-2-5-demo",
       "license_declared": null,
       "pricing_verified": false,
@@ -73,7 +73,7 @@
       "api_host": "https://kulkas2pintu-wan777.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-07T11:10:06.225930+00:00",
+      "discovered_at": "2026-11-08T11:22:16.451153+00:00",
       "id": "kulkas2pintu/wan777",
       "license_declared": null,
       "pricing_verified": false,
@@ -88,7 +88,7 @@
       "api_host": "https://jcishere-wan2-2-i2v-v3.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-07T11:10:06.225930+00:00",
+      "discovered_at": "2026-11-08T11:22:16.451153+00:00",
       "id": "JCisHERE/wan2-2-i2v-v3",
       "license_declared": null,
       "pricing_verified": false,
@@ -103,7 +103,7 @@
       "api_host": "https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-07T11:10:06.225930+00:00",
+      "discovered_at": "2026-11-08T11:22:16.451153+00:00",
       "id": "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
       "license_declared": null,
       "pricing_verified": false,
@@ -118,7 +118,7 @@
       "api_host": "https://r3gm-wan2-2-fp8da-aoti-preview.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-07T11:10:06.225930+00:00",
+      "discovered_at": "2026-11-08T11:22:16.451153+00:00",
       "id": "r3gm/wan2-2-fp8da-aoti-preview",
       "license_declared": null,
       "pricing_verified": false,
@@ -133,7 +133,7 @@
       "api_host": "https://upsampler-wan-2-2-14b-image-to-video.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-07T11:10:06.225930+00:00",
+      "discovered_at": "2026-11-08T11:22:16.451153+00:00",
       "id": "Upsampler/wan-2-2-14b-image-to-video",
       "license_declared": null,
       "pricing_verified": false,
@@ -145,7 +145,7 @@
       "terms_verified": false
     }
   ],
-  "discovered_at": "2026-11-07T11:10:06.225930+00:00",
+  "discovered_at": "2026-11-08T11:22:16.451153+00:00",
   "never_claims_generation_from_metadata": true,
   "verification_level": "metadata_only",
   "version": "3.2.0"
