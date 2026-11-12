@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "kind": "historical-frequency-not-prediction",
-  "date_israel": "2026-11-11",
-  "generated_at_israel": "2026-11-11T04:14:49+02:00",
-  "valid_until_date_israel": "2026-11-11",
+  "date_israel": "2026-11-12",
+  "generated_at_israel": "2026-11-12T05:20:49+02:00",
+  "valid_until_date_israel": "2026-11-12",
   "draw_times_local": [
     "09:00",
     "11:00",
@@ -16,24 +16,24 @@
   "draw_times_are_sales_closing_times": true,
   "data_source": "External archive attributed in chance-data/source.txt; verify against pais.co.il",
   "last_recorded_draw": {
-    "id": 53890,
-    "date": "2026-11-10"
+    "id": 53897,
+    "date": "2026-11-11"
   },
   "historical_window": 200,
   "pair": {
     "cards": [
       {
-        "suit": "♦",
-        "rank": "8",
-        "suit_index": 1
+        "suit": "♥",
+        "rank": "7",
+        "suit_index": 2
       },
       {
         "suit": "♠",
-        "rank": "A",
+        "rank": "9",
         "suit_index": 3
       }
     ],
-    "label": "8♦ + A♠",
+    "label": "7♥ + 9♠",
     "historical_hits": 9,
     "sample_draws": 200,
     "historical_rate_percent": 4.5,
@@ -71,7 +71,7 @@
     },
     "expected_hits_for_fixed_combination": 0.39
   },
-  "whatsapp_draft": "🃏 צ'אנס נכנס | סקירת נתוני עבר\n📅 תאריך: 11/11/2026 (שעון ישראל)\n♣ זוג שכיח היסטורית: 8♦ + A♠\n📊 9 מתוך 200 הגרלות שנבדקו\n♠ שלשה שכיחה היסטורית: 9♣ + 8♦ + A♠\n📊 4 מתוך 200 הגרלות שנבדקו\n🕐 שעות סגירת מכירה רגילות היום: 09:00, 11:00, 13:00, 15:00, 17:00, 19:00, 21:00\n⚠️ אין בנתונים תחזית או הבטחת זכייה; לכל זוג מוגדר סיכוי של 1 ל־64 בכל הגרלה הוגנת.\nלוח הזמנים עשוי להשתנות בחגים. השתתפות בהגרלה לבני 18+ בלבד.",
+  "whatsapp_draft": "🃏 צ'אנס נכנס | סקירת נתוני עבר\n📅 תאריך: 12/11/2026 (שעון ישראל)\n♣ זוג שכיח היסטורית: 7♥ + 9♠\n📊 9 מתוך 200 הגרלות שנבדקו\n♠ שלשה שכיחה היסטורית: 9♣ + 8♦ + A♠\n📊 4 מתוך 200 הגרלות שנבדקו\n🕐 שעות סגירת מכירה רגילות היום: 09:00, 11:00, 13:00, 15:00, 17:00, 19:00, 21:00\n⚠️ אין בנתונים תחזית או הבטחת זכייה; לכל זוג מוגדר סיכוי של 1 ל־64 בכל הגרלה הוגנת.\nלוח הזמנים עשוי להשתנות בחגים. השתתפות בהגרלה לבני 18+ בלבד.",
   "disclaimer_he": "דירוג שכיחות היסטורית בלבד. אין ראיה שהוא משפר הסתברות לזכייה; אין התחייבות או המלצת סכום הימור.",
   "is_public_preview": true
 }
