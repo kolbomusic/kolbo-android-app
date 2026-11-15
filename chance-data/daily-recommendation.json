@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "historical-frequency-not-prediction",
   "date_israel": "2026-11-15",
-  "generated_at_israel": "2026-11-15T00:16:25+02:00",
+  "generated_at_israel": "2026-11-15T04:07:00+02:00",
   "valid_until_date_israel": "2026-11-15",
   "draw_times_local": [
     "09:00",
