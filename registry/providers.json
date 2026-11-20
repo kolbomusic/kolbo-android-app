@@ -58,7 +58,7 @@
           "supports_explicit_duration": true
         }
       ],
-      "discovered_at": "2026-11-19T13:28:42.956648+00:00",
+      "discovered_at": "2026-11-20T13:10:04.323453+00:00",
       "id": "chopperblu/ltx-2-5-demo",
       "license_declared": null,
       "pricing_verified": false,
@@ -73,7 +73,7 @@
       "api_host": "https://jcishere-wan2-2-i2v-v3.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-19T13:28:42.956648+00:00",
+      "discovered_at": "2026-11-20T13:10:04.323453+00:00",
       "id": "JCisHERE/wan2-2-i2v-v3",
       "license_declared": null,
       "pricing_verified": false,
@@ -88,7 +88,7 @@
       "api_host": "https://r3gm-wan2-2-fp8da-aoti-preview.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-19T13:28:42.956648+00:00",
+      "discovered_at": "2026-11-20T13:10:04.323453+00:00",
       "id": "r3gm/wan2-2-fp8da-aoti-preview",
       "license_declared": null,
       "pricing_verified": false,
@@ -103,7 +103,7 @@
       "api_host": "https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-19T13:28:42.956648+00:00",
+      "discovered_at": "2026-11-20T13:10:04.323453+00:00",
       "id": "zerogpu-aoti/wan2-2-fp8da-aoti-faster",
       "license_declared": null,
       "pricing_verified": false,
@@ -115,25 +115,10 @@
       "terms_verified": false
     },
     {
-      "api_host": "https://prunaai-p-image-oss.hf.space",
-      "automated_public_demo_probe_candidate": false,
-      "capabilities": [],
-      "discovered_at": "2026-11-19T13:28:42.956648+00:00",
-      "id": "PrunaAI/P-Image-OSS",
-      "license_declared": null,
-      "pricing_verified": false,
-      "probe": "not_run",
-      "production_eligible": false,
-      "source": "huggingface_spaces_official",
-      "space_url": "https://huggingface.co/spaces/PrunaAI/P-Image-OSS",
-      "status": "schema_not_compatible",
-      "terms_verified": false
-    },
-    {
       "api_host": "https://minimaxai-minimax-h3-image.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-19T13:28:42.956648+00:00",
+      "discovered_at": "2026-11-20T13:10:04.323453+00:00",
       "id": "MiniMaxAI/minimax-h3-image",
       "license_declared": null,
       "pricing_verified": false,
@@ -143,9 +128,24 @@
       "space_url": "https://huggingface.co/spaces/MiniMaxAI/minimax-h3-image",
       "status": "schema_not_compatible",
       "terms_verified": false
+    },
+    {
+      "api_host": "https://wank3r-minimax-h3.hf.space",
+      "automated_public_demo_probe_candidate": false,
+      "capabilities": [],
+      "discovered_at": "2026-11-20T13:10:04.323453+00:00",
+      "id": "wank3r/minimax-h3",
+      "license_declared": null,
+      "pricing_verified": false,
+      "probe": "not_run",
+      "production_eligible": false,
+      "source": "huggingface_spaces_official",
+      "space_url": "https://huggingface.co/spaces/wank3r/minimax-h3",
+      "status": "schema_not_compatible",
+      "terms_verified": false
     }
   ],
-  "discovered_at": "2026-11-19T13:28:42.956648+00:00",
+  "discovered_at": "2026-11-20T13:10:04.323453+00:00",
   "never_claims_generation_from_metadata": true,
   "verification_level": "metadata_only",
   "version": "3.2.0"
