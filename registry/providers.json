@@ -58,7 +58,7 @@
           "supports_explicit_duration": true
         }
       ],
-      "discovered_at": "2026-11-27T13:59:13.257286+00:00",
+      "discovered_at": "2026-11-28T13:14:26.974869+00:00",
       "id": "chopperblu/ltx-2-5-demo",
       "license_declared": null,
       "pricing_verified": false,
@@ -73,7 +73,7 @@
       "api_host": "https://upsampler-wan-2-2-14b-image-to-video.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-27T13:59:13.257286+00:00",
+      "discovered_at": "2026-11-28T13:14:26.974869+00:00",
       "id": "Upsampler/wan-2-2-14b-image-to-video",
       "license_declared": null,
       "pricing_verified": false,
@@ -88,7 +88,7 @@
       "api_host": "https://waloneai-sdxt-image-to-video.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-27T13:59:13.257286+00:00",
+      "discovered_at": "2026-11-28T13:14:26.974869+00:00",
       "id": "waloneai/SDXT-Image-To-Video",
       "license_declared": null,
       "pricing_verified": false,
@@ -103,7 +103,7 @@
       "api_host": "https://devilking99-image-video-pro.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-27T13:59:13.257286+00:00",
+      "discovered_at": "2026-11-28T13:14:26.974869+00:00",
       "id": "Devilking99/Image-Video__Pro",
       "license_declared": null,
       "pricing_verified": false,
@@ -118,7 +118,7 @@
       "api_host": "https://upsampler-wan-2-2-5b-video.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-27T13:59:13.257286+00:00",
+      "discovered_at": "2026-11-28T13:14:26.974869+00:00",
       "id": "Upsampler/wan-2-2-5b-video",
       "license_declared": null,
       "pricing_verified": false,
@@ -133,7 +133,7 @@
       "api_host": "https://upsampler-ltx-video.hf.space",
       "automated_public_demo_probe_candidate": false,
       "capabilities": [],
-      "discovered_at": "2026-11-27T13:59:13.257286+00:00",
+      "discovered_at": "2026-11-28T13:14:26.974869+00:00",
       "id": "Upsampler/ltx-video",
       "license_declared": null,
       "pricing_verified": false,
@@ -145,7 +145,7 @@
       "terms_verified": false
     }
   ],
-  "discovered_at": "2026-11-27T13:59:13.257286+00:00",
+  "discovered_at": "2026-11-28T13:14:26.974869+00:00",
   "never_claims_generation_from_metadata": true,
   "verification_level": "metadata_only",
   "version": "3.2.0"
